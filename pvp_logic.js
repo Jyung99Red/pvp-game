@@ -155,6 +155,12 @@ const pvpLogic = (() => {
         _setPhase(side, 'strike_out', 16);
 
         if (pvpNet.role === 'host') {
+            // Host 是判定权威，自己不需要靠这条消息来判定，但 guest 那边显示的
+            // "对手"状态完全依赖网络消息驱动——如果不广播，guest 看到的 host
+            // 会一直卡在最后一次 charge_sync 收到的"蓄力中"，直到下一个动作
+            // 消息把它覆盖掉。这里补发一条，复用 guest 攻击时已经验证正确的
+            // 接收处理逻辑（_handleNetMessage 的 'charge_release' case）。
+            pvpNet.send({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
             _resolveExchange(chargeMs, state.pvpBattle.self, state.pvpBattle.opponent);
         } else {
             pvpNet.send({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
@@ -240,14 +246,14 @@ const pvpLogic = (() => {
         // Log (host side)
         _pushLog(logText);
 
-        // Check end
-        if (attacker.hp <= 0 || defender.hp <= 0) {
-            _endBattle();
-            return;
-        }
+        // 视觉反馈：哪怕这一下是致命一击，也要先把动画打出来——
+        // 下面如果直接因为HP归零提前return，guest端会连这条result消息都收不到，
+        // 等于看不到最后一下的特效，直接跳到结算画面。所以这里先播放、
+        // 再广播，最后才做生死判定。
+        uiPvp.playExchangeFx(exchange, selfIsAttacker);
 
-        // Broadcast to guest — send enough for guest to apply HP and log
-        // selfIsAttacker=true means host attacked, so from guest's view: opponentAttacked
+        // Broadcast to guest — send enough for guest to apply HP/log/fx.
+        // attackerIsHost 让 guest 端能正确翻译"出手的是己方还是对手"。
         pvpNet.send({
             msg:          'result',
             exchange,
@@ -256,7 +262,14 @@ const pvpLogic = (() => {
             guestHp:      b.opponent.hp,
             hostStunMs:   selfIsAttacker ? attackerStunMs : defenderStunMs,
             guestStunMs:  selfIsAttacker ? defenderStunMs : attackerStunMs,
+            attackerIsHost: selfIsAttacker,
         });
+
+        // Check end (放在广播之后，确保致命一击的特效/log已经送达guest)
+        if (attacker.hp <= 0 || defender.hp <= 0) {
+            _endBattle();
+            return;
+        }
     }
 
     // ── Apply result on guest side ────────────────────────────────────
@@ -271,6 +284,7 @@ const pvpLogic = (() => {
         if (msg.hostStunMs  > 0) _setPhase(b.opponent, 'stunned', msg.hostStunMs);
 
         _pushLog(msg.logText);
+        uiPvp.playExchangeFx(msg.exchange, !msg.attackerIsHost);
 
         if (b.self.hp <= 0 || b.opponent.hp <= 0) _endBattle();
     }
@@ -513,6 +527,7 @@ const pvpLogic = (() => {
             _lastTime = performance.now();
             _rAF = requestAnimationFrame(_loop);
 
+            uiPvp.initFighters();
             ui.switchTab('pvp-battle');
         },
 
