@@ -39,6 +39,25 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 .attack-bar.penalized { background: #e07c3a; }
 .bar-text { position: absolute; width: 100%; text-align: center; line-height: 12px; font-size: 13px; font-weight: bold; top: 0; left: 0; text-shadow: 1px 1px 1px #000; pointer-events: none; }
 
+/* ── PVP 蓄力条 ──
+   根因：charge-early / charge-normal 之前没有定义任何背景色，导致 .bar-inner
+   本身透明，叠在黑底 .bar-wrap 上视觉等于啥都没有——宽度其实一直在变，只是
+   看不见。这里补上颜色，并给宽度变化加一点过渡：
+   - 自己的条每帧(rAF≈16ms)更新一次，本来就够密集，给个很短的过渡防止手感发飘；
+   - 对手的条只靠每100ms一次的网络同步消息更新，没有过渡时视觉上是"跳着走"，
+     过渡时长稍微长一点，让两次同步之间也能连续滑动而不是瞬移。 */
+.pvp-charge-wrap .bar-inner {
+    transition: width 0.08s linear;
+}
+.pvp-charge-wrap .bar-inner.charge-early {
+    background: #6c757d;   /* 灰：还没过最低阈值，松手只有1点固定伤害 */
+}
+.pvp-charge-wrap .bar-inner.charge-normal {
+    background: linear-gradient(90deg, #ffb703, #fb8500);  /* 金橙：正常蓄力区间，越满越亮 */
+}
+#pvp-op-charge {
+    transition: width 0.15s linear;
+}
 /* ── Enemy action area ── */
 .enemy-action-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
 .enemy-charge-bar-wrap { flex: 1; background: #000; height: 18px; border-radius: 4px; overflow: hidden; border: 1px solid #111; position: relative; }
@@ -300,6 +319,31 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 }
 .player-node:active { transform: scale(0.9); }
 .player-node.disabled { opacity: 0.3; pointer-events: none; }
+
+/* ====== PVP 竞技场：双方武器图标节点 ======
+   复用 .player-node（圆形底座+举盾辉光环 .shield-windup/.shield-ready 状态），
+   只覆盖尺寸/光标，并补上 .player-node 本身缺的 position:relative
+   （.slashed::after 等特效靠它定位，否则会跑去相对 .battle-arena 居中）。 */
+.pvp-arena { justify-content: space-around; }
+.pvp-arena-node { display: flex; justify-content: center; }
+.pvp-weapon-node {
+    width: 56px; height: 56px;
+    position: relative;
+    cursor: default;
+}
+#pvp-self-weapon-icon .pvp-weapon-icon,
+#pvp-op-weapon-icon .pvp-weapon-icon {
+    width: 34px; height: 34px;
+    fill: #fff;
+    transform-origin: 50% 85%;
+}
+#pvp-clash-fx {
+    align-self: center;
+    font-size: 32px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+#pvp-clash-fx.pvp-clash-flash { opacity: 1; }
 
 /* ====== 判定特效类 ====== */
 
