@@ -37,6 +37,44 @@ const uiPvp = (() => {
         if (el) el.classList.toggle(cls, on);
     }
 
+    // ── PVP 角色节点视觉 ──
+    // 蓄力图标的transform、举盾辉光环都是"状态切换那一瞬间"触发一次性效果，
+    // 不是每帧重复加同一个class（class已经在身上时reflow会打断正在播的动画）。
+    // 这里记一下上一帧的phase，专门用于边沿检测。
+    const _prevPhase = { self: null, op: null };
+
+    function _weaponNodeEl(key) {
+        return document.getElementById(key === 'self' ? 'pvp-self-weapon-icon' : 'pvp-op-weapon-icon');
+    }
+
+    function _updateFighterFx(key, sideState, chargeProgress) {
+        const nodeEl = _weaponNodeEl(key);
+        const iconEl = nodeEl ? nodeEl.querySelector('.pvp-weapon-icon') : null;
+        const phase  = sideState.phase;
+        const prev   = _prevPhase[key];
+
+        // 蓄力中：连续驱动；一旦离开charging（无论是松手还是3秒自动出手），
+        // 触发一次性缓出动画转回原位
+        if (phase === 'charging') {
+            fx.pvpChargeIcon(iconEl, chargeProgress);
+        } else if (prev === 'charging') {
+            fx.pvpChargeRelease(iconEl);
+        }
+
+        // 举盾辉光环：进入windup/ready各触发一次；离开(无论是松手取消、
+        // 还是被命中切到stunned/blocked)统一先做一次"取消淡出"清场
+        if (phase === 'guard_windup' && prev !== 'guard_windup') {
+            fx.shieldWindupEl(nodeEl, pvpConfig.guardWindupMs);
+        } else if (phase === 'guard_ready' && prev !== 'guard_ready') {
+            fx.shieldReadyEl(nodeEl, pvpConfig.guardMaxHoldMs);
+        } else if ((prev === 'guard_windup' || prev === 'guard_ready') &&
+                   phase !== 'guard_windup' && phase !== 'guard_ready') {
+            fx.shieldCancelEl(nodeEl);
+        }
+
+        _prevPhase[key] = phase;
+    }
+
     return {
         updateFrame() {
             const b = state.pvpBattle;
@@ -44,6 +82,10 @@ const uiPvp = (() => {
 
             const s  = b.self;
             const op = b.opponent;
+
+            // ── 角色节点视觉(蓄力图标 / 举盾辉光环) ──
+            _updateFighterFx('self', s, s.phase === 'charging' ? s.chargeMs / pvpConfig.chargeMaxMs : 0);
+            _updateFighterFx('op',   op, op.chargeProgress || 0);
 
             // ── Opponent ─────────────────────────────────────────────
             _setBar('pvp-op-hp',     _pct(op.hp, op.maxHp));
@@ -117,6 +159,58 @@ const uiPvp = (() => {
             const logEl = document.getElementById('pvp-log');
             if (logEl && b.log) {
                 logEl.textContent = b.log.slice(0, 5).join('\n');
+            }
+        },
+
+        // 战斗开始/重开(含rematch)时调用：注入双方武器图标，并清掉上一局
+        // 可能残留的特效class/transform——因为DOM节点在两局之间是复用的，
+        // 不会自动重置。
+        initFighters() {
+            const opNode   = document.getElementById('pvp-op-weapon-icon');
+            const selfNode = document.getElementById('pvp-self-weapon-icon');
+            if (opNode)   opNode.innerHTML   = renderIcon('weapon-atk', 'pvp-weapon-icon');
+            if (selfNode) selfNode.innerHTML = renderIcon('weapon-atk', 'pvp-weapon-icon');
+
+            [opNode, selfNode].forEach(node => {
+                if (!node) return;
+                node.classList.remove('shield-windup', 'shield-ready', 'shield-cancelled',
+                                       'slashed', 'node-parry-glow', 'node-guard-shrink', 'node-shrink');
+                const icon = node.querySelector('.pvp-weapon-icon');
+                if (icon) { icon.style.transition = 'none'; icon.style.transform = ''; }
+            });
+
+            const clashEl = document.getElementById('pvp-clash-fx');
+            if (clashEl) clashEl.classList.remove('pvp-clash-flash');
+
+            _prevPhase.self = null;
+            _prevPhase.op   = null;
+        },
+
+        // 判定结果落地那一刻触发对应特效。attackerIsSelf 由调用方(pvp_logic.js)
+        // 翻译好再传进来——host/guest 双方都会调用这同一个方法，
+        // 各自传各自视角下"攻击方是不是自己"。
+        playExchangeFx(exchange, attackerIsSelf) {
+            const selfNode = document.getElementById('pvp-self-weapon-icon');
+            const opNode   = document.getElementById('pvp-op-weapon-icon');
+            const attackerEl = attackerIsSelf ? selfNode : opNode;
+            const defenderEl = attackerIsSelf ? opNode   : selfNode;
+
+            switch (exchange) {
+                case 'hit':
+                    fx.slash(defenderEl);
+                    break;
+                case 'blocked':
+                    fx.guardShrinkEl(defenderEl);
+                    break;
+                case 'parry':
+                    fx.parryGlowEl(defenderEl);
+                    fx.enemyShrink(attackerEl);   // 攻击方被弹反，短促受挫反馈
+                    break;
+                case 'clash':
+                    fx.triggerId('pvp-clash-fx', 'pvp-clash-flash', 280);
+                    fx.enemyShrink(attackerEl);
+                    fx.enemyShrink(defenderEl);
+                    break;
             }
         },
 
