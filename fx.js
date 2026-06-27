@@ -67,6 +67,60 @@ const fx = {
     // 玩家节点格挡缩小（普通格挡）
     guardShrink(hand) { this.playerNode(hand, 'node-guard-shrink', 300); },
 
+    // ════════════════════════════════
+    //  PVP 专用：直接对元素操作的版本
+    //  （PVP节点id不是 node-left/node-right 这种"手"的形式，
+    //   所以不能直接复用上面 playerNode() 那套按hand找id的写法）
+    // ════════════════════════════════
+
+    // 蓄力图标：每帧按 t(0→1) 连续驱动位移/旋转/缩放，不挂transition——
+    // 严格贴着真实蓄力进度走，不发飘。t 由调用方算好传入。
+    pvpChargeIcon(el, t) {
+        if (!el) return;
+        const tt = Math.max(0, Math.min(t, 1));
+        const LIFT_PX = 14, ROTATE_DEG = 28, SCALE_MAX = 0.15;
+        el.style.transition = 'none';
+        el.style.transform =
+            `translateY(${-LIFT_PX * tt}px) rotate(${-ROTATE_DEG * tt}deg) scale(${1 + SCALE_MAX * tt})`;
+    },
+
+    // 松手/出招那一刻：单次缓出，转回原位而不是瞬间归位。
+    // 时长固定（跟蓄力时长无关），所以用 transition 而不是 keyframes。
+    pvpChargeRelease(el, duration = 280) {
+        if (!el) return;
+        el.style.transition = `transform ${duration}ms ease-out`;
+        el.style.transform = '';
+        setTimeout(() => { if (el) el.style.transition = ''; }, duration);
+    },
+
+    // 完美弹反发光 / 普通格挡缩小 — 直接对元素触发的版本
+    parryGlowEl(el, duration = 300)   { this.trigger(el, 'node-parry-glow', duration); },
+    guardShrinkEl(el, duration = 300) { this.trigger(el, 'node-guard-shrink', duration); },
+
+    // 举盾前摇/就绪/取消 — 直接对元素触发的版本
+    // （逻辑跟下面 hand 版本的 shieldWindup/shieldReady/shieldCancel 完全一致，
+    //   只是不用通过 `node-${hand}` 拼id去找元素，而是直接传元素进来）
+    shieldWindupEl(el, durationMs) {
+        if (!el) return;
+        el.style.setProperty('--shield-windup-time', `${durationMs}ms`);
+        el.classList.remove('shield-windup', 'shield-ready', 'shield-cancelled');
+        void el.offsetWidth;
+        el.classList.add('shield-windup');
+    },
+    shieldReadyEl(el, holdMs) {
+        if (!el) return;
+        el.style.setProperty('--shield-hold-time', `${holdMs}ms`);
+        el.classList.remove('shield-windup', 'shield-cancelled');
+        void el.offsetWidth;
+        el.classList.add('shield-ready');
+    },
+    shieldCancelEl(el) {
+        if (!el) return;
+        el.classList.remove('shield-windup', 'shield-ready');
+        el.classList.add('shield-cancelled');
+        setTimeout(() => el?.classList.remove('shield-cancelled'), 200);
+    },
+
     // 举盾前摇：辉光边框逐圈填满
     shieldWindup(hand, durationMs) {
         const el = document.getElementById(`node-${hand}`);
