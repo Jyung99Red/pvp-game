@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"
+     style="position:absolute; width:90px; height:90px; top:50%; left:50%;
+            pointer-events:none; z-index:20; overflow:visible;
+            filter: drop-shadow(0 0 8px #e9c46a) drop-shadow(0 0 18px #ff4757);">
+
+  <!-- 整体变换动画：缩放 + 旋转，原点锁定在SVG中心(256,256) -->
+  <!-- ease-out 用 calcMode=spline + keySplines 模拟 -->
+  <g transform-origin="256 256">
+
+    <animateTransform
+      attributeName="transform"
+      type="scale"
+      values="0.3; 1.15; 1.4"
+      keyTimes="0; 0.4; 1"
+      keySplines="0.25 0.1 0.25 1; 0.25 0.1 0.25 1"
+      calcMode="spline"
+      dur="0.45s"
+      fill="freeze"
+      additive="replace"/>
+
+    <animateTransform
+      attributeName="transform"
+      type="rotate"
+      values="-30 256 256; 5 256 256; 10 256 256"
+      keyTimes="0; 0.4; 1"
+      keySplines="0.25 0.1 0.25 1; 0.25 0.1 0.25 1"
+      calcMode="spline"
+      dur="0.45s"
+      fill="freeze"
+      additive="sum"/>
+
+    <!-- 刀刃弧形路径 -->
+    <g transform="translate(51.2,51.2) scale(0.8,0.8) rotate(-15,256,256)">
+      <path d="M270.877 444.542C576.857 496.618 318.44 29.007 23.097 25.68C447.57 -7.506 696.864 640.745 270.878 444.54Z"
+        fill="#fff" fill-opacity="0.95" stroke="#d0021b" stroke-opacity="1" stroke-width="14"/>
+    </g>
+
+    <!-- opacity淡出：0→0.4s保持1，然后淡出到0 -->
+    <animate
+      attributeName="opacity"
+      values="1; 1; 0"
+      keyTimes="0; 0.4; 1"
+      dur="0.45s"
+      fill="freeze"/>
+
+  </g>
+</svg>
