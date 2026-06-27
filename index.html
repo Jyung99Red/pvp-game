@@ -368,9 +368,14 @@
             </div>
 
             <!-- Battle arena (visual feedback) -->
-            <div class="battle-arena" id="pvp-arena" style="min-height:80px;display:flex;
-                 align-items:center;justify-content:center;">
-                <div id="pvp-clash-fx" style="font-size:32px;opacity:0;transition:opacity 0.2s;">💥</div>
+            <div class="battle-arena pvp-arena" id="pvp-arena">
+                <div class="pvp-arena-node">
+                    <div class="player-node pvp-weapon-node" id="pvp-op-weapon-icon"></div>
+                </div>
+                <div id="pvp-clash-fx">💥</div>
+                <div class="pvp-arena-node">
+                    <div class="player-node pvp-weapon-node" id="pvp-self-weapon-icon"></div>
+                </div>
             </div>
 
             <!-- Self panel -->
@@ -480,6 +485,8 @@
                     </button>
                 </div>
             </div>
+
+        </div>
 
         </div>
 
