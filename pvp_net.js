@@ -33,11 +33,12 @@ const pvpNet = (() => {
 
     // 由 pvp_room / pvp_logic 设置的回调
     const on = {
-        open:    null,   // ()
-        message: null,   // (msg)
-        close:   null,   // ()
-        error:   null,   // (err)
-        status:  null,   // (text) 给 UI 显示状态用
+        open:     null,   // () 仅 host 侧，在时钟同步完成后触发
+        connOpen: null,   // () 双方都会触发，数据通道刚打开那一刻（不等时钟同步）
+        message:  null,   // (msg)
+        close:    null,   // ()
+        error:    null,   // (err)
+        status:   null,   // (text) 给 UI 显示状态用
     };
 
     // ── 内部辅助 ────────────────────────────────────────────────────
@@ -55,6 +56,10 @@ const pvpNet = (() => {
 
         conn.on('open', () => {
             _status('数据通道已建立');
+            // 双方都立即触发，不等时钟同步——pvp_room.js 用这个时机做一次
+            // "hello" 握手，判断对方是不是刷新页面后重新连进来的（内存状态已丢失）
+            _emit('connOpen');
+
             if (_role === 'host') {
                 _runClockSync().then(() => _emit('open'));
             }
