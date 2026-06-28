@@ -79,6 +79,8 @@
 
                 <button onclick="devCheat()" id="dev-cheat-btn" style="background:#822faf; margin-top:4px;">🛠️ 测试：+1级 &
                     +50金币</button>
+                <!-- 临时测试按钮：重置为初始状态，调试用，正式发布前记得删掉 -->
+                <button onclick="save.resetToInitial()" id="dev-reset-btn" style="background:#7a1f1f; margin-top:4px;">🧪 测试：重置存档</button>
             </div>
 
             <div class="panel" style="background:transparent; border:none; padding:0;">
@@ -501,6 +503,7 @@
         <!-- 引入所有的 JS 文件 -->
 
         <script src="data.js"></script>
+        <script src="save.js"></script>
         <script src="player.js"></script>
         <script src="tick.js"></script>
         <script src="fx.js"></script>

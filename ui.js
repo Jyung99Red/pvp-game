@@ -11,6 +11,8 @@ const GRID_TOTAL = GRID_COLS * GRID_ROWS;
 
 const ui = {
     init() {
+        save.load();   // 先把本地存档读回 state，再渲染UI
+
         // Build area list
         let areaHtml = '';
         for (let key in content.areas) {
@@ -53,6 +55,7 @@ const ui = {
         this.updateEquip();
         this.switchTab('base');
         tick.start();
+        save.startAutosave();
         this.log("系统已加载。");
     },
 	
