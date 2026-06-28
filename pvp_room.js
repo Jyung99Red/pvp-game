@@ -50,22 +50,15 @@ const pvpRoom = (() => {
         });
     }
 
-    // ── 对方等级（联机时随 hello 消息互相同步，仅等级，战绩暂时不发） ──
-    let _opponentLevel = null;
+    // ── 对方真实战斗数值（联机时随 hello 消息互相同步：等级 + atk/def/spd/maxHp
+    // + 衍生倍率，详见 pvp_logic.js 的 _buildLocalProfile）。战绩暂时不发。
+    let _opponentProfile = null;
 
-    function _applyOpponentLevel() {
-        if (state.pvpBattle && state.pvpBattle.opponent && _opponentLevel != null) {
-            state.pvpBattle.opponent.level = _opponentLevel;
-            state.pvpBattle.opponent.displayName = `对手 Lv.${_opponentLevel}`;
-        }
-    }
-
-    // 统一的"开战"入口：startPVP + 套用对方等级 + 切到战斗界面，
-    // 三处会触发开战的地方（host 首次连接 / guest 收到 fight_start / hello 探测到对方
-    // 刷新重进后 host 重新发起）都走这一个函数，避免漏掉某一处忘记套等级显示。
+    // 统一的"开战"入口：startPVP + 切到战斗界面。三处会触发开战的地方
+    // （host 首次连接 / guest 收到 fight_start / hello 探测到对方刷新重进后
+    // host 重新发起）都走这一个函数，避免漏掉某一处忘记传对方资料。
     function _beginBattle(role) {
-        pvpLogic.startPVP(role);
-        _applyOpponentLevel();
+        pvpLogic.startPVP(role, _opponentProfile);
         ui.switchTab('pvp-battle');
     }
 
@@ -82,10 +75,10 @@ const pvpRoom = (() => {
     // 说明其中一方的战斗状态已经丢了——不去尝试同步战斗内部细节（HP/相位/计时器
     // 太多状态，跨端同步风险大），直接放弃这一局，由 host 重新发起一局全新的对局。
     function _handleHello(msg) {
-        // 等级不管有没有触发"重新开战"都先记下来，包括最常见的"第一次连接，
+        // 不管有没有触发"重新开战"都先记下来，包括最常见的"第一次连接，
         // 双方都没在打"这种情况——如果放在下面的 mismatch 分支里才记，
-        // 正常首次连接根本不会进 if，等级就永远收不到了。
-        if (typeof msg.level === 'number') _opponentLevel = msg.level;
+        // 正常首次连接根本不会进 if，对方资料就永远收不到。
+        if (msg.profile) _opponentProfile = msg.profile;
 
         const iHaveActiveBattle = !!(state.pvpBattle && state.pvpBattle.active);
         if (iHaveActiveBattle === msg.hasActiveBattle) return; // 状态一致，不用处理
@@ -110,7 +103,7 @@ const pvpRoom = (() => {
             pvpNet.send({
                 msg: 'hello',
                 hasActiveBattle: !!(state.pvpBattle && state.pvpBattle.active),
-                level: state.player.level
+                profile: pvpLogic.getMyCombatProfile()
             });
         };
 

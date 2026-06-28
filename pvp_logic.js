@@ -58,12 +58,35 @@ const pvpLogic = (() => {
     let _lastTime = 0;
     let _rematchRequestedBySelf = false;
 
+    // 对方真实的战斗数值快照（atk/def/spd/maxHp + 衍生倍率），由 pvp_room.js
+    // 在连接建立时通过 hello 消息发过来、再传进 startPVP。在拿到真实数据之前，
+    // 兜底用自己的数值，避免没收到时直接报错（单设备自测场景也能跑）。
+    //
+    // 背景：在这次修复之前，_calcChargeDamage / _applyDefense / _apRecoveryMs /
+    // _parryWindow 全部直接调 player.getStats()——这个函数读的永远是"本机这台
+    // 设备上的角色"，不管这次算的是不是对方的攻击/防御。结果是：无论谁出招，
+    // 伤害用的都是判定方（host）本机角色的 atk/def，跟攻击者实际等级/装备完全
+    // 对不上，对手的等级、HP上限在UI上也只是从本机角色数值镜像出来的假数字。
+    let _opponentProfile = null;
+
+    function _buildLocalProfile() {
+        const stats = player.getStats();
+        return {
+            level: state.player.level,
+            maxHp: stats.maxHp,
+            atk:   stats.atk,
+            def:   stats.def,
+            spd:   stats.spd,
+            judgmentMultiplier:    player.getJudgmentMultiplier(),
+            guardDamageMultiplier: player.getGuardDamageMultiplier()
+        };
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     function _lerp(a, b, t) { return a + (b - a) * t; }
 
-    function _calcChargeDamage(chargeMs) {
-        const atk = player.getStats().atk;
+    function _calcChargeDamage(chargeMs, atk) {
         // <500ms: fixed 1 dmg (tap penalty)
         if (chargeMs < pvpConfig.earlyReleaseMs) return pvpConfig.earlyReleaseDmg;
         // 500ms->3000ms: linear 0.3x->1.1x atk
@@ -76,21 +99,19 @@ const pvpLogic = (() => {
         return Math.max(1, Math.round(atk * ratio));
     }
 
-    function _applyDefense(rawDmg) {
+    function _applyDefense(rawDmg, def) {
         // Flat reduction: each def point blocks 0.15 dmg, capped at 20% of raw dmg
         // Result: def has mild effect, atk stays dominant
-        const def = player.getStats().def;
         const reduction = Math.min(rawDmg * 0.20, def * 0.15);
         return Math.max(1, Math.round(rawDmg - reduction));
     }
 
-    function _parryWindow() {
-        return pvpConfig.parryWindowMs * player.getJudgmentMultiplier();
+    function _parryWindow(judgmentMultiplier) {
+        return pvpConfig.parryWindowMs * (judgmentMultiplier || 1);
     }
 
-    function _apRecoveryMs() {
-        const spd = player.getStats().spd || 10;
-        return pvpConfig.apRecoveryMs * (10 / spd);
+    function _apRecoveryMs(spd) {
+        return pvpConfig.apRecoveryMs * (10 / (spd || 10));
     }
 
     function _setPhase(side, phase, timerMs) {
@@ -104,7 +125,8 @@ const pvpLogic = (() => {
         // AP recovery (not while actively doing something)
         if (!['charging', 'guard_windup', 'guard_ready'].includes(side.phase)) {
             if (side.actionPoints < pvpConfig.apMax) {
-                side.actionProgress += dt / _apRecoveryMs();
+                const spd = isSelf ? player.getStats().spd : _opponentProfile.spd;
+                side.actionProgress += dt / _apRecoveryMs(spd);
                 if (side.actionProgress >= 1) {
                     side.actionPoints++;
                     side.actionProgress = side.actionPoints < pvpConfig.apMax
@@ -171,7 +193,12 @@ const pvpLogic = (() => {
     // attacker / defender are the actual state objects (not fixed to host/guest)
 
     function _resolveExchange(attackerChargeMs, attacker, defender) {
-        const rawDmg  = _calcChargeDamage(attackerChargeMs);
+        const b = state.pvpBattle;
+        const attackerIsSelf = (attacker === b.self);
+        const attackerStats  = attackerIsSelf ? _buildLocalProfile() : _opponentProfile;
+        const defenderStats  = attackerIsSelf ? _opponentProfile     : _buildLocalProfile();
+
+        const rawDmg  = _calcChargeDamage(attackerChargeMs, attackerStats.atk);
         const wallNow = Date.now();
 
         const isClash  = defender.phase === 'strike_out' &&
@@ -179,7 +206,7 @@ const pvpLogic = (() => {
         const timeSinceGuard = defender.lastGuardReadyT > 0
             ? (wallNow - defender.lastGuardReadyT) : Infinity;
         const isParry  = !isClash && defender.phase === 'guard_ready' &&
-                         timeSinceGuard <= _parryWindow();
+                         timeSinceGuard <= _parryWindow(defenderStats.judgmentMultiplier);
         const isBlock  = !isClash && defender.phase === 'guard_ready' && !isParry;
 
         console.log('[pvp] resolveExchange: atkCharge=', attackerChargeMs,
@@ -198,23 +225,23 @@ const pvpLogic = (() => {
 
         if (isClash) {
             const defChargeMs = defender.lastChargeMs || pvpConfig.earlyReleaseMs;
-            attackerDmg   = _applyDefense(Math.round(_calcChargeDamage(defChargeMs) * 0.5));
-            defenderDmg   = _applyDefense(Math.round(rawDmg * 0.5));
+            attackerDmg   = _applyDefense(Math.round(_calcChargeDamage(defChargeMs, defenderStats.atk) * 0.5), attackerStats.def);
+            defenderDmg   = _applyDefense(Math.round(rawDmg * 0.5), defenderStats.def);
             attackerStunMs = pvpConfig.clashRecoveryMs;
             defenderStunMs = pvpConfig.clashRecoveryMs;
             exchange  = 'clash';
             logText   = `💥 对撞！双方各受伤害`;
         } else if (isParry) {
             const counterDmg = Math.max(1, Math.round(rawDmg * 0.5));
-            attackerDmg    = _applyDefense(counterDmg);
+            attackerDmg    = _applyDefense(counterDmg, attackerStats.def);
             defenderDmg    = 0;
             attackerStunMs = pvpConfig.parryStunMs;
             defenderStunMs = 0;
             exchange   = 'parry';
             logText    = `✨ 弹反！反击 ${attackerDmg} 点，攻击方硬直`;
         } else if (isBlock) {
-            const guardMult  = player.getGuardDamageMultiplier();
-            const blockedDmg = Math.max(1, Math.round(_applyDefense(rawDmg) * 0.4 * guardMult));
+            const guardMult  = defenderStats.guardDamageMultiplier;
+            const blockedDmg = Math.max(1, Math.round(_applyDefense(rawDmg, defenderStats.def) * 0.4 * guardMult));
             attackerDmg    = 0;
             defenderDmg    = blockedDmg;
             attackerStunMs = 0;
@@ -223,7 +250,7 @@ const pvpLogic = (() => {
             logText    = `🛡️ 格挡！减为 ${defenderDmg} 点伤害`;
         } else {
             attackerDmg    = 0;
-            defenderDmg    = _applyDefense(rawDmg);
+            defenderDmg    = _applyDefense(rawDmg, defenderStats.def);
             attackerStunMs = 0;
             defenderStunMs = 0;
             exchange   = 'hit';
@@ -232,8 +259,7 @@ const pvpLogic = (() => {
 
         // Determine if the local player (b.self) is the attacker or defender.
         // host always calls this function, so attacker/defender are real objects.
-        const b            = state.pvpBattle;
-        const selfIsAttacker = (attacker === b.self);
+        const selfIsAttacker = attackerIsSelf;
 
         // Apply HP
         attacker.hp = Math.max(0, attacker.hp - attackerDmg);
@@ -491,9 +517,10 @@ const pvpLogic = (() => {
                 break;
 
             case 'rematch_request':
+                if (msg.profile) _opponentProfile = msg.profile;
                 if (_rematchRequestedBySelf) {
                     _rematchRequestedBySelf = false;
-                    pvpNet.send({ msg: 'rematch_accept' });
+                    pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile() });
                     pvpLogic.startPVP(pvpNet.role);
                 } else {
                     uiPvp.showRematchRequest();
@@ -502,6 +529,7 @@ const pvpLogic = (() => {
 
             case 'rematch_accept':
                 _rematchRequestedBySelf = false;
+                if (msg.profile) _opponentProfile = msg.profile;
                 pvpLogic.startPVP(pvpNet.role);
                 break;
         }
@@ -510,20 +538,29 @@ const pvpLogic = (() => {
     // ── Public API ───────────────────────────────────────────────────
 
     return {
-        startPVP(role) {
+        startPVP(role, opponentProfile) {
             if (_rAF) { cancelAnimationFrame(_rAF); _rAF = null; }
             _stopChargeSync();
             _rematchRequestedBySelf = false;
             uiPvp.hideResult();
             uiPvp.hideRematchRequest();
 
-            const stats = player.getStats();
+            // 优先用刚传进来的对方资料；没传(比如重赛时内部直接调用)就用上一局
+            // 已经存下来的；两者都没有(比如单设备自测、hello还没收到)才兜底用自己的。
+            _opponentProfile = opponentProfile || _opponentProfile || _buildLocalProfile();
+            const selfProfile = _buildLocalProfile();
+
             state.pvpBattle = {
                 active:   true,
                 paused:   false,
                 role,
-                self:     _makeSideState(stats.maxHp),
-                opponent: { ..._makeSideState(stats.maxHp), displayName: '对手', chargeProgress: 0 },
+                self:     _makeSideState(selfProfile.maxHp),
+                opponent: {
+                    ..._makeSideState(_opponentProfile.maxHp),
+                    displayName: _opponentProfile.level != null ? `对手 Lv.${_opponentProfile.level}` : '对手',
+                    level: _opponentProfile.level,
+                    chargeProgress: 0
+                },
                 net:      { clockOffset: pvpNet.clockOffset, rtt: pvpNet.rtt },
                 log:      []
             };
@@ -536,6 +573,12 @@ const pvpLogic = (() => {
             ui.switchTab('pvp-battle');
         },
 
+        // 给 pvp_room.js 在连接建立时通过 hello 消息发给对方用的——
+        // 对方拿到这份数据后传进它自己那边的 startPVP(role, opponentProfile)
+        getMyCombatProfile() {
+            return _buildLocalProfile();
+        },
+
         receiveMessage: _handleNetMessage,
 
         onChargePress()   { _onChargePress(Date.now());   _startChargeSync(); },
@@ -546,13 +589,13 @@ const pvpLogic = (() => {
         requestRematch() {
             if (_rematchRequestedBySelf) return;
             _rematchRequestedBySelf = true;
-            pvpNet.send({ msg: 'rematch_request' });
+            pvpNet.send({ msg: 'rematch_request', profile: _buildLocalProfile() });
             uiPvp.showRematchWaiting();
         },
 
         acceptRematch() {
             _rematchRequestedBySelf = false;
-            pvpNet.send({ msg: 'rematch_accept' });
+            pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile() });
             this.startPVP(pvpNet.role);
         },
 

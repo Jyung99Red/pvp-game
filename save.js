@@ -12,6 +12,7 @@ const save = (() => {
     const AUTOSAVE_INTERVAL_MS = 8000;
 
     let _timer = null;
+    let _resetting = false;   // 重置期间为 true，期间所有写入一律跳过（见下方说明）
 
     function _snapshot() {
         return {
@@ -25,6 +26,7 @@ const save = (() => {
     }
 
     function _doSave() {
+        if (_resetting) return false;   // 重置流程进行中，不允许任何写入把旧数据写回去
         try {
             localStorage.setItem(KEY, JSON.stringify(_snapshot()));
             return true;
@@ -109,8 +111,14 @@ const save = (() => {
         // ── 开发测试用：重置到初始状态 ──────────────────────────────
         // 直接清空存档 + 刷新页面，让 data.js 重新跑一遍最初的 state 定义，
         // 比手动逐项还原更可靠（不会漏掉某个字段忘记重置）。
+        //
+        // 坑：location.reload() 会触发 beforeunload，而我们自己注册的自动
+        // 存档处理器(_doSave)又会把"清空前那一刻还留在内存里的旧 state"
+        // 重新写回 localStorage——等于清了又被自己立刻写回去，重置形同没生效。
+        // 用 _resetting 标记把这个时间窗口里的所有写入都挡掉。
         resetToInitial() {
             if (!confirm('确定要重置为初始状态吗？当前进度会清空（仅用于测试）')) return;
+            _resetting = true;
             _clear();
             location.reload();
         }
