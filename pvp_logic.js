@@ -427,8 +427,13 @@ const pvpLogic = (() => {
 
                 switch (msg.type) {
                     case 'charge_start':
-                        op.chargeStartT = correctedT;
-                        op.chargeMs     = 0;
+                        op.chargeStartT   = correctedT;
+                        op.chargeMs       = 0;
+                        // 清掉上一轮蓄力结束时残留的进度值（比如上次松手前是100%），
+                        // 否则新一轮蓄力刚开始的这一帧会先显示上次的残留值，
+                        // 直到下一条 charge_sync 消息（~100ms后）才刷新成真实进度，
+                        // 视觉上就是"先闪一下满条，再跳回真实值继续填"。
+                        op.chargeProgress = 0;
                         _setPhase(op, 'charging', 0);
                         break;
 

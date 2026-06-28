@@ -392,16 +392,18 @@
                     <div id="pvp-self-hp-txt" class="bar-text">- / -</div>
                 </div>
 
-                <!-- Self charge bar -->
-                <div class="bar-wrap pvp-charge-wrap hidden" id="pvp-self-charge-wrap" style="margin-top:4px;">
-                    <div id="pvp-self-charge" class="bar-inner charge-early" style="width:0%;"></div>
-                    <div class="bar-text">蓄力</div>
-                </div>
-
                 <!-- AP recovery bar -->
                 <div class="bar-wrap" style="margin-top:4px;">
                     <div id="pvp-self-ap-bar" class="bar-inner attack-bar" style="width:100%;"></div>
                     <div class="bar-text" style="font-size:10px;">行动力恢复</div>
+                </div>
+
+                <!-- 攻击蓄力条：常驻显示、固定占位（调试用）。不再用 hidden 切换显示/隐藏，
+                     蓄力开始/结束都不会改变本元素的占位高度，下方按钮位置因此保持固定；
+                     以后若移除此条，也不影响其他元素布局。 -->
+                <div class="bar-wrap pvp-charge-wrap" id="pvp-self-charge-wrap" style="margin-top:4px;">
+                    <div id="pvp-self-charge" class="bar-inner charge-early" style="width:0%;"></div>
+                    <div id="pvp-self-charge-txt" class="bar-text">蓄力 0%</div>
                 </div>
 
                 <!-- Action buttons -->
@@ -430,7 +432,7 @@
             <!-- Log -->
             <div id="pvp-log"
                 style="height:80px;overflow:hidden;font-size:11px;color:#888;
-                       white-space:pre-line;padding:0 4px;">
+                       white-space:pre-line;padding:0 4px;margin-top:10px;">
             </div>
 
             <!-- Result overlay -->

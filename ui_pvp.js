@@ -113,20 +113,22 @@ const uiPvp = (() => {
             _setText('pvp-self-hp-txt',  `${s.hp} / ${s.maxHp}`);
             _setText('pvp-self-phase',   _phaseLabel(s.phase));
 
-            // Self charge bar
+            // Self charge bar（常驻显示，不再用 hidden 切换可见性——
+            // 该元素固定占位，蓄力开始/结束都不会改变下方按钮的位置；
+            // 非蓄力状态下显示0%，调试用，以后可能移除）
             const selfChargeVisible = s.phase === 'charging';
-            _setClass('pvp-self-charge-wrap', 'hidden', !selfChargeVisible);
-            if (selfChargeVisible) {
-                const progress = Math.min(s.chargeMs / pvpConfig.chargeMaxMs, 1);
-                _setBar('pvp-self-charge', progress * 100);
+            const progress = selfChargeVisible
+                ? Math.min(s.chargeMs / pvpConfig.chargeMaxMs, 1)
+                : 0;
+            _setBar('pvp-self-charge', progress * 100);
+            _setText('pvp-self-charge-txt', `蓄力 ${Math.round(progress * 100)}%`);
 
-                // Colour coding: red before early threshold, yellow → green as charge fills
-                const chargeEl = document.getElementById('pvp-self-charge');
-                if (chargeEl) {
-                    const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
-                    chargeEl.classList.toggle('charge-early', progress < earlyPct);
-                    chargeEl.classList.toggle('charge-normal', progress >= earlyPct);
-                }
+            // Colour coding: red before early threshold, yellow → green as charge fills
+            const chargeEl = document.getElementById('pvp-self-charge');
+            if (chargeEl) {
+                const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
+                chargeEl.classList.toggle('charge-early', selfChargeVisible && progress < earlyPct);
+                chargeEl.classList.toggle('charge-normal', selfChargeVisible && progress >= earlyPct);
             }
 
             // AP dots
