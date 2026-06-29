@@ -54,17 +54,36 @@ const pvpNet = (() => {
     function _attachConn(conn) {
         _conn = conn;
 
-        conn.on('open', () => {
+        function _onChannelOpen() {
             _status('数据通道已建立');
             // 双方都立即触发，不等时钟同步——pvp_room.js 用这个时机做一次
-            // "hello" 握手，判断对方是不是刷新页面后重新连进来的（内存状态已丢失）
+            // "hello" 握手，判断对方是不是刷新页面后重新连进来的（内存状态已丢失），
+            // 也用它互换战斗数值资料。
             _emit('connOpen');
 
             if (_role === 'host') {
                 _runClockSync().then(() => _emit('open'));
             }
             // guest 等待 host 发起 ping，自己不主动 emit open
-        });
+        }
+
+        // 这里有个容易踩的坑：host 端是从 _peer.on('connection') 里直接调用
+        // _attachConn 的，这时候数据通道还没真正 open，用 conn.on('open', ...)
+        // 等未来才会发生的事件没问题。
+        // 但 guest 端是从 joinRoom()/reconnect() 里调用的——那两个函数都是先
+        // 自己 conn.on('open', ...) 等到事件发生之后，再在那个回调里调用
+        // _attachConn(conn)。也就是说传进来的这个 conn，它的 'open' 事件早就已经
+        // 发生过、已经"过去"了。如果这里还无条件再 conn.on('open', ...) 重新注册
+        // 一次，等的是同一个只会触发一次的事件——但它已经触发完了，这次注册永远
+        // 等不到，里面的逻辑（包括 connOpen 广播 hello）就成了死代码，guest 端的
+        // hello 从来没真正发出去过。
+        // 用 conn.open 这个同步布尔属性判断当前是否已经开过，两条路径都能正确
+        // 触发恰好一次。
+        if (conn.open) {
+            _onChannelOpen();
+        } else {
+            conn.on('open', _onChannelOpen);
+        }
 
         conn.on('data', (msg) => {
             // PeerJS 默认按 JSON 序列化，data 已经是解析好的对象

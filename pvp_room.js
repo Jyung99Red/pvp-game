@@ -57,8 +57,10 @@ const pvpRoom = (() => {
     // 统一的"开战"入口：startPVP + 切到战斗界面。三处会触发开战的地方
     // （host 首次连接 / guest 收到 fight_start / hello 探测到对方刷新重进后
     // host 重新发起）都走这一个函数，避免漏掉某一处忘记传对方资料。
-    function _beginBattle(role) {
-        pvpLogic.startPVP(role, _opponentProfile);
+    // battleId 只有 guest 端需要传（从 fight_start 消息里拿到）；host 端不传，
+    // 让 pvpLogic 自己生成一个新的。
+    function _beginBattle(role, battleId) {
+        pvpLogic.startPVP(role, _opponentProfile, battleId);
         ui.switchTab('pvp-battle');
     }
 
@@ -70,27 +72,28 @@ const pvpRoom = (() => {
     // 已经清空了——既不会收到 fight_start，也没有本地状态可以恢复，于是永远卡在
     // "已连接主机，等待开始..."。
     //
-    // 修复思路：数据通道刚打开（不等时钟同步）双方都立刻报一下"我这边现在是否
-    // 还有活跃的对局"（顺带把自己的等级也带过去）。如果双方报的活跃状态不一致，
-    // 说明其中一方的战斗状态已经丢了——不去尝试同步战斗内部细节（HP/相位/计时器
-    // 太多状态，跨端同步风险大），直接放弃这一局，由 host 重新发起一局全新的对局。
+    // 这里不再用"双方各报一个布尔值，猜测状态是否一致"这种弱信号——而是直接
+    // 比对 battleId 这个精确标识：完全一致才算真的是同一场战斗的重连；只要不
+    // 一致（不管具体是刷新、重连时机错位，还是别的没遇到过的情况），统一放弃
+    // 这一局，由 host 重新发起一局全新的对局，不去尝试同步战斗内部细节。
     function _handleHello(msg) {
         // 不管有没有触发"重新开战"都先记下来，包括最常见的"第一次连接，
         // 双方都没在打"这种情况——如果放在下面的 mismatch 分支里才记，
         // 正常首次连接根本不会进 if，对方资料就永远收不到。
         if (msg.profile) _opponentProfile = msg.profile;
 
-        const iHaveActiveBattle = !!(state.pvpBattle && state.pvpBattle.active);
-        if (iHaveActiveBattle === msg.hasActiveBattle) return; // 状态一致，不用处理
+        const localBattleId  = pvpLogic.getCurrentBattleId();
+        const remoteBattleId = msg.battleId || null;
+        if (localBattleId === remoteBattleId) return; // 完全一致，不用处理
 
-        if (iHaveActiveBattle) pvpLogic.abortToLobby();
+        if (localBattleId) pvpLogic.abortToLobby();
         uiPvp.hideDisconnectOverlay();
         setStatus('检测到对方重新进入，正在重新开始新一局...');
 
         // 只有 host 负责重新发起；guest 被动等 fight_start（走原有那条分支）
         if (pvpNet.role === 'host') {
-            pvpNet.send({ msg: 'fight_start' });
             _beginBattle('host');
+            pvpNet.send({ msg: 'fight_start', battleId: pvpLogic.getCurrentBattleId() });
         }
     }
 
@@ -102,7 +105,7 @@ const pvpRoom = (() => {
         pvpNet.on.connOpen = () => {
             pvpNet.send({
                 msg: 'hello',
-                hasActiveBattle: !!(state.pvpBattle && state.pvpBattle.active),
+                battleId: pvpLogic.getCurrentBattleId(),
                 profile: pvpLogic.getMyCombatProfile()
             });
         };
@@ -121,8 +124,8 @@ const pvpRoom = (() => {
             setStep('pvp-step-ready');
 
             if (pvpNet.role === 'host') {
-                pvpNet.send({ msg: 'fight_start' });
                 _beginBattle('host');
+                pvpNet.send({ msg: 'fight_start', battleId: pvpLogic.getCurrentBattleId() });
             }
         };
 
@@ -132,7 +135,7 @@ const pvpRoom = (() => {
                 return;
             }
             if (msg.msg === 'fight_start' && pvpNet.role === 'guest') {
-                _beginBattle('guest');
+                _beginBattle('guest', msg.battleId);
                 return;
             }
             pvpLogic.receiveMessage(msg);

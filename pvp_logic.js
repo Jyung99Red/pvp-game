@@ -69,6 +69,24 @@ const pvpLogic = (() => {
     // 对不上，对手的等级、HP上限在UI上也只是从本机角色数值镜像出来的假数字。
     let _opponentProfile = null;
 
+    // 当前这一局的唯一标识。每次 startPVP() 都会生成一个新的（host生成、
+    // guest 从 fight_start/rematch_accept 消息里拿到同一个），战斗内的每条
+    // 网络消息都带着它——比"双方各报一个布尔值猜测状态是否一致"更可靠：
+    // 不管是刷新重连、消息延迟乱序、还是别的没遇到过的边缘情况，只要编号
+    // 对不上就是对不上，不需要为每一种具体场景单独写一条判断。
+    let _battleId = null;
+    let _pendingRematchBattleId = null; // 对方在 rematch_request 里提议的id（只有对方是host时才会有）
+
+    function _genBattleId() {
+        return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
+    // 战斗内消息（action / charge_sync / result / fight_end）统一从这里发，
+    // 自动带上当前 battleId，不用每个发送点自己记得加这个字段。
+    function _sendBattleMsg(payload) {
+        pvpNet.send({ ...payload, battleId: _battleId });
+    }
+
     function _buildLocalProfile() {
         const stats = player.getStats();
         return {
@@ -182,10 +200,10 @@ const pvpLogic = (() => {
             // 会一直卡在最后一次 charge_sync 收到的"蓄力中"，直到下一个动作
             // 消息把它覆盖掉。这里补发一条，复用 guest 攻击时已经验证正确的
             // 接收处理逻辑（_handleNetMessage 的 'charge_release' case）。
-            pvpNet.send({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
+            _sendBattleMsg({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
             _resolveExchange(chargeMs, state.pvpBattle.self, state.pvpBattle.opponent);
         } else {
-            pvpNet.send({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
+            _sendBattleMsg({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
         }
     }
 
@@ -280,7 +298,7 @@ const pvpLogic = (() => {
 
         // Broadcast to guest — send enough for guest to apply HP/log/fx.
         // attackerIsHost 让 guest 端能正确翻译"出手的是己方还是对手"。
-        pvpNet.send({
+        _sendBattleMsg({
             msg:          'result',
             exchange,
             logText,
@@ -333,7 +351,7 @@ const pvpLogic = (() => {
 
         const winner = b.self.hp <= 0 ? 'opponent' : 'self';
         if (pvpNet.role === 'host') {
-            pvpNet.send({ msg: 'fight_end', winner: winner === 'self' ? 'host' : 'guest' });
+            _sendBattleMsg({ msg: 'fight_end', winner: winner === 'self' ? 'host' : 'guest' });
         }
         _onFightEnd(winner);
     }
@@ -354,7 +372,7 @@ const pvpLogic = (() => {
             const side = state.pvpBattle && state.pvpBattle.self;
             if (!side || side.phase !== 'charging') { _stopChargeSync(); return; }
             const progress = Math.min(side.chargeMs / pvpConfig.chargeMaxMs, 1);
-            pvpNet.send({ msg: 'charge_sync', progress });
+            _sendBattleMsg({ msg: 'charge_sync', progress });
         }, 100);
     }
 
@@ -400,7 +418,7 @@ const pvpLogic = (() => {
         _setPhase(side, 'charging', 0);
         console.log('[pvp] chargePress→charging: startT=', now);
 
-        pvpNet.send({ msg: 'action', type: 'charge_start', t: pvpNet.now() });
+        _sendBattleMsg({ msg: 'action', type: 'charge_start', t: pvpNet.now() });
     }
 
     function _onChargeRelease(now) {
@@ -419,14 +437,14 @@ const pvpLogic = (() => {
         if (side.actionPoints < 1)     return;
 
         _setPhase(side, 'guard_windup', pvpConfig.guardWindupMs);
-        pvpNet.send({ msg: 'action', type: 'guard_press', t: pvpNet.now() });
+        _sendBattleMsg({ msg: 'action', type: 'guard_press', t: pvpNet.now() });
     }
 
     function _onGuardWindupComplete(side, now) {
         side.actionPoints--;
         side.lastGuardReadyT = now;   // wall-clock, for parry window
         _setPhase(side, 'guard_ready', pvpConfig.guardMaxHoldMs);
-        pvpNet.send({ msg: 'action', type: 'guard_ready', t: pvpNet.now() });
+        _sendBattleMsg({ msg: 'action', type: 'guard_ready', t: pvpNet.now() });
     }
 
     function _onGuardRelease() {
@@ -435,7 +453,7 @@ const pvpLogic = (() => {
         if (side.phase === 'guard_windup' || side.phase === 'guard_ready') {
             _setPhase(side, 'idle', 0);
             side.lastGuardReadyT = 0;
-            pvpNet.send({ msg: 'action', type: 'guard_release', t: pvpNet.now() });
+            _sendBattleMsg({ msg: 'action', type: 'guard_release', t: pvpNet.now() });
         }
     }
 
@@ -445,6 +463,16 @@ const pvpLogic = (() => {
         if (!state.pvpBattle) return;
         const b  = state.pvpBattle;
         const op = b.opponent;
+
+        // action/charge_sync/result/fight_end 都是"某一场具体对局"内部的消息——
+        // 先比对battleId，不一致就说明这条消息来自我们已经不在同一场对局的
+        // 状态（对方刷新重连、消息延迟到了新一局开始之后……不管具体是哪种
+        // 情况），直接丢弃，不去猜该怎么硬套到当前这场战斗上。
+        const BATTLE_SCOPED = { action: 1, charge_sync: 1, result: 1, fight_end: 1 };
+        if (BATTLE_SCOPED[msg.msg] && msg.battleId !== _battleId) {
+            console.warn('[pvp] 丢弃battleId不匹配的消息:', msg.msg, msg.battleId, '当前=', _battleId);
+            return;
+        }
 
         switch (msg.msg) {
             case 'action': {
@@ -518,10 +546,17 @@ const pvpLogic = (() => {
 
             case 'rematch_request':
                 if (msg.profile) _opponentProfile = msg.profile;
+                _pendingRematchBattleId = msg.battleId || null;
                 if (_rematchRequestedBySelf) {
+                    // 双方几乎同时点了"再来一局"——以 host 这一端生成的id为准，
+                    // guest 这种情况下用的是上面刚记下的对方提案（不完全可靠，
+                    // 极少数情况下双方仍可能生成不一致；但只要不一致，下一条
+                    // 战斗消息就会被上面的battleId校验直接丢弃并能感知到，
+                    // 不会悄悄算错——这正是这套机制要保证的下限）。
                     _rematchRequestedBySelf = false;
-                    pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile() });
-                    pvpLogic.startPVP(pvpNet.role);
+                    const battleId = (pvpNet.role === 'host') ? _genBattleId() : _pendingRematchBattleId;
+                    pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile(), battleId });
+                    pvpLogic.startPVP(pvpNet.role, null, battleId);
                 } else {
                     uiPvp.showRematchRequest();
                 }
@@ -530,7 +565,7 @@ const pvpLogic = (() => {
             case 'rematch_accept':
                 _rematchRequestedBySelf = false;
                 if (msg.profile) _opponentProfile = msg.profile;
-                pvpLogic.startPVP(pvpNet.role);
+                pvpLogic.startPVP(pvpNet.role, null, msg.battleId);
                 break;
         }
     }
@@ -538,12 +573,17 @@ const pvpLogic = (() => {
     // ── Public API ───────────────────────────────────────────────────
 
     return {
-        startPVP(role, opponentProfile) {
+        startPVP(role, opponentProfile, battleId) {
             if (_rAF) { cancelAnimationFrame(_rAF); _rAF = null; }
             _stopChargeSync();
             _rematchRequestedBySelf = false;
             uiPvp.hideResult();
             uiPvp.hideRematchRequest();
+
+            // host 没传 battleId 时自己生成一个新的；guest 必须用传进来的
+            // （从 fight_start / rematch_accept 消息里拿到），不能自己生成，
+            // 否则双方各算各的，battleId 根本对不上。
+            _battleId = battleId || _genBattleId();
 
             // 优先用刚传进来的对方资料；没传(比如重赛时内部直接调用)就用上一局
             // 已经存下来的；两者都没有(比如单设备自测、hello还没收到)才兜底用自己的。
@@ -554,6 +594,7 @@ const pvpLogic = (() => {
                 active:   true,
                 paused:   false,
                 role,
+                battleId: _battleId,
                 self:     _makeSideState(selfProfile.maxHp),
                 opponent: {
                     ..._makeSideState(_opponentProfile.maxHp),
@@ -565,7 +606,6 @@ const pvpLogic = (() => {
                 log:      []
             };
 
-            pvpNet.on.message = _handleNetMessage;
             _lastTime = performance.now();
             _rAF = requestAnimationFrame(_loop);
 
@@ -574,9 +614,15 @@ const pvpLogic = (() => {
         },
 
         // 给 pvp_room.js 在连接建立时通过 hello 消息发给对方用的——
-        // 对方拿到这份数据后传进它自己那边的 startPVP(role, opponentProfile)
+        // 对方拿到这份数据后传进它自己那边的 startPVP(role, opponentProfile, battleId)
         getMyCombatProfile() {
             return _buildLocalProfile();
+        },
+
+        // 给 pvp_room.js 比对"我们俩是不是在同一场对局里"用，以及发 fight_start
+        // 时附带这个id给 guest
+        getCurrentBattleId() {
+            return _battleId;
         },
 
         receiveMessage: _handleNetMessage,
@@ -589,14 +635,19 @@ const pvpLogic = (() => {
         requestRematch() {
             if (_rematchRequestedBySelf) return;
             _rematchRequestedBySelf = true;
-            pvpNet.send({ msg: 'rematch_request', profile: _buildLocalProfile() });
+            // 只有 host 有资格"提案"battleId（host才是判定权威）；guest发起
+            // 请求时不提案，等 host accept 时再统一生成。
+            const battleId = (pvpNet.role === 'host') ? _genBattleId() : null;
+            if (battleId) _pendingRematchBattleId = battleId;
+            pvpNet.send({ msg: 'rematch_request', profile: _buildLocalProfile(), battleId });
             uiPvp.showRematchWaiting();
         },
 
         acceptRematch() {
             _rematchRequestedBySelf = false;
-            pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile() });
-            this.startPVP(pvpNet.role);
+            const battleId = (pvpNet.role === 'host') ? _genBattleId() : _pendingRematchBattleId;
+            pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile(), battleId });
+            this.startPVP(pvpNet.role, null, battleId);
         },
 
         abortToLobby() {
@@ -604,6 +655,7 @@ const pvpLogic = (() => {
             _stopChargeSync();
             _rematchRequestedBySelf = false;
             if (state.pvpBattle) state.pvpBattle.active = false;
+            _battleId = null;
             uiPvp.hideResult();
             uiPvp.hideRematchRequest();
         },
@@ -625,7 +677,6 @@ const pvpLogic = (() => {
         resumeAfterReconnect() {
             if (!state.pvpBattle || !state.pvpBattle.active) return;
             state.pvpBattle.paused = false;
-            pvpNet.on.message = _handleNetMessage;
             _lastTime = performance.now();
             if (!_rAF) _rAF = requestAnimationFrame(_loop);
         }
