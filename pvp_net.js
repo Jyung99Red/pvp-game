@@ -15,11 +15,14 @@ const pvpNet = (() => {
     // PeerJS 公共信令服务器配置（仅做信令撮合，不转发游戏数据）
     // 如果默认服务器不稳定，可以换成自建的 PeerServer，把这里的 config 改掉即可。
     const PEER_CONFIG = {
+        host: '0.peerjs.com',
+        port: 443,
+        secure: true,
         debug: 1,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
             ]
         }
     };
