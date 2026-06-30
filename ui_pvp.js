@@ -1,325 +1,268 @@
-// pvp_net.js - PeerJS signaling (free public signaling server) + WebRTC transport + clock sync
-// Contains no game logic and never touches the DOM directly (except via the status callback)
-//
-// Design note:
-// The original approach required manually exchanging SDP text (offer/answer) twice -- error
-// prone and a poor fit for a "scan and connect" experience. Now: both sides connect to PeerJS's
-// public signaling server (0.peerjs.com, free, used only for NAT traversal matchmaking, never
-// relays game data), agree on a "room code", Host registers under the room code, Guest connects
-// directly to it. The whole flow only needs exchanging one room code (4-6 digit/char), shareable
-// via QR code or typing it in -- no more pasting an answer code back and forth.
+// ui_pvp.js - PVP battle UI renderer
+// Pure read of state.pvpBattle. Never writes game state.
 
-const pvpNet = (() => {
-    const PING_ROUNDS = 5;
-    const PING_INTERVAL_MS = 200;
-    const PEER_OPEN_TIMEOUT_MS = 12000;
+const uiPvp = (() => {
 
-    // Public PeerJS signaling server config (matchmaking only, never relays game data)
-    // If the default server is unstable, swap in a self-hosted PeerServer by changing this config.
-    const PEER_CONFIG = {
-        debug: 1,
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        }
-    };
-
-    let _peer = null;
-    let _conn = null;
-    let _role = null;       // 'host' | 'guest'
-    let _clockOffset = 0;   // Applied to every remote timestamp as: corrected = remote_t - offset
-                             // (see the longer explanation on correctRemote() below for why it's
-                             // a subtraction, not addition)
-    let _rtt = 0;
-
-    // Callbacks set by pvp_room / pvp_logic
-    const on = {
-        open:     null,   // () Host side only, fires once clock sync completes
-        connOpen: null,   // () fires on both sides, the moment the data channel first opens (doesn't wait for clock sync)
-        message:  null,   // (msg)
-        close:    null,   // ()
-        error:    null,   // (err)
-        status:   null,   // (text) for the UI to display status
-    };
-
-    // ── Internal helpers ───────────────────────────────────────────────
-
-    function _emit(event, ...args) {
-        if (on[event]) on[event](...args);
+    function _pct(val, max) {
+        return max > 0 ? Math.min(100, Math.max(0, (val / max) * 100)) : 0;
     }
 
-    function _status(text) {
-        _emit('status', text);
-    }
-
-    function _attachConn(conn) {
-        _conn = conn;
-
-        function _onChannelOpen() {
-            _status('数据通道已建立');
-            // Fires immediately on both sides, doesn't wait for clock sync --
-            // pvp_room.js uses this moment to do a "hello" handshake, to
-            // figure out whether the other side reconnected after a page
-            // refresh (its in-memory state already lost), and to exchange
-            // combat profile data.
-            _emit('connOpen');
-
-            if (_role === 'host') {
-                _runClockSync().then(() => _emit('open'));
-            }
-            // Guest waits for Host to initiate ping; it never emits 'open' itself
-        }
-
-        // An easy trap here: on the Host side, _attachConn is called directly
-        // from _peer.on('connection'), at which point the data channel hasn't
-        // truly opened yet, so registering conn.on('open', ...) to wait for a
-        // future event is fine.
-        // But on the Guest side, _attachConn is called from joinRoom()/reconnect()
-        // -- both of those functions already wait on their own conn.on('open', ...)
-        // for the event to fire, and only then call _attachConn(conn) from
-        // inside that callback. Which means the conn passed in here already
-        // had its 'open' event fire in the past -- it's already "over". If we
-        // unconditionally register conn.on('open', ...) again here, we'd be
-        // waiting on an event that only fires once -- but it already fired,
-        // so this registration would never fire, and everything inside it
-        // (including connOpen broadcasting hello) becomes dead code; the
-        // Guest's hello would never actually be sent.
-        // Checking conn.open, a synchronous boolean property for whether it's
-        // already open, lets both code paths fire exactly once correctly.
-        if (conn.open) {
-            _onChannelOpen();
-        } else {
-            conn.on('open', _onChannelOpen);
-        }
-
-        conn.on('data', (msg) => {
-            // PeerJS serializes as JSON by default, so data is already a parsed object
-            _handleMessage(msg);
-        });
-
-        conn.on('close', () => {
-            // This only clears the specific data connection, not _peer --
-            // Host's peer.on('connection') listener is persistent, so
-            // technically a Guest can joinRoom() with the same room code
-            // again and still reach the same Host. But that doesn't mean
-            // "resuming the battle": once pvp_room.js receives this close
-            // event, if a battle was in progress it always goes through
-            // abortToLobby() + shows the disconnect overlay, whose only exit
-            // is "return to lobby" (giveUpToLobby, which fully destroys the
-            // peer). Rejoining the same room code afterwards only ever starts
-            // a brand new battle (triggered by a battleId mismatch in the
-            // hello message). What actually destroys _peer is the close()
-            // method below.
-            _conn = null;
-            _clockOffset = 0;
-            _rtt = 0;
-            _emit('close');
-        });
-        conn.on('error', (e) => _emit('error', e));
-    }
-
-    function _makePeer(id) {
-        const peer = id ? new Peer(id, PEER_CONFIG) : new Peer(PEER_CONFIG);
-
-        peer.on('disconnected', () => {
-            // Note: this is PeerJS's own auto-reconnect between itself and
-            // the signaling server -- a different thing from "disconnected
-            // mid-battle". It has no effect on, and doesn't restore, an
-            // already-closed WebRTC data channel (that's handled in
-            // conn.on('close') instead).
-            _status('信令服务器断开，尝试重连...');
-            try { peer.reconnect(); } catch (_) {}
-        });
-
-        peer.on('close', () => _emit('close'));
-
-        return peer;
-    }
-
-    function _waitForPeerOpen(peer) {
-        return new Promise((resolve, reject) => {
-            if (peer.open) { resolve(peer.id); return; }
-
-            const timeout = setTimeout(() => {
-                reject(new Error('连接信令服务器超时，请检查网络'));
-            }, PEER_OPEN_TIMEOUT_MS);
-
-            peer.on('open', (id) => {
-                clearTimeout(timeout);
-                resolve(id);
-            });
-
-            peer.on('error', (e) => {
-                clearTimeout(timeout);
-                reject(_friendlyPeerError(e));
-            });
-        });
-    }
-
-    function _friendlyPeerError(e) {
-        const type = e && e.type;
+    function _phaseLabel(phase) {
         const map = {
-            'peer-unavailable': '房间号不存在或对方已离线',
-            'unavailable-id':   '房间号已被占用，请重新生成',
-            'network':          '网络错误，请检查网络连接',
-            'server-error':     '信令服务器错误，请重试',
-            'browser-incompatible': '当前浏览器不支持 WebRTC'
+            idle:           '待机',
+            charging:       '蓄力中...',
+            strike_out:     '⚔️ 出击!',
+            strike_recover: '后摇',
+            guard_windup:   '举盾中...',
+            guard_ready:    '🛡️ 格挡就绪',
+            stunned:        '💫 硬直'
         };
-        const msg = map[type] || (e && e.message) || String(e);
-        const err = new Error(msg);
-        err.type = type;
-        return err;
+        return map[phase] || phase;
     }
 
-    // ── Clock sync ───────────────────────────────────────────────────────
-    // Host sends ping, Guest replies pong.
-    // offset = avg((t1 - t0 - RTT) / 2), over PING_ROUNDS rounds
-
-    const _pingCallbacks = {};
-
-    function _runClockSync() {
-        return new Promise((resolve) => {
-            const samples = [];
-            let round = 0;
-
-            function sendPing() {
-                if (round >= PING_ROUNDS) {
-                    _clockOffset = samples.reduce((a, b) => a + b.offset, 0) / samples.length;
-                    _rtt         = samples.reduce((a, b) => a + b.rtt,    0) / samples.length;
-                    _status(`时钟同步完成  offset=${_clockOffset.toFixed(1)}ms  rtt=${_rtt.toFixed(1)}ms`);
-                    resolve();
-                    return;
-                }
-
-                const t0 = Date.now();
-                _pingCallbacks[t0] = (t1) => {
-                    const tRecv = Date.now();
-                    const rtt    = tRecv - t0;
-                    const offset = t1 - t0 - rtt / 2;
-                    samples.push({ offset, rtt });
-                    round++;
-                    setTimeout(sendPing, PING_INTERVAL_MS);
-                };
-
-                _send({ msg: 'ping', t0 });
-            }
-
-            sendPing();
-        });
+    function _setBar(id, pct) {
+        const el = document.getElementById(id);
+        if (el) el.style.width = pct + '%';
     }
 
-    function _handleMessage(msg) {
-        switch (msg.msg) {
-            case 'ping':
-                _send({ msg: 'pong', t0: msg.t0, t1: Date.now() });
-                break;
+    function _setText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    }
 
-            case 'pong':
-                if (_pingCallbacks[msg.t0]) {
-                    _pingCallbacks[msg.t0](msg.t1);
-                    delete _pingCallbacks[msg.t0];
-                }
-                break;
+    function _setClass(id, cls, on) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle(cls, on);
+    }
 
-            default:
-                _emit('message', msg);
-                break;
+    // ── PVP 角色节点视觉 ──
+    // 蓄力图标的transform、举盾辉光环都是"状态切换那一瞬间"触发一次性效果，
+    // 不是每帧重复加同一个class（class已经在身上时reflow会打断正在播的动画）。
+    // 这里记一下上一帧的phase，专门用于边沿检测。
+    const _prevPhase = { self: null, op: null };
+
+    function _weaponNodeEl(key) {
+        return document.getElementById(key === 'self' ? 'pvp-self-weapon-icon' : 'pvp-op-weapon-icon');
+    }
+
+    function _updateFighterFx(key, sideState, chargeProgress) {
+        const nodeEl = _weaponNodeEl(key);
+        const iconEl = nodeEl ? nodeEl.querySelector('.pvp-weapon-icon') : null;
+        const phase  = sideState.phase;
+        const prev   = _prevPhase[key];
+
+        // 蓄力中：连续驱动；一旦离开charging（无论是松手还是3秒自动出手），
+        // 触发一次性缓出动画转回原位
+        if (phase === 'charging') {
+            fx.pvpChargeIcon(iconEl, chargeProgress);
+        } else if (prev === 'charging') {
+            fx.pvpChargeRelease(iconEl);
         }
-    }
 
-    // ── Internal send ──────────────────────────────────────────────────
-
-    function _send(obj) {
-        if (!_conn || !_conn.open) return false;
-        try {
-            _conn.send(obj);
-            return true;
-        } catch (e) {
-            _emit('error', e);
-            return false;
+        // 举盾辉光环：进入windup/ready各触发一次；离开(无论是松手取消、
+        // 还是被命中切到stunned/blocked)统一先做一次"取消淡出"清场
+        if (phase === 'guard_windup' && prev !== 'guard_windup') {
+            fx.shieldWindupEl(nodeEl, pvpConfig.guardWindupMs);
+        } else if (phase === 'guard_ready' && prev !== 'guard_ready') {
+            fx.shieldReadyEl(nodeEl, pvpConfig.guardMaxHoldMs);
+        } else if ((prev === 'guard_windup' || prev === 'guard_ready') &&
+                   phase !== 'guard_windup' && phase !== 'guard_ready') {
+            fx.shieldCancelEl(nodeEl);
         }
-    }
 
-    // ── Public API ──────────────────────────────────────────────────────
+        _prevPhase[key] = phase;
+    }
 
     return {
-        get role()        { return _role; },
-        get clockOffset() { return _clockOffset; },
-        get rtt()         { return _rtt; },
-        on,
+        updateFrame() {
+            const b = state.pvpBattle;
+            if (!b || !b.active) return;
 
-        now()                   { return Date.now(); },
-        // offset is defined as "guest clock - host clock" (see the NTP-style
-        // formula in _runClockSync). So converting a remote clock reading
-        // into its local-clock equivalent means subtracting offset, not
-        // adding it -- adding would push the result up to 2x offset away from
-        // the real value, and in the direction that pushes the remote event's
-        // time "into the future", which is exactly what caused the block/parry
-        // misjudgments in earlier versions.
-        correctRemote(remote_t) { return remote_t - _clockOffset; },
+            const s  = b.self;
+            const op = b.opponent;
 
-        // ── Host: register under the room code on the signaling server, wait for Guest ──
-        // Returns the room code actually in effect (normally the same as the passed-in roomCode)
-        async hostRoom(roomCode) {
-            _role = 'host';
-            _peer = _makePeer(roomCode);
+            // ── 角色节点视觉(蓄力图标 / 举盾辉光环) ──
+            _updateFighterFx('self', s, s.phase === 'charging' ? s.chargeMs / pvpConfig.chargeMaxMs : 0);
+            _updateFighterFx('op',   op, op.chargeProgress || 0);
 
-            _peer.on('connection', (conn) => {
-                _attachConn(conn);
+            // ── Opponent ─────────────────────────────────────────────
+            _setBar('pvp-op-hp',     _pct(op.hp, op.maxHp));
+            _setText('pvp-op-hp-txt', `${op.hp} / ${op.maxHp}`);
+            _setText('pvp-op-name',   op.displayName);
+            _setText('pvp-op-phase',  _phaseLabel(op.phase));
+
+            // Opponent charge bar (synced via charge_sync messages)
+            const opChargeVisible = op.phase === 'charging';
+            _setClass('pvp-op-charge-wrap', 'hidden', !opChargeVisible);
+            if (opChargeVisible) {
+                // Use chargeProgress (0→1) received from network
+                _setBar('pvp-op-charge', (op.chargeProgress || 0) * 100);
+            }
+
+            // Opponent guard indicator
+            _setClass('pvp-op-guard-icon', 'hidden', op.phase !== 'guard_ready');
+            _setClass('pvp-op-phase-label', 'phase-windup',   op.phase === 'guard_windup');
+            _setClass('pvp-op-phase-label', 'phase-guard',    op.phase === 'guard_ready');
+            _setClass('pvp-op-phase-label', 'phase-striking', op.phase === 'strike_out');
+            _setClass('pvp-op-phase-label', 'phase-stunned',  op.phase === 'stunned');
+
+            // ── Self ─────────────────────────────────────────────────
+            _setBar('pvp-self-hp',      _pct(s.hp, s.maxHp));
+            _setText('pvp-self-hp-txt',  `${s.hp} / ${s.maxHp}`);
+            _setText('pvp-self-phase',   _phaseLabel(s.phase));
+
+            // Self charge bar（常驻显示，不再用 hidden 切换可见性——
+            // 该元素固定占位，蓄力开始/结束都不会改变下方按钮的位置；
+            // 非蓄力状态下显示0%，调试用，以后可能移除）
+            const selfChargeVisible = s.phase === 'charging';
+            const progress = selfChargeVisible
+                ? Math.min(s.chargeMs / pvpConfig.chargeMaxMs, 1)
+                : 0;
+            _setBar('pvp-self-charge', progress * 100);
+            _setText('pvp-self-charge-txt', `蓄力 ${Math.round(progress * 100)}%`);
+
+            // Colour coding: red before early threshold, yellow → green as charge fills
+            const chargeEl = document.getElementById('pvp-self-charge');
+            if (chargeEl) {
+                const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
+                chargeEl.classList.toggle('charge-early', selfChargeVisible && progress < earlyPct);
+                chargeEl.classList.toggle('charge-normal', selfChargeVisible && progress >= earlyPct);
+            }
+
+            // AP dots
+            const apEl = document.getElementById('pvp-self-ap');
+            if (apEl) {
+                apEl.textContent = '⭐'.repeat(s.actionPoints) + '☆'.repeat(pvpConfig.apMax - s.actionPoints);
+            }
+
+            // AP recovery bar
+            _setBar('pvp-self-ap-bar', s.actionPoints >= pvpConfig.apMax ? 100 : s.actionProgress * 100);
+
+            // ── Button states ────────────────────────────────────────
+            const canCharge = s.phase === 'idle' && s.actionPoints >= 1;
+            const canGuard  = s.phase === 'idle' && s.actionPoints >= 1;
+            const isCharging = s.phase === 'charging';
+
+            const btnCharge = document.getElementById('pvp-btn-charge');
+            const btnGuard  = document.getElementById('pvp-btn-guard');
+            if (btnCharge) {
+                btnCharge.disabled = !canCharge && !isCharging;
+                btnCharge.classList.toggle('btn-charging', isCharging);
+            }
+            if (btnGuard) {
+                btnGuard.disabled = !canGuard;
+                btnGuard.classList.toggle('btn-guard-active',
+                    s.phase === 'guard_ready' || s.phase === 'guard_windup');
+            }
+
+            // ── Log ──────────────────────────────────────────────────
+            const logEl = document.getElementById('pvp-log');
+            if (logEl && b.log) {
+                logEl.textContent = b.log.slice(0, 5).join('\n');
+            }
+        },
+
+        // 战斗开始/重开(含rematch)时调用：注入双方武器图标，并清掉上一局
+        // 可能残留的特效class/transform——因为DOM节点在两局之间是复用的，
+        // 不会自动重置。
+        initFighters() {
+            const opNode   = document.getElementById('pvp-op-weapon-icon');
+            const selfNode = document.getElementById('pvp-self-weapon-icon');
+            if (opNode)   opNode.innerHTML   = renderIcon('weapon-atk', 'pvp-weapon-icon');
+            if (selfNode) selfNode.innerHTML = renderIcon('weapon-atk', 'pvp-weapon-icon');
+
+            [opNode, selfNode].forEach(node => {
+                if (!node) return;
+                node.classList.remove('shield-windup', 'shield-ready', 'shield-cancelled',
+                                       'slashed', 'node-parry-glow', 'node-guard-shrink', 'node-shrink');
+                const icon = node.querySelector('.pvp-weapon-icon');
+                if (icon) { icon.style.transition = 'none'; icon.style.transform = ''; }
             });
 
-            const id = await _waitForPeerOpen(_peer);
-            return id;
+            const clashEl = document.getElementById('pvp-clash-fx');
+            if (clashEl) clashEl.classList.remove('pvp-clash-flash');
+
+            _prevPhase.self = null;
+            _prevPhase.op   = null;
         },
 
-        // ── Guest: connect directly to Host using the room code ──────────
-        async joinRoom(roomCode) {
-            _role = 'guest';
-            _peer = _makePeer();
+        // 判定结果落地那一刻触发对应特效。attackerIsSelf 由调用方(pvp_logic.js)
+        // 翻译好再传进来——host/guest 双方都会调用这同一个方法，
+        // 各自传各自视角下"攻击方是不是自己"。
+        playExchangeFx(exchange, attackerIsSelf) {
+            const selfNode = document.getElementById('pvp-self-weapon-icon');
+            const opNode   = document.getElementById('pvp-op-weapon-icon');
+            const attackerEl = attackerIsSelf ? selfNode : opNode;
+            const defenderEl = attackerIsSelf ? opNode   : selfNode;
 
-            await _waitForPeerOpen(_peer);
-
-            return new Promise((resolve, reject) => {
-                const conn = _peer.connect(roomCode, { reliable: true, serialization: 'json' });
-
-                const timeout = setTimeout(() => {
-                    reject(new Error('连接超时，请确认房间号正确且对方仍在等待'));
-                }, PEER_OPEN_TIMEOUT_MS);
-
-                conn.on('open', () => {
-                    clearTimeout(timeout);
-                    _attachConn(conn);
-                    resolve();
-                });
-
-                conn.on('error', (e) => {
-                    clearTimeout(timeout);
-                    reject(_friendlyPeerError(e));
-                });
-
-                _peer.on('error', (e) => {
-                    clearTimeout(timeout);
-                    reject(_friendlyPeerError(e));
-                });
-            });
+            switch (exchange) {
+                case 'hit':
+                    fx.slash(defenderEl);
+                    break;
+                case 'blocked':
+                    fx.guardShrinkEl(defenderEl);
+                    break;
+                case 'parry':
+                    fx.parryGlowEl(defenderEl);
+                    fx.enemyShrink(attackerEl);   // 攻击方被弹反，短促受挫反馈
+                    break;
+                case 'clash':
+                    fx.triggerId('pvp-clash-fx', 'pvp-clash-flash', 280);
+                    fx.enemyShrink(attackerEl);
+                    fx.enemyShrink(defenderEl);
+                    break;
+            }
         },
 
-        // ── Send a game message ───────────────────────────────────────────
-        send(obj) {
-            return _send(obj);
+        showResult(winner) {
+            const overlay = document.getElementById('pvp-result-overlay');
+            if (!overlay) return;
+            const titleEl = document.getElementById('pvp-result-title');
+            if (titleEl) {
+                titleEl.textContent = winner === 'self' ? '🏆 胜利！' : '💀 败北';
+                titleEl.className = winner === 'self' ? 'result-win' : 'result-lose';
+            }
+            overlay.classList.remove('hidden');
         },
 
-        // ── Fully tear down the connection (call before returning to lobby / leaving the page; truly destroys the peer) ──
-        close() {
-            if (_conn) { try { _conn.close();   } catch (_) {} }
-            if (_peer) { try { _peer.destroy(); } catch (_) {} }
-            _conn         = null;
-            _peer         = null;
-            _role         = null;
-            _clockOffset  = 0;
-            _rtt          = 0;
+        hideResult() {
+            const overlay = document.getElementById('pvp-result-overlay');
+            if (overlay) overlay.classList.add('hidden');
+
+            // 复位"再来一局"相关的子状态，避免带着上一局的残留显示进入下一局
+            const waitEl = document.getElementById('pvp-rematch-waiting');
+            if (waitEl) waitEl.classList.add('hidden');
+            const btn = document.getElementById('pvp-btn-rematch');
+            if (btn) btn.classList.remove('hidden');
+        },
+
+        showRematchRequest() {
+            const el = document.getElementById('pvp-rematch-request');
+            if (el) el.classList.remove('hidden');
+        },
+
+        hideRematchRequest() {
+            const el = document.getElementById('pvp-rematch-request');
+            if (el) el.classList.add('hidden');
+        },
+
+        showRematchWaiting() {
+            const el = document.getElementById('pvp-rematch-waiting');
+            if (el) el.classList.remove('hidden');
+            // 自己发起请求后，"再来一局"按钮本身不需要再展示，避免重复点击造成困惑
+            const btn = document.getElementById('pvp-btn-rematch');
+            if (btn) btn.classList.add('hidden');
+        },
+
+        // 断线遮罩：host 只能被动等待（自己的peer监听是持续的），guest 可以主动重连
+        showDisconnectOverlay() {
+            const overlay = document.getElementById('pvp-disconnect-overlay');
+            if (overlay) overlay.classList.remove('hidden');
+        },
+
+        hideDisconnectOverlay() {
+            const overlay = document.getElementById('pvp-disconnect-overlay');
+            if (overlay) overlay.classList.add('hidden');
         }
     };
 })();
