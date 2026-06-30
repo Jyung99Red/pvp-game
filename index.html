@@ -346,7 +346,7 @@
         <!-- ═══════════════════════════════════════════════════
              VIEW: PVP Battle
              ═══════════════════════════════════════════════════ -->
-        <div id="view-pvp-battle" class="view-section hidden">
+        <div id="view-pvp-battle" class="view-section hidden pvp-battle-view">
 
             <!-- Opponent panel -->
             <div class="panel" style="margin-bottom:8px;">
@@ -396,7 +396,7 @@
 
                 <!-- AP recovery bar -->
                 <div class="bar-wrap" style="margin-top:4px;">
-                    <div id="pvp-self-ap-bar" class="bar-inner attack-bar" style="width:100%;"></div>
+                    <div id="pvp-self-ap-bar" class="bar-inner action-bar" style="width:100%;"></div>
                     <div class="bar-text" style="font-size:10px;">行动力恢复</div>
                 </div>
 
@@ -432,9 +432,12 @@
             </div>
 
             <!-- Log -->
+            <!-- margin-top:auto 把它推到 .pvp-battle-view（flex列、min-height拉满
+                 content-area）的最底部，贴着下面的3个tab；5行高度通过 height:80px
+                 维持不变，只是位置从"紧跟按钮"改成"靠住tab栏" -->
             <div id="pvp-log"
                 style="height:80px;overflow:hidden;font-size:11px;color:#888;
-                       white-space:pre-line;padding:0 4px;margin-top:10px;">
+                       white-space:pre-line;padding:0 4px;margin-top:auto;">
             </div>
 
             <!-- Result overlay -->

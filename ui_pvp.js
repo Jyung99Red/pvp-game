@@ -199,6 +199,12 @@ const uiPvp = (() => {
                 case 'hit':
                     fx.slash(defenderEl);
                     break;
+                case 'interrupt':
+                    // 蓄力被打断：和普通命中一样挨一刀，再加一个受挫缩小，
+                    // 跟纯 hit 区分开，提示"你的蓄力被打断了"而不只是单纯被打
+                    fx.slash(defenderEl);
+                    fx.enemyShrink(defenderEl);
+                    break;
                 case 'blocked':
                     fx.guardShrinkEl(defenderEl);
                     break;

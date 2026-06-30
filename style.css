@@ -27,8 +27,14 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Nav */
 .nav-bar { display: flex; background: #1a1a20; border-top: 1px solid var(--border); flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
-.nav-btn { flex: 1; padding: 13px 0; background: transparent; border-radius: 0; border: none; font-size: 13px; color: #777; margin: 0; }
+.nav-btn { flex: 1; padding: 18px 0; background: transparent; border-radius: 0; border: none; font-size: 14px; color: #777; margin: 0; }
 .nav-btn.active { color: #fff; background: var(--accent); }
+
+/* PVP 战斗视图：flex列 + min-height拉满content-area，配合 #pvp-log 的
+   margin-top:auto，让log条贴住底部的3个tab，而不是紧跟在按钮后面。
+   内容本身没变多，只是log的位置从"按钮下方一小段"挪到"贴住tab栏上沿"，
+   视觉上整组面板会比之前的版本稍微往下挪一点。 */
+.pvp-battle-view { display: flex; flex-direction: column; min-height: 100%; }
 
 /* Bars */
 .bar-wrap { background: #000; height: 18px; border-radius: 4px; overflow: hidden; margin: 5px 0; position: relative; border: 1px solid #111; }

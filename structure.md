@@ -97,29 +97,36 @@ IDLE ─────────────────► CHARGING
 ▲                         │ release OR held ≥ 3s
 │                         ▼
 │                    STRIKE_OUT ──► 交锋判定
-│                         │ strikeRecoveryMs (800ms)
+│                         │ strikeRecoveryMs (300ms，仅 hit/blocked 时走完整流程)
 └─────────────────────────┘
     press guard
 IDLE ─────────────────► GUARD_WINDUP (300ms)
 │
-GUARD_READY
+GUARD_READY ── 超过 guardMaxHoldMs(2000ms)未被击中 → 自动收回 idle
 │ 被击中:
 ┌─────────┴──────────┐
 弹反窗口内               弹反窗口外
 → 攻击方反击受伤+硬直     → defender 进入
-(parryStunMs 600ms)      STUNNED 150ms
+(parryStunMs 1000ms)     STUNNED 150ms
+
+**对手蓄力中被命中 = 打断：** 若防御方此刻 `phase === 'charging'`（既不在
+`strike_out` 也不在 `guard_ready`，所以走不到拼刀/弹反/格挡分支），来犯的
+攻击按普通命中公式结算伤害，同时把防御方强制踢出 `charging`，扣
+`interruptStunMs`(250ms) 硬直——蓄力作废，按下攻击键时已经扣掉的那 1 点 AP
+不退还，等同于一次白白浪费的出招。
 
 **`phase` 的真实取值只有 7 个：** `idle | charging | strike_out |
-strike_recover | guard_windup | guard_ready | stunned`。无论是被弹反还是被
-格挡，最终都统一落在 `stunned`，区别只在硬直时长(600ms / 150ms)和作用对象
-(攻击方 / 防守方)——`phase` 上曾经还声明过 `'parry'` / `'blocked'` 两个值，
-但从未被真正赋值过(底层都走 `'stunned'`)，已经从 `PHASES` 列表、
-`_tickSide` 的兜底分支、`ui_pvp.js` 的标签映射表里一并删掉了。
+strike_recover | guard_windup | guard_ready | stunned`。无论是被弹反、被
+格挡还是蓄力中被打断，最终都统一落在 `stunned`，区别只在硬直时长(1000ms /
+150ms / 250ms)和作用对象(攻击方 / 防守方)——`phase` 上曾经还声明过
+`'parry'` / `'blocked'` 两个值，但从未被真正赋值过(底层都走 `'stunned'`)，
+已经从 `PHASES` 列表、`_tickSide` 的兜底分支、`ui_pvp.js` 的标签映射表里
+一并删掉了。
 
 > 注意区分 `phase`(角色状态机当前阶段)和 `exchange`(单次交锋的判定结果，
-> 取值 `'hit'|'blocked'|'parry'|'clash'`，定义在 `_resolveExchange` 里)——
-> 后者是真实生效、驱动伤害和特效的字段，格挡减伤/弹反反击/拼刀对撞这些
-> 玩法都是靠它，不要跟上面的 `phase` 搞混。
+> 取值 `'hit'|'blocked'|'parry'|'clash'|'interrupt'`，定义在
+> `_resolveExchange` 里)——后者是真实生效、驱动伤害和特效的字段，格挡减伤
+> /弹反反击/拼刀对撞/蓄力打断这些玩法都是靠它，不要跟上面的 `phase` 搞混。
 
 **锁定规则：** CHARGING 状态下完全锁 guard 输入,必须先松手出招才能举盾。
 
@@ -281,7 +288,7 @@ correctRemote(remote_t) = remote_t - clockOffset
 
 // Host 判定结果（绝对HP值，guest直接套用，不用算差值）
 { msg:'result',
-  exchange: 'hit'|'blocked'|'parry'|'clash',
+  exchange: 'hit'|'blocked'|'parry'|'clash'|'interrupt',
   logText,
   hostHp, guestHp,
   hostStunMs, guestStunMs,
@@ -367,3 +374,16 @@ correctRemote(remote_t) = remote_t - clockOffset
   `state.pvpBattle.paused`。
 - `pvp_logic.js` / `pvp_net.js` / `pvp_room.js` 三个文件的代码注释统一改为
   英文；游戏内中文文案不变。
+- 新增"蓄力被打断"机制：防御方在 `charging` 状态下被命中（且未触发拼刀/
+  弹反/格挡）视为 `exchange:'interrupt'`，按普通命中公式扣血，并叠加
+  `interruptStunMs`(250ms) 硬直把对方踢出蓄力；蓄力作废，已扣的 AP 不退还。
+  对应改动：`pvpConfig.interruptStunMs`、`_resolveExchange` 新增
+  `isInterrupt` 分支、`ui_pvp.js: playExchangeFx` 新增 `'interrupt'` 特效
+  分支（挨刀 + 受挫缩小）。
+- 数值调整：`strikeRecoveryMs` 800→300ms、`clashRecoveryMs` 400→600ms、
+  `guardMaxHoldMs` 3000→2000ms、`parryStunMs` 600→1000ms。
+- PVP 界面布局：`pvp-log` 改为贴住底部 3 个 tab(基地/战斗/PVP)，靠
+  `.pvp-battle-view`(flex 列 + `min-height:100%`)+ `#pvp-log{margin-top:auto}`
+  实现，仍保持 5 行(`height:80px`)高度；底部 nav 三个 tab 调高
+  (`.nav-btn` padding 13px→18px，字号 13→14px)；AP 恢复条样式从蓝色
+  `attack-bar` 换成黄色 `action-bar`。

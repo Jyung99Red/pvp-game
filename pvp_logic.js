@@ -20,13 +20,14 @@ const pvpConfig = {
 
     // Defense
     guardWindupMs:     300,   // Guard startup delay before guard_ready actually engages
-    guardMaxHoldMs:    3000,  // Max hold duration; auto-cancels back to idle past this
+    guardMaxHoldMs:    2000,  // Max hold duration; auto-cancels back to idle past this
     parryWindowMs:     200,   // Base perfect-parry window, scaled by judgmentMultiplier
 
     // Phase timers
-    strikeRecoveryMs:  800,
-    parryStunMs:       600,   // Stun duration applied to the attacker after being parried
-    clashRecoveryMs:   400,
+    strikeRecoveryMs:  300,
+    parryStunMs:       1000,  // Stun duration applied to the attacker after being parried
+    clashRecoveryMs:   600,
+    interruptStunMs:   250,   // Stun duration applied to a defender whose charge gets interrupted by an incoming hit
 
     // AP (action points)
     apMax:             3,
@@ -257,13 +258,20 @@ const pvpLogic = (() => {
         const isParry  = !isClash && defender.phase === 'guard_ready' &&
                          timeSinceGuard <= _parryWindow(defenderStats.judgmentMultiplier);
         const isBlock  = !isClash && defender.phase === 'guard_ready' && !isParry;
+        // Defender is mid-charge and gets hit by an attack that isn't a
+        // clash/parry/block -- this counts as an interrupt: their charge is
+        // forcibly cancelled (defenderStunMs below knocks them out of the
+        // 'charging' phase) on top of taking the hit. The AP they already
+        // spent pressing charge is simply gone, same as any other attack
+        // that landed -- no separate AP bookkeeping needed here.
+        const isInterrupt = !isClash && !isParry && !isBlock && defender.phase === 'charging';
 
         console.log('[pvp] resolveExchange: atkCharge=', attackerChargeMs,
             'defPhase=', defender.phase,
             'defLastStrike=', defender.lastStrikeT,
             'wallNow=', wallNow,
             'Δstrike=', defender.lastStrikeT ? wallNow - defender.lastStrikeT : '∞',
-            '→', isClash ? 'CLASH' : isParry ? 'PARRY' : isBlock ? 'BLOCK' : 'HIT');
+            '→', isClash ? 'CLASH' : isParry ? 'PARRY' : isBlock ? 'BLOCK' : isInterrupt ? 'INTERRUPT' : 'HIT');
 
         // ── Result fields ───────────────────────────────────────────────
         // attackerDmg: damage the attacker takes (clash/parry can hurt the attacker too)
@@ -297,6 +305,13 @@ const pvpLogic = (() => {
             defenderStunMs = 150;
             exchange   = 'blocked';
             logText    = `🛡️ 格挡！减为 ${defenderDmg} 点伤害`;
+        } else if (isInterrupt) {
+            attackerDmg    = 0;
+            defenderDmg    = _applyDefense(rawDmg, defenderStats.def);
+            attackerStunMs = 0;
+            defenderStunMs = pvpConfig.interruptStunMs;
+            exchange   = 'interrupt';
+            logText    = `⚡ 打断！蓄力被打断，受到 ${defenderDmg} 点伤害`;
         } else {
             attackerDmg    = 0;
             defenderDmg    = _applyDefense(rawDmg, defenderStats.def);
