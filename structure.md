@@ -31,6 +31,10 @@ PVP 是独立的新战斗系统,复用玩家属性与装备数值(`player.js` / 
 - 结果通过 `result` 消息广播给 Guest
 - Guest 只渲染,从不自行判定
 
+> 代码注释语言：`pvp_logic.js` / `pvp_net.js` / `pvp_room.js` 三个文件的注释
+> 已统一改成英文；游戏内显示给玩家的状态文案、日志文案(`status`、`logText`
+> 等字符串字面量)保持中文不变。
+
 ---
 
 ## File Map
@@ -64,8 +68,7 @@ PVP 是独立的新战斗系统,复用玩家属性与装备数值(`player.js` / 
 
 ```js
 // pvp_logic.js — _calcChargeDamage
-function _calcChargeDamage(chargeMs) {
-    const atk = player.getStats().atk;
+function _calcChargeDamage(chargeMs, atk) {
     if (chargeMs < pvpConfig.earlyReleaseMs) return pvpConfig.earlyReleaseDmg; // 1
     const t = Math.min(
         (chargeMs - earlyReleaseMs) / (chargeMaxMs - earlyReleaseMs), 1.0
@@ -77,12 +80,16 @@ function _calcChargeDamage(chargeMs) {
 
 ```js
 // pvp_logic.js — _applyDefense（PVP 专用线性减免公式，与单人战斗的伤害公式分开维护）
-function _applyDefense(rawDmg) {
-    const def = player.getStats().def;
+function _applyDefense(rawDmg, def) {
     const reduction = Math.min(rawDmg * 0.20, def * 0.15);
     return Math.max(1, Math.round(rawDmg - reduction));
 }
 ```
+
+> `pvpConfig` 里曾经有 `minChargeDmg` / `maxChargeDmg` / `baseAtk` 三个字段，
+> 是更早期设计阶段预想的"理想伤害区间"参照值，后来伤害公式改成上面这套
+> 500ms~3000ms 线性插值 atk 的算法后就完全没再用过——已经直接删掉，不再
+> 保留在 `pvpConfig` 里。
 
 ### 状态机（per player）
     press attack
@@ -101,6 +108,18 @@ GUARD_READY
 弹反窗口内               弹反窗口外
 → 攻击方反击受伤+硬直     → defender 进入
 (parryStunMs 600ms)      STUNNED 150ms
+
+**`phase` 的真实取值只有 7 个：** `idle | charging | strike_out |
+strike_recover | guard_windup | guard_ready | stunned`。无论是被弹反还是被
+格挡，最终都统一落在 `stunned`，区别只在硬直时长(600ms / 150ms)和作用对象
+(攻击方 / 防守方)——`phase` 上曾经还声明过 `'parry'` / `'blocked'` 两个值，
+但从未被真正赋值过(底层都走 `'stunned'`)，已经从 `PHASES` 列表、
+`_tickSide` 的兜底分支、`ui_pvp.js` 的标签映射表里一并删掉了。
+
+> 注意区分 `phase`(角色状态机当前阶段)和 `exchange`(单次交锋的判定结果，
+> 取值 `'hit'|'blocked'|'parry'|'clash'`，定义在 `_resolveExchange` 里)——
+> 后者是真实生效、驱动伤害和特效的字段，格挡减伤/弹反反击/拼刀对撞这些
+> 玩法都是靠它，不要跟上面的 `phase` 搞混。
 
 **锁定规则：** CHARGING 状态下完全锁 guard 输入,必须先松手出招才能举盾。
 
@@ -128,9 +147,6 @@ spd 越高恢复越快;蓄力/举盾期间不恢复 AP。
 ```js
 state.pvpBattle = {
     active: false,
-    paused: false,             // ⚠️ 死字段：断线重连流程已移除，现在没有任何
-                               // 地方会把它置为 true，input handler 里的判断
-                               // 是无害的死代码
 
     role: null,               // 'host' | 'guest'
     battleId: null,            // 当前这一局的唯一标识，每条战斗内网络消息都带着它
@@ -138,9 +154,7 @@ state.pvpBattle = {
     self: {
         hp, maxHp,
         phase: 'idle',         // idle|charging|strike_out|strike_recover
-                               // |guard_windup|guard_ready|parry|stunned|blocked
-                               // 'parry' 和 'blocked' 这两个值实际上从未被赋值过,
-                               // 见下方“网络消息协议”后的已知问题
+                               // |guard_windup|guard_ready|stunned
         phaseTimer: 0,
         chargeStartT: 0,
         chargeMs: 0,
@@ -161,6 +175,11 @@ state.pvpBattle = {
     log: []
 }
 ```
+
+> 曾经有一个 `paused` 字段(断线时置 true，用于"暂停战斗、等重连后恢复"的
+> 旧流程)，断线重连机制移除后这个字段已经没有任何地方会写入 true，连同
+> 输入处理函数里对它的检查一起删掉了——现在断线就是直接结束当前对局，
+> 不存在"暂停"这个中间状态。
 
 ---
 
@@ -217,7 +236,7 @@ correctRemote(remote_t) = remote_t - clockOffset
 ### 房间号与连接状态机（pvp_room.js）
 
 - 房间号：6 位数字,`genRoomCode()` 随机生成;`joinRoom()` 侧校验放宽到
-  `/^\d{4,8}$/`(4~8位都接受),比实际生成的位数更宽松。
+  `/^\d{4,8}$/`(4~8位都接受),比实际生成的位数更宽松（见下方已知问题）。
 - `pvp-step-*` 系列 DOM 节点对应房间流程的每一步(entry / hosting /
   host-waiting / joining / joining-wait / ready),由 `setStep()` 统一切换
   `hidden` 类。
@@ -225,7 +244,7 @@ correctRemote(remote_t) = remote_t - clockOffset
   Host 侧触发(时钟同步是 Host 发起的,完成后才 emit),Guest 侧的
   `on.open` 永远不会被调用。Guest 实际是停在 `pvp-step-joining-wait`,直到
   收到 `fight_start` 消息才直接跳到战斗界面。
-- **断线处理（已移除"原地重连恢复战斗"）：**
+- **断线处理（无"原地重连恢复战斗"）：**
   - 对战中掉线 → 双方各自的 `conn.on('close')` 触发 → `pvpLogic.abortToLobby()`
     + 弹出 `pvp-disconnect-overlay`，遮罩上只有一个"返回大厅"按钮。
   - 还没开打就掉线 → 直接回到 `pvp-step-entry`。
@@ -237,8 +256,6 @@ correctRemote(remote_t) = remote_t - clockOffset
     内有效)，重新进入"加入房间"步骤时会自动填回上次用过的 Guest 房间号，
     但这只是省得用户记数字，不代表战斗状态能恢复——能不能接上同一个 Host、
     要不要开新一局，全靠上面说的 hello + battleId 机制现场判断。
-  - `pvp_net.js` 里还留着一个 `lastRoomCode` getter，是更早期重连方案的
-    残留，现在没有任何调用方，跟上面这套 localStorage 记忆机制完全无关。
 
 ---
 
@@ -283,6 +300,11 @@ correctRemote(remote_t) = remote_t - clockOffset
 乱序、还是别的没遇到过的边缘情况)，不去猜该怎么硬套到当前这场战斗上——比
 "双方各报一个布尔值猜测状态是否一致"更可靠。
 
+> `pvpNet.sendAction(type, hand)` 这个便捷发送方法曾经存在过，但从未被
+> 调用——所有 action 消息都是直接走 `pvpNet.send({msg:'action', ...})`，
+> `hand` 字段在 PVP 协议里也从未真正出现过(大概率是早期单人战斗"左右手"
+> 概念的残留)，已经从 `pvp_net.js` 里删掉。
+
 ---
 
 ## ui_pvp.js — 当前布局
@@ -323,30 +345,25 @@ correctRemote(remote_t) = remote_t - clockOffset
 
 ## 已知问题 / 注意事项
 
-1. `pvpConfig.minChargeDmg` / `maxChargeDmg` / `baseAtk` 三个字段未被
-   `_calcChargeDamage` 实际使用,伤害是直接拿 `atk` 乘 0.3~1.1 的线性系数。
-2. `'blocked'` 和 `'parry'` 这两个 phase 值永远不会被赋值——格挡命中走的是
-   `_setPhase(defender, 'stunned', 150)`，弹反命中走的是
-   `_setPhase(attacker, 'stunned', parryStunMs)`。两者只在 `_tickSide`
-   的兜底 switch 和 `ui_pvp.js` 的标签映射表里各留了一条死分支，其中
-   `'blocked'` 容易和 `exchange:'blocked'`(交锋结果字段,语义不同)搞混。
-3. `pvpNet.sendAction(type, hand)` 这个便捷方法目前没人调用——`pvp_logic.js`
-   都是直接 `pvpNet.send({msg:'action', type, t})`,`hand` 字段在 PVP 协议
-   里也从未出现过,大概是早期单人战斗"左右手"概念的残留。
-4. Guest 端永远不会经过 `pvp-step-ready` 步骤(见上文"房间号与连接状态机"),
+1. Guest 端永远不会经过 `pvp-step-ready` 步骤(见上文"房间号与连接状态机"),
    如果以后改动连接流程,要注意这个步骤目前实际上是 Host-only 的。
-5. 房间号生成是固定 6 位,但 `joinRoom()` 的校验正则接受 4~8 位,范围比实际
+2. 房间号生成是固定 6 位,但 `joinRoom()` 的校验正则接受 4~8 位,范围比实际
    宽,目前没造成问题但两边不完全对齐。
-6. ICE 只配置了 STUN,没有 TURN。多数 NAT 环境下能直连成功,但对称型 NAT
+3. ICE 只配置了 STUN,没有 TURN。多数 NAT 环境下能直连成功,但对称型 NAT
    或严格防火墙环境下可能连不通,目前没有兜底方案。
-7. `state.pvpBattle.paused` 字段已经是死代码——断线重连流程移除后没有任何
-   地方会把它置为 `true`,但 `_onChargePress`/`_onGuardPress` 还在检查它。
-8. `pvp_net.js` 里的 `_lastRoomCode` 字段和对外暴露的 `lastRoomCode` getter
-   没有调用方,是更早期重连方案的残留,跟 `pvp_room.js` 自己那套基于
-   localStorage 的房间号记忆是两条独立机制。
 
 ## 可能的后续工作
 
-- 清理上面 1～3、7、8 条死代码/未用字段,或者把它们接上真正的逻辑。
 - 视情况补一个 TURN 服务器配置,提升连接成功率。
 - 把房间号位数的生成与校验对齐(确定到底是固定6位还是允许4~8位)。
+
+## 近期变更记录
+
+- 移除"断线后原地重连恢复战斗"的旧机制，改为 hello + battleId 判断是否
+  开新一局；断线统一走"返回大厅"。
+- 删除死代码：`pvpConfig.minChargeDmg`/`maxChargeDmg`/`baseAtk`、
+  `phase` 的 `'parry'`/`'blocked'` 取值(及对应死分支/死标签)、
+  `pvpNet.sendAction()`、`pvpNet._lastRoomCode`/`lastRoomCode` getter、
+  `state.pvpBattle.paused`。
+- `pvp_logic.js` / `pvp_net.js` / `pvp_room.js` 三个文件的代码注释统一改为
+  英文；游戏内中文文案不变。
