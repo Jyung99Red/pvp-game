@@ -1,38 +1,42 @@
-// pvp_logic.js - PVP battle engine
-// Rules:
-//   - No document.* calls
-//   - No Date.now() - time comes from arguments (now, dt)
-//   - Host is the sole judgment authority
-//   - Guest mirrors opponent state from network messages only
+// pvp_logic.js - PVP battle engine: state machine + damage formulas + Host judgment authority + network message handling
+// Hard constraints:
+//   - No document.* calls, pure logic layer, never touches the DOM
+//   - Frame advancement relies on the external tick's (now, dt), not on reading
+//     Date.now() inside the main loop -- EXCEPT lastStrikeT / lastGuardReadyT,
+//     the two timestamps used specifically for clash/parry window checks.
+//     Those intentionally read Date.now() directly and skip network clock
+//     correction; see the comments at the matching spots in _fireCharge /
+//     _handleNetMessage for why.
+//   - Host is the sole judgment authority; every exchange result is computed
+//     in this file's _resolveExchange
+//   - Guest never judges locally, it only mirrors state from the Host's
+//     broadcast result messages
 
 const pvpConfig = {
     // Charge attack
     chargeMaxMs:       3000,
     earlyReleaseMs:    500,
     earlyReleaseDmg:   1,
-    minChargeDmg:      5,
-    maxChargeDmg:      30,
-    baseAtk:           10,    // reference atk for damage scaling
 
     // Defense
-    guardWindupMs:     300,   // ms before guard becomes active
-    guardMaxHoldMs:    3000,  // auto-cancel after this
-    parryWindowMs:     200,   // base perfect-parry window (scaled by int)
+    guardWindupMs:     300,   // Guard startup delay before guard_ready actually engages
+    guardMaxHoldMs:    3000,  // Max hold duration; auto-cancels back to idle past this
+    parryWindowMs:     200,   // Base perfect-parry window, scaled by judgmentMultiplier
 
     // Phase timers
     strikeRecoveryMs:  800,
-    parryStunMs:       600,   // attacker stun duration after being parried
+    parryStunMs:       600,   // Stun duration applied to the attacker after being parried
     clashRecoveryMs:   400,
 
-    // AP
+    // AP (action points)
     apMax:             3,
-    apRecoveryMs:      2000,  // ms per AP point (scaled by spd)
+    apRecoveryMs:      2000,  // Base recovery time per AP point, scaled by 10/spd
 
-    // Clash detection window
+    // Clash detection window, fixed value, not affected by any stat
     clashWindowMs:     100
 };
 
-// ── State initialiser ────────────────────────────────────────────────
+// ── State initialiser ────────────────────────────────────────────────────
 
 function _makeSideState(maxHp) {
     return {
@@ -44,45 +48,57 @@ function _makeSideState(maxHp) {
         chargeMs:      0,
         actionPoints:  pvpConfig.apMax,
         actionProgress: 0,
-        lastStrikeT:   0,   // wall-clock ms when last strike_out began (Date.now())
-        lastChargeMs:  0,   // chargeMs of the last fired attack (for clash dmg calc)
-        lastGuardReadyT: 0  // wall-clock ms when guard became ready (Date.now())
+        lastStrikeT:   0,   // Wall-clock time (Date.now()) when strike_out last began; clash detection
+        lastChargeMs:  0,   // Charge duration of the last fired attack; used for clash damage calc
+        lastGuardReadyT: 0  // Wall-clock time (Date.now()) when guard became ready; parry detection
     };
 }
 
 // PHASES: idle | charging | strike_out | strike_recover |
-//         guard_windup | guard_ready | parry | stunned | blocked
+//         guard_windup | guard_ready | stunned
+// Parry/block outcomes both resolve through 'stunned' (with different
+// durations); see the `exchange` result type in _resolveExchange below for
+// the actual hit/block/parry/clash outcome.
 
 const pvpLogic = (() => {
     let _rAF  = null;
     let _lastTime = 0;
     let _rematchRequestedBySelf = false;
 
-    // 对方真实的战斗数值快照（atk/def/spd/maxHp + 衍生倍率），由 pvp_room.js
-    // 在连接建立时通过 hello 消息发过来、再传进 startPVP。在拿到真实数据之前，
-    // 兜底用自己的数值，避免没收到时直接报错（单设备自测场景也能跑）。
+    // A snapshot of the opponent's real combat stats (atk/def/spd/maxHp +
+    // derived multipliers), sent over by pvp_room.js via the 'hello' message
+    // when the connection is established, then passed into startPVP(). Until
+    // real data arrives, this falls back to the local player's own stats so
+    // nothing throws (also makes single-device self-testing work).
     //
-    // 背景：在这次修复之前，_calcChargeDamage / _applyDefense / _apRecoveryMs /
-    // _parryWindow 全部直接调 player.getStats()——这个函数读的永远是"本机这台
-    // 设备上的角色"，不管这次算的是不是对方的攻击/防御。结果是：无论谁出招，
-    // 伤害用的都是判定方（host）本机角色的 atk/def，跟攻击者实际等级/装备完全
-    // 对不上，对手的等级、HP上限在UI上也只是从本机角色数值镜像出来的假数字。
+    // Background: before this was fixed, _calcChargeDamage / _applyDefense /
+    // _apRecoveryMs / _parryWindow all called player.getStats() directly --
+    // that function always reads "the character on this device", regardless
+    // of whether the calculation was actually for the opponent's attack or
+    // defense. The result: no matter who attacked, damage was computed from
+    // the judging side's (Host's) own local atk/def, completely disconnected
+    // from the real attacker's level/gear, and the opponent's level/max HP
+    // shown in the UI were just fake numbers mirrored from the local character.
     let _opponentProfile = null;
 
-    // 当前这一局的唯一标识。每次 startPVP() 都会生成一个新的（host生成、
-    // guest 从 fight_start/rematch_accept 消息里拿到同一个），战斗内的每条
-    // 网络消息都带着它——比"双方各报一个布尔值猜测状态是否一致"更可靠：
-    // 不管是刷新重连、消息延迟乱序、还是别的没遇到过的边缘情况，只要编号
-    // 对不上就是对不上，不需要为每一种具体场景单独写一条判断。
+    // The unique id of the current battle. A fresh one is generated on every
+    // startPVP() call (Host generates it, Guest receives the same one via the
+    // fight_start/rematch_accept message), and every in-battle network
+    // message carries it. More reliable than "each side reports a boolean and
+    // we guess whether state is consistent" -- whether the cause is a page
+    // refresh + reconnect, out-of-order delivery, or some other edge case we
+    // haven't hit yet, a mismatched id is simply a mismatch; no need to write
+    // a separate check for every concrete scenario.
     let _battleId = null;
-    let _pendingRematchBattleId = null; // 对方在 rematch_request 里提议的id（只有对方是host时才会有）
+    let _pendingRematchBattleId = null; // The id the opponent proposed in rematch_request (only set when they're Host)
 
     function _genBattleId() {
         return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
     }
 
-    // 战斗内消息（action / charge_sync / result / fight_end）统一从这里发，
-    // 自动带上当前 battleId，不用每个发送点自己记得加这个字段。
+    // All in-battle messages (action / charge_sync / result / fight_end) go
+    // out through here, which automatically attaches the current battleId --
+    // so no individual send site has to remember to add that field itself.
     function _sendBattleMsg(payload) {
         pvpNet.send({ ...payload, battleId: _battleId });
     }
@@ -100,14 +116,14 @@ const pvpLogic = (() => {
         };
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────
 
     function _lerp(a, b, t) { return a + (b - a) * t; }
 
     function _calcChargeDamage(chargeMs, atk) {
-        // <500ms: fixed 1 dmg (tap penalty)
+        // Charge < 500ms: fixed 1 damage (penalty for "tap-attack" rushing)
         if (chargeMs < pvpConfig.earlyReleaseMs) return pvpConfig.earlyReleaseDmg;
-        // 500ms->3000ms: linear 0.3x->1.1x atk
+        // 500ms -> 3000ms: linear interpolation 0.3x atk -> 1.1x atk
         const t = Math.min(
             (chargeMs - pvpConfig.earlyReleaseMs) /
             (pvpConfig.chargeMaxMs - pvpConfig.earlyReleaseMs),
@@ -118,8 +134,8 @@ const pvpLogic = (() => {
     }
 
     function _applyDefense(rawDmg, def) {
-        // Flat reduction: each def point blocks 0.15 dmg, capped at 20% of raw dmg
-        // Result: def has mild effect, atk stays dominant
+        // Flat reduction: each point of def blocks 0.15 damage, capped at
+        // 20% of raw damage -- keeps def's effect mild, atk stays dominant
         const reduction = Math.min(rawDmg * 0.20, def * 0.15);
         return Math.max(1, Math.round(rawDmg - reduction));
     }
@@ -137,10 +153,10 @@ const pvpLogic = (() => {
         side.phaseTimer = timerMs || 0;
     }
 
-    // ── Tick: advance one side's state ───────────────────────────────
+    // ── Tick: advance one side's (self or opponent) state by one frame ───
 
     function _tickSide(side, dt, now, isSelf) {
-        // AP recovery (not while actively doing something)
+        // AP recovery (paused while charging or guarding)
         if (!['charging', 'guard_windup', 'guard_ready'].includes(side.phase)) {
             if (side.actionPoints < pvpConfig.apMax) {
                 const spd = isSelf ? player.getStats().spd : _opponentProfile.spd;
@@ -159,7 +175,7 @@ const pvpLogic = (() => {
         if (side.phaseTimer > 0) {
             side.phaseTimer = Math.max(0, side.phaseTimer - dt);
         }
-		
+	
 		if (side.phase === 'charging') {
 			side.chargeMs = now - side.chargeStartT;
 			if (side.chargeMs >= pvpConfig.chargeMaxMs) {
@@ -168,22 +184,20 @@ const pvpLogic = (() => {
 			}
 		}
 
-        // Phase auto-transitions when timer hits 0
+        // Phase auto-transitions when the timer hits 0
         if (side.phaseTimer === 0) {
             switch (side.phase) {
                 case 'strike_out':     _setPhase(side, 'strike_recover', pvpConfig.strikeRecoveryMs); break;
                 case 'strike_recover': _setPhase(side, 'idle', 0); break;
                 case 'guard_windup':   _setPhase(side, 'idle', 0); break;
                 case 'guard_ready':    _setPhase(side, 'idle', 0); break;
-                case 'parry':          _setPhase(side, 'idle', 0); break;
                 case 'stunned':        _setPhase(side, 'idle', 0); break;
-                case 'blocked':        _setPhase(side, 'idle', 0); break;
             }
         }
 
     }
 
-    // ── Fire charge ───────────────────────────────────────────────────
+    // ── Fire charge (charge finished, either released early or auto-fired at 3s) ──
 
     function _fireCharge(side, isAuto) {
         const chargeMs    = isAuto ? pvpConfig.chargeMaxMs : side.chargeMs;
@@ -191,24 +205,41 @@ const pvpLogic = (() => {
         side.lastChargeMs = chargeMs;
         side.chargeMs     = 0;
         side.chargeStartT = 0;
+        // Uses local Date.now() directly here, not pvpNet.now()/correctRemote's
+        // network-aligned time -- lastStrikeT is only ever compared against
+        // "a timestamp received locally on this machine" (see the isClash
+        // check in _resolveExchange and the same-named field on the op side
+        // in _handleNetMessage). As long as both sides each consistently use
+        // their own local wall clock, the resulting time delta is self-consistent
+        // and won't be skewed by clock-sync error or the window before sync
+        // completes -- belt and suspenders.
         side.lastStrikeT  = Date.now();
         _setPhase(side, 'strike_out', 16);
 
         if (pvpNet.role === 'host') {
-            // Host 是判定权威，自己不需要靠这条消息来判定，但 guest 那边显示的
-            // "对手"状态完全依赖网络消息驱动——如果不广播，guest 看到的 host
-            // 会一直卡在最后一次 charge_sync 收到的"蓄力中"，直到下一个动作
-            // 消息把它覆盖掉。这里补发一条，复用 guest 攻击时已经验证正确的
-            // 接收处理逻辑（_handleNetMessage 的 'charge_release' case）。
+            // Host is the judgment authority and doesn't need this message to
+            // judge its own side (it calls _resolveExchange directly below),
+            // but the Guest's view of "the opponent" is entirely driven by
+            // network messages -- if this charge_release isn't broadcast, the
+            // Guest will see Host stuck on the last "charging" state received
+            // via charge_sync until the next action message overwrites it.
+            // Sending one here reuses the receive-side handling already
+            // verified correct for Guest attacks (the 'charge_release' case
+            // in _handleNetMessage).
             _sendBattleMsg({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
             _resolveExchange(chargeMs, state.pvpBattle.self, state.pvpBattle.opponent);
         } else {
+            // Guest never judges locally -- it just forwards the action to
+            // Host, whose _handleNetMessage calls _resolveExchange and
+            // broadcasts the result back via a 'result' message
             _sendBattleMsg({ msg: 'action', type: 'charge_release', chargeMs, t: pvpNet.now() });
         }
     }
 
-    // ── Exchange resolution (Host only) ──────────────────────────────
-    // attacker / defender are the actual state objects (not fixed to host/guest)
+    // ── Exchange resolution (Host only) ───────────────────────────────────
+    // attacker / defender are real state object references (self or opponent),
+    // not hardcoded to host/guest -- whoever fired the attack is the attacker,
+    // regardless of role
 
     function _resolveExchange(attackerChargeMs, attacker, defender) {
         const b = state.pvpBattle;
@@ -234,10 +265,10 @@ const pvpLogic = (() => {
             'Δstrike=', defender.lastStrikeT ? wallNow - defender.lastStrikeT : '∞',
             '→', isClash ? 'CLASH' : isParry ? 'PARRY' : isBlock ? 'BLOCK' : 'HIT');
 
-        // ── Result fields ─────────────────────────────────────────────
-        // attackerDmg: damage attacker receives
-        // defenderDmg: damage defender receives
-        // logText: ready-to-display string, no further translation needed
+        // ── Result fields ───────────────────────────────────────────────
+        // attackerDmg: damage the attacker takes (clash/parry can hurt the attacker too)
+        // defenderDmg: damage the defender takes
+        // logText: a ready-to-display string, no further translation needed
 
         let attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, exchange, logText;
 
@@ -275,8 +306,9 @@ const pvpLogic = (() => {
             logText    = `⚔️ 命中！造成 ${defenderDmg} 点伤害`;
         }
 
-        // Determine if the local player (b.self) is the attacker or defender.
-        // host always calls this function, so attacker/defender are real objects.
+        // Whether the local player (b.self) is the attacker or the defender --
+        // _resolveExchange is only ever called on the Host side, so attacker/
+        // defender here are real state object references
         const selfIsAttacker = attackerIsSelf;
 
         // Apply HP
@@ -287,17 +319,19 @@ const pvpLogic = (() => {
         if (attackerStunMs > 0) _setPhase(attacker, 'stunned', attackerStunMs);
         if (defenderStunMs > 0) _setPhase(defender, 'stunned', defenderStunMs);
 
-        // Log (host side)
+        // Log it (Host side)
         _pushLog(logText);
 
-        // 视觉反馈：哪怕这一下是致命一击，也要先把动画打出来——
-        // 下面如果直接因为HP归零提前return，guest端会连这条result消息都收不到，
-        // 等于看不到最后一下的特效，直接跳到结算画面。所以这里先播放、
-        // 再广播，最后才做生死判定。
+        // Play the fx first, even for a killing blow -- if we returned early
+        // below because HP hit 0, the Guest wouldn't even receive this result
+        // message, meaning they'd never see the final hit's fx and would jump
+        // straight to the result screen. So: play first, broadcast, and only
+        // then check for death.
         uiPvp.playExchangeFx(exchange, selfIsAttacker);
 
-        // Broadcast to guest — send enough for guest to apply HP/log/fx.
-        // attackerIsHost 让 guest 端能正确翻译"出手的是己方还是对手"。
+        // Broadcast to Guest -- includes everything Guest needs to apply
+        // HP/log/fx. attackerIsHost lets the Guest side correctly translate
+        // "did I attack, or did the opponent".
         _sendBattleMsg({
             msg:          'result',
             exchange,
@@ -309,18 +343,20 @@ const pvpLogic = (() => {
             attackerIsHost: selfIsAttacker,
         });
 
-        // Check end (放在广播之后，确保致命一击的特效/log已经送达guest)
+        // Death check goes after the broadcast, to make sure the killing
+        // blow's fx/log have already reached the Guest before ending the fight
         if (attacker.hp <= 0 || defender.hp <= 0) {
             _endBattle();
             return;
         }
     }
 
-    // ── Apply result on guest side ────────────────────────────────────
+    // ── Apply result on the Guest side ─────────────────────────────────────
 
     function _applyResultGuest(msg) {
         const b = state.pvpBattle;
-        // Host sends absolute HP values — use them directly, no translation needed
+        // Host sends absolute HP values -- Guest applies them directly, no
+        // delta math or translation needed
         b.self.hp     = msg.guestHp;
         b.opponent.hp = msg.hostHp;
 
@@ -333,7 +369,7 @@ const pvpLogic = (() => {
         if (b.self.hp <= 0 || b.opponent.hp <= 0) _endBattle();
     }
 
-    // ── Log ──────────────────────────────────────────────────────────
+    // ── Log ─────────────────────────────────────────────────────────────
 
     function _pushLog(text) {
         const log = state.pvpBattle.log;
@@ -341,7 +377,7 @@ const pvpLogic = (() => {
         if (log.length > 20) log.pop();
     }
 
-    // ── Battle lifecycle ─────────────────────────────────────────────
+    // ── Battle lifecycle ──────────────────────────────────────────────────
 
     function _endBattle() {
         if (_rAF) { cancelAnimationFrame(_rAF); _rAF = null; }
@@ -363,7 +399,7 @@ const pvpLogic = (() => {
         uiPvp.showResult(winner);
     }
 
-    // ── Charge sync ──────────────────────────────────────────────────
+    // ── Charge progress sync (broadcast to the opponent every 100ms) ──────
 
     let _chargeSyncInterval = null;
 
@@ -380,16 +416,18 @@ const pvpLogic = (() => {
         if (_chargeSyncInterval) { clearInterval(_chargeSyncInterval); _chargeSyncInterval = null; }
     }
 
-    // ── Main loop ────────────────────────────────────────────────────
+    // ── Main loop (driven by requestAnimationFrame) ────────────────────────
 
     function _loop(currentTime) {
         if (!state.pvpBattle || !state.pvpBattle.active) return;
-        const dt  = Math.min(currentTime - _lastTime, 100); // cap dt to avoid huge jumps
+        const dt  = Math.min(currentTime - _lastTime, 100); // Cap per-frame dt to avoid big jumps after a tab switch / lag spike
         _lastTime = currentTime;
         const now = Date.now();
         const b   = state.pvpBattle;
 
-        // Guard windup → guard_ready transition (needs to fire before tick zeroes the timer)
+        // The guard_windup -> guard_ready transition has to fire before
+        // _tickSide zeroes the timer this frame, otherwise it's one frame
+        // late and the guard_ready logic (e.g. the ready timestamp) lags behind
         if (b.self.phase === 'guard_windup' && b.self.phaseTimer <= dt) {
             _onGuardWindupComplete(b.self, now);
         }
@@ -402,13 +440,12 @@ const pvpLogic = (() => {
         _rAF = requestAnimationFrame(_loop);
     }
 
-    // ── Input handlers ───────────────────────────────────────────────
+    // ── Input handlers (called from the UI's button events) ───────────────
 
     function _onChargePress(now) {
         const side = state.pvpBattle && state.pvpBattle.self;
-        console.log('[pvp] chargePress: paused=', state.pvpBattle?.paused,
-            'phase=', side?.phase, 'AP=', side?.actionPoints);
-        if (!state.pvpBattle || state.pvpBattle.paused) return;
+        console.log('[pvp] chargePress: phase=', side?.phase, 'AP=', side?.actionPoints);
+        if (!state.pvpBattle) return;
         if (side.actionPoints < 1)  return;
         if (side.phase !== 'idle')  return;
 
@@ -430,7 +467,7 @@ const pvpLogic = (() => {
     }
 
     function _onGuardPress(now) {
-        if (!state.pvpBattle || state.pvpBattle.paused) return;
+        if (!state.pvpBattle) return;
         const side = state.pvpBattle.self;
         if (side.phase === 'charging') return;
         if (side.phase !== 'idle')     return;
@@ -442,7 +479,7 @@ const pvpLogic = (() => {
 
     function _onGuardWindupComplete(side, now) {
         side.actionPoints--;
-        side.lastGuardReadyT = now;   // wall-clock, for parry window
+        side.lastGuardReadyT = now;   // Wall-clock time, used for the parry window
         _setPhase(side, 'guard_ready', pvpConfig.guardMaxHoldMs);
         _sendBattleMsg({ msg: 'action', type: 'guard_ready', t: pvpNet.now() });
     }
@@ -457,49 +494,56 @@ const pvpLogic = (() => {
         }
     }
 
-    // ── Network message handler ───────────────────────────────────────
+    // ── Network message handler (called on both Guest and Host, branches by role) ──
 
     function _handleNetMessage(msg) {
         if (!state.pvpBattle) return;
         const b  = state.pvpBattle;
         const op = b.opponent;
 
-        // action/charge_sync/result/fight_end 都是"某一场具体对局"内部的消息——
-        // 先比对battleId，不一致就说明这条消息来自我们已经不在同一场对局的
-        // 状态（对方刷新重连、消息延迟到了新一局开始之后……不管具体是哪种
-        // 情况），直接丢弃，不去猜该怎么硬套到当前这场战斗上。
+        // action/charge_sync/result/fight_end are all messages scoped to "one
+        // specific battle" -- check battleId first; a mismatch means this
+        // message came from a state we're no longer in (the opponent
+        // refreshed and reconnected, the message was delayed past the start
+        // of a new battle... whatever the specific cause), so just drop it
+        // rather than guessing how to force-fit it onto the current battle.
         const BATTLE_SCOPED = { action: 1, charge_sync: 1, result: 1, fight_end: 1 };
         if (BATTLE_SCOPED[msg.msg] && msg.battleId !== _battleId) {
-            console.warn('[pvp] 丢弃battleId不匹配的消息:', msg.msg, msg.battleId, '当前=', _battleId);
+            console.warn('[pvp] dropping message with mismatched battleId:', msg.msg, msg.battleId, 'current=', _battleId);
             return;
         }
 
         switch (msg.msg) {
             case 'action': {
-                // correctedT aligns the remote timestamp to local wall-clock
+                // correctedT converts the remote timestamp into its local wall-clock equivalent
                 const correctedT = pvpNet.correctRemote(msg.t);
 
                 switch (msg.type) {
                     case 'charge_start':
                         op.chargeStartT   = correctedT;
                         op.chargeMs       = 0;
-                        // 清掉上一轮蓄力结束时残留的进度值（比如上次松手前是100%），
-                        // 否则新一轮蓄力刚开始的这一帧会先显示上次的残留值，
-                        // 直到下一条 charge_sync 消息（~100ms后）才刷新成真实进度，
-                        // 视觉上就是"先闪一下满条，再跳回真实值继续填"。
+                        // Clear out any leftover progress from the previous
+                        // charge cycle (e.g. it was at 100% right before being
+                        // released) -- otherwise the first frame of the new
+                        // charge would briefly show that stale value until the
+                        // next charge_sync message (~100ms later) refreshes it
+                        // to the real progress, visually flashing a full bar
+                        // before snapping back down.
                         op.chargeProgress = 0;
                         _setPhase(op, 'charging', 0);
                         break;
 
                     case 'charge_release':
                         op.lastChargeMs = msg.chargeMs;
-                        // Use local Date.now() for lastStrikeT so clash detection
-                        // (wallNow - lastStrikeT) stays on one consistent clock.
+                        // Same as elsewhere: use local Date.now() rather than
+                        // correctedT, so clash detection (wallNow - lastStrikeT)
+                        // is computed on one consistent local clock on each
+                        // side, without introducing network clock-sync error.
                         op.lastStrikeT  = Date.now();
                         _setPhase(op, 'strike_out', 16);
 
                         if (pvpNet.role === 'host') {
-                            // Guest attacked → guest=attacker, host=defender
+                            // Guest attacked -> Guest is the attacker, Host (self) is the defender
                             _resolveExchange(msg.chargeMs, b.opponent, b.self);
                         }
                         break;
@@ -509,11 +553,14 @@ const pvpLogic = (() => {
                         break;
 
                     case 'guard_ready':
-                        // 与 charge_release 的 lastStrikeT 处理方式保持一致：
-                        // 使用本地收到消息时的 Date.now()，而不是依赖跨设备时钟
-                        // 同步换算出来的 correctedT。correctRemote 一旦有偏差（哪怕
-                        // 只是几百毫秒），就会让 timeSinceGuard 算出极小值甚至负数，
-                        // 导致对手举盾后无论过去多久，攻击都被误判为弹反。
+                        // Consistent with how charge_release handles lastStrikeT:
+                        // use the local Date.now() at receive time, not
+                        // correctedT derived from cross-device clock sync.
+                        // Any drift in correctRemote -- even just a couple
+                        // hundred ms -- would make timeSinceGuard come out
+                        // tiny or even negative, causing an attack to be
+                        // misjudged as a parry no matter how long the
+                        // opponent had actually been guarding.
                         op.lastGuardReadyT = Date.now();
                         _setPhase(op, 'guard_ready', pvpConfig.guardMaxHoldMs);
                         break;
@@ -548,11 +595,15 @@ const pvpLogic = (() => {
                 if (msg.profile) _opponentProfile = msg.profile;
                 _pendingRematchBattleId = msg.battleId || null;
                 if (_rematchRequestedBySelf) {
-                    // 双方几乎同时点了"再来一局"——以 host 这一端生成的id为准，
-                    // guest 这种情况下用的是上面刚记下的对方提案（不完全可靠，
-                    // 极少数情况下双方仍可能生成不一致；但只要不一致，下一条
-                    // 战斗消息就会被上面的battleId校验直接丢弃并能感知到，
-                    // 不会悄悄算错——这正是这套机制要保证的下限）。
+                    // Both sides hit "rematch" at almost the same time --
+                    // defer to whichever id Host generated. On the Guest side
+                    // this uses the proposal just recorded above (not fully
+                    // bulletproof; in rare cases the two sides could still end
+                    // up with different ids, but as long as they differ, the
+                    // next battle message gets dropped by the battleId check
+                    // above and the mismatch is visible -- never silently
+                    // miscalculated. That's the floor this mechanism is meant
+                    // to guarantee).
                     _rematchRequestedBySelf = false;
                     const battleId = (pvpNet.role === 'host') ? _genBattleId() : _pendingRematchBattleId;
                     pvpNet.send({ msg: 'rematch_accept', profile: _buildLocalProfile(), battleId });
@@ -570,7 +621,7 @@ const pvpLogic = (() => {
         }
     }
 
-    // ── Public API ───────────────────────────────────────────────────
+    // ── Public API ──────────────────────────────────────────────────────
 
     return {
         startPVP(role, opponentProfile, battleId) {
@@ -580,19 +631,22 @@ const pvpLogic = (() => {
             uiPvp.hideResult();
             uiPvp.hideRematchRequest();
 
-            // host 没传 battleId 时自己生成一个新的；guest 必须用传进来的
-            // （从 fight_start / rematch_accept 消息里拿到），不能自己生成，
-            // 否则双方各算各的，battleId 根本对不上。
+            // Host generates a fresh id when none was passed in; Guest must
+            // use the one it was given (from fight_start / rematch_accept) --
+            // it can't generate its own, or the two sides would never agree
+            // on a battleId.
             _battleId = battleId || _genBattleId();
 
-            // 优先用刚传进来的对方资料；没传(比如重赛时内部直接调用)就用上一局
-            // 已经存下来的；两者都没有(比如单设备自测、hello还没收到)才兜底用自己的。
+            // Prefer the opponent profile just passed in; if none was given
+            // (e.g. an internal call during a rematch), fall back to whatever
+            // was saved from the previous battle; if neither is available
+            // (single-device self-testing, or hello hasn't arrived yet), fall
+            // back to the local player's own stats.
             _opponentProfile = opponentProfile || _opponentProfile || _buildLocalProfile();
             const selfProfile = _buildLocalProfile();
 
             state.pvpBattle = {
                 active:   true,
-                paused:   false,
                 role,
                 battleId: _battleId,
                 self:     _makeSideState(selfProfile.maxHp),
@@ -613,14 +667,15 @@ const pvpLogic = (() => {
             ui.switchTab('pvp-battle');
         },
 
-        // 给 pvp_room.js 在连接建立时通过 hello 消息发给对方用的——
-        // 对方拿到这份数据后传进它自己那边的 startPVP(role, opponentProfile, battleId)
+        // Used by pvp_room.js to send to the opponent via the 'hello' message
+        // once a connection is established -- the opponent passes this data
+        // into their own startPVP(role, opponentProfile, battleId)
         getMyCombatProfile() {
             return _buildLocalProfile();
         },
 
-        // 给 pvp_room.js 比对"我们俩是不是在同一场对局里"用，以及发 fight_start
-        // 时附带这个id给 guest
+        // Used by pvp_room.js to check "are we both in the same battle",
+        // and attached to the fight_start message sent to Guest
         getCurrentBattleId() {
             return _battleId;
         },
@@ -635,8 +690,9 @@ const pvpLogic = (() => {
         requestRematch() {
             if (_rematchRequestedBySelf) return;
             _rematchRequestedBySelf = true;
-            // 只有 host 有资格"提案"battleId（host才是判定权威）；guest发起
-            // 请求时不提案，等 host accept 时再统一生成。
+            // Only Host is allowed to "propose" a battleId (Host is the
+            // judgment authority); when Guest initiates the request it
+            // doesn't propose one, and waits for Host to generate it on accept.
             const battleId = (pvpNet.role === 'host') ? _genBattleId() : null;
             if (battleId) _pendingRematchBattleId = battleId;
             pvpNet.send({ msg: 'rematch_request', profile: _buildLocalProfile(), battleId });

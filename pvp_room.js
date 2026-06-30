@@ -1,25 +1,26 @@
-// pvp_room.js - 房间创建/加入，基于房间号（PeerJS 信令，无需手动交换 SDP）
-// 依赖: pvp_net.js, pvp_logic.js (用于 startPVP)
+// pvp_room.js - Room hosting/joining, based on room codes (PeerJS signaling, no manual SDP exchange)
+// Depends on: pvp_net.js, pvp_logic.js (for startPVP)
 
 const pvpRoom = (() => {
-    // ── 房间号 ──────────────────────────────────────────────────────
-    // 6 位数字，足够避免短时间内碰撞，且适合扫码/手输
+    // ── Room code ────────────────────────────────────────────────────────
+    // 6 digits, enough to avoid short-term collisions, and easy to scan/type
 
     function genRoomCode() {
         return String(Math.floor(100000 + Math.random() * 900000));
     }
 
-    // ── 房间号本地记忆（localStorage，刷新/误关页面后用来自动填回） ──
-    // 只是为了不让用户记数字，不代表真的能恢复战斗内部状态——
-    // 战斗状态的恢复/放弃逻辑见下面的 _handleHello。
+    // ── Room code local memory (localStorage, auto-fills it back after a refresh / accidental close) ──
+    // This only saves the user from remembering the number, it does NOT mean
+    // the internal battle state can actually be restored -- the resume/give-up
+    // logic for battle state lives in _handleHello below.
 
     const _LAST_ROOM_KEY = 'pvp_lastRoom';
-    const _LAST_ROOM_MAX_AGE_MS = 20 * 60 * 1000; // 超过20分钟不再自动填，大概率房间已经失效
+    const _LAST_ROOM_MAX_AGE_MS = 20 * 60 * 1000; // Stop auto-filling after 20 minutes, the room has likely expired by then
 
     function _saveLastRoom(role, code) {
         try {
             localStorage.setItem(_LAST_ROOM_KEY, JSON.stringify({ role, code, ts: Date.now() }));
-        } catch (_) { /* localStorage 不可用（隐私模式等）时静默跳过，不影响主流程 */ }
+        } catch (_) { /* Silently skip if localStorage is unavailable (private mode etc.), doesn't affect the main flow */ }
     }
 
     function _loadLastRoom() {
@@ -36,7 +37,7 @@ const pvpRoom = (() => {
         try { localStorage.removeItem(_LAST_ROOM_KEY); } catch (_) {}
     }
 
-    // ── 状态辅助 ──────────────────────────────────────────────────
+    // ── Status helpers ──────────────────────────────────────────────────
 
     function setStatus(text) {
         document.querySelectorAll('.pvp-status-text').forEach(el => {
@@ -50,54 +51,76 @@ const pvpRoom = (() => {
         });
     }
 
-    // ── 对方真实战斗数值（联机时随 hello 消息互相同步：等级 + atk/def/spd/maxHp
-    // + 衍生倍率，详见 pvp_logic.js 的 _buildLocalProfile）。战绩暂时不发。
+    // ── The opponent's real combat stats (synced both ways via the hello
+    // message once connected: level + atk/def/spd/maxHp + derived multipliers,
+    // see _buildLocalProfile in pvp_logic.js). Match history isn't sent yet.
     let _opponentProfile = null;
 
-    // 统一的"开战"入口：startPVP + 切到战斗界面。三处会触发开战的地方
-    // （host 首次连接 / guest 收到 fight_start / hello 探测到对方刷新重进后
-    // host 重新发起）都走这一个函数，避免漏掉某一处忘记传对方资料。
-    // battleId 只有 guest 端需要传（从 fight_start 消息里拿到）；host 端不传，
-    // 让 pvpLogic 自己生成一个新的。
+    // The single unified "start the fight" entry point: startPVP + switch to
+    // the battle tab. All three places that can trigger a fight start (Host's
+    // first connection / Guest receiving fight_start / Host re-initiating
+    // after hello detects the opponent reconnected after a refresh) go
+    // through this one function, so none of them can forget to pass the
+    // opponent's profile. battleId only needs to be passed on the Guest side
+    // (received via the fight_start message); Host doesn't pass one, letting
+    // pvpLogic generate a fresh id itself.
     function _beginBattle(role, battleId) {
         pvpLogic.startPVP(role, _opponentProfile, battleId);
         ui.switchTab('pvp-battle');
     }
 
-    // ── hello 握手：修复"刷新页面后重连，卡在等待开始不动"的问题 ──────
+    // ── hello handshake: decide whether to start a brand new battle ────────
     //
-    // 背景：原来 host 端只在自己 state.pvpBattle.active 为 true 时，把任何新连接
-    // 都当成"短暂断线后的真重连"，直接走 resumeAfterReconnect，不会再发 fight_start。
-    // 但如果对方是刷新/关闭页面后用同一个房间号重新连进来的，它内存里的战斗状态
-    // 已经清空了——既不会收到 fight_start，也没有本地状态可以恢复，于是永远卡在
-    // "已连接主机，等待开始..."。
+    // Background (historical issue, already fixed): in an earlier version,
+    // as long as the Host's own state.pvpBattle.active was true, it treated
+    // any newly-incoming connection as "a genuine reconnect after a brief
+    // drop" and called a function named resumeAfterReconnect to try to
+    // restore the original battle, without sending fight_start again. But if
+    // the other side had actually refreshed/closed the page and reconnected
+    // with the same room code, its in-memory battle state was already wiped
+    // -- it would never receive fight_start, and had no local state to
+    // restore either, so it stayed stuck forever on "Connected to host,
+    // waiting to start...".
     //
-    // 这里不再用"双方各报一个布尔值，猜测状态是否一致"这种弱信号——而是直接
-    // 比对 battleId 这个精确标识：完全一致才算真的是同一场战斗的重连；只要不
-    // 一致（不管具体是刷新、重连时机错位，还是别的没遇到过的情况），统一放弃
-    // 这一局，由 host 重新发起一局全新的对局，不去尝试同步战斗内部细节。
+    // Current approach: that "resume the battle in place" path
+    // (resumeAfterReconnect) has been removed entirely. After a disconnect
+    // the only exit is returning to the lobby (giveUpToLobby) and going
+    // through hostRoom/joinRoom again from scratch -- this hello handshake
+    // only has one job: deciding whether a freshly (re-)established
+    // connection should start a brand new battle. Rather than the weak
+    // signal of "each side reports a boolean and we guess whether state is
+    // consistent", it directly compares the precise battleId identifier:
+    // matching ids mean both sides are genuinely still in the same battle
+    // (e.g. a brief network blip mid-battle where the connection never
+    // truly dropped); any mismatch (whatever the specific cause -- a
+    // refresh, room code reuse, message reordering, or something we haven't
+    // hit yet) is uniformly treated as "the other side just joined fresh",
+    // and Host directly starts a brand new battle without trying to sync any
+    // internal battle details.
     function _handleHello(msg) {
-        // 不管有没有触发"重新开战"都先记下来，包括最常见的"第一次连接，
-        // 双方都没在打"这种情况——如果放在下面的 mismatch 分支里才记，
-        // 正常首次连接根本不会进 if，对方资料就永远收不到。
+        // Record the opponent's profile regardless of whether this triggers
+        // a "restart" -- including the most common case of "first connection,
+        // neither side is fighting yet". If this were only recorded inside
+        // the mismatch branch below, a normal first connection would never
+        // enter that branch and the opponent's profile would never be received.
         if (msg.profile) _opponentProfile = msg.profile;
 
         const localBattleId  = pvpLogic.getCurrentBattleId();
         const remoteBattleId = msg.battleId || null;
-        if (localBattleId === remoteBattleId) return; // 完全一致，不用处理
+        if (localBattleId === remoteBattleId) return; // Exact match, nothing to do
 
         if (localBattleId) pvpLogic.abortToLobby();
         uiPvp.hideDisconnectOverlay();
         setStatus('检测到对方重新进入，正在重新开始新一局...');
 
-        // 只有 host 负责重新发起；guest 被动等 fight_start（走原有那条分支）
+        // Only Host re-initiates; Guest passively waits for fight_start (handled by the existing branch)
         if (pvpNet.role === 'host') {
             _beginBattle('host');
             pvpNet.send({ msg: 'fight_start', battleId: pvpLogic.getCurrentBattleId() });
         }
     }
 
-    // ── 网络回调 ──────────────────────────────────────────────────
+    // ── Network callbacks ──────────────────────────────────────────────────
 
     function _attachNetCallbacks() {
         pvpNet.on.status = (text) => setStatus(text);
@@ -135,9 +158,11 @@ const pvpRoom = (() => {
         pvpNet.on.close = () => {
             const wasBattling = state.pvpBattle && state.pvpBattle.active;
             if (wasBattling) {
-                // 快节奏对战模式——断线就是断线，不尝试恢复当前局。
-                // 弹遮罩告知玩家，由双方重新进入同一房间号开新一局
-                // （房间号已存在 localStorage，对方会自动填回）。
+                // Fast-paced battle mode -- a disconnect is a disconnect, no
+                // attempt to resume the current battle. Show the overlay to
+                // let the player know; both sides rejoin the same room code
+                // to start a new battle (the room code is already saved in
+                // localStorage, so it gets auto-filled back in).
                 pvpLogic.abortToLobby();
                 uiPvp.showDisconnectOverlay();
             } else {
@@ -151,10 +176,10 @@ const pvpRoom = (() => {
         };
     }
 
-    // ── 公开 API ──────────────────────────────────────────────────
+    // ── Public API ──────────────────────────────────────────────────────
 
     return {
-        // 玩家点击"创建房间"
+        // Player clicked "create room"
         async hostRoom(_retriesLeft = 3) {
             setStep('pvp-step-hosting');
             setStatus('正在创建房间...');
@@ -165,7 +190,7 @@ const pvpRoom = (() => {
             try {
                 await pvpNet.hostRoom(code);
 
-                // 房间号展示
+                // Display the room code
                 const codeEl = document.getElementById('pvp-host-code');
                 if (codeEl) codeEl.textContent = code;
 
@@ -174,7 +199,7 @@ const pvpRoom = (() => {
                 setStatus('等待对方输入房间号...');
                 setStep('pvp-step-host-waiting');
             } catch (e) {
-                // 房间号偶发冲突（极小概率）时自动换号重试，不需要用户感知
+                // Occasional room code collisions (very rare) auto-retry with a new code, transparently to the user
                 if (e.type === 'unavailable-id' && _retriesLeft > 0) {
                     pvpNet.close();
                     return this.hostRoom(_retriesLeft - 1);
@@ -183,12 +208,13 @@ const pvpRoom = (() => {
             }
         },
 
-        // 玩家点击"加入房间"
+        // Player clicked "join room"
         showJoinInput() {
             setStep('pvp-step-joining');
 
-            // 如果最近(20分钟内)掉线过、且当时是 guest 身份，自动把房间号填回去，
-            // 不用用户自己回忆/翻聊天记录找数字
+            // If they disconnected recently (within 20 minutes) while acting
+            // as Guest, auto-fill the room code back in -- saves the user
+            // from having to remember/dig up the number themselves
             const last = _loadLastRoom();
             const input = document.getElementById('pvp-room-code-input');
             if (input && last && last.role === 'guest' && !input.value) {
@@ -197,7 +223,7 @@ const pvpRoom = (() => {
             }
         },
 
-        // 扫码或手输房间号后，guest 点击"连接"（也可由扫码回调直接调用）
+        // After scanning or typing a room code, Guest clicks "connect" (can also be called directly from a scan callback)
         async joinRoom(roomCodeOverride) {
             const input = document.getElementById('pvp-room-code-input');
             const roomCode = (roomCodeOverride || (input && input.value) || '').trim();
@@ -213,7 +239,7 @@ const pvpRoom = (() => {
 
             try {
                 await pvpNet.joinRoom(roomCode);
-                // 连接成功后，等待 host 端时钟同步完毕、发出 fight_start
+                // Once connected, wait for Host's clock sync to finish and fight_start to be sent
                 _saveLastRoom('guest', roomCode);
                 setStatus('已连接主机，等待开始...');
             } catch (e) {
@@ -222,12 +248,16 @@ const pvpRoom = (() => {
             }
         },
 
-        // 断线遮罩里点"放弃，返回大厅"——彻底结束本局
+        // Clicking "return to lobby" on the disconnect overlay -- ends the
+        // current battle for good, the only exit / restart entry point
         giveUpToLobby() {
             pvpLogic.abortToLobby();
-            // Null out the close callback BEFORE calling pvpNet.close(), so that
-            // peer.destroy()'s async 'close' event doesn't re-trigger lobby/step logic
-            // and race with the explicit navigation below.
+            // Must null out the close callback before calling pvpNet.close():
+            // peer.destroy() asynchronously fires its own 'close' event, and
+            // if we don't detach it first, that event would re-run the lobby
+            // navigation logic in on.close above, clashing with the explicit
+            // navigation a few lines down (running it twice, state bouncing
+            // back and forth).
             pvpNet.on.close = null;
             pvpNet.close();
             _clearLastRoom();
@@ -237,7 +267,7 @@ const pvpRoom = (() => {
             ui.switchTab('pvp-room');
         },
 
-        // 重置房间状态，回到入口界面
+        // Reset room state, return to the entry screen
         reset() {
             pvpNet.on.close = null;
             pvpNet.close();
