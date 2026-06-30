@@ -15,14 +15,11 @@ const pvpNet = (() => {
     // PeerJS 公共信令服务器配置（仅做信令撮合，不转发游戏数据）
     // 如果默认服务器不稳定，可以换成自建的 PeerServer，把这里的 config 改掉即可。
     const PEER_CONFIG = {
-        host: '0.peerjs.com',
-        port: 443,
-        secure: true,
         debug: 1,
         config: {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
             ]
         }
     };
@@ -280,44 +277,6 @@ const pvpNet = (() => {
                 });
 
                 _peer.on('error', (e) => {
-                    clearTimeout(timeout);
-                    reject(_friendlyPeerError(e));
-                });
-            });
-        },
-
-        // ── 断线重连 ──────────────────────────────────────────────────
-        // 仅 guest 侧需要主动重连：host 的 peer.on('connection') 一直在监听，
-        // 不需要做任何事，等 guest 重新连进来即可。
-        // guest 侧：如果 _peer 还活着（信令连接没断）直接 connect 同一房间号；
-        // 如果 _peer 本身也死了（比如WiFi整体断了一段时间），重新整个建一遍。
-        async reconnect() {
-            if (_role !== 'guest') {
-                throw new Error('host 不需要主动重连，等待对方重新连入即可');
-            }
-            if (!_lastRoomCode) {
-                throw new Error('没有可用的房间号记录，无法重连');
-            }
-
-            if (!_peer || _peer.destroyed || _peer.disconnected) {
-                _peer = _makePeer();
-                await _waitForPeerOpen(_peer);
-            }
-
-            return new Promise((resolve, reject) => {
-                const conn = _peer.connect(_lastRoomCode, { reliable: true, serialization: 'json' });
-
-                const timeout = setTimeout(() => {
-                    reject(new Error('重连超时，请确认对方仍在等待'));
-                }, PEER_OPEN_TIMEOUT_MS);
-
-                conn.on('open', () => {
-                    clearTimeout(timeout);
-                    _attachConn(conn);
-                    resolve();
-                });
-
-                conn.on('error', (e) => {
                     clearTimeout(timeout);
                     reject(_friendlyPeerError(e));
                 });

@@ -111,15 +111,6 @@ const pvpRoom = (() => {
         };
 
         pvpNet.on.open = () => {
-            // 战斗已经在进行中 → 这是断线重连恢复，不是第一次开始
-            if (state.pvpBattle && state.pvpBattle.active) {
-                pvpLogic.resumeAfterReconnect();
-                uiPvp.hideDisconnectOverlay();
-                setStatus('已重新连接');
-                return;
-            }
-
-            // 第一次建立连接：时钟同步完成(host侧)，或数据通道打开(guest侧等待answer之后)
             setStatus('已连接，等待开始...');
             setStep('pvp-step-ready');
 
@@ -142,16 +133,14 @@ const pvpRoom = (() => {
         };
 
         pvpNet.on.close = () => {
-			console.log('[pvp] NETWORK CLOSE 触发了, wasBattling=', state.pvpBattle && state.pvpBattle.active);
             const wasBattling = state.pvpBattle && state.pvpBattle.active;
-
             if (wasBattling) {
-                // 对战中掉线：冻结战斗状态，留在战斗界面，弹出断线遮罩
-                // （而不是直接退回房间界面——避免战斗中突然被切走界面造成困惑）
-                pvpLogic.pauseForDisconnect();
-                uiPvp.showDisconnectOverlay(pvpNet.role);
+                // 快节奏对战模式——断线就是断线，不尝试恢复当前局。
+                // 弹遮罩告知玩家，由双方重新进入同一房间号开新一局
+                // （房间号已存在 localStorage，对方会自动填回）。
+                pvpLogic.abortToLobby();
+                uiPvp.showDisconnectOverlay();
             } else {
-                // 还没开打就掉线（建连阶段失败/对方提前退出）：回到入口
                 setStatus('连接断开');
                 setStep('pvp-step-entry');
             }
@@ -233,23 +222,7 @@ const pvpRoom = (() => {
             }
         },
 
-        // 断线遮罩里点"重新连接"（仅 guest 可用，host 是被动等待）
-        async attemptReconnect() {
-            setStatus('正在重新连接...');
-
-            try {
-                await pvpNet.reconnect();
-                // 成功后 pvpNet.reconnect() 的 resolve 即代表连接已建立；
-                // guest 这一侧的 on.open 不会被底层触发（既有设计），这里直接手动恢复
-                pvpLogic.resumeAfterReconnect();
-                uiPvp.hideDisconnectOverlay();
-                setStatus('已重新连接');
-            } catch (e) {
-                setStatus(`重连失败: ${e.message}`);
-            }
-        },
-
-        // 断线遮罩里点"放弃，返回大厅"——彻底结束本局，不再尝试重连
+        // 断线遮罩里点"放弃，返回大厅"——彻底结束本局
         giveUpToLobby() {
             pvpLogic.abortToLobby();
             // Null out the close callback BEFORE calling pvpNet.close(), so that

@@ -257,22 +257,9 @@ const uiPvp = (() => {
         },
 
         // 断线遮罩：host 只能被动等待（自己的peer监听是持续的），guest 可以主动重连
-        showDisconnectOverlay(role) {
+        showDisconnectOverlay() {
             const overlay = document.getElementById('pvp-disconnect-overlay');
-            if (!overlay) return;
-
-            const titleEl = document.getElementById('pvp-disconnect-title');
-            const reconnectBtn = document.getElementById('pvp-btn-reconnect');
-
-            if (role === 'guest') {
-                if (titleEl) titleEl.textContent = '⚠️ 连接已断开';
-                if (reconnectBtn) reconnectBtn.classList.remove('hidden');
-            } else {
-                if (titleEl) titleEl.textContent = '⚠️ 对方已断开，等待重新连接...';
-                if (reconnectBtn) reconnectBtn.classList.add('hidden');
-            }
-
-            overlay.classList.remove('hidden');
+            if (overlay) overlay.classList.remove('hidden');
         },
 
         hideDisconnectOverlay() {

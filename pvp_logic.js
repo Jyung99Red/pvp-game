@@ -659,26 +659,5 @@ const pvpLogic = (() => {
             uiPvp.hideResult();
             uiPvp.hideRematchRequest();
         },
-
-        pauseForDisconnect() {
-            if (!state.pvpBattle || !state.pvpBattle.active) return;
-            if (_rAF) { cancelAnimationFrame(_rAF); _rAF = null; }
-            _stopChargeSync();
-            const self = state.pvpBattle.self;
-            if (['charging', 'guard_windup', 'guard_ready'].includes(self.phase)) {
-                _setPhase(self, 'idle', 0);
-                self.chargeMs        = 0;
-                self.chargeStartT    = 0;
-                self.lastGuardReadyT = 0;
-            }
-            state.pvpBattle.paused = true;
-        },
-
-        resumeAfterReconnect() {
-            if (!state.pvpBattle || !state.pvpBattle.active) return;
-            state.pvpBattle.paused = false;
-            _lastTime = performance.now();
-            if (!_rAF) _rAF = requestAnimationFrame(_loop);
-        }
     };
 })();
