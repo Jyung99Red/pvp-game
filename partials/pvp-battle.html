@@ -1,0 +1,147 @@
+<!-- ═══════════════════════════════════════════════════
+     VIEW: PVP Battle
+     ═══════════════════════════════════════════════════ -->
+<div id="view-pvp-battle" class="view-section hidden pvp-battle-view">
+
+    <!-- Opponent panel -->
+    <div class="panel" style="margin-bottom:8px;">
+        <div class="flex-row" style="margin-bottom:6px;">
+            <h3 id="pvp-op-name" style="margin:0;">对手</h3>
+            <span id="pvp-op-phase" style="font-size:12px;color:#f4a261;"></span>
+            <div id="pvp-op-guard-icon" class="hidden" style="font-size:18px;">🛡️</div>
+        </div>
+
+        <!-- Opponent HP -->
+        <div class="bar-wrap" id="pvp-op-hp-wrap">
+            <div id="pvp-op-hp" class="bar-inner hp-bar" style="width:100%;"></div>
+            <div id="pvp-op-hp-txt" class="bar-text">- / -</div>
+        </div>
+
+        <!-- Opponent charge bar (hidden when not charging) -->
+        <div class="bar-wrap pvp-charge-wrap hidden" id="pvp-op-charge-wrap" style="margin-top:4px;">
+            <div id="pvp-op-charge" class="bar-inner" style="width:0%;background:#e76f51;"></div>
+            <div class="bar-text">蓄力</div>
+        </div>
+    </div>
+
+    <!-- Battle arena (visual feedback) -->
+    <div class="battle-arena pvp-arena" id="pvp-arena">
+        <div class="pvp-arena-node">
+            <div class="player-node pvp-weapon-node" id="pvp-op-weapon-icon"></div>
+        </div>
+        <div id="pvp-clash-fx">💥</div>
+        <div class="pvp-arena-node">
+            <div class="player-node pvp-weapon-node" id="pvp-self-weapon-icon"></div>
+        </div>
+    </div>
+
+    <!-- Self panel -->
+    <div class="panel" style="margin-bottom:8px;">
+        <div class="flex-row" style="margin-bottom:6px;">
+            <h3 style="margin:0;">英雄</h3>
+            <span id="pvp-self-phase" style="font-size:12px;color:#48cae4;"></span>
+            <span id="pvp-self-ap" style="color:#48cae4;font-weight:bold;">★★★</span>
+        </div>
+
+        <!-- Self HP -->
+        <div class="bar-wrap" id="pvp-self-hp-wrap">
+            <div id="pvp-self-hp" class="bar-inner hp-bar" style="width:100%;"></div>
+            <div id="pvp-self-hp-txt" class="bar-text">- / -</div>
+        </div>
+
+        <!-- AP recovery bar -->
+        <div class="bar-wrap" style="margin-top:4px;">
+            <div id="pvp-self-ap-bar" class="bar-inner action-bar" style="width:100%;"></div>
+            <div class="bar-text" style="font-size:10px;">行动力恢复</div>
+        </div>
+
+        <!-- 攻击蓄力条：常驻显示、固定占位（调试用）。不再用 hidden 切换显示/隐藏，
+             蓄力开始/结束都不会改变本元素的占位高度，下方按钮位置因此保持固定；
+             以后若移除此条，也不影响其他元素布局。 -->
+        <div class="bar-wrap pvp-charge-wrap" id="pvp-self-charge-wrap" style="margin-top:4px;">
+            <div id="pvp-self-charge" class="bar-inner charge-early" style="width:0%;"></div>
+            <div id="pvp-self-charge-txt" class="bar-text">蓄力 0%</div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="btn-row" style="margin-top:12px;">
+            <button id="pvp-btn-charge"
+                onpointerdown="event.preventDefault(); this.setPointerCapture(event.pointerId); pvpLogic.onChargePress()"
+					onpointerup="console.log('[pvp] UP type=', event.pointerType); pvpLogic.onChargeRelease()"
+					onpointercancel="console.log('[pvp] CANCEL type=', event.pointerType); pvpLogic.onChargeRelease()"
+                onpointerup="pvpLogic.onChargeRelease()"
+                onpointercancel="pvpLogic.onChargeRelease()"
+                oncontextmenu="return false;"
+                style="height:52px;font-size:15px;background:#c1440e;">
+                ⚔️ 攻击<br><small>按住蓄力</small>
+            </button>
+            <button id="pvp-btn-guard"
+                onpointerdown="event.preventDefault(); this.setPointerCapture(event.pointerId); pvpLogic.onGuardPress()"
+                onpointerup="pvpLogic.onGuardRelease()"
+                onpointercancel="pvpLogic.onGuardRelease()"
+                oncontextmenu="return false;"
+                style="height:52px;font-size:15px;background:#1d6a8a;">
+                🛡️ 防御<br><small>按住格挡</small>
+            </button>
+        </div>
+    </div>
+
+    <!-- Log -->
+    <!-- margin-top:auto 把它推到 .pvp-battle-view（flex列、min-height拉满
+         content-area）的最底部，贴着下面的3个tab；5行高度通过 height:80px
+         维持不变，只是位置从"紧跟按钮"改成"靠住tab栏" -->
+    <div id="pvp-log"
+        style="height:80px;overflow:hidden;font-size:11px;color:#888;
+               white-space:pre-line;padding:0 4px;margin-top:auto;">
+    </div>
+
+    <!-- Result overlay -->
+    <div id="pvp-result-overlay" class="hidden"
+        style="position:fixed;inset:0;background:rgba(0,0,0,0.8);
+               display:flex;flex-direction:column;align-items:center;
+               justify-content:center;z-index:999;">
+        <div id="pvp-result-title" style="font-size:36px;font-weight:bold;margin-bottom:24px;">
+        </div>
+        <div class="btn-row" style="gap:12px;">
+            <button id="pvp-btn-rematch" onclick="pvpLogic.requestRematch()"
+                style="background:#0077b6;padding:12px 24px;font-size:15px;">
+                🔄 再来一局
+            </button>
+            <button onclick="pvpRoom.giveUpToLobby()"
+                style="background:#333;padding:12px 24px;font-size:15px;">
+                🏠 回大厅
+            </button>
+        </div>
+
+        <!-- 自己已请求再来一局，等待对方响应 -->
+        <div id="pvp-rematch-waiting" class="hidden" style="margin-top:16px;text-align:center;">
+            <p style="color:#aaa;font-size:13px;">⏳ 已发送请求，等待对方确认...</p>
+        </div>
+
+        <!-- 对方请求再来一局 -->
+        <div id="pvp-rematch-request" class="hidden" style="margin-top:16px;text-align:center;">
+            <p style="color:#aaa;font-size:13px;">对方请求再来一局</p>
+            <button onclick="pvpLogic.acceptRematch()" style="background:#2a9d8f;">
+                ✅ 接受
+            </button>
+        </div>
+    </div>
+
+    <!-- Disconnect overlay：对战中断线时弹出 -->
+    <div id="pvp-disconnect-overlay" class="hidden"
+        style="position:fixed;inset:0;background:rgba(0,0,0,0.85);
+               display:flex;flex-direction:column;align-items:center;
+               justify-content:center;z-index:1000;padding:24px;text-align:center;">
+        <div style="font-size:22px;font-weight:bold;margin-bottom:8px;color:#ffb703;">
+            ⚠️ 连接已断开
+        </div>
+        <div style="color:#aaa;font-size:13px;margin-bottom:16px;">
+            用同一个房间号重新加入，可开始新一局
+        </div>
+        <button onclick="pvpRoom.giveUpToLobby()"
+            style="background:#333;padding:12px 24px;font-size:15px;">
+            🏠 返回大厅
+        </button>
+    </div>
+
+</div>

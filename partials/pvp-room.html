@@ -1,0 +1,97 @@
+<!-- ═══════════════════════════════════════════════════
+     VIEW: PVP Room
+     ═══════════════════════════════════════════════════ -->
+<div id="view-pvp-room" class="view-section hidden">
+
+    <!-- Step: entry (choose host or join) -->
+    <div class="pvp-step" id="pvp-step-entry">
+        <div class="panel">
+            <h2>⚔️ PVP 对战</h2>
+            <p style="color:#aaa;font-size:13px;margin-bottom:12px;">
+                双方需联网（不必同一 Wi-Fi），扫码或输房间号即可连接
+            </p>
+            <div class="btn-row">
+                <button onclick="pvpRoom.hostRoom()" style="height:52px;font-size:15px;">
+                    🏠 创建房间
+                </button>
+                <button onclick="pvpRoom.showJoinInput()" style="height:52px;font-size:15px;background:#2d6a4f;">
+                    🔗 加入房间
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step: host — creating -->
+    <div class="pvp-step hidden" id="pvp-step-hosting">
+        <div class="panel" style="text-align:center;">
+            <h3>🏠 创建中...</h3>
+            <div class="pvp-status-text" style="color:#aaa;font-size:12px;margin:8px 0;"></div>
+        </div>
+    </div>
+
+    <!-- Step: host — show room code, wait for guest -->
+    <div class="pvp-step hidden" id="pvp-step-host-waiting">
+        <div class="panel">
+            <h3>🏠 等待对方加入</h3>
+
+            <p style="font-size:12px;color:#aaa;text-align:center;">
+                把下面的房间号告诉对方
+            </p>
+
+            <!-- 房间号展示 -->
+            <div id="pvp-host-code"
+                style="text-align:center;font-size:36px;font-weight:bold;letter-spacing:6px;
+                       color:#fff;background:#1a1a2e;border:1px solid var(--border);
+                       border-radius:6px;padding:16px 0;margin-top:8px;">
+            </div>
+
+            <div class="btn-row" style="margin-top:12px;">
+                <button onclick="pvpRoom.reset()" style="background:#333;">取消</button>
+            </div>
+            <div class="pvp-status-text" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <!-- Step: guest — input room code -->
+    <div class="pvp-step hidden" id="pvp-step-joining">
+        <div class="panel">
+            <h3>🔗 加入房间</h3>
+
+            <p style="font-size:12px;color:#aaa;margin-bottom:6px;">
+                输入对方屏幕上显示的房间号：
+            </p>
+            <input id="pvp-room-code-input" type="tel" inputmode="numeric" placeholder="6位房间号" autofocus
+                style="width:100%;font-size:20px;text-align:center;letter-spacing:4px;
+                       background:#0d0d1a;color:#fff;border:1px solid var(--border);
+                       border-radius:4px;padding:8px;">
+
+            <div class="btn-row" style="margin-top:8px;">
+                <button onclick="pvpRoom.joinRoom()" style="background:#0077b6;">
+                    🔗 连接
+                </button>
+                <button onclick="pvpRoom.reset()" style="background:#333;flex:0.4;">
+                    取消
+                </button>
+            </div>
+            <div class="pvp-status-text" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
+        </div>
+    </div>
+
+    <!-- Step: guest — connecting -->
+    <div class="pvp-step hidden" id="pvp-step-joining-wait">
+        <div class="panel" style="text-align:center;">
+            <h3>🔗 正在连接...</h3>
+            <div class="pvp-status-text" style="color:#aaa;font-size:12px;margin:8px 0;"></div>
+            <button onclick="pvpRoom.reset()" style="background:#333;margin-top:8px;">取消</button>
+        </div>
+    </div>
+
+    <!-- Step: both ready -->
+    <div class="pvp-step hidden" id="pvp-step-ready">
+        <div class="panel" style="text-align:center;">
+            <h3>✅ 已连接</h3>
+            <p style="color:#aaa;font-size:13px;">等待战斗开始...</p>
+        </div>
+    </div>
+
+</div>
