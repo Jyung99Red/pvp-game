@@ -10,6 +10,8 @@ const battle = {
     rAF: null,
 
     startFight(enemyKey) {
+        this._clearShieldWindup(); // 清理上一场遗留的举盾计时器，避免跨战斗残留触发
+
         const eData = content.enemies[enemyKey];
         const firstAct = Math.random() < 0.5 ? 'act1' : 'act2';
         const isFirst = state.world.currentFightIndex === 0;
