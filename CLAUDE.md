@@ -3,7 +3,7 @@
 ## Line endings
 
 This repo's files use **CRLF** (Windows) line endings — the project is
-developed on Windows (see `build.py` / `serve.bat`). Only `save.js` and
+developed on Windows. Only `save.js` and
 `structure.md` are LF; everything else is CRLF. Preserve this; don't
 convert the repo to LF.
 

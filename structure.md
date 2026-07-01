@@ -31,9 +31,8 @@ PVP 是独立的新战斗系统,复用玩家属性与装备数值(`player.js` / 
 - 结果通过 `result` 消息广播给 Guest
 - Guest 只渲染,从不自行判定
 
-> 代码注释语言：`pvp_logic.js` / `pvp_net.js` / `pvp_room.js` 三个文件的注释
-> 已统一改成英文；游戏内显示给玩家的状态文案、日志文案(`status`、`logText`
-> 等字符串字面量)保持中文不变。
+> 代码注释语言：全部 `.js` 文件的注释已统一改成英文；游戏内显示给玩家的
+> 状态文案、日志文案(`status`、`logText` 等字符串字面量)保持中文不变。
 
 ---
 
@@ -366,35 +365,6 @@ correctRemote(remote_t) = remote_t - clockOffset
 
 ## 近期变更记录
 
-- 移除"断线后原地重连恢复战斗"的旧机制，改为 hello + battleId 判断是否
-  开新一局；断线统一走"返回大厅"。
-- 删除死代码：`pvpConfig.minChargeDmg`/`maxChargeDmg`/`baseAtk`、
-  `phase` 的 `'parry'`/`'blocked'` 取值(及对应死分支/死标签)、
-  `pvpNet.sendAction()`、`pvpNet._lastRoomCode`/`lastRoomCode` getter、
-  `state.pvpBattle.paused`。
-- `pvp_logic.js` / `pvp_net.js` / `pvp_room.js` 三个文件的代码注释统一改为
-  英文；游戏内中文文案不变。
-- 新增"蓄力被打断"机制：防御方在 `charging` 状态下被命中（且未触发拼刀/
-  弹反/格挡）视为 `exchange:'interrupt'`，按普通命中公式扣血，并叠加
-  `interruptStunMs`(250ms) 硬直把对方踢出蓄力；蓄力作废，已扣的 AP 不退还。
-  对应改动：`pvpConfig.interruptStunMs`、`_resolveExchange` 新增
-  `isInterrupt` 分支、`ui_pvp.js: playExchangeFx` 新增 `'interrupt'` 特效
-  分支（挨刀 + 受挫缩小）。
-- 数值调整：`strikeRecoveryMs` 800→300ms、`clashRecoveryMs` 400→600ms、
-  `guardMaxHoldMs` 3000→2000ms、`parryStunMs` 600→1000ms。
-- PVP 界面布局：`pvp-log` 改为贴住底部 3 个 tab(基地/战斗/PVP)，靠
-  `.pvp-battle-view`(flex 列 + `min-height:100%`)+ `#pvp-log{margin-top:auto}`
-  实现，仍保持 5 行(`height:80px`)高度；底部 nav 三个 tab 调高
-  (`.nav-btn` padding 13px→18px，字号 13→14px)；AP 恢复条样式从蓝色
-  `attack-bar` 换成黄色 `action-bar`。
-- 删除 `build.py`(拖拽合并脚本)和 `serve.bat`(Windows 本地开发服务器脚本)，
-  不再需要构建/打包步骤。
-- `index.html` 里原本内联的 4 个 view(`view-base`/`view-battle`/
-  `view-pvp-room`/`view-pvp-battle`)拆分到 `partials/*.html`，启动时通过
-  `fetch()` 并行取回、注入到对应的 `mount-*` 占位 div，全部注入完成后才
-  调用 `ui.init()`；跨模态的公共弹窗(`inventory-overlay`/`modal-overlay`/
-  `smithy-overlay`)不属于任何单一 view，仍留在 `index.html` 里。原本内联
-  在 `<head>` 里的 PVP 按钮触摸样式也移进了 `style.css`。
-- `ui_pvp.js` 的代码注释也统一改为英文，跟 `pvp_logic.js`/`pvp_net.js`/
-  `pvp_room.js` 保持一致；游戏内文案(相位标签、蓄力百分比、胜负提示等)
-  仍是中文，未受影响。
+历史变更条目已并入各自的架构章节（断线设计见 Hard Constraints；蓄力打断
+机制见"战斗机制"；注释语言范围见文首约定；partials 拆分/构建工具移除见
+File Map），不在这里重复记录演变过程。更细的逐次改动请查 git log。
