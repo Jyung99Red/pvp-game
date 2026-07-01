@@ -67,8 +67,6 @@
         <div class="btn-row" style="margin-top:12px;">
             <button id="pvp-btn-charge"
                 onpointerdown="event.preventDefault(); this.setPointerCapture(event.pointerId); pvpLogic.onChargePress()"
-					onpointerup="console.log('[pvp] UP type=', event.pointerType); pvpLogic.onChargeRelease()"
-					onpointercancel="console.log('[pvp] CANCEL type=', event.pointerType); pvpLogic.onChargeRelease()"
                 onpointerup="pvpLogic.onChargeRelease()"
                 onpointercancel="pvpLogic.onChargeRelease()"
                 oncontextmenu="return false;"

@@ -35,6 +35,7 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
    内容本身没变多，只是log的位置从"按钮下方一小段"挪到"贴住tab栏上沿"，
    视觉上整组面板会比之前的版本稍微往下挪一点。 */
 .pvp-battle-view { display: flex; flex-direction: column; min-height: 100%; }
+.pvp-battle-view > .panel:first-child { margin-top: 24px; }
 
 /* Bars */
 .bar-wrap { background: #000; height: 18px; border-radius: 4px; overflow: hidden; margin: 5px 0; position: relative; border: 1px solid #111; }
@@ -334,7 +335,7 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
    复用 .player-node（圆形底座+举盾辉光环 .shield-windup/.shield-ready 状态），
    只覆盖尺寸/光标，并补上 .player-node 本身缺的 position:relative
    （.slashed::after 等特效靠它定位，否则会跑去相对 .battle-arena 居中）。 */
-.pvp-arena { justify-content: space-around; }
+.pvp-arena { justify-content: space-around; height: 190px; }
 .pvp-arena-node { display: flex; justify-content: center; }
 .pvp-weapon-node {
     width: 56px; height: 56px;
