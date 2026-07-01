@@ -522,7 +522,7 @@ const pvpLogic = (() => {
         // refreshed and reconnected, the message was delayed past the start
         // of a new battle... whatever the specific cause), so just drop it
         // rather than guessing how to force-fit it onto the current battle.
-        const BATTLE_SCOPED = { action: 1, charge_sync: 1, result: 1, fight_end: 1 };
+        const BATTLE_SCOPED = { action: 1, charge_sync: 1, result: 1, fight_end: 1, surrender: 1 };
         if (BATTLE_SCOPED[msg.msg] && msg.battleId !== _battleId) {
             console.warn('[pvp] dropping message with mismatched battleId:', msg.msg, msg.battleId, 'current=', _battleId);
             return;
@@ -604,6 +604,13 @@ const pvpLogic = (() => {
                 if (pvpNet.role === 'guest') {
                     _onFightEnd(msg.winner === 'guest' ? 'self' : 'opponent');
                 }
+                break;
+
+            // Unlike fight_end, this isn't a Host-arbitrated judgment --
+            // whoever surrenders unilaterally declares themselves the
+            // loser, so both Host and Guest handle it the same way here.
+            case 'surrender':
+                _onFightEnd('self');
                 break;
 
             case 'rematch_request':
@@ -701,6 +708,14 @@ const pvpLogic = (() => {
         onChargeRelease() { _onChargeRelease(Date.now()); _stopChargeSync();  },
         onGuardPress()    { _onGuardPress(Date.now());    },
         onGuardRelease()  { _onGuardRelease();            },
+
+        surrender() {
+            const b = state.pvpBattle;
+            if (!b || !b.active) return;
+            if (!confirm('确定要投降认输吗？这场对战将直接判负')) return;
+            _sendBattleMsg({ msg: 'surrender' });
+            _onFightEnd('opponent');
+        },
 
         requestRematch() {
             if (_rematchRequestedBySelf) return;
