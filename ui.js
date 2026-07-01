@@ -11,7 +11,7 @@ const GRID_TOTAL = GRID_COLS * GRID_ROWS;
 
 const ui = {
     init() {
-        save.load();   // 先把本地存档读回 state，再渲染UI
+        save.load();   // Read the local save back into state first, then render the UI
 
         // Build area list
         let areaHtml = '';
@@ -23,7 +23,7 @@ const ui = {
         // Build building list
         this.updateBuildingList();
 
-        // 绑定战斗按钮事件
+        // Bind battle button events
         document.getElementById('btn-act-left').onclick    = () => battle.playerAction('left');
         document.getElementById('btn-act-right').onclick   = () => battle.playerAction('right');
         document.getElementById('btn-skill').onclick       = () => battle.playerSkill();
@@ -63,16 +63,16 @@ const ui = {
     closeAreaModal() { document.getElementById('area-overlay').classList.remove('open'); },
 	
 	openInventoryModal() {
-        this.updateEquip(); // 打开前刷新最新背包数据
+        this.updateEquip(); // Refresh latest inventory data before opening
         
         const overlay = document.getElementById('inventory-overlay');
         const box = document.getElementById('inventory-box');
         const anchorPanel = document.getElementById('player-equip-panel');
         
-        // 动态计算锚点面板的底部位置
+        // Dynamically compute the anchor panel's bottom position
         if (anchorPanel) {
             const rect = anchorPanel.getBoundingClientRect();
-            // 让背包盒子的顶部外边距 = 面板的底部坐标 + 8px的间隙
+            // Set the inventory box's top margin = panel bottom + an 8px gap
             box.style.marginTop = `${rect.bottom + 8}px`;
         }
         
@@ -88,10 +88,10 @@ const ui = {
     },
     closeBuildingModal() { document.getElementById('building-overlay').classList.remove('open'); },
 
-    // 唯一的 startExplore，包含了关闭弹窗的逻辑
+    // The one and only startExplore; includes the modal-closing logic
     startExplore(areaKey) {
         if (state.world.status !== 'base') return;
-        this.closeAreaModal(); // 开始战斗前关闭弹窗
+        this.closeAreaModal(); // Close the modal before starting the fight
         state.world.currentArea = areaKey;
         state.world.currentFightIndex = 0;
         battle.startFight(content.areas[areaKey].encounters[0]);
@@ -100,14 +100,14 @@ const ui = {
     switchTab(tabId) {
         if (state.battle.active && tabId !== 'battle') { ui.log("正在战斗中！"); return; }
 
-        // PVP 对战中或正在建立连接时，禁止切到其他主tab，避免误触导致连接异常中断
-        // pvp-battle 本身不是 nav-btn，只能通过代码跳转，所以这里拦截的是"离开"动作
+        // While a PVP match is active or a connection is being set up, block switching to other main tabs to avoid accidental taps breaking the connection
+        // pvp-battle itself isn't a nav-btn (only reachable via code), so what's intercepted here is the "leave" action
         if (state.pvpBattle && state.pvpBattle.active && tabId !== 'pvp-battle') {
             ui.log("PVP 对战中，无法切换界面！");
             return;
         }
         if (pvpNet.role && !(state.pvpBattle && state.pvpBattle.active) && tabId !== 'pvp-room' && tabId !== 'pvp-battle') {
-            // 已经发起/加入房间、还没正式开打（在等待对方连接的中间状态）
+            // Already hosted/joined a room but the match hasn't started yet (mid-state waiting for the opponent's connection)
             ui.log("正在建立PVP连接，请先取消或等待连接完成");
             return;
         }
@@ -392,13 +392,13 @@ const ui = {
         const cost = h.level * 100;
         const canLvUp = state.inventory.exp >= cost;
         
-        // 1. 单独渲染标题栏旁边的 等级与经验值
+        // 1. Render the level and exp next to the title bar
         const levelInfoEl = document.getElementById('player-level-info');
         if (levelInfoEl) {
             levelInfoEl.innerHTML = `<b style="color:#eee;">Lv.${h.level}</b> (${state.inventory.exp}/${cost})`;
         }
 
-        // 2. 单独渲染下面的 攻击/防御/速度 属性
+        // 2. Render the atk/def/spd stats below
         const statsEl = document.getElementById('player-display-stats');
         if (statsEl) {
             statsEl.innerHTML = `⚔️ ${s.atk} &nbsp; 🛡️ ${s.def} &nbsp; 🧠 ${s.int} &nbsp; ⚡ ${Number(s.spd).toFixed(1)}`;

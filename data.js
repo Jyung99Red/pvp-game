@@ -91,7 +91,7 @@ const content = {
         wisdom_ring: {
             id: 'wisdom_ring', name: "智慧之环", type: "accessory", icon: "🧿",
             slots: ['accessory'],
-            stats: { atk: 0, def: 0, int: 10 }, // 加 10 点 int
+            stats: { atk: 0, def: 0, int: 10 }, // +10 int
             effects: [],
             desc: "提升洞察力，显著延长完美拼刀与弹反的判定窗口"
         }

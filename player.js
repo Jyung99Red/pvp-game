@@ -16,15 +16,15 @@ const player = {
     getActionSpeedMultiplier() {
         let mult = 1.0;
         
-        // 1. 基础速度换算：默认 10 速度为标准倍率 1.0，20 速度即可让时间减半(倍率 0.5)
+        // 1. Base speed conversion: 10 spd = baseline 1.0x, 20 spd halves the time (0.5x)
         const spd = this.getStats().spd || 10;
         mult *= (10 / spd);
 
-        // 2. 负面状态 (如铁剑迟缓)
+        // 2. Negative status effects (e.g. iron sword slow)
         this.getEquippedEffects('action_speed_penalty').forEach(e => { mult *= (1 + e.value); });
-        // 3. 饰品被动 (如疾速戒指)
+        // 3. Accessory passives (e.g. swift ring)
         this.getEquippedEffects('passive_speed_boost').forEach(e => { mult *= (1 - e.value); });
-        // 4. 临时 Buff 
+        // 4. Temporary buffs
         const now = Date.now();
         state.battle.activeBuffs.forEach(b => {
             if (b.type === 'action_speed_boost' && b.expiresAt > now) mult *= (1 - b.value);
@@ -47,7 +47,7 @@ const player = {
             if (item) { 
                 stats.atk += (item.stats.atk || 0); 
                 stats.def += (item.stats.def || 0); 
-                // 若以后装备带 spd 属性也能生效
+                // Also applies if gear ever carries an spd stat
                 if (item.stats.spd) stats.spd += item.stats.spd;
 				if (item.stats.int) stats.int += item.stats.int;
             }
@@ -58,7 +58,7 @@ const player = {
 
     takeDamage(amount) {
         const def = this.getStats().def;
-        // 采用全新的动态护甲比例公式
+        // Dynamic armor-ratio damage formula
         const actual = Math.max(1, Math.floor((amount * amount) / (amount + def * 0.5)));
         
         state.player.currentHp = Math.max(0, state.player.currentHp - actual);
@@ -83,17 +83,17 @@ const player = {
         state.player.baseStats.spd += 0.2; 
         state.player.baseStats.int += 1;
         
-        // 升级后血量回满
+        // Full heal on level up
         state.player.currentHp = this.getStats().maxHp;
     },
 
-    // 正常的玩家升级操作（检查经验 -> 扣除经验 -> 加属性 -> 刷新UI）
+    // Standard level-up flow (check exp -> deduct exp -> apply stats -> refresh UI)
     levelUp() {
         const cost = state.player.level * 100;
         if (state.inventory.exp >= cost) {
             state.inventory.exp -= cost;
             
-            this._applyLevelStats(); // 调用核心升级方法
+            this._applyLevelStats(); // Invoke the core level-up routine
             
             ui.log(`↑ 角色升级至 Lv.${state.player.level}！`);
             ui.updateBase();

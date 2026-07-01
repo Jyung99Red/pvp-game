@@ -1,32 +1,32 @@
-// icons.js - SVG图标映射表与渲染helper
-// symbol id 对应 icons/ 文件夹结构：
+// icons.js - SVG icon lookup table and render helpers
+// symbol id mirrors the icons/ folder structure:
 //   icons/weapons/weapon-atk.svg → id = "weapons/weapon-atk"
 //   icons/fx/slash.svg           → id = "fx/slash"
 
-// ── 图标映射表 ──
-// key = 代码里用的名称，value = SVG symbol id
+// -- Icon lookup table --
+// key = the name used in code, value = the SVG symbol id
 const ICONS = {
-    // 【 Data 类 - 实体与装备 】
-    'weapon-atk': 'data/weapon-atk',      // 攻击型武器
-    'shield-def': 'data/shield-def',      // 防守型盾牌
-    'goblin': 'data/goblin',              // 哥布林头像
+    // [ Data - entities & gear ]
+    'weapon-atk': 'data/weapon-atk',      // Offensive weapon
+    'shield-def': 'data/shield-def',      // Defensive shield
+    'goblin': 'data/goblin',              // Goblin sprite
 
-    // 【 UI 类 - 界面与交互 】
-    'escape': 'ui/escape',                // 撤离/逃跑按钮
-    'monster-atk': 'ui/monster-atk',      // 敌方攻击预警节点图标
+    // [ UI - interface & interaction ]
+    'escape': 'ui/escape',                // Retreat/flee button
+    'monster-atk': 'ui/monster-atk',      // Enemy attack-warning node icon
 
-    // 【 FX 类 - 战斗特效 】
-    'fx-slash': 'fx/slash',               // 斩击特效
+    // [ FX - battle effects ]
+    'fx-slash': 'fx/slash',               // Slash effect
 };
 
 
-// ── 渲染helper ──
+// -- Render helpers --
 
 /**
- * 生成内联 SVG <use> 标签（用于嵌入HTML）
- * @param {string} key     - ICONS 里的 key
- * @param {string} cls     - 额外的 CSS class（可选）
- * @returns {string}       - HTML字符串
+ * Build an inline SVG <use> tag (for embedding in HTML)
+ * @param {string} key     - a key from ICONS
+ * @param {string} cls     - extra CSS class (optional)
+ * @returns {string}       - HTML string
  */
 function renderIcon(key, cls = '') {
     const id = ICONS[key];
@@ -36,25 +36,25 @@ function renderIcon(key, cls = '') {
 }
 
 /**
- * 把图标挂载到现有DOM元素上
- * @param {HTMLElement} el  - 目标元素
- * @param {string} key      - ICONS 里的 key
- * @param {string} cls      - 额外 CSS class（可选）
+ * Mount an icon onto an existing DOM element
+ * @param {HTMLElement} el  - target element
+ * @param {string} key      - a key from ICONS
+ * @param {string} cls      - extra CSS class (optional)
  */
 function setIcon(el, key, cls = '') {
     if (!el) return;
     el.innerHTML = renderIcon(key, cls);
 }
 
-// ── Dev-mode SVG sprite loader ──
-// 在打包版（game_build.html）里，symbol 已内联 → 直接跳过。
-// 在开发模式（index.html + 本地服务器）里，自动 fetch 各 SVG 文件并注入。
+// -- Dev-mode SVG sprite loader --
+// In a bundled build (game_build.html), symbols are already inlined -> skip.
+// In dev mode (index.html + local server), fetch each SVG file and inject it automatically.
 function _loadSVGSprite() {
-    // 取 ICONS 里第一个 id，检查 symbol 是否已存在（打包模式）
+    // Take the first id from ICONS and check whether its symbol already exists (bundled mode)
     const firstId = Object.values(ICONS)[0];
     if (!firstId || document.querySelector(`symbol[id="${firstId}"]`)) return;
 
-    // 从 ICONS 里收集所有需要 fetch 的 SVG（去重）
+    // Collect all the SVGs that need fetching from ICONS (deduped)
     const seen = new Set();
     const sources = [];
     for (const id of Object.values(ICONS)) {
@@ -64,7 +64,7 @@ function _loadSVGSprite() {
         }
     }
 
-    // 创建隐藏 sprite 容器，插到 body 最前面
+    // Create a hidden sprite container and insert it at the very start of body
     const sprite = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     sprite.setAttribute('style', 'display:none');
     sprite.setAttribute('aria-hidden', 'true');
