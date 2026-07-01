@@ -492,3 +492,16 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
     vertical-align: middle;
     margin-right: 2px;
 }
+
+/* PVP 蓄力/格挡按钮需要长按不放，必须禁用浏览器默认的
+   文本选中/长按菜单/触摸滚动手势，否则长按会触发系统复制弹窗 */
+#pvp-btn-charge,
+#pvp-btn-guard,
+#pvp-btn-charge *,
+#pvp-btn-guard * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;  /* iOS 长按弹出菜单 */
+    touch-action: none;            /* 禁用触摸滚动/缩放等默认手势 */
+    -webkit-tap-highlight-color: transparent;
+}

@@ -46,7 +46,7 @@ PVP 是独立的新战斗系统,复用玩家属性与装备数值(`player.js` / 
 | `tick.js` / `ui.js` | 主循环与视图切换,PVP 和单人战斗共用 |
 | `fx.js` / `icons.js` | 共享特效与图标库,单人战斗和 PVP 都在用 |
 | `battle.js` / `ui_battle.js` | 单人战斗,与 PVP 视图通过 tab 切换共存 |
-| `build.py` / `serve.bat` | 构建/开发服务脚本 |
+| `partials/*.html` | 从 `index.html` 拆出的 4 个 view 片段(base/battle/pvp-room/pvp-battle),启动时由 `index.html` 里的 `fetch()` 注入 |
 | `pvp_logic.js` | 战斗引擎：状态机、伤害公式、Host 判定、网络消息处理；`pvpConfig` 定义在本文件顶部 |
 | `pvp_net.js` | PeerJS 连接、时钟同步、消息收发 |
 | `pvp_room.js` | 房间创建/加入的 UI 流程、hello 握手判断是否要开新一局 |
@@ -387,3 +387,14 @@ correctRemote(remote_t) = remote_t - clockOffset
   实现，仍保持 5 行(`height:80px`)高度；底部 nav 三个 tab 调高
   (`.nav-btn` padding 13px→18px，字号 13→14px)；AP 恢复条样式从蓝色
   `attack-bar` 换成黄色 `action-bar`。
+- 删除 `build.py`(拖拽合并脚本)和 `serve.bat`(Windows 本地开发服务器脚本)，
+  不再需要构建/打包步骤。
+- `index.html` 里原本内联的 4 个 view(`view-base`/`view-battle`/
+  `view-pvp-room`/`view-pvp-battle`)拆分到 `partials/*.html`，启动时通过
+  `fetch()` 并行取回、注入到对应的 `mount-*` 占位 div，全部注入完成后才
+  调用 `ui.init()`；跨模态的公共弹窗(`inventory-overlay`/`modal-overlay`/
+  `smithy-overlay`)不属于任何单一 view，仍留在 `index.html` 里。原本内联
+  在 `<head>` 里的 PVP 按钮触摸样式也移进了 `style.css`。
+- `ui_pvp.js` 的代码注释也统一改为英文，跟 `pvp_logic.js`/`pvp_net.js`/
+  `pvp_room.js` 保持一致；游戏内文案(相位标签、蓄力百分比、胜负提示等)
+  仍是中文，未受影响。
