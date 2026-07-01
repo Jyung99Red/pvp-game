@@ -99,6 +99,29 @@ const fx = {
         setTimeout(() => { if (el) el.style.transition = ''; }, duration);
     },
 
+    // Charge got interrupted by an incoming hit: snap downward in a few
+    // discrete jumps (transition:none between each, so it reads as a
+    // frame-skipped stutter rather than a smooth motion), then linearly
+    // ease position + color back to the resting pose.
+    pvpChargeInterrupt(el, stutterStepMs = 40, returnMs = 220) {
+        if (!el) return;
+        const DOWN_PX = 10, STEPS = 4;
+        for (let i = 1; i <= STEPS; i++) {
+            setTimeout(() => {
+                if (!el) return;
+                el.style.transition = 'none';
+                el.style.transform = `translateY(${DOWN_PX * (i / STEPS)}px)`;
+            }, stutterStepMs * (i - 1));
+        }
+        setTimeout(() => {
+            if (!el) return;
+            el.style.transition = `transform ${returnMs}ms linear, color ${returnMs}ms linear`;
+            el.style.transform = '';
+            el.style.color = '';
+            setTimeout(() => { if (el) el.style.transition = ''; }, returnMs);
+        }, stutterStepMs * STEPS);
+    },
+
     // Perfect-parry glow / normal-block shrink -- element-direct variants
     parryGlowEl(el, duration = 300)   { this.trigger(el, 'node-parry-glow', duration); },
     guardShrinkEl(el, duration = 300) { this.trigger(el, 'node-guard-shrink', duration); },

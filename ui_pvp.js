@@ -54,12 +54,18 @@ const uiPvp = (() => {
         const prev   = _prevPhase[key];
 
         // While charging: driven continuously; the moment it leaves
-        // 'charging' (whether released manually or auto-fired at 3s),
-        // fire a one-shot ease-out animation back to the resting position
+        // 'charging' it's either a normal release/auto-fire (→ strike_out,
+        // eased back to rest) or an interrupt (→ stunned directly, the
+        // only path that goes charging→stunned — see pvp_logic.js
+        // isInterrupt — so it gets the stutter-down FX instead)
         if (phase === 'charging') {
             fx.pvpChargeIcon(iconEl, chargeProgress);
         } else if (prev === 'charging') {
-            fx.pvpChargeRelease(iconEl);
+            if (phase === 'stunned') {
+                fx.pvpChargeInterrupt(iconEl);
+            } else {
+                fx.pvpChargeRelease(iconEl);
+            }
         }
 
         // Shield glow ring: fires once on entering windup/ready; leaving
