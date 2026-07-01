@@ -23,7 +23,7 @@ const battle = {
             // Charging phase
             enemyPhase: 'charging',
             enemyActionProgress: 0,
-            enemyWindupTimer: 0, enemyRecoveryTimer: 0,
+            enemyWindupTimer: 0, enemyRecoveryTimer: 0, 
             enemyCurrentAct: firstAct,
             enemyChargeDuration: eData.baseMsCharge,
 
