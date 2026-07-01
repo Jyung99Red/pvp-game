@@ -35,10 +35,12 @@ const uiPvp = (() => {
         if (el) el.classList.toggle(cls, on);
     }
 
-    // ── PVP 角色节点视觉 ──
-    // 蓄力图标的transform、举盾辉光环都是"状态切换那一瞬间"触发一次性效果，
-    // 不是每帧重复加同一个class（class已经在身上时reflow会打断正在播的动画）。
-    // 这里记一下上一帧的phase，专门用于边沿检测。
+    // ── PVP fighter node visuals ──
+    // The charge icon transform and shield glow ring are one-shot effects
+    // triggered at the exact moment of a state transition, not re-added
+    // every frame (reflow would interrupt an animation already playing if
+    // the class is re-applied while it's still on the element).
+    // We track the previous frame's phase here purely for edge detection.
     const _prevPhase = { self: null, op: null };
 
     function _weaponNodeEl(key) {
@@ -51,16 +53,18 @@ const uiPvp = (() => {
         const phase  = sideState.phase;
         const prev   = _prevPhase[key];
 
-        // 蓄力中：连续驱动；一旦离开charging（无论是松手还是3秒自动出手），
-        // 触发一次性缓出动画转回原位
+        // While charging: driven continuously; the moment it leaves
+        // 'charging' (whether released manually or auto-fired at 3s),
+        // fire a one-shot ease-out animation back to the resting position
         if (phase === 'charging') {
             fx.pvpChargeIcon(iconEl, chargeProgress);
         } else if (prev === 'charging') {
             fx.pvpChargeRelease(iconEl);
         }
 
-        // 举盾辉光环：进入windup/ready各触发一次；离开(无论是松手取消、
-        // 还是被命中切到stunned/blocked)统一先做一次"取消淡出"清场
+        // Shield glow ring: fires once on entering windup/ready; leaving
+        // it (whether released manually or knocked into stunned/blocked)
+        // always does a one-shot "cancel fade-out" cleanup first
         if (phase === 'guard_windup' && prev !== 'guard_windup') {
             fx.shieldWindupEl(nodeEl, pvpConfig.guardWindupMs);
         } else if (phase === 'guard_ready' && prev !== 'guard_ready') {
@@ -81,7 +85,7 @@ const uiPvp = (() => {
             const s  = b.self;
             const op = b.opponent;
 
-            // ── 角色节点视觉(蓄力图标 / 举盾辉光环) ──
+            // ── Fighter node visuals (charge icon / shield glow ring) ──
             _updateFighterFx('self', s, s.phase === 'charging' ? s.chargeMs / pvpConfig.chargeMaxMs : 0);
             _updateFighterFx('op',   op, op.chargeProgress || 0);
 
@@ -111,9 +115,10 @@ const uiPvp = (() => {
             _setText('pvp-self-hp-txt',  `${s.hp} / ${s.maxHp}`);
             _setText('pvp-self-phase',   _phaseLabel(s.phase));
 
-            // Self charge bar（常驻显示，不再用 hidden 切换可见性——
-            // 该元素固定占位，蓄力开始/结束都不会改变下方按钮的位置；
-            // 非蓄力状态下显示0%，调试用，以后可能移除）
+            // Self charge bar (always shown, no longer toggled via
+            // 'hidden' — this element holds a fixed spot so starting/
+            // ending a charge never shifts the buttons below it; shows
+            // 0% when not charging, for debugging, may be removed later)
             const selfChargeVisible = s.phase === 'charging';
             const progress = selfChargeVisible
                 ? Math.min(s.chargeMs / pvpConfig.chargeMaxMs, 1)
@@ -162,9 +167,10 @@ const uiPvp = (() => {
             }
         },
 
-        // 战斗开始/重开(含rematch)时调用：注入双方武器图标，并清掉上一局
-        // 可能残留的特效class/transform——因为DOM节点在两局之间是复用的，
-        // 不会自动重置。
+        // Called when a battle starts/restarts (including rematch): inject
+        // both fighters' weapon icons, and clear any fx class/transform
+        // left over from the previous battle — the DOM nodes are reused
+        // between battles, so they don't reset themselves.
         initFighters() {
             const opNode   = document.getElementById('pvp-op-weapon-icon');
             const selfNode = document.getElementById('pvp-self-weapon-icon');
@@ -186,17 +192,20 @@ const uiPvp = (() => {
             _prevPhase.op   = null;
         },
 
-        // 判定结果落地那一刻触发对应特效。attackerIsSelf 由调用方(pvp_logic.js)
-        // 翻译好再传进来——host/guest 双方都会调用这同一个方法，
-        // 各自传各自视角下"攻击方是不是自己"。
+        // Fires the corresponding fx the moment a judgment result lands.
+        // attackerIsSelf is already translated by the caller (pvp_logic.js)
+        // before being passed in — both host and guest call this same
+        // method, each passing "is the attacker me?" from their own
+        // perspective.
         playExchangeFx(exchange, attackerIsSelf) {
             const selfNode = document.getElementById('pvp-self-weapon-icon');
             const opNode   = document.getElementById('pvp-op-weapon-icon');
             const attackerEl = attackerIsSelf ? selfNode : opNode;
             const defenderEl = attackerIsSelf ? opNode   : selfNode;
 
-            // 血条 shake：受到实际伤害的一方抖血条 wrap（抖 inner 条会被
-            // overflow:hidden 裁掉，所以挂在外层 wrap 上）
+            // HP bar shake: shake the wrap of whoever actually took damage
+            // (shaking the inner bar gets clipped by overflow:hidden, so
+            // it's applied to the outer wrap instead)
             const selfHpWrap     = 'pvp-self-hp-wrap';
             const opHpWrap       = 'pvp-op-hp-wrap';
             const attackerHpWrap = attackerIsSelf ? selfHpWrap : opHpWrap;
@@ -214,18 +223,18 @@ const uiPvp = (() => {
                     break;
                 case 'blocked':
                     fx.guardShrinkEl(defenderEl);
-                    fx.shake(defenderHpWrap);   // 格挡仍扣血，小幅震动提示
+                    fx.shake(defenderHpWrap);   // blocking still costs HP, small shake as feedback
                     break;
                 case 'parry':
                     fx.parryGlowEl(defenderEl);
                     fx.enemyShrink(attackerEl);
-                    fx.shake(attackerHpWrap);   // 攻击方被反伤
+                    fx.shake(attackerHpWrap);   // attacker takes reflected damage
                     break;
                 case 'clash':
                     fx.triggerId('pvp-clash-fx', 'pvp-clash-flash', 280);
                     fx.enemyShrink(attackerEl);
                     fx.enemyShrink(defenderEl);
-                    fx.shake(attackerHpWrap);   // 双方都扣血
+                    fx.shake(attackerHpWrap);   // both sides take damage
                     fx.shake(defenderHpWrap);
                     break;
             }
@@ -246,7 +255,8 @@ const uiPvp = (() => {
             const overlay = document.getElementById('pvp-result-overlay');
             if (overlay) overlay.classList.add('hidden');
 
-            // 复位"再来一局"相关的子状态，避免带着上一局的残留显示进入下一局
+            // Reset "rematch" sub-state so leftover display from the last
+            // battle doesn't carry into the next one
             const waitEl = document.getElementById('pvp-rematch-waiting');
             if (waitEl) waitEl.classList.add('hidden');
             const btn = document.getElementById('pvp-btn-rematch');
@@ -266,12 +276,14 @@ const uiPvp = (() => {
         showRematchWaiting() {
             const el = document.getElementById('pvp-rematch-waiting');
             if (el) el.classList.remove('hidden');
-            // 自己发起请求后，"再来一局"按钮本身不需要再展示，避免重复点击造成困惑
+            // Once we've sent the request, the "rematch" button itself
+            // shouldn't show anymore, to avoid confusing repeat clicks
             const btn = document.getElementById('pvp-btn-rematch');
             if (btn) btn.classList.add('hidden');
         },
 
-        // 断线遮罩：host 只能被动等待（自己的peer监听是持续的），guest 可以主动重连
+        // Disconnect overlay: host can only passively wait (its own peer
+        // listener stays alive), guest can actively reconnect
         showDisconnectOverlay() {
             const overlay = document.getElementById('pvp-disconnect-overlay');
             if (overlay) overlay.classList.remove('hidden');
@@ -282,4 +294,4 @@ const uiPvp = (() => {
             if (overlay) overlay.classList.add('hidden');
         }
     };
-})();
+})();
