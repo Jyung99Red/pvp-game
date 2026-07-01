@@ -38,6 +38,10 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Bars */
 .bar-wrap { background: #000; height: 18px; border-radius: 4px; overflow: hidden; margin: 5px 0; position: relative; border: 1px solid #111; }
+/* shake 动画会把元素位移出自身范围，overflow:hidden 会裁掉这个位移；
+   挂上 .shake 时临时改成 visible，动画结束后 class 被 fx.shake() 移除，
+   overflow 自动回到 hidden */
+.bar-wrap.shake { overflow: visible; }
 .bar-inner { height: 100%; width: 0%; }
 .hp-bar     { background: linear-gradient(90deg, #9b2226, #dc2f02); transition: width 0.2s ease-out; }
 .action-bar { background: #e9c46a; }

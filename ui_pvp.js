@@ -195,27 +195,38 @@ const uiPvp = (() => {
             const attackerEl = attackerIsSelf ? selfNode : opNode;
             const defenderEl = attackerIsSelf ? opNode   : selfNode;
 
+            // 血条 shake：受到实际伤害的一方抖血条 wrap（抖 inner 条会被
+            // overflow:hidden 裁掉，所以挂在外层 wrap 上）
+            const selfHpWrap     = 'pvp-self-hp-wrap';
+            const opHpWrap       = 'pvp-op-hp-wrap';
+            const attackerHpWrap = attackerIsSelf ? selfHpWrap : opHpWrap;
+            const defenderHpWrap = attackerIsSelf ? opHpWrap   : selfHpWrap;
+
             switch (exchange) {
                 case 'hit':
                     fx.slash(defenderEl);
+                    fx.shake(defenderHpWrap);
                     break;
                 case 'interrupt':
-                    // 蓄力被打断：和普通命中一样挨一刀，再加一个受挫缩小，
-                    // 跟纯 hit 区分开，提示"你的蓄力被打断了"而不只是单纯被打
                     fx.slash(defenderEl);
                     fx.enemyShrink(defenderEl);
+                    fx.shake(defenderHpWrap);
                     break;
                 case 'blocked':
                     fx.guardShrinkEl(defenderEl);
+                    fx.shake(defenderHpWrap);   // 格挡仍扣血，小幅震动提示
                     break;
                 case 'parry':
                     fx.parryGlowEl(defenderEl);
-                    fx.enemyShrink(attackerEl);   // 攻击方被弹反，短促受挫反馈
+                    fx.enemyShrink(attackerEl);
+                    fx.shake(attackerHpWrap);   // 攻击方被反伤
                     break;
                 case 'clash':
                     fx.triggerId('pvp-clash-fx', 'pvp-clash-flash', 280);
                     fx.enemyShrink(attackerEl);
                     fx.enemyShrink(defenderEl);
+                    fx.shake(attackerHpWrap);   // 双方都扣血
+                    fx.shake(defenderHpWrap);
                     break;
             }
         },
