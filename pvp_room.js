@@ -228,8 +228,8 @@ const pvpRoom = (() => {
             const input = document.getElementById('pvp-room-code-input');
             const roomCode = (roomCodeOverride || (input && input.value) || '').trim();
 
-            if (!/^\d{4,8}$/.test(roomCode)) {
-                setStatus('房间号无效，请重新输入或扫码');
+            if (!/^\d{6}$/.test(roomCode)) {
+                setStatus('房间号无效（应为6位数字），请重新输入或扫码');
                 return;
             }
 

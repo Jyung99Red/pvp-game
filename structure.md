@@ -241,8 +241,8 @@ correctRemote(remote_t) = remote_t - clockOffset
 
 ### 房间号与连接状态机（pvp_room.js）
 
-- 房间号：6 位数字,`genRoomCode()` 随机生成;`joinRoom()` 侧校验放宽到
-  `/^\d{4,8}$/`(4~8位都接受),比实际生成的位数更宽松（见下方已知问题）。
+- 房间号：6 位数字,`genRoomCode()` 随机生成;`joinRoom()` 侧校验
+  `/^\d{6}$/`,与生成位数一致（输入框也限制 `maxlength="6"`）。
 - `pvp-step-*` 系列 DOM 节点对应房间流程的每一步(entry / hosting /
   host-waiting / joining / joining-wait / ready),由 `setStep()` 统一切换
   `hidden` 类。
@@ -353,15 +353,12 @@ correctRemote(remote_t) = remote_t - clockOffset
 
 1. Guest 端永远不会经过 `pvp-step-ready` 步骤(见上文"房间号与连接状态机"),
    如果以后改动连接流程,要注意这个步骤目前实际上是 Host-only 的。
-2. 房间号生成是固定 6 位,但 `joinRoom()` 的校验正则接受 4~8 位,范围比实际
-   宽,目前没造成问题但两边不完全对齐。
-3. ICE 只配置了 STUN,没有 TURN。多数 NAT 环境下能直连成功,但对称型 NAT
+2. ICE 只配置了 STUN,没有 TURN。多数 NAT 环境下能直连成功,但对称型 NAT
    或严格防火墙环境下可能连不通,目前没有兜底方案。
 
 ## 可能的后续工作
 
 - 视情况补一个 TURN 服务器配置,提升连接成功率。
-- 把房间号位数的生成与校验对齐(确定到底是固定6位还是允许4~8位)。
 
 ## 近期变更记录
 
