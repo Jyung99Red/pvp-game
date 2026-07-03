@@ -3,7 +3,7 @@
 
 const pvpRoom = (() => {
     // ── Room code ────────────────────────────────────────────────────────
-    // 6 digits, enough to avoid short-term collisions, and easy to scan/type
+    // 6 digits, enough to avoid short-term collisions, and easy to type and share
 
     function genRoomCode() {
         return String(Math.floor(100000 + Math.random() * 900000));
@@ -223,13 +223,13 @@ const pvpRoom = (() => {
             }
         },
 
-        // After scanning or typing a room code, Guest clicks "connect" (can also be called directly from a scan callback)
+        // After typing a room code, Guest clicks "connect" (can also be called directly with an override)
         async joinRoom(roomCodeOverride) {
             const input = document.getElementById('pvp-room-code-input');
             const roomCode = (roomCodeOverride || (input && input.value) || '').trim();
 
             if (!/^\d{6}$/.test(roomCode)) {
-                setStatus('房间号无效（应为6位数字），请重新输入或扫码');
+                setStatus('房间号无效（应为6位数字），请重新输入');
                 return;
             }
 

@@ -3,11 +3,11 @@
 //
 // Design note:
 // The original approach required manually exchanging SDP text (offer/answer) twice -- error
-// prone and a poor fit for a "scan and connect" experience. Now: both sides connect to PeerJS's
+// prone and clunky. Now: both sides connect to PeerJS's
 // public signaling server (0.peerjs.com, free, used only for NAT traversal matchmaking, never
 // relays game data), agree on a "room code", Host registers under the room code, Guest connects
-// directly to it. The whole flow only needs exchanging one room code (4-6 digit/char), shareable
-// via QR code or typing it in -- no more pasting an answer code back and forth.
+// directly to it. The whole flow only needs exchanging one room code (6 digits), shareable
+// by typing it in -- no more pasting an answer code back and forth.
 
 const pvpNet = (() => {
     const PING_ROUNDS = 5;

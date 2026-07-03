@@ -356,10 +356,6 @@ correctRemote(remote_t) = remote_t - clockOffset
 2. ICE 只配置了 STUN,没有 TURN。多数 NAT 环境下能直连成功,但对称型 NAT
    或严格防火墙环境下可能连不通,目前没有兜底方案。
 
-## 可能的后续工作
-
-- 视情况补一个 TURN 服务器配置,提升连接成功率。
-
 ## 近期变更记录
 
 历史变更条目已并入各自的架构章节（断线设计见 Hard Constraints；蓄力打断
