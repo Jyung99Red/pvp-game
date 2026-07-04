@@ -300,4 +300,4 @@ const uiPvp = (() => {
             if (overlay) overlay.classList.add('hidden');
         }
     };
-})();
+})();
