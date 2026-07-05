@@ -11,32 +11,38 @@ const player = {
         return result;
     },
 
+    // Folds all equipped effects of `type` into `mult` via the effect registry.
+    _applyEffectPass(mult, type) {
+        const def = EFFECT_REGISTRY[type];
+        if (!def) return mult;
+        this.getEquippedEffects(type).forEach(e => { mult = def.apply(mult, e.value); });
+        return mult;
+    },
+
     // Speed multiplier: >1 = slower (penalty), <1 = faster (boost)
     // Sources: iron sword passive penalty + swift ring passive boost + temp activeBuffs
     getActionSpeedMultiplier() {
         let mult = 1.0;
-        
+
         // 1. Base speed conversion: 10 spd = baseline 1.0x, 20 spd halves the time (0.5x)
         const spd = this.getStats().spd || 10;
         mult *= (10 / spd);
 
         // 2. Negative status effects (e.g. iron sword slow)
-        this.getEquippedEffects('action_speed_penalty').forEach(e => { mult *= (1 + e.value); });
+        mult = this._applyEffectPass(mult, 'action_speed_penalty');
         // 3. Accessory passives (e.g. swift ring)
-        this.getEquippedEffects('passive_speed_boost').forEach(e => { mult *= (1 - e.value); });
+        mult = this._applyEffectPass(mult, 'passive_speed_boost');
         // 4. Temporary buffs
         const now = Date.now();
         state.battle.activeBuffs.forEach(b => {
             if (b.type === 'action_speed_boost' && b.expiresAt > now) mult *= (1 - b.value);
         });
-        
+
         return mult;
     },
 
     getGuardDamageMultiplier() {
-        let mult = 1.0;
-        this.getEquippedEffects('guard_damage_reduce').forEach(e => { mult *= (1 - e.value); });
-        return mult;
+        return this._applyEffectPass(1.0, 'guard_damage_reduce');
     },
 
     getStats() {
@@ -44,12 +50,11 @@ const player = {
         Object.values(state.player.equip).forEach(id => {
             if (!id) return;
             const item = content.items[id];
-            if (item) { 
-                stats.atk += (item.stats.atk || 0); 
-                stats.def += (item.stats.def || 0); 
-                // Also applies if gear ever carries an spd stat
-                if (item.stats.spd) stats.spd += item.stats.spd;
-				if (item.stats.int) stats.int += item.stats.int;
+            if (item) {
+                Object.keys(STAT_REGISTRY).forEach(statKey => {
+                    const add = item.stats[statKey];
+                    if (add) stats[statKey] = (stats[statKey] || 0) + add;
+                });
             }
         });
         return stats;

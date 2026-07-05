@@ -24,8 +24,8 @@ ui.updateBattle = function () {
 
     const leftIconHtml = leftItem ? (leftItem.iconKey ? renderIcon(leftItem.iconKey, 'btn-icon') : leftItem.icon) : '';
     const rightIconHtml = rightItem ? (rightItem.iconKey ? renderIcon(rightItem.iconKey, 'btn-icon') : rightItem.icon) : '';
-    btnLeft.innerHTML = leftItem ? `${leftIconHtml}  ${leftItem.name}<br><small>(-1动)</small>` : '左手空';
-    btnRight.innerHTML = rightItem ? `${rightIconHtml} ${rightItem.name}<br><small>(-1动)</small>` : '右手空';
+    btnLeft.innerHTML = leftItem ? `${leftIconHtml}  ${leftItem.name}<br><small>(-1动)</small>` : '武器空';
+    btnRight.innerHTML = rightItem ? `${rightIconHtml} ${rightItem.name}<br><small>(-1动)</small>` : '副手空';
 
     // Weapon: GCD + AP + this hand already pending; Shield: GCD + AP + windup/holding + consumedByHit not released
     const shieldBusyLeft  = b.shieldWindupHand === 'left'  || (b.shieldHolding && b.lastShieldHand === 'left')  || b.shieldConsumedByHit;

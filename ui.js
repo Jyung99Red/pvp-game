@@ -31,16 +31,21 @@ const ui = {
         document.getElementById('btn-continue').onclick    = () => battle.continueNext();
         document.getElementById('btn-retreat-safe').onclick = () => battle.safeRetreat();
 		
-		const closeModalsOnBG = (e) => {
-            if (e.target.classList.contains('modal-overlay-shared') || 
-                e.target.id === 'modal-overlay' || 
-                e.target.id === 'smithy-overlay' ||
-                e.target.id === 'inventory-overlay') { 
+		// Only act when the click lands on the backdrop itself, not the box inside.
+        // Layered close: the item modal sits above the inventory (higher z-index),
+        // so clicking its backdrop closes only the item modal and leaves the
+        // inventory behind it open; clicking the inventory backdrop closes both.
+        const closeModalsOnBG = (e) => {
+            if (e.target.id === 'modal-overlay') {
                 this.closeModal();
+            } else if (e.target.id === 'inventory-overlay') {
+                this.closeModal();
+                this.closeInventoryModal();
+            } else if (e.target.id === 'smithy-overlay') {
                 this.closeSmithyModal();
+            } else if (e.target.classList.contains('modal-overlay-shared')) {
                 this.closeAreaModal();
                 this.closeBuildingModal();
-                this.closeInventoryModal(); 
             }
         };
 
@@ -64,19 +69,7 @@ const ui = {
 	
 	openInventoryModal() {
         this.updateEquip(); // Refresh latest inventory data before opening
-        
-        const overlay = document.getElementById('inventory-overlay');
-        const box = document.getElementById('inventory-box');
-        const anchorPanel = document.getElementById('player-equip-panel');
-        
-        // Dynamically compute the anchor panel's bottom position
-        if (anchorPanel) {
-            const rect = anchorPanel.getBoundingClientRect();
-            // Set the inventory box's top margin = panel bottom + an 8px gap
-            box.style.marginTop = `${rect.bottom + 8}px`;
-        }
-        
-        overlay.classList.add('open');
+        document.getElementById('inventory-overlay').classList.add('open');
     },
     closeInventoryModal() {
         document.getElementById('inventory-overlay').classList.remove('open');
@@ -170,8 +163,8 @@ const ui = {
                     ${key !== 'smithy' || lv === 0 ? `<div class="building-cost">升级: ${costData.amt} ${costData.icon}</div>` : ''}
                 </div>
                 ${isSmithyBuilt
-                    ? `<button onclick="ui.openSmithyModal()" style="background:#7b4e00;">进入</button>`
-                    : `<button onclick="ui.upgradeBuilding('${key}')" ${canAfford ? '' : 'disabled'} style="background:${canAfford ? '#2a5a8f' : '#333'};">升级</button>`
+                    ? `<button onclick="ui.openSmithyModal()" class="btn-gold">进入</button>`
+                    : `<button onclick="ui.upgradeBuilding('${key}')" ${canAfford ? '' : 'disabled'} class="btn-info">升级</button>`
                 }
             </div>`;
         }
@@ -222,7 +215,7 @@ const ui = {
             html += `<div class="recipe-card">
                 <div class="recipe-name">${item.icon} ${item.name} ${(already + equippedCount) > 0 ? `<span style="color:#888;font-size:11px;">（持有 ×${already + equippedCount}）</span>` : ''}</div>
                 <div class="recipe-reqs">${reqHtml}</div>
-                <button onclick="player.craftItem('${itemId}');ui._renderSmithyRecipes();" ${canCraft ? '' : 'disabled'} style="background:${canCraft ? '#2a6' : '#333'}">
+                <button onclick="player.craftItem('${itemId}');ui._renderSmithyRecipes();" ${canCraft ? '' : 'disabled'} class="btn-success">
                     ${canCraft ? '🔨 制作' : '材料不足'}
                 </button>
             </div>`;
@@ -232,13 +225,8 @@ const ui = {
 
     _renderEffectsHtml(effects) {
         return effects.map(e => {
-            if (e.type === 'action_speed_penalty')
-                return `<span class="effect-tag effect-penalty">⏱ 行动慢 ${e.value*100}%</span>`;
-            if (e.type === 'guard_damage_reduce')
-                return `<span class="effect-tag effect-buff">🛡 格挡减伤 ${e.value*100}%</span>`;
-            if (e.type === 'passive_speed_boost')
-                return `<span class="effect-tag effect-passive">⚡ 速度 +${e.value*100}%（永久）</span>`;
-            return '';
+            const def = EFFECT_REGISTRY[e.type];
+            return def ? def.label(e.value) : '';
         }).join('');
     },
 
@@ -359,12 +347,14 @@ const ui = {
         const statsArr = [];
         if (item.stats.atk > 0) statsArr.push(`⚔️ +${item.stats.atk}`);
         if (item.stats.def > 0) statsArr.push(`🛡️ +${item.stats.def}`);
+        if (item.stats.int > 0) statsArr.push(`🧠 +${item.stats.int}`);
         document.getElementById('modal-stats').innerText = statsArr.length ? statsArr.join('  ') : '无属性加成';
 
         document.getElementById('modal-effects').innerHTML = this._renderEffectsHtml(item.effects);
         document.getElementById('modal-desc').innerText = item.desc;
         document.getElementById('modal-btns').innerHTML =
-            `<button onclick="player.equipItem('${slot}',null);ui.closeModal();" style="background:#553;">卸下装备</button>`;
+            `<button onclick="ui.closeModal();ui.openInventoryModal();">🔄 更换</button>` +
+            `<button class="btn-unequip" onclick="player.equipItem('${slot}',null);ui.closeModal();">卸下</button>`;
 
         document.getElementById('modal-overlay').classList.add('open');
     },
@@ -408,7 +398,6 @@ const ui = {
         if (btnLvl) {
             btnLvl.disabled = !canLvUp;
             btnLvl.innerText = canLvUp ? '⬆️ 升级' : 'EXP不足';
-            btnLvl.style.background = canLvUp ? '#2a9d8f' : '#333';
         }
 
         document.getElementById('base-player-hp').style.width = `${(h.currentHp / s.maxHp) * 100}%`;

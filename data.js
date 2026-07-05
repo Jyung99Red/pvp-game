@@ -190,8 +190,8 @@ const content = {
     },
 
     slotMeta: {
-        left: { label: "左手", hint: "武器/盾牌" },
-        right: { label: "右手", hint: "武器/盾牌" },
+        left: { label: "武器", hint: "武器/盾牌" },
+        right: { label: "副手", hint: "武器/盾牌" },
         armor: { label: "护甲", hint: "护甲" },
         accessory: { label: "饰品", hint: "饰品" }
     }

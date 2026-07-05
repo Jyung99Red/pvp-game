@@ -20,14 +20,13 @@
 
         <div id="inventory-overlay">
             <div id="inventory-box">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <h3 style="margin:0;">🎒 个人背包</h3>
-                    <span id="inv-count" style="font-size:11px;color:#aaa;">0/20</span>
+                <div class="modal-header">
+                    <h3>🎒 个人背包</h3>
+                    <span id="inv-count" class="modal-subtle">0/20</span>
                 </div>
                 <div class="inv-grid-wrap">
                     <div class="inv-grid" id="inventory-grid"></div>
                 </div>
-                <button onclick="ui.closeInventoryModal()" style="background:#333;margin-top:12px;">关闭</button>
             </div>
         </div>
 
@@ -39,7 +38,6 @@
                 <div id="modal-effects"></div>
                 <div class="modal-desc" id="modal-desc"></div>
                 <div class="modal-btns" id="modal-btns"></div>
-                <button id="modal-close" onclick="ui.closeModal()">关闭</button>
             </div>
         </div>
 
@@ -67,6 +65,7 @@
         <!-- 引入所有的 JS 文件 -->
 
         <script src="data.js"></script>
+        <script src="effects.js"></script>
         <script src="save.js"></script>
         <script src="player.js"></script>
         <script src="tick.js"></script>

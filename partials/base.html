@@ -2,7 +2,7 @@
 <div id="view-base" class="view-section">
     <div class="panel">
         <h2>🏰 基地物资</h2>
-        <div id="resource-display" style="font-size:13px;line-height:1.9;"></div>
+        <div id="resource-display" style="font-size:13px;line-height:1.5;"></div>
     </div>
 
     <div class="panel" id="player-equip-panel">
@@ -12,14 +12,13 @@
             <!-- 左侧：英雄属性 -->
             <div style="flex: 1; display: flex; flex-direction: column; padding-right: 8px;">
                 <!-- 标题栏：英雄 + 等级 + 升级按钮 -->
-                <div
-                    style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px;">
+                <div class="panel-header bordered">
                     <div style="display: flex; align-items: baseline; gap: 4px;">
-                        <h3 style="color:#a8b2d1; margin:0;">🦸 英雄</h3>
-                        <span id="player-level-info" style="font-size:10px; color:#888;"></span>
+                        <h3>🦸 英雄</h3>
+                        <span id="player-level-info" style="font-size:10px; color:var(--muted);"></span>
                     </div>
                     <button onclick="player.levelUp()" id="btn-lvl-up"
-                        style="width:auto; margin:0; padding:2px 6px; font-size:10px;">⬆️ 升级</button>
+                        class="btn-success btn-mini">⬆️ 升级</button>
                 </div>
 
                 <!-- HP 血条移到这里 -->
@@ -35,30 +34,26 @@
             <!-- 右侧：装备栏 -->
             <div
                 style="flex: 1.1; border-left: 1px solid var(--border); padding-left: 8px; display: flex; flex-direction: column;">
-                <div
-                    style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 6px;">
-                    <h3 style="color:#a8b2d1; margin:0;">⚔️ 装备</h3>
-                    <button onclick="ui.openInventoryModal()"
-                        style="width:auto; padding:2px 8px; font-size:10px; background:#b05231; margin:0;">🎒
-                        背包</button>
+                <div class="panel-header bordered">
+                    <h3>⚔️ 装备</h3>
+                    <button onclick="ui.openInventoryModal()" class="btn-warm btn-mini">🎒 背包</button>
                 </div>
                 <!-- 紧凑型装备槽 -->
                 <div class="equip-grid-compact" id="equip-slots"></div>
             </div>
         </div>
 
-        <button onclick="devCheat()" id="dev-cheat-btn" style="background:#822faf; margin-top:4px;">🛠️ 测试：+1级 &
-            +50金币</button>
-        <!-- 临时测试按钮：重置为初始状态，调试用，正式发布前记得删掉 -->
-        <button onclick="save.resetToInitial()" id="dev-reset-btn" style="background:#7a1f1f; margin-top:4px;">🧪 测试：重置存档</button>
+        <!-- 临时测试按钮：调试用，正式发布前记得删掉 -->
+        <div class="btn-row" style="margin-top:6px;">
+            <button onclick="devCheat()" id="dev-cheat-btn" class="btn-dev">🛠️ +1级 & +50金币</button>
+            <button onclick="save.resetToInitial()" id="dev-reset-btn" class="btn-dev">🧪 重置存档</button>
+        </div>
     </div>
 
     <div class="panel" style="background:transparent; border:none; padding:0;">
         <div class="btn-row">
-            <button onclick="ui.openAreaModal()" style="height:52px; font-size:15px; background:#b05231;">🗺️
-                探索</button>
-            <button onclick="ui.openBuildingModal()"
-                style="height:52px; font-size:15px; background:#2d6a4f;">🏗️ 建筑</button>
+            <button onclick="ui.openAreaModal()" class="btn-lg btn-warm">🗺️ 探索</button>
+            <button onclick="ui.openBuildingModal()" class="btn-lg btn-success">🏗️ 建筑</button>
         </div>
     </div>
 </div>
