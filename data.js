@@ -37,8 +37,8 @@ const content = {
             id: 'iron_sword', name: "铁剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
             slots: ['left', 'right'],
             stats: { atk: 22, def: 0 },
-            effects: [{ type: 'action_speed_penalty', value: 0.15 }],
-            desc: "攻击强劲，但行动回复慢 15%"
+            effects: [{ type: 'charge_threshold_ms', value: 700 }],
+            desc: "攻击强劲，但蓄力阈值更高，轻点难以脱手"
         },
         wooden_shield: {
             id: 'wooden_shield', name: "木盾", type: "shield", icon: "🛡️", iconKey: 'shield-def',
@@ -51,15 +51,15 @@ const content = {
             id: 'iron_shield', name: "铁盾", type: "shield", icon: "🔰", iconKey: 'shield-def',
             slots: ['left', 'right'],
             stats: { atk: 0, def: 18 },
-            effects: [{ type: 'guard_damage_reduce', value: 0.40 }],
-            desc: "格挡成功时额外减伤 40%"
+            effects: [{ type: 'guard_damage_reduce', value: 0.40 }, { type: 'parry_window_ms', value: 150 }],
+            desc: "格挡减伤更强，但弹反判定窗口更严格"
         },
         swift_ring: {
             id: 'swift_ring', name: "疾速戒指", type: "accessory", icon: "💍",
             slots: ['accessory'],
-            stats: { atk: 0, def: 0 },
-            effects: [{ type: 'passive_speed_boost', value: 0.10 }],
-            desc: "穿戴后行动速度永久提升 10%"
+            stats: { atk: 0, def: 0, spd: 3 },
+            effects: [],
+            desc: "穿戴后行动力回复明显加快"
         },
         wooden_armor: {
             id: 'wooden_armor', name: "布甲", type: "armor", icon: "👕",
@@ -158,7 +158,17 @@ const content = {
             drops: [
                 { id: 'dragon_scale', chance: 1.00, amount: [2, 4] },
                 { id: 'dragon_fang', chance: 0.50, amount: [1, 1] }
-            ]
+            ],
+            ai: {
+                feintChance:     0.35,
+                feintAbortMs:    [400, 900],
+                comboChance:     0.5,
+                comboMax:        2,
+                comboDelayMs:    [150, 300],
+                enrageThreshold: 0.3,
+                enrageAtkMult:   1.4,
+                enrageSpdMult:   1.25
+            }
         }
     },
 

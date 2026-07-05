@@ -68,7 +68,9 @@ const pvpLogic = (() => {
             def:   stats.def,
             spd:   stats.spd,
             judgmentMultiplier:    player.getJudgmentMultiplier(),
-            guardDamageMultiplier: player.getGuardDamageMultiplier()
+            guardDamageMultiplier: player.getGuardDamageMultiplier(),
+            earlyReleaseMs:    player.getChargeThresholdMs(),
+            parryWindowBaseMs: player.getParryWindowBaseMs()
         };
     }
 

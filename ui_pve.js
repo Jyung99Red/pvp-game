@@ -87,6 +87,8 @@ const uiPve = (() => {
             _setBar('pve-enemy-hp',      _pct(e.hp, e.maxHp));
             _setText('pve-enemy-hp-txt', `${e.hp} / ${e.maxHp}`);
             _setText('pve-enemy-phase',  frozen ? '⏳ 遭遇...' : _phaseLabel(e.phase));
+            _setText('pve-enemy-status', b.ai && b.ai.enraged ? '⚡ 狂暴' : '');
+            _setClass('pve-enemy-weapon-icon', 'warning', !!(b.ai && b.ai.enraged));
 
             // Enemy charge bar: locally simulated, read directly
             const eCharging = e.phase === 'charging';
@@ -94,7 +96,7 @@ const uiPve = (() => {
             _setBar('pve-enemy-charge', eProgress * 100);
             const eChargeEl = document.getElementById('pve-enemy-charge');
             if (eChargeEl) {
-                const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
+                const earlyPct = (b.enemyProfile ? b.enemyProfile.earlyReleaseMs : pvpConfig.earlyReleaseMs) / pvpConfig.chargeMaxMs;
                 eChargeEl.classList.toggle('charge-early',  eCharging && eProgress < earlyPct);
                 eChargeEl.classList.toggle('charge-normal', eCharging && eProgress >= earlyPct);
             }
@@ -115,7 +117,7 @@ const uiPve = (() => {
 
             const chargeEl = document.getElementById('pve-self-charge');
             if (chargeEl) {
-                const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
+                const earlyPct = player.getChargeThresholdMs() / pvpConfig.chargeMaxMs;
                 chargeEl.classList.toggle('charge-early',  selfCharging && progress < earlyPct);
                 chargeEl.classList.toggle('charge-normal', selfCharging && progress >= earlyPct);
             }

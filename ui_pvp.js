@@ -135,7 +135,7 @@ const uiPvp = (() => {
             // Colour coding: red before early threshold, yellow → green as charge fills
             const chargeEl = document.getElementById('pvp-self-charge');
             if (chargeEl) {
-                const earlyPct = pvpConfig.earlyReleaseMs / pvpConfig.chargeMaxMs;
+                const earlyPct = player.getChargeThresholdMs() / pvpConfig.chargeMaxMs;
                 chargeEl.classList.toggle('charge-early', selfChargeVisible && progress < earlyPct);
                 chargeEl.classList.toggle('charge-normal', selfChargeVisible && progress >= earlyPct);
             }

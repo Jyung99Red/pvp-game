@@ -25,5 +25,14 @@ const EFFECT_REGISTRY = {
         appliesTo: 'guardDamage',
         apply(mult, value) { return mult * (1 - value); },
         label(value) { return `<span class="effect-tag effect-buff">🛡 格挡减伤 ${value*100}%</span>`; }
+    },
+    // Per-weapon/shield combat-timing overrides — absolute values, not
+    // multiplicative buffs, so no apply(); read via
+    // player.getFirstEquippedEffectValue instead of _applyEffectPass.
+    charge_threshold_ms: {
+        label(value) { return `<span class="effect-tag effect-info">⏱ 蓄力阈值 ${value}ms</span>`; }
+    },
+    parry_window_ms: {
+        label(value) { return `<span class="effect-tag effect-info">🎯 弹反窗口 ${value}ms</span>`; }
     }
 };

@@ -19,6 +19,24 @@ const player = {
         return mult;
     },
 
+    // First equipped item (in slot order) that carries an effect of `type`
+    // wins — used for per-item combat-timing values (not multiplicative
+    // buffs, so folding them together like _applyEffectPass doesn't apply).
+    getFirstEquippedEffectValue(type, fallback) {
+        const slotOrder = ['left', 'right', 'armor', 'accessory'];
+        for (const slot of slotOrder) {
+            const id = state.player.equip[slot];
+            if (!id) continue;
+            const item = content.items[id];
+            if (!item) continue;
+            const e = item.effects.find(e => e.type === type);
+            if (e) return e.value;
+        }
+        return fallback;
+    },
+    getChargeThresholdMs() { return this.getFirstEquippedEffectValue('charge_threshold_ms', pvpConfig.earlyReleaseMs); },
+    getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', pvpConfig.parryWindowMs); },
+
     getGuardDamageMultiplier() {
         return this._applyEffectPass(1.0, 'guard_damage_reduce');
     },

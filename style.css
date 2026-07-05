@@ -273,6 +273,7 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 .effect-penalty { background: #5c2a00; color: #ffaa66; }
 .effect-buff    { background: #003a5c; color: #66ddff; }
 .effect-passive { background: #1a3a00; color: #88ff66; }
+.effect-info    { background: #2a2a45; color: #b8a8ff; }
 .modal-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .modal-btns button { flex: 1; min-width: 80px; margin: 0; padding: 10px 6px; font-size: 12px; }
 
@@ -362,6 +363,9 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 }
 .player-node:active { transform: scale(0.9); }
 .player-node.disabled { opacity: 0.3; pointer-events: none; }
+/* Persistent enrage indicator (Phase 3 boss toolkit) -- stays on for the
+   whole enraged state, unlike the one-shot fx.trigger animations above */
+.player-node.warning { border-color: #ff3b3b !important; box-shadow: 0 0 10px #ff3b3b; }
 
 /* ====== PVP 竞技场：双方武器图标节点 ======
    复用 .player-node（圆形底座+举盾辉光环 .shield-windup/.shield-ready 状态），

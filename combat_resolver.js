@@ -54,13 +54,13 @@ const combatResolver = (() => {
 
     function _lerp(a, b, t) { return a + (b - a) * t; }
 
-    function calcChargeDamage(chargeMs, atk) {
-        // Charge < 500ms: fixed 1 damage (penalty for "tap-attack" rushing)
-        if (chargeMs < pvpConfig.earlyReleaseMs) return pvpConfig.earlyReleaseDmg;
-        // 500ms -> 3000ms: linear interpolation 0.3x atk -> 1.1x atk
+    function calcChargeDamage(chargeMs, atk, earlyReleaseMs = pvpConfig.earlyReleaseMs) {
+        // Charge < threshold: fixed 1 damage (penalty for "tap-attack" rushing)
+        if (chargeMs < earlyReleaseMs) return pvpConfig.earlyReleaseDmg;
+        // threshold -> 3000ms: linear interpolation 0.3x atk -> 1.1x atk
         const t = Math.min(
-            (chargeMs - pvpConfig.earlyReleaseMs) /
-            (pvpConfig.chargeMaxMs - pvpConfig.earlyReleaseMs),
+            (chargeMs - earlyReleaseMs) /
+            (pvpConfig.chargeMaxMs - earlyReleaseMs),
             1.0
         );
         const ratio = _lerp(0.3, 1.1, t);
@@ -74,8 +74,8 @@ const combatResolver = (() => {
         return Math.max(1, Math.round(rawDmg - reduction));
     }
 
-    function parryWindow(judgmentMultiplier) {
-        return pvpConfig.parryWindowMs * (judgmentMultiplier || 1);
+    function parryWindow(judgmentMultiplier, baseMs = pvpConfig.parryWindowMs) {
+        return baseMs * (judgmentMultiplier || 1);
     }
 
     function apRecoveryMs(spd) {
@@ -92,14 +92,14 @@ const combatResolver = (() => {
     // Reads state, writes NOTHING; the caller applies the returned result.
     function resolveExchange(attackerChargeMs, attacker, defender,
                              attackerStats, defenderStats, wallNow) {
-        const rawDmg = calcChargeDamage(attackerChargeMs, attackerStats.atk);
+        const rawDmg = calcChargeDamage(attackerChargeMs, attackerStats.atk, attackerStats.earlyReleaseMs);
 
         const isClash  = defender.phase === 'strike_out' &&
                          (wallNow - defender.lastStrikeT) <= pvpConfig.clashWindowMs;
         const timeSinceGuard = defender.lastGuardReadyT > 0
             ? (wallNow - defender.lastGuardReadyT) : Infinity;
         const isParry  = !isClash && defender.phase === 'guard_ready' &&
-                         timeSinceGuard <= parryWindow(defenderStats.judgmentMultiplier);
+                         timeSinceGuard <= parryWindow(defenderStats.judgmentMultiplier, defenderStats.parryWindowBaseMs);
         const isBlock  = !isClash && defender.phase === 'guard_ready' && !isParry;
         // Defender is mid-charge and gets hit by an attack that isn't a
         // clash/parry/block -- this counts as an interrupt: their charge is
@@ -113,8 +113,8 @@ const combatResolver = (() => {
         let attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, exchange, logText;
 
         if (isClash) {
-            const defChargeMs = defender.lastChargeMs || pvpConfig.earlyReleaseMs;
-            attackerDmg   = applyDefense(Math.round(calcChargeDamage(defChargeMs, defenderStats.atk) * 0.5), attackerStats.def);
+            const defChargeMs = defender.lastChargeMs || defenderStats.earlyReleaseMs;
+            attackerDmg   = applyDefense(Math.round(calcChargeDamage(defChargeMs, defenderStats.atk, defenderStats.earlyReleaseMs) * 0.5), attackerStats.def);
             defenderDmg   = applyDefense(Math.round(rawDmg * 0.5), defenderStats.def);
             attackerStunMs = pvpConfig.clashRecoveryMs;
             defenderStunMs = pvpConfig.clashRecoveryMs;

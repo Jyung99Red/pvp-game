@@ -29,7 +29,9 @@ const pveLogic = (() => {
             def:   stats.def,
             spd:   stats.spd,
             judgmentMultiplier:    player.getJudgmentMultiplier(),
-            guardDamageMultiplier: player.getGuardDamageMultiplier()
+            guardDamageMultiplier: player.getGuardDamageMultiplier(),
+            earlyReleaseMs:    player.getChargeThresholdMs(),
+            parryWindowBaseMs: player.getParryWindowBaseMs()
         };
     }
 
@@ -41,7 +43,9 @@ const pveLogic = (() => {
             def:   eData.def,
             spd:   o.spd || 10,
             judgmentMultiplier:    o.judgmentMultiplier || 1,
-            guardDamageMultiplier: o.guardDamageMultiplier || 1
+            guardDamageMultiplier: o.guardDamageMultiplier || 1,
+            earlyReleaseMs:    o.earlyReleaseMs    || pvpConfig.earlyReleaseMs,
+            parryWindowBaseMs: o.parryWindowBaseMs || pvpConfig.parryWindowMs
         };
     }
 
@@ -57,7 +61,17 @@ const pveLogic = (() => {
             decideDelayMs: o.decideDelayMs || [300, 800],
             guardReactMs:  o.guardReactMs  != null ? o.guardReactMs : 1100,
             guardChance:   o.guardChance   != null ? o.guardChance : 0.3,
-            guardHoldMs:   o.guardHoldMs   || [500, 1400]
+            guardHoldMs:   o.guardHoldMs   || [500, 1400],
+            // Phase 3: boss-fight toolkit -- every enemy defaults to "off",
+            // only content.enemies[key].ai overrides turn these on.
+            feintChance:     o.feintChance     != null ? o.feintChance : 0,
+            feintAbortMs:    o.feintAbortMs    || [400, 900],
+            comboChance:     o.comboChance     != null ? o.comboChance : 0,
+            comboDelayMs:    o.comboDelayMs    || [150, 350],
+            comboMax:        o.comboMax        != null ? o.comboMax : 1,
+            enrageThreshold: o.enrageThreshold != null ? o.enrageThreshold : 0,
+            enrageAtkMult:   o.enrageAtkMult   || 1.3,
+            enrageSpdMult:   o.enrageSpdMult   || 1.2
         };
     }
 
@@ -79,7 +93,7 @@ const pveLogic = (() => {
     function _chargeMsFor(eData, act) {
         const mult = (eData.acts && eData.acts[act] && eData.acts[act].dmgMult) || 1;
         const base = (eData.baseMsCharge || 1500) * mult;
-        return Math.min(Math.max(base, pvpConfig.earlyReleaseMs + 100), pvpConfig.chargeMaxMs);
+        return Math.min(Math.max(base, _enemyProfile.earlyReleaseMs + 100), pvpConfig.chargeMaxMs);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -156,6 +170,16 @@ const pveLogic = (() => {
         const e  = b.enemy;
         const ai = b.ai;
 
+        // Enrage: edge-triggered once when HP drops at/below the threshold.
+        // Multiplies the enemy's real combat profile (not just AI timing),
+        // so it actually hits harder/faster, not just "acts" more aggressive.
+        if (!ai.enraged && ai.params.enrageThreshold > 0 && e.hp / e.maxHp <= ai.params.enrageThreshold) {
+            ai.enraged = true;
+            _enemyProfile.atk = Math.round(ai.baseAtk * ai.params.enrageAtkMult);
+            _enemyProfile.spd = ai.baseSpd * ai.params.enrageSpdMult;
+            _pushLog(`⚡ ${content.enemies[b.enemyId].name} 陷入狂暴！`);
+        }
+
         // Timed guard release
         if ((e.phase === 'guard_windup' || e.phase === 'guard_ready') && now >= ai.guardReleaseAt) {
             _setPhase(e, 'idle', 0);
@@ -177,17 +201,46 @@ const pveLogic = (() => {
             _setPhase(e, 'guard_windup', pvpConfig.guardWindupMs);
             ai.guardReleaseAt = now + pvpConfig.guardWindupMs + _rand(ai.params.guardHoldMs);
         } else {
-            // Attack: pick an act, charge toward its target duration
-            const eData  = content.enemies[b.enemyId];
-            const act    = _rollAct(ai.params.actWeights);
-            const jitter = 1 + (Math.random() * 2 - 1) * ai.params.chargeJitter;
-            ai.currentAct    = act;
-            ai.targetChargeMs = Math.min(_chargeMsFor(eData, act) * jitter, pvpConfig.chargeMaxMs);
+            const eData = content.enemies[b.enemyId];
+            // Combo follow-ups always commit for real -- feinting mid-chain
+            // would just delay the combo, not add any bluff value.
+            const isComboFollowUp = ai.comboCount > 0;
+            const doFeint = !isComboFollowUp && Math.random() < ai.params.feintChance;
+
+            if (doFeint) {
+                // Fake charge: identical visuals to a real attack (same
+                // 'charging' phase, same charge bar/animation) -- the player
+                // can't tell them apart, that's the point. Aborts in _loop
+                // once chargeMs reaches this shorter fake target.
+                ai.isFeint = true;
+                ai.targetChargeMs = _rand(ai.params.feintAbortMs);
+                ai.currentAct = null;
+            } else {
+                ai.isFeint = false;
+                const act    = _rollAct(ai.params.actWeights);
+                const jitter = 1 + (Math.random() * 2 - 1) * ai.params.chargeJitter;
+                ai.currentAct     = act;
+                ai.targetChargeMs = Math.min(_chargeMsFor(eData, act) * jitter, pvpConfig.chargeMaxMs);
+            }
             e.actionPoints--;
             e.chargeStartT = now;
             e.chargeMs     = 0;
             _setPhase(e, 'charging', 0);
         }
+    }
+
+    // Feint reached its (short) fake target duration -- abort back to idle
+    // without ever calling _fire, so no exchange is resolved. Logged only
+    // after the fact so it doesn't spoil the bluff while it's happening.
+    function _abortFeint() {
+        const b = state.pveBattle, e = b.enemy, ai = b.ai;
+        e.chargeMs = 0;
+        e.chargeStartT = 0;
+        _setPhase(e, 'idle', 0);
+        ai.isFeint = false;
+        ai.comboCount = 0;
+        _pushLog(`🎭 ${content.enemies[b.enemyId].name} 只是佯攻！`);
+        ai.thinkTimer = _rand(ai.params.decideDelayMs);
     }
 
     // ── Fire + resolve (both sides funnel through here; no network) ──────
@@ -211,13 +264,25 @@ const pveLogic = (() => {
         _applyExchange(r, attackerIsPlayer);
 
         // AI post-strike think delay (reuses the act's old recoveryMs as
-        // extra downtime after heavy attacks)
+        // extra downtime after heavy attacks), or a short combo follow-up
+        // instead. No need to special-case "was this attack parried/clashed":
+        // parry/clash stun the enemy for 1000/600ms, both far longer than
+        // comboDelayMs, and _aiThink only decides while phase === 'idle' --
+        // so a successful parry/clash already breaks the chain for free.
         if (!attackerIsPlayer && b.active) {
             const eData = content.enemies[b.enemyId];
             const rec = (b.ai.currentAct && eData.acts &&
                          eData.acts[b.ai.currentAct] &&
                          eData.acts[b.ai.currentAct].recoveryMs) || 0;
-            b.ai.thinkTimer = _rand(b.ai.params.decideDelayMs) + rec;
+
+            const canChain = b.ai.comboCount < b.ai.params.comboMax && Math.random() < b.ai.params.comboChance;
+            if (canChain) {
+                b.ai.comboCount++;
+                b.ai.thinkTimer = _rand(b.ai.params.comboDelayMs);
+            } else {
+                b.ai.comboCount = 0;
+                b.ai.thinkTimer = _rand(b.ai.params.decideDelayMs) + rec;
+            }
         }
     }
 
@@ -315,10 +380,15 @@ const pveLogic = (() => {
             _tickSide(b.enemy,  dt, now, _enemyProfile.spd, () => _fire(b.enemy, true));
 
             _aiThink(dt, now);
-            // AI releases its charge at the decided target duration
+            // AI releases its charge at the decided target duration --
+            // a feint aborts back to idle instead of firing for real
             if (b.enemy.phase === 'charging' && b.ai.targetChargeMs > 0 &&
                 b.enemy.chargeMs >= b.ai.targetChargeMs) {
-                _fire(b.enemy, false);
+                if (b.ai.isFeint) {
+                    _abortFeint();
+                } else {
+                    _fire(b.enemy, false);
+                }
             }
         }
 
@@ -359,13 +429,19 @@ const pveLogic = (() => {
                 enemyId: enemyKey,
                 player: playerSide,
                 enemy:  combatResolver.makeSideState(_enemyProfile.maxHp),
+                enemyProfile: _enemyProfile,
                 skillPoints: 0,
                 ai: {
                     params: _aiParams(eData),
                     targetChargeMs: 0,
                     thinkTimer: 600,   // initial hesitation before the first move
                     guardReleaseAt: 0,
-                    currentAct: null
+                    currentAct: null,
+                    comboCount: 0,
+                    isFeint: false,
+                    enraged: false,
+                    baseAtk: _enemyProfile.atk,
+                    baseSpd: _enemyProfile.spd
                 },
                 log: []
             };
