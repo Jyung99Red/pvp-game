@@ -23,14 +23,9 @@ const ui = {
         // Build building list
         this.updateBuildingList();
 
-        // Bind battle button events
-        document.getElementById('btn-act-left').onclick    = () => battle.playerAction('left');
-        document.getElementById('btn-act-right').onclick   = () => battle.playerAction('right');
-        document.getElementById('btn-skill').onclick       = () => battle.playerSkill();
-        document.getElementById('btn-flee').onclick        = () => battle.playerFlee();
-        document.getElementById('btn-continue').onclick    = () => battle.continueNext();
-        document.getElementById('btn-retreat-safe').onclick = () => battle.safeRetreat();
-		
+        // (PVE battle buttons are inline-wired in partials/pve-battle.html,
+        //  same pattern as the PVP view — no init-time bindings needed)
+
 		// Only act when the click lands on the backdrop itself, not the box inside.
         // Layered close: the item modal sits above the inventory (higher z-index),
         // so clicking its backdrop closes only the item modal and leaves the
@@ -87,11 +82,11 @@ const ui = {
         this.closeAreaModal(); // Close the modal before starting the fight
         state.world.currentArea = areaKey;
         state.world.currentFightIndex = 0;
-        battle.startFight(content.areas[areaKey].encounters[0]);
+        pveLogic.startFight(content.areas[areaKey].encounters[0]);
     },
 
     switchTab(tabId) {
-        if (state.battle.active && tabId !== 'battle') { ui.log("正在战斗中！"); return; }
+        if (state.pveBattle && state.pveBattle.active && tabId !== 'battle') { ui.log("正在战斗中！"); return; }
 
         // While a PVP match is active or a connection is being set up, block switching to other main tabs to avoid accidental taps breaking the connection
         // pvp-battle itself isn't a nav-btn (only reachable via code), so what's intercepted here is the "leave" action
@@ -116,11 +111,10 @@ const ui = {
             tabEl.classList.add('active');
         }
 
-        if (tabId === 'base') this.updateEquip(); 
-        if (tabId === 'battle' && !state.battle.active) {
-            document.getElementById('enemy-name').innerText = "当前无战斗";
-            document.getElementById('battle-actions').classList.add('hidden');
-            document.getElementById('post-battle-actions').classList.add('hidden');
+        if (tabId === 'base') this.updateEquip();
+        if (tabId === 'battle' && !(state.pveBattle && state.pveBattle.active)) {
+            document.getElementById('pve-enemy-name').innerText = "当前无战斗";
+            uiPve.hideOverlays();
         }
 
         // Mapping hooks for PVP view transitions

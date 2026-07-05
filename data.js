@@ -20,20 +20,7 @@ const state = {
         currentArea: null,
         currentFightIndex: 0
     },
-    battle: {
-        active: false, waitingChoice: false, isStarting: false, enemyId: null, enemyHp: 0, enemyMaxHp: 0,
-        enemyPhase: 'charging',       // 'charging' | 'windup'
-        enemyActionProgress: 0,       // 0→1 during charging
-        enemyWindupTimer: 0,          // ms remaining in windup
-        enemyCurrentAct: null,        // 'act1' | 'act2'
-        enemyChargeDuration: 0,       // ms for current charge cycle, set from enemy baseMsCharge
-        actionPoints: 3, actionProgress: 0, skillPoints: 0,
-        lastWeaponActTime: 0, lastShieldActTime: 0,
-        lastWeaponHand: null, lastShieldHand: null,
-        globalCooldownEnd: 0,
-        activeBuffs: []
-
-    }
+    pveBattle: null   // created at runtime by pveLogic.startFight (transient, never saved)
 };
 
 // ====== Static Data: game config ======

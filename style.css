@@ -151,6 +151,8 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
     flex-shrink: 0;
 }
 
+.character-node .game-icon { width: 26px; height: 26px; fill: #fff; }
+
 /* 统一的受击斩击特效 (叠加在目标头像上) */
 .slashed::after {
     content: '';

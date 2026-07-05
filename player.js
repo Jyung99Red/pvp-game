@@ -19,28 +19,6 @@ const player = {
         return mult;
     },
 
-    // Speed multiplier: >1 = slower (penalty), <1 = faster (boost)
-    // Sources: iron sword passive penalty + swift ring passive boost + temp activeBuffs
-    getActionSpeedMultiplier() {
-        let mult = 1.0;
-
-        // 1. Base speed conversion: 10 spd = baseline 1.0x, 20 spd halves the time (0.5x)
-        const spd = this.getStats().spd || 10;
-        mult *= (10 / spd);
-
-        // 2. Negative status effects (e.g. iron sword slow)
-        mult = this._applyEffectPass(mult, 'action_speed_penalty');
-        // 3. Accessory passives (e.g. swift ring)
-        mult = this._applyEffectPass(mult, 'passive_speed_boost');
-        // 4. Temporary buffs
-        const now = Date.now();
-        state.battle.activeBuffs.forEach(b => {
-            if (b.type === 'action_speed_boost' && b.expiresAt > now) mult *= (1 - b.value);
-        });
-
-        return mult;
-    },
-
     getGuardDamageMultiplier() {
         return this._applyEffectPass(1.0, 'guard_damage_reduce');
     },

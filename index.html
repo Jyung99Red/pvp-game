@@ -16,7 +16,7 @@
     <div class="content-area">
         <div id="mount-base"></div>
 
-        <div id="mount-battle"></div>
+        <div id="mount-pve-battle"></div>
 
         <div id="inventory-overlay">
             <div id="inventory-box">
@@ -71,11 +71,11 @@
         <script src="tick.js"></script>
         <script src="fx.js"></script>
         <script src="combat_resolver.js"></script>
-        <script src="battle.js"></script>
 
         <script src="icons.js"></script>
         <script src="ui.js"></script>
-        <script src="ui_battle.js"></script>
+        <script src="ui_pve.js"></script>
+        <script src="pve_logic.js"></script>
 
         <!-- PVP and external dependencies -->
         <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -87,7 +87,7 @@
         <!-- 启动游戏：先把拆分出去的 view 片段 fetch 回来注入，再跑 ui.init() -->
         <script>
             window.onload = async () => {
-                const mounts = ['base', 'battle', 'pvp-room', 'pvp-battle'];
+                const mounts = ['base', 'pve-battle', 'pvp-room', 'pvp-battle'];
                 await Promise.all(mounts.map(async id => {
                     const el = document.getElementById('mount-' + id);
                     el.outerHTML = await fetch('partials/' + id + '.html').then(r => r.text());

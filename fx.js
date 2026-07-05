@@ -16,61 +16,21 @@ const fx = {
         this.trigger(document.getElementById(id), cls, duration);
     },
 
-    // -- Player hand-node animation (left / right) --
-    playerNode(hand, cls, duration = 300) {
-        if (!hand) return;
-        this.triggerId(`node-${hand}`, cls, duration);
-    },
-
     // ════════════════════════════════
     //  FX methods
     // ════════════════════════════════
 
-    // Plain slash (applied to the enemy or hero sprite)
+    // Plain slash (applied to a fighter node)
     slash(el) { this.trigger(el, 'slashed', 400); },
-
-    // SVG slash effect (fetches icons/fx/slash.svg and injects it, cached)
-    _slashSVGCache: null,
-    xSlash(el) {
-        if (!el) return;
-        const inject = (svgText) => {
-            el.querySelectorAll('.fx-slash-svg').forEach(n => n.remove());
-            const wrap = document.createElement('div');
-            wrap.innerHTML = svgText;
-            const svgEl = wrap.querySelector('svg');
-            if (!svgEl) return;
-            svgEl.classList.add('fx-slash-svg');
-            // Force-restart the animation (clone the node so the browser re-triggers it)
-            const clone = svgEl.cloneNode(true);
-            el.appendChild(clone);
-            setTimeout(() => clone.remove(), 500);
-        };
-        if (this._slashSVGCache) {
-            inject(this._slashSVGCache);
-        } else {
-            fetch('icons/fx/slash.svg', { cache: 'force-cache' })
-                .then(r => r.text())
-                .then(text => { this._slashSVGCache = text; inject(text); })
-                .catch(e => console.warn('[fx] slash.svg load failed', e));
-        }
-    },
 
     // Shake (HP bars, etc.)
     shake(id) { this.triggerId(id, 'shake', 300); },
 
-    // Enemy weapon-node shrink (enemy side, on a normal block)
+    // Weapon-node shrink (on a normal block / clash)
     enemyShrink(el) { this.trigger(el, 'node-shrink', 300); },
 
-    // Player-node parry glow (perfect clash / perfect parry)
-    parryGlow(hand) { this.playerNode(hand, 'node-parry-glow', 300); },
-
-    // Player-node guard shrink (normal block)
-    guardShrink(hand) { this.playerNode(hand, 'node-guard-shrink', 300); },
-
     // ════════════════════════════════
-    //  PVP-only: element-direct variants
-    //  (PVP node ids aren't the node-left/node-right "hand" shape,
-    //   so they can't reuse playerNode()'s hand-based id lookup above)
+    //  Element-direct fighter-node variants (used by PVP and PVE views)
     // ════════════════════════════════
 
     // Charge icon: every frame, drive lift/rotate/scale continuously from t(0-1), no transition --
@@ -127,8 +87,6 @@ const fx = {
     guardShrinkEl(el, duration = 300) { this.trigger(el, 'node-guard-shrink', duration); },
 
     // Guard windup/ready/cancel -- element-direct variants
-    // (identical logic to the hand-based shieldWindup/shieldReady/shieldCancel below,
-    //   just skips building the `node-${hand}` id lookup and takes the element directly)
     shieldWindupEl(el, durationMs) {
         if (!el) return;
         el.style.setProperty('--shield-windup-time', `${durationMs}ms`);
@@ -150,58 +108,6 @@ const fx = {
         setTimeout(() => el?.classList.remove('shield-cancelled'), 200);
     },
 
-    // Guard windup: glow border fills in ring by ring
-    shieldWindup(hand, durationMs) {
-        const el = document.getElementById(`node-${hand}`);
-        if (!el) return;
-        el.style.setProperty('--shield-windup-time', `${durationMs}ms`);
-        el.classList.remove('shield-windup', 'shield-ready', 'shield-cancelled');
-        void el.offsetWidth;
-        el.classList.add('shield-windup');
-    },
-
-    // Charge complete, switch to the ready highlight
-    shieldReady(hand, holdMs) {
-        const el = document.getElementById(`node-${hand}`);
-        if (!el) return;
-        el.style.setProperty('--shield-hold-time', `${holdMs}ms`);
-        el.classList.remove('shield-windup', 'shield-cancelled');
-        void el.offsetWidth; // force reflow so the animation restarts from the beginning
-        el.classList.add('shield-ready');
-    },
-
-    // Release/cancel: quick fade-out
-    shieldCancel(hand) {
-        const el = document.getElementById(`node-${hand}`);
-        if (!el) return;
-        el.classList.remove('shield-windup', 'shield-ready');
-        el.classList.add('shield-cancelled');
-        setTimeout(() => el?.classList.remove('shield-cancelled'), 200);
-    },
-
-    // Enemy enters windup: set the CSS variable and trigger windup-active
-    enemyWindupStart(el, windupMs) {
-        if (!el) return;
-        el.style.setProperty('--windup-time', `${windupMs}ms`);
-        el.classList.remove('windup-active');
-        void el.offsetWidth;
-        el.classList.add('windup-active');
-    },
-
-    // On battle end/victory: clean up the weapon node + leftover animations on both sprites
-    clearBattleSprites() {
-        this.clearWeaponNode(document.getElementById('enemy-weapon-node'));
-        const enemySprite = document.getElementById('enemy-sprite');
-        if (enemySprite) enemySprite.classList.remove('slashed');
-    },
-
-    // Clear all animation classes and dynamic SVG effects on the enemy weapon node
-    clearWeaponNode(el) {
-        if (!el) return;
-        el.classList.remove('warning', 'pre-attack', 'windup-active', 'shake', 'node-shrink');
-        el.querySelectorAll('.fx-slash-svg').forEach(n => n.remove());
-    },
-
     // ════════════════════════════════
     //  Battle log output (unified prefix format)
     // ════════════════════════════════
@@ -209,17 +115,9 @@ const fx = {
         encounter(enemyName)         { ui.log(`[遭遇] ${enemyName}`); },
 
         // Player actions
-        attack(weaponName, dmg)      { ui.log(`[攻击] ${weaponName} 造成 ${dmg} 伤害`); },
-        guard(weaponName)            { ui.log(`[防守] 举起 ${weaponName}`); },
         skill(hp)                    { ui.log(`[技能] 恢复 ${hp} HP`); },
         flee()                       { ui.log(`[撤退] 返回基地`); },
         retreat()                    { ui.log(`[撤离] 见好就收，返回基地`); },
-
-        // Resolution outcomes
-        clash(actName, dmg)          { ui.log(`[拼刀] ${actName} → 反击 ${dmg} 伤害`); },
-        parry(actName, dmg)          { ui.log(`[弹反] ${actName} → 反弹 ${dmg} 伤害`); },
-        block(actName, dmg)          { ui.log(`[格挡] ${actName} → 受到 ${dmg} 伤害`); },
-        hit(actName, dmg)            { ui.log(`[受击] ${actName} 命中，受到 ${dmg} 伤害`); },
 
         // Battle settlement
         death()                      { ui.log(`[阵亡] 英雄倒下...`); },
