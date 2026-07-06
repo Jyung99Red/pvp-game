@@ -288,22 +288,22 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 .hidden { display: none !important; }
 #player-buff-display { font-size: 11px; color: #66ddff; min-height: 14px; margin-bottom: 3px; }
 
-/* ── Smithy & Building UI ── */
-#smithy-overlay {
+/* ── Smithy / Shop & Building UI ── */
+#smithy-overlay, #shop-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
-    z-index: 100; 
+    z-index: 100;
     align-items: center; /* <--- 关键点：将 flex-end 改为 center，让弹窗垂直居中 */
     justify-content: center;
     max-width: 480px; margin: 0 auto;
 }
-#smithy-overlay.open { display: flex; }
+#smithy-overlay.open, #shop-overlay.open { display: flex; }
 
-#smithy-box {
-    background: #1e1e28; border: 1px solid #554; 
-    border-radius: 12px; 
-    padding: 16px; 
-    width: 85%;        
-    max-height: 80vh; 
+#smithy-box, #shop-box {
+    background: #1e1e28; border: 1px solid #554;
+    border-radius: 12px;
+    padding: 16px;
+    width: 85%;
+    max-height: 80vh;
     overflow-y: auto;
 }
 .building-card {

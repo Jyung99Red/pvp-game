@@ -3,11 +3,14 @@
 // Depends on: data.js must load first (uses state / content)
 //
 // What gets saved, what doesn't:
-// - Saved: resources (gold/stone) / inventory (exp+items+materials) / base.buildings / player (level, stats, HP, equip)
-// - Not saved: world (current tab/exploration progress), battle (mid-fight state), pvpBattle (online match state)
-//   -- these are all transient "session-only" state that should always reset
-//   to defaults on page reload, rather than trying to restore a fight
-//   mid-flight (high risk, low value, and out of scope here).
+// - Saved: resources (gold) / inventory (exp+items+materials) / base.buildings /
+//   player (level, stats, HP, equip) / progress (checkpointFloor -- permanent
+//   dungeon progress, NOT the same as `world` below)
+// - Not saved: world (current tab/in-run floor position), battle (mid-fight state),
+//   pvpBattle (online match state) -- these are all transient "session-only"
+//   state that should always reset to defaults on page reload, rather than
+//   trying to restore a fight mid-flight (high risk, low value, and out of
+//   scope here).
 
 const save = (() => {
     const KEY = 'idle_rpg_save_v1';
@@ -23,7 +26,8 @@ const save = (() => {
             resources: state.resources,
             inventory: state.inventory,
             base: state.base,
-            player: state.player
+            player: state.player,
+            progress: state.progress
         };
     }
 
@@ -79,6 +83,9 @@ const save = (() => {
             // fine because player.js always reads state.player.xxx live and
             // never caches an old reference.
         }
+
+        if (data.progress) Object.assign(state.progress, data.progress);
+
         return true;
     }
 

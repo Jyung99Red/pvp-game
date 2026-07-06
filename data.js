@@ -1,26 +1,29 @@
 // ====== Active Data: current game state ======
 const state = {
     time: { tick: 0, days: 1, hours: 6, minutes: 0, period: 'day' },
-    resources: { gold: 0, stone: 0 },
+    resources: { gold: 0 },
     inventory: {
         exp: 0,
         items: {},
         materials: {}
     },
-    base: { buildings: { goldMine: 1, stoneMine: 0, hotSpring: 0, smithy: 0 } },
+    base: { buildings: { hotSpring: 0, smithy: 0, shop: 0 } },
     player: {
         level: 1,
         baseStats: { maxHp: 100, atk: 10, def: 3, spd: 10, int: 10, luck: 5 },
         currentHp: 100,
         equip: { left: 'wooden_sword', right: 'wooden_shield', armor: null, accessory: null }
     },
+    // Permanent dungeon progress -- unlike `world` below, this IS saved
+    // (see save.js). checkpointFloor is where the next dungeon run starts;
+    // it only advances when a boss floor (every 9th) is cleared.
+    progress: { checkpointFloor: 1 },
     world: {
         status: 'base',
         currentTab: 'base',
-        currentArea: null,
-        currentFightIndex: 0
+        currentFloor: 0   // 0 = not currently in a dungeon run
     },
-    pveBattle: null   // created at runtime by pveLogic.startFight (transient, never saved)
+    pveBattle: null   // created at runtime by pveLogic.enterDungeon/continueNext (transient, never saved)
 };
 
 // ====== Static Data: game config ======
@@ -172,18 +175,35 @@ const content = {
         }
     },
 
-    areas: {
-        forest: { name: "迷雾森林", encounters: ["goblin", "wolf", "goblin", "orc"] },
-        cave: { name: "幽暗洞穴", encounters: ["goblin", "orc", "wolf", "orc"] },
-        dragon_cave: { name: "龙之洞", encounters: ["young_dragon", "young_dragon", "elder_dragon"] },
-        traning: { name: "训练场", encounters: ["test_combat", "test_combat", "test_combat"] }
-    },
+    // Roguelike dungeon floors (replaces the old fixed-area system).
+    // Every 9th floor (9, 18, 27...) is a boss floor -- see
+    // pve_logic.js's _isBossFloor/_floorPosition. Non-boss floors pick one
+    // enemy at random from whichever tier covers that cycle position;
+    // both enemy pools and boss identity are placeholders for now (only
+    // elder_dragon exists as a boss) -- easy to extend once more enemies
+    // are added.
+    floorPools: [
+        { maxFloor: 3, pool: ['goblin', 'wolf'] },
+        { maxFloor: 6, pool: ['goblin', 'wolf', 'orc'] },
+        { maxFloor: 8, pool: ['orc', 'young_dragon'] }
+    ],
+    bossEnemy: 'elder_dragon',
+    bossFloorInterval: 9,
 
     buildings: {
-        goldMine: { name: "金矿", baseProduce: { gold: 1 } },
-        stoneMine: { name: "采石场", baseProduce: { stone: 1 } },
         hotSpring: { name: "温泉", baseProduce: {} },
-        smithy: { name: "铁匠铺", baseProduce: {} }
+        smithy:    { name: "铁匠铺", baseProduce: {} },
+        shop:      { name: "商店", baseProduce: {} }
+    },
+
+    // Shop: spend gold to buy materials directly (gold now comes from
+    // combat/floor clears, not a production building) -- placeholder prices.
+    shopPrices: {
+        goblin_ear:   15,
+        wolf_pelt:    20,
+        orc_tooth:    25,
+        dragon_scale: 60,
+        dragon_fang:  120
     },
 
     slotMeta: {

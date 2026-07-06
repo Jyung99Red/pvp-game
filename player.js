@@ -158,5 +158,15 @@ const player = {
         ui.log(`🔨 制作成功！获得 ${item.icon}${item.name}`);
         ui.updateEquip();
         ui.updateBase();
+    },
+
+    buyMaterial(matId) {
+        const price = content.shopPrices[matId];
+        if (!price) return;
+        if (state.resources.gold < price) { ui.log('金币不足！'); return; }
+        state.resources.gold -= price;
+        state.inventory.materials[matId] = (state.inventory.materials[matId] || 0) + 1;
+        const m = content.materials[matId];
+        ui.log(`🛒 购买成功！获得 ${m.icon}${m.name}`);
     }
 };

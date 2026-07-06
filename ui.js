@@ -13,13 +13,6 @@ const ui = {
     init() {
         save.load();   // Read the local save back into state first, then render the UI
 
-        // Build area list
-        let areaHtml = '';
-        for (let key in content.areas) {
-            areaHtml += `<button onclick="ui.startExplore('${key}')">探索 [${content.areas[key].name}]</button>`;
-        }
-        document.getElementById('area-list').innerHTML = areaHtml;
-
         // Build building list
         this.updateBuildingList();
 
@@ -38,8 +31,9 @@ const ui = {
                 this.closeInventoryModal();
             } else if (e.target.id === 'smithy-overlay') {
                 this.closeSmithyModal();
+            } else if (e.target.id === 'shop-overlay') {
+                this.closeShopModal();
             } else if (e.target.classList.contains('modal-overlay-shared')) {
-                this.closeAreaModal();
                 this.closeBuildingModal();
             }
         };
@@ -47,7 +41,7 @@ const ui = {
         // Close modals on overlay click
         document.getElementById('modal-overlay').addEventListener('click', closeModalsOnBG);
         document.getElementById('smithy-overlay').addEventListener('click', closeModalsOnBG);
-        document.getElementById('area-overlay').addEventListener('click', closeModalsOnBG);
+        document.getElementById('shop-overlay').addEventListener('click', closeModalsOnBG);
         document.getElementById('building-overlay').addEventListener('click', closeModalsOnBG);
         document.getElementById('inventory-overlay').addEventListener('click', closeModalsOnBG);
 
@@ -58,9 +52,6 @@ const ui = {
         save.startAutosave();
         this.log("系统已加载。");
     },
-	
-	openAreaModal() { document.getElementById('area-overlay').classList.add('open'); },
-    closeAreaModal() { document.getElementById('area-overlay').classList.remove('open'); },
 	
 	openInventoryModal() {
         this.updateEquip(); // Refresh latest inventory data before opening
@@ -76,13 +67,11 @@ const ui = {
     },
     closeBuildingModal() { document.getElementById('building-overlay').classList.remove('open'); },
 
-    // The one and only startExplore; includes the modal-closing logic
-    startExplore(areaKey) {
+    // Enter the dungeon: always resumes from the saved checkpoint floor
+    // (see state.progress.checkpointFloor / pve_logic.js's enterDungeon)
+    enterDungeon() {
         if (state.world.status !== 'base') return;
-        this.closeAreaModal(); // Close the modal before starting the fight
-        state.world.currentArea = areaKey;
-        state.world.currentFightIndex = 0;
-        pveLogic.startFight(content.areas[areaKey].encounters[0]);
+        pveLogic.enterDungeon();
     },
 
     switchTab(tabId) {
@@ -128,19 +117,14 @@ const ui = {
 
     _buildingUpgradeCost(key) {
         const lv = state.base.buildings[key] || 0;
-        if (key === 'hotSpring') {
-            if (lv === 0) return { res: 'gold', amt: 50, icon: '💰', resName: '金币' };
-            return { res: 'stone', amt: 50 * Math.pow(lv + 1, 2), icon: '🪨', resName: '石材' };
-        }
         return { res: 'gold', amt: 50 * Math.pow(lv + 1, 2), icon: '💰', resName: '金币' };
     },
 
     updateBuildingList() {
         const buildingDefs = {
-            goldMine:   { icon: '⛏️', label: '金矿', desc: '每秒产出金币' },
-            stoneMine:  { icon: '🪨', label: '采石场', desc: '每秒产出石材' },
-            hotSpring:  { icon: '♨️', label: '温泉', desc: '提供HP秒回' },
-            smithy:     { icon: '🔨', label: '铁匠铺', desc: '解锁装备制作' }
+            hotSpring:  { icon: '♨️', label: '温泉', desc: '提供HP秒回', gate: false },
+            smithy:     { icon: '🔨', label: '铁匠铺', desc: '解锁装备制作', gate: true, openFn: 'openSmithyModal' },
+            shop:       { icon: '🛒', label: '商店', desc: '解锁用金币购买素材', gate: true, openFn: 'openShopModal' }
         };
         let html = '';
         for (const key in buildingDefs) {
@@ -148,16 +132,16 @@ const ui = {
             const lv   = state.base.buildings[key] || 0;
             const costData = this._buildingUpgradeCost(key);
             const canAfford = state.resources[costData.res] >= costData.amt;
-            const isSmithyBuilt = key === 'smithy' && lv > 0;
+            const isUnlocked = def.gate && lv > 0;
 
             html += `<div class="building-card">
                 <div class="building-info">
                     <div class="building-name">${def.icon} ${def.label} <span style="color:#888;font-size:11px;font-weight:normal;">Lv.${lv}</span></div>
                     <div class="building-lv">${def.desc}</div>
-                    ${key !== 'smithy' || lv === 0 ? `<div class="building-cost">升级: ${costData.amt} ${costData.icon}</div>` : ''}
+                    ${!def.gate || lv === 0 ? `<div class="building-cost">升级: ${costData.amt} ${costData.icon}</div>` : ''}
                 </div>
-                ${isSmithyBuilt
-                    ? `<button onclick="ui.openSmithyModal()" class="btn-gold">进入</button>`
+                ${isUnlocked
+                    ? `<button onclick="ui.${def.openFn}()" class="btn-gold">进入</button>`
                     : `<button onclick="ui.upgradeBuilding('${key}')" ${canAfford ? '' : 'disabled'} class="btn-info">升级</button>`
                 }
             </div>`;
@@ -215,6 +199,35 @@ const ui = {
             </div>`;
         }
         document.getElementById('smithy-recipe-list').innerHTML = html;
+    },
+
+    openShopModal() {
+        if ((state.base.buildings.shop || 0) === 0) { ui.log('商店尚未建造！'); return; }
+        this._renderShopList();
+        document.getElementById('shop-overlay').classList.add('open');
+    },
+
+    closeShopModal() {
+        document.getElementById('shop-overlay').classList.remove('open');
+    },
+
+    _renderShopList() {
+        let html = '';
+        for (const matId in content.shopPrices) {
+            const price = content.shopPrices[matId];
+            const m = content.materials[matId];
+            const owned = state.inventory.materials[matId] || 0;
+            const canAfford = state.resources.gold >= price;
+
+            html += `<div class="recipe-card">
+                <div class="recipe-name">${m.icon} ${m.name} ${owned > 0 ? `<span style="color:#888;font-size:11px;">（持有 ×${owned}）</span>` : ''}</div>
+                <div class="recipe-reqs">💰 ${price}</div>
+                <button onclick="player.buyMaterial('${matId}');ui._renderShopList();ui.updateBase();" ${canAfford ? '' : 'disabled'} class="btn-success">
+                    ${canAfford ? '🛒 购买' : '金币不足'}
+                </button>
+            </div>`;
+        }
+        document.getElementById('shop-list').innerHTML = html;
     },
 
     _renderEffectsHtml(effects) {
@@ -368,7 +381,7 @@ const ui = {
         }
 
         document.getElementById('resource-display').innerHTML =
-            `💰 ${r.gold} &nbsp; 🪨 ${r.stone} &nbsp; 🧪 EXP: ${state.inventory.exp}` +
+            `💰 ${r.gold} &nbsp; 🧪 EXP: ${state.inventory.exp} &nbsp; 🏰 进度: 第${state.progress.checkpointFloor}层` +
             (matLine ? `<br><small style="color:#999;">素材: ${matLine}</small>` : '');
 
         const h = state.player;

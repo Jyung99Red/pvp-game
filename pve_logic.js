@@ -11,8 +11,9 @@
 //   - Player HP authority is state.player.currentHp (tick.js heals it
 //     mid-fight via the hot spring): copied in every frame, written back
 //     after every exchange/heal.
-//   - Fight chaining (area encounters, drops, exp, death→10% HP) ported
-//     from the old battle.js semantics.
+//   - Fight chaining (drops, exp, death→10% HP) ported from the old
+//     battle.js semantics; floor-to-floor progression (this file's
+//     enterDungeon/continueNext) replaces the old fixed-area system.
 
 const pveLogic = (() => {
     let _rAF = null;
@@ -46,6 +47,42 @@ const pveLogic = (() => {
             guardDamageMultiplier: o.guardDamageMultiplier || 1,
             earlyReleaseMs:    o.earlyReleaseMs    || pvpConfig.earlyReleaseMs,
             parryWindowBaseMs: o.parryWindowBaseMs || pvpConfig.parryWindowMs
+        };
+    }
+
+    // ── Roguelike floors ─────────────────────────────────────────────────
+    // Every content.bossFloorInterval'th floor (9, 18, 27...) is a boss
+    // floor; other floors draw one enemy at random from whichever
+    // content.floorPools tier covers that position in the 9-floor cycle.
+    // Only hp/atk/def/exp scale with floor depth -- timing fields (acts,
+    // baseMsCharge, ai overrides) come through unscaled via the spread.
+
+    function _floorPosition(floor) {
+        const p = floor % content.bossFloorInterval;
+        return p === 0 ? content.bossFloorInterval : p;
+    }
+
+    function _isBossFloor(floor) {
+        return floor % content.bossFloorInterval === 0;
+    }
+
+    function _pickFloorEnemyId(floor) {
+        if (_isBossFloor(floor)) return content.bossEnemy;
+        const pos  = _floorPosition(floor);
+        const tier = content.floorPools.find(t => pos <= t.maxFloor) || content.floorPools[content.floorPools.length - 1];
+        const pool = tier.pool;
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    function _scaledEnemyData(baseId, floor) {
+        const base  = content.enemies[baseId];
+        const scale = 1 + (floor - 1) * 0.08;
+        return {
+            ...base,
+            hp:  Math.round(base.hp  * scale),
+            atk: Math.round(base.atk * scale),
+            def: Math.round(base.def * scale),
+            exp: Math.round(base.exp * scale)
         };
     }
 
@@ -336,14 +373,29 @@ const pveLogic = (() => {
 
     function _onVictory() {
         const b = state.pveBattle;
-        const eData = content.enemies[b.enemyId];
+        const eData = b.enemyData; // the scaled data used for this fight (exp reflects floor depth)
         state.inventory.exp += eData.exp;
+        // Gold now comes from combat/floor clears instead of a production
+        // building (see Phase 5 building rework) -- proportional to the
+        // (already floor-scaled) exp reward.
+        const goldReward = Math.round(eData.exp * 0.6);
+        state.resources.gold += goldReward;
         const drops = _rollDrops(b.enemyId);
         fx.log.victory(eData.name, eData.exp);
+
+        // Checkpoint: only advances when a boss floor is cleared, and only
+        // forward (retreating after re-clearing an earlier boss floor
+        // shouldn't move the checkpoint backward -- it can't anyway since
+        // floor only increases within a run, but the guard is cheap insurance).
+        if (b.isBossFloor && b.floor + 1 > state.progress.checkpointFloor) {
+            state.progress.checkpointFloor = b.floor + 1;
+            fx.log.checkpoint(b.floor);
+        }
+
         b.waitingChoice = true;
         _stopLoop();
         uiPve.updateFrame();
-        uiPve.showWinChoice(drops, eData.exp);
+        uiPve.showWinChoice(drops, eData.exp, goldReward);
     }
 
     function _onDefeat() {
@@ -406,66 +458,72 @@ const pveLogic = (() => {
         return b && b.active && !b.waitingChoice && Date.now() >= b.startFreezeUntil;
     }
 
+    // Shared fight-start body -- floor is already resolved by the caller
+    // (enterDungeon / continueNext) into an enemyId + scaled eData.
+    function _beginFight(enemyId, eData, floor, isFreshEntry) {
+        _stopLoop();
+
+        _selfProfile  = _buildLocalProfile();
+        _enemyProfile = _buildEnemyProfile(eData);
+
+        const playerSide = combatResolver.makeSideState(_selfProfile.maxHp);
+        // HP persists across fights within a run (currentHp is authority)
+        playerSide.hp = Math.min(state.player.currentHp, _selfProfile.maxHp);
+
+        state.pveBattle = {
+            active: true,
+            waitingChoice: false,
+            startFreezeUntil: isFreshEntry ? Date.now() + 1000 : 0,
+            enemyId,
+            enemyData: eData,
+            floor,
+            isBossFloor: _isBossFloor(floor),
+            player: playerSide,
+            enemy:  combatResolver.makeSideState(_enemyProfile.maxHp),
+            enemyProfile: _enemyProfile,
+            skillPoints: 0,
+            ai: {
+                params: _aiParams(eData),
+                targetChargeMs: 0,
+                thinkTimer: 600,   // initial hesitation before the first move
+                guardReleaseAt: 0,
+                currentAct: null,
+                comboCount: 0,
+                isFeint: false,
+                enraged: false,
+                baseAtk: _enemyProfile.atk,
+                baseSpd: _enemyProfile.spd
+            },
+            log: []
+        };
+
+        state.world.status = 'fighting';
+        fx.log.encounter(eData.name);
+        uiPve.initFight(eData, isFreshEntry);
+        ui.switchTab('battle');
+
+        _lastTime = performance.now();
+        _rAF = requestAnimationFrame(_loop);
+    }
+
     // ── Public API ────────────────────────────────────────────────────────
 
     return {
-        startFight(enemyKey) {
-            _stopLoop();
-            const eData = content.enemies[enemyKey];
-            if (!eData) return;
-
-            _selfProfile  = _buildLocalProfile();
-            _enemyProfile = _buildEnemyProfile(eData);
-            const isFirst = state.world.currentFightIndex === 0;
-
-            const playerSide = combatResolver.makeSideState(_selfProfile.maxHp);
-            // HP persists across fights within a run (currentHp is authority)
-            playerSide.hp = Math.min(state.player.currentHp, _selfProfile.maxHp);
-
-            state.pveBattle = {
-                active: true,
-                waitingChoice: false,
-                startFreezeUntil: isFirst ? Date.now() + 1000 : 0,
-                enemyId: enemyKey,
-                player: playerSide,
-                enemy:  combatResolver.makeSideState(_enemyProfile.maxHp),
-                enemyProfile: _enemyProfile,
-                skillPoints: 0,
-                ai: {
-                    params: _aiParams(eData),
-                    targetChargeMs: 0,
-                    thinkTimer: 600,   // initial hesitation before the first move
-                    guardReleaseAt: 0,
-                    currentAct: null,
-                    comboCount: 0,
-                    isFeint: false,
-                    enraged: false,
-                    baseAtk: _enemyProfile.atk,
-                    baseSpd: _enemyProfile.spd
-                },
-                log: []
-            };
-
-            state.world.status = 'fighting';
-            fx.log.encounter(eData.name);
-            uiPve.initFight(eData, isFirst);
-            ui.switchTab('battle');
-
-            _lastTime = performance.now();
-            _rAF = requestAnimationFrame(_loop);
+        // Always resumes from the saved checkpoint floor -- a run never
+        // starts at floor 1 once a boss floor has been cleared.
+        enterDungeon() {
+            const floor = state.progress.checkpointFloor;
+            state.world.currentFloor = floor;
+            const enemyId = _pickFloorEnemyId(floor);
+            _beginFight(enemyId, _scaledEnemyData(enemyId, floor), floor, true);
         },
 
         continueNext() {
-            const area = content.areas[state.world.currentArea];
-            state.world.currentFightIndex++;
             uiPve.hideOverlays();
-            if (state.world.currentFightIndex < area.encounters.length) {
-                fx.log.continueDeep();
-                this.startFight(area.encounters[state.world.currentFightIndex]);
-            } else {
-                fx.log.exploreComplete();
-                this.endFight(true);
-            }
+            const floor = ++state.world.currentFloor;
+            fx.log.continueDeep();
+            const enemyId = _pickFloorEnemyId(floor);
+            _beginFight(enemyId, _scaledEnemyData(enemyId, floor), floor, false);
         },
 
         safeRetreat() {
@@ -489,6 +547,7 @@ const pveLogic = (() => {
                 state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * 0.1));
             }
             state.world.status = 'base';
+            state.world.currentFloor = 0;
             uiPve.hideOverlays();
             ui.switchTab('base');
             ui.updateBase();

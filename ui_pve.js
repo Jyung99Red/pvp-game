@@ -163,6 +163,9 @@ const uiPve = (() => {
         // Battle start/restart: inject icons, clear leftover fx classes
         // (DOM nodes are reused between fights and don't reset themselves)
         initFight(eData, isFirst) {
+            const b = state.pveBattle;
+            _setText('pve-floor-label', b ? `第 ${b.floor} 层${b.isBossFloor ? ' · 👑 首领' : ''}` : '');
+
             const enemyNode = document.getElementById('pve-enemy-weapon-icon');
             const selfNode  = document.getElementById('pve-self-weapon-icon');
             if (enemyNode) enemyNode.innerHTML = renderIcon('monster-atk', 'pvp-weapon-icon');
@@ -244,10 +247,10 @@ const uiPve = (() => {
             }
         },
 
-        showWinChoice(drops, exp) {
+        showWinChoice(drops, exp, gold) {
             const lootEl = document.getElementById('pve-win-loot');
             if (lootEl) {
-                let html = `🧪 EXP +${exp}`;
+                let html = `🧪 EXP +${exp} &nbsp; 💰 +${gold}`;
                 if (drops && drops.length) {
                     html += '<br>' + drops.map(d => {
                         const m = content.materials[d.id];

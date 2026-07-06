@@ -124,6 +124,6 @@ const fx = {
         victory(enemyName, exp)      { ui.log(`[胜利] 击败 ${enemyName}，获得 ${exp} EXP`); },
         loot(names)                  { ui.log(`[掉落] ${names}`); },
         continueDeep()               { ui.log(`[前进] 继续深入...`); },
-        exploreComplete()            { ui.log(`[返程] 探索完成，满载而归`); },
+        checkpoint(bossFloor)        { ui.log(`[存档点] 突破第${bossFloor}层首领，下次将从第${bossFloor + 1}层开始`); },
     }
 };
