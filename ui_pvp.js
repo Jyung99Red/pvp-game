@@ -140,14 +140,15 @@ const uiPvp = (() => {
                 chargeEl.classList.toggle('charge-normal', selfChargeVisible && progress >= earlyPct);
             }
 
-            // AP dots
+            // AP dots (cap can exceed the default via ap_max_bonus gear)
+            const apCap = s.apMax || pvpConfig.apMax;
             const apEl = document.getElementById('pvp-self-ap');
             if (apEl) {
-                apEl.textContent = '⭐'.repeat(s.actionPoints) + '☆'.repeat(pvpConfig.apMax - s.actionPoints);
+                apEl.textContent = '⭐'.repeat(s.actionPoints) + '☆'.repeat(Math.max(0, apCap - s.actionPoints));
             }
 
             // AP recovery bar
-            _setBar('pvp-self-ap-bar', s.actionPoints >= pvpConfig.apMax ? 100 : s.actionProgress * 100);
+            _setBar('pvp-self-ap-bar', s.actionPoints >= apCap ? 100 : s.actionProgress * 100);
 
             // ── Button states ────────────────────────────────────────
             const canCharge = s.phase === 'idle' && s.actionPoints >= 1;

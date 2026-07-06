@@ -95,11 +95,17 @@
             </button>
         </div>
 
-        <!-- Skill (3 skill points → heal 30%) -->
-        <button id="pve-btn-skill" onclick="pveLogic.useSkill()" disabled
-            style="margin-top:8px;margin-bottom:0;background:#0077b6;">
-            ✨ 技能：治疗 (-3<span id="pve-self-sp">···</span>)
-        </button>
+        <!-- Skills (spend skill pips; earned by landing hits / parrying) -->
+        <div class="flex-row" style="margin-top:8px;margin-bottom:4px;">
+            <span style="font-size:11px;color:#888;">技能点 <span id="pve-self-sp" style="color:#e9c46a;">···</span></span>
+            <span id="pve-buff-display" style="font-size:10px;color:#66ddff;"></span>
+        </div>
+        <div class="btn-row">
+            <button id="pve-skill-heal" class="btn-skill" onclick="pveLogic.useSkill('heal')" disabled>💚 治疗<br><small>-3</small></button>
+            <button id="pve-skill-haste" class="btn-skill" onclick="pveLogic.useSkill('haste')" disabled>⚡ 疾速<br><small>-1</small></button>
+            <button id="pve-skill-full" class="btn-skill" onclick="pveLogic.useSkill('full')" disabled>🔥 满蓄<br><small>-2</small></button>
+            <button id="pve-skill-parry" class="btn-skill" onclick="pveLogic.useSkill('parry')" disabled>🔮 弹反<br><small>-2</small></button>
+        </div>
     </div>
 
     <!-- Battle log (5 lines, resolver logText) -->

@@ -32,7 +32,10 @@ const pveLogic = (() => {
             judgmentMultiplier:    player.getJudgmentMultiplier(),
             guardDamageMultiplier: player.getGuardDamageMultiplier(),
             earlyReleaseMs:    player.getChargeThresholdMs(),
-            parryWindowBaseMs: player.getParryWindowBaseMs()
+            parryWindowBaseMs: player.getParryWindowBaseMs(),
+            critChance:  player.getCritChance(),
+            guardThorns: player.getGuardThorns(),
+            apMax:       player.getApMax()
         };
     }
 
@@ -46,30 +49,31 @@ const pveLogic = (() => {
             judgmentMultiplier:    o.judgmentMultiplier || 1,
             guardDamageMultiplier: o.guardDamageMultiplier || 1,
             earlyReleaseMs:    o.earlyReleaseMs    || pvpConfig.earlyReleaseMs,
-            parryWindowBaseMs: o.parryWindowBaseMs || pvpConfig.parryWindowMs
+            parryWindowBaseMs: o.parryWindowBaseMs || pvpConfig.parryWindowMs,
+            critChance:  o.critChance  || 0,
+            guardThorns: o.guardThorns || 0,
+            apMax:       o.apMax       || pvpConfig.apMax
         };
     }
 
     // ── Roguelike floors ─────────────────────────────────────────────────
     // Every content.bossFloorInterval'th floor (9, 18, 27...) is a boss
-    // floor; other floors draw one enemy at random from whichever
-    // content.floorPools tier covers that position in the 9-floor cycle.
+    // floor, rotating through content.bossRotation. Other floors draw one
+    // enemy at random from the tier whose maxFloor covers the ABSOLUTE
+    // floor number (floors past the last tier keep drawing from it).
     // Only hp/atk/def/exp scale with floor depth -- timing fields (acts,
     // baseMsCharge, ai overrides) come through unscaled via the spread.
-
-    function _floorPosition(floor) {
-        const p = floor % content.bossFloorInterval;
-        return p === 0 ? content.bossFloorInterval : p;
-    }
 
     function _isBossFloor(floor) {
         return floor % content.bossFloorInterval === 0;
     }
 
     function _pickFloorEnemyId(floor) {
-        if (_isBossFloor(floor)) return content.bossEnemy;
-        const pos  = _floorPosition(floor);
-        const tier = content.floorPools.find(t => pos <= t.maxFloor) || content.floorPools[content.floorPools.length - 1];
+        if (_isBossFloor(floor)) {
+            const idx = Math.floor(floor / content.bossFloorInterval) - 1;
+            return content.bossRotation[idx % content.bossRotation.length];
+        }
+        const tier = content.floorPools.find(t => floor <= t.maxFloor) || content.floorPools[content.floorPools.length - 1];
         const pool = tier.pool;
         return pool[Math.floor(Math.random() * pool.length)];
     }
@@ -153,14 +157,15 @@ const pveLogic = (() => {
 
     // ── Tick one side per frame (clone of pvp_logic._tickSide, spd passed in) ──
 
-    function _tickSide(side, dt, now, spd, onAutoFire) {
+    function _tickSide(side, dt, now, spd, onAutoFire, chargeRate = 1) {
+        const apCap = side.apMax || pvpConfig.apMax;
         // AP recovery (paused while charging or guarding)
         if (!['charging', 'guard_windup', 'guard_ready'].includes(side.phase)) {
-            if (side.actionPoints < pvpConfig.apMax) {
+            if (side.actionPoints < apCap) {
                 side.actionProgress += dt / combatResolver.apRecoveryMs(spd);
                 if (side.actionProgress >= 1) {
                     side.actionPoints++;
-                    side.actionProgress = side.actionPoints < pvpConfig.apMax
+                    side.actionProgress = side.actionPoints < apCap
                         ? side.actionProgress - 1 : 0;
                 }
             } else {
@@ -173,7 +178,8 @@ const pveLogic = (() => {
         }
 
         if (side.phase === 'charging') {
-            side.chargeMs = now - side.chargeStartT;
+            // chargeRate > 1 = the haste skill buff: charge fills faster
+            side.chargeMs = (now - side.chargeStartT) * chargeRate;
             if (side.chargeMs >= pvpConfig.chargeMaxMs) {
                 side.chargeMs = pvpConfig.chargeMaxMs;
                 onAutoFire();
@@ -296,8 +302,24 @@ const pveLogic = (() => {
         const aStats   = attackerIsPlayer ? _selfProfile  : _enemyProfile;
         const dStats   = attackerIsPlayer ? _enemyProfile : _selfProfile;
 
-        const r = combatResolver.resolveExchange(
+        let r = combatResolver.resolveExchange(
             chargeMs, side, defender, aStats, dStats, Date.now());
+
+        // Auto-parry buff: an enemy attack that would land clean (hit or
+        // interrupt) is re-judged against a synthetic guard_ready defender,
+        // so the resolver computes a proper parry (counter damage + attacker
+        // stun). The real player side isn't touched -- parry deals the
+        // defender no damage and no stun, so an ongoing player charge
+        // continues unbroken, which is the whole point of the buff.
+        if (!attackerIsPlayer && b.buffs.autoParry > 0 &&
+            (r.exchange === 'hit' || r.exchange === 'interrupt')) {
+            b.buffs.autoParry--;
+            const wallNow = Date.now();
+            const ghost = Object.assign({}, defender, { phase: 'guard_ready', lastGuardReadyT: wallNow });
+            r = combatResolver.resolveExchange(chargeMs, side, ghost, aStats, dStats, wallNow);
+            _pushLog('🔮 弹反护体生效！');
+        }
+
         _applyExchange(r, attackerIsPlayer);
 
         // AI post-strike think delay (reuses the act's old recoveryMs as
@@ -375,11 +397,12 @@ const pveLogic = (() => {
         const b = state.pveBattle;
         const eData = b.enemyData; // the scaled data used for this fight (exp reflects floor depth)
         state.inventory.exp += eData.exp;
-        // Gold now comes from combat/floor clears instead of a production
-        // building (see Phase 5 building rework) -- proportional to the
-        // (already floor-scaled) exp reward.
+        // Gold accumulates into world.runGold (at risk!) rather than being
+        // paid out immediately -- it's banked into resources only on making
+        // it back to base alive, and lost entirely on death. This is what
+        // makes "继续深入 vs 携宝回城" an actual decision.
         const goldReward = Math.round(eData.exp * 0.6);
-        state.resources.gold += goldReward;
+        state.world.runGold += goldReward;
         const drops = _rollDrops(b.enemyId);
         fx.log.victory(eData.name, eData.exp);
 
@@ -428,7 +451,8 @@ const pveLogic = (() => {
             if (b.player.phase === 'guard_windup' && b.player.phaseTimer <= dt) _guardWindupComplete(b.player, now);
             if (b.enemy.phase  === 'guard_windup' && b.enemy.phaseTimer  <= dt) _guardWindupComplete(b.enemy, now);
 
-            _tickSide(b.player, dt, now, _selfProfile.spd,  () => _fire(b.player, true));
+            const hasteRate = now < b.buffs.chargeHasteUntil ? 1.5 : 1;
+            _tickSide(b.player, dt, now, _selfProfile.spd,  () => _fire(b.player, true), hasteRate);
             _tickSide(b.enemy,  dt, now, _enemyProfile.spd, () => _fire(b.enemy, true));
 
             _aiThink(dt, now);
@@ -466,7 +490,7 @@ const pveLogic = (() => {
         _selfProfile  = _buildLocalProfile();
         _enemyProfile = _buildEnemyProfile(eData);
 
-        const playerSide = combatResolver.makeSideState(_selfProfile.maxHp);
+        const playerSide = combatResolver.makeSideState(_selfProfile.maxHp, _selfProfile.apMax);
         // HP persists across fights within a run (currentHp is authority)
         playerSide.hp = Math.min(state.player.currentHp, _selfProfile.maxHp);
 
@@ -479,9 +503,15 @@ const pveLogic = (() => {
             floor,
             isBossFloor: _isBossFloor(floor),
             player: playerSide,
-            enemy:  combatResolver.makeSideState(_enemyProfile.maxHp),
+            enemy:  combatResolver.makeSideState(_enemyProfile.maxHp, _enemyProfile.apMax),
             enemyProfile: _enemyProfile,
             skillPoints: 0,
+            // Skill buffs (see useSkill): haste = faster charge fill until
+            // the timestamp; instantCharge = next charge press is instantly
+            // full; autoParry = charges that convert an incoming clean hit
+            // into a parry (deliberately does NOT break the player's own
+            // ongoing charge -- a parried attacker deals no interrupt)
+            buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 },
             ai: {
                 params: _aiParams(eData),
                 targetChargeMs: 0,
@@ -514,6 +544,7 @@ const pveLogic = (() => {
         enterDungeon() {
             const floor = state.progress.checkpointFloor;
             state.world.currentFloor = floor;
+            state.world.runGold = 0;
             const enemyId = _pickFloorEnemyId(floor);
             _beginFight(enemyId, _scaledEnemyData(enemyId, floor), floor, true);
         },
@@ -543,6 +574,19 @@ const pveLogic = (() => {
             const b = state.pveBattle;
             if (b) { b.active = false; b.waitingChoice = false; }
             _stopLoop();
+
+            // Run-gold settlement: banked on making it back alive, lost on death
+            const carried = state.world.runGold || 0;
+            if (carried > 0) {
+                if (win) {
+                    state.resources.gold += carried;
+                    fx.log.goldBank(carried);
+                } else {
+                    fx.log.goldLost(carried);
+                }
+            }
+            state.world.runGold = 0;
+
             if (state.player.currentHp <= 0) {
                 state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * 0.1));
             }
@@ -553,27 +597,59 @@ const pveLogic = (() => {
             ui.updateBase();
         },
 
-        useSkill() {
+        SKILL_COSTS: { heal: 3, haste: 1, full: 2, parry: 2 },
+
+        useSkill(kind) {
             const b = state.pveBattle;
             if (!b || !b.active || b.waitingChoice) return;
-            if (b.skillPoints < 3) return;
-            b.skillPoints -= 3;
-            const healAmt = Math.floor(player.getStats().maxHp * 0.3);
-            player.heal(healAmt);
-            b.player.hp = Math.min(state.player.currentHp, b.player.maxHp);
-            fx.log.skill(healAmt);
+            const cost = this.SKILL_COSTS[kind];
+            if (!cost || b.skillPoints < cost) return;
+
+            switch (kind) {
+                case 'heal': {
+                    const healAmt = Math.floor(player.getStats().maxHp * 0.3);
+                    player.heal(healAmt);
+                    b.player.hp = Math.min(state.player.currentHp, b.player.maxHp);
+                    fx.log.skill(healAmt);
+                    break;
+                }
+                case 'haste':
+                    b.buffs.chargeHasteUntil = Date.now() + 10000;
+                    _pushLog('⚡ 疾速！10秒内蓄力速度提升 50%');
+                    break;
+                case 'full':
+                    if (b.buffs.instantCharge) return; // already queued, don't waste pips
+                    b.buffs.instantCharge = true;
+                    _pushLog('🔥 蓄势待发！下一次攻击直接满蓄力');
+                    break;
+                case 'parry':
+                    if (b.buffs.autoParry >= 1) return; // cap at one charge
+                    b.buffs.autoParry = 1;
+                    _pushLog('🔮 弹反护体！下一次受击将自动弹反');
+                    break;
+                default:
+                    return;
+            }
+            b.skillPoints -= cost;
         },
 
         // ── Player input (same two-button model as PVP) ───────────────────
 
         onChargePress() {
             if (!_inputOk()) return;
-            const side = state.pveBattle.player;
+            const b = state.pveBattle;
+            const side = b.player;
             if (side.actionPoints < 1) return;
             if (side.phase !== 'idle') return;
             side.actionPoints--;
             side.chargeStartT = Date.now();
             side.chargeMs     = 0;
+            // Instant-full-charge buff: backdate the charge start so the
+            // very next tick reads full charge and auto-fires
+            if (b.buffs.instantCharge) {
+                b.buffs.instantCharge = false;
+                side.chargeStartT = Date.now() - pvpConfig.chargeMaxMs;
+            }
             _setPhase(side, 'charging', 0);
         },
 

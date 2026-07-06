@@ -34,5 +34,14 @@ const EFFECT_REGISTRY = {
     },
     parry_window_ms: {
         label(value) { return `<span class="effect-tag effect-info">🎯 弹反窗口 ${value}ms</span>`; }
+    },
+    crit_chance: {
+        label(value) { return `<span class="effect-tag effect-buff">💥 暴击率 +${value*100}%</span>`; }
+    },
+    guard_thorns: {
+        label(value) { return `<span class="effect-tag effect-buff">🌵 格挡反伤 ${value*100}%</span>`; }
+    },
+    ap_max_bonus: {
+        label(value) { return `<span class="effect-tag effect-passive">⭐ 行动力上限 +${value}</span>`; }
     }
 };

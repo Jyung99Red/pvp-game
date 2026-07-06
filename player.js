@@ -37,6 +37,25 @@ const player = {
     getChargeThresholdMs() { return this.getFirstEquippedEffectValue('charge_threshold_ms', pvpConfig.earlyReleaseMs); },
     getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', pvpConfig.parryWindowMs); },
 
+    // Crit chance: 1% per luck point + flat crit_chance item effects
+    getCritChance() {
+        let c = (this.getStats().luck || 0) * 0.01;
+        this.getEquippedEffects('crit_chance').forEach(e => { c += e.value; });
+        return c;
+    },
+
+    getGuardThorns() {
+        let t = 0;
+        this.getEquippedEffects('guard_thorns').forEach(e => { t += e.value; });
+        return t;
+    },
+
+    getApMax() {
+        let m = pvpConfig.apMax;
+        this.getEquippedEffects('ap_max_bonus').forEach(e => { m += e.value; });
+        return m;
+    },
+
     getGuardDamageMultiplier() {
         return this._applyEffectPass(1.0, 'guard_damage_reduce');
     },
@@ -47,13 +66,44 @@ const player = {
             if (!id) return;
             const item = content.items[id];
             if (item) {
+                const enhMult = 1 + 0.1 * this.getEnhanceLevel(id);
                 Object.keys(STAT_REGISTRY).forEach(statKey => {
-                    const add = item.stats[statKey];
-                    if (add) stats[statKey] = (stats[statKey] || 0) + add;
+                    let add = item.stats[statKey];
+                    if (!add) return;
+                    // Enhancement (+10%/level) applies to atk/def only --
+                    // utility stats (spd/int) stay at their designed values
+                    if (statKey === 'atk' || statKey === 'def') add = Math.round(add * enhMult);
+                    stats[statKey] = (stats[statKey] || 0) + add;
                 });
             }
         });
         return stats;
+    },
+
+    // ── Enhancement (weapons/shields only, +10% atk/def per level) ──
+
+    ENHANCE_MAX: 5,
+
+    getEnhanceLevel(itemId) {
+        return state.inventory.enhance[itemId] || 0;
+    },
+
+    getEnhanceCost(itemId) {
+        return 100 * (this.getEnhanceLevel(itemId) + 1);
+    },
+
+    enhanceItem(itemId) {
+        const item = content.items[itemId];
+        if (!item || (item.type !== 'weapon' && item.type !== 'shield')) return;
+        const lvl = this.getEnhanceLevel(itemId);
+        if (lvl >= this.ENHANCE_MAX) { ui.log('已达到强化上限！'); return; }
+        const cost = this.getEnhanceCost(itemId);
+        if (state.resources.gold < cost) { ui.log('金币不足！'); return; }
+        state.resources.gold -= cost;
+        state.inventory.enhance[itemId] = lvl + 1;
+        ui.log(`⚒️ 强化成功！${item.icon}${item.name} +${lvl + 1}`);
+        ui.updateBase();
+        ui.updateEquip();
     },
 	
 

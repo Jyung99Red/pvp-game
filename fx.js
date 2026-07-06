@@ -125,5 +125,7 @@ const fx = {
         loot(names)                  { ui.log(`[掉落] ${names}`); },
         continueDeep()               { ui.log(`[前进] 继续深入...`); },
         checkpoint(bossFloor)        { ui.log(`[存档点] 突破第${bossFloor}层首领，下次将从第${bossFloor + 1}层开始`); },
+        goldBank(amount)             { ui.log(`[结算] 平安归来，${amount} 金币入账`); },
+        goldLost(amount)             { ui.log(`[损失] 阵亡了... ${amount} 金币散落在地牢中`); },
     }
 };

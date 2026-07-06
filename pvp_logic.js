@@ -70,7 +70,10 @@ const pvpLogic = (() => {
             judgmentMultiplier:    player.getJudgmentMultiplier(),
             guardDamageMultiplier: player.getGuardDamageMultiplier(),
             earlyReleaseMs:    player.getChargeThresholdMs(),
-            parryWindowBaseMs: player.getParryWindowBaseMs()
+            parryWindowBaseMs: player.getParryWindowBaseMs(),
+            critChance:  player.getCritChance(),
+            guardThorns: player.getGuardThorns(),
+            apMax:       player.getApMax()
         };
     }
 
@@ -84,14 +87,15 @@ const pvpLogic = (() => {
     // ── Tick: advance one side's (self or opponent) state by one frame ───
 
     function _tickSide(side, dt, now, isSelf) {
+        const apCap = side.apMax || pvpConfig.apMax;
         // AP recovery (paused while charging or guarding)
         if (!['charging', 'guard_windup', 'guard_ready'].includes(side.phase)) {
-            if (side.actionPoints < pvpConfig.apMax) {
+            if (side.actionPoints < apCap) {
                 const spd = isSelf ? player.getStats().spd : _opponentProfile.spd;
                 side.actionProgress += dt / combatResolver.apRecoveryMs(spd);
                 if (side.actionProgress >= 1) {
                     side.actionPoints++;
-                    side.actionProgress = side.actionPoints < pvpConfig.apMax
+                    side.actionProgress = side.actionPoints < apCap
                         ? side.actionProgress - 1 : 0;
                 }
             } else {
@@ -536,9 +540,9 @@ const pvpLogic = (() => {
                 active:   true,
                 role,
                 battleId: _battleId,
-                self:     _makeSideState(selfProfile.maxHp),
+                self:     _makeSideState(selfProfile.maxHp, selfProfile.apMax),
                 opponent: {
-                    ..._makeSideState(_opponentProfile.maxHp),
+                    ..._makeSideState(_opponentProfile.maxHp, _opponentProfile.apMax),
                     displayName: _opponentProfile.level != null ? `对手 Lv.${_opponentProfile.level}` : '对手',
                     level: _opponentProfile.level,
                     chargeProgress: 0

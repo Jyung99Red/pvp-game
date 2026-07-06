@@ -70,6 +70,7 @@ const save = (() => {
             if (typeof data.inventory.exp === 'number') state.inventory.exp = data.inventory.exp;
             Object.assign(state.inventory.items, data.inventory.items || {});
             Object.assign(state.inventory.materials, data.inventory.materials || {});
+            Object.assign(state.inventory.enhance, data.inventory.enhance || {});
         }
 
         if (data.base && data.base.buildings) {

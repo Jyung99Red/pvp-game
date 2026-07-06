@@ -122,12 +122,13 @@ const uiPve = (() => {
                 chargeEl.classList.toggle('charge-normal', selfCharging && progress >= earlyPct);
             }
 
-            // AP dots + recovery bar
+            // AP dots + recovery bar (cap can exceed the default via ap_max_bonus gear)
+            const apCap = s.apMax || pvpConfig.apMax;
             const apEl = document.getElementById('pve-self-ap');
             if (apEl) {
-                apEl.textContent = '⭐'.repeat(s.actionPoints) + '☆'.repeat(pvpConfig.apMax - s.actionPoints);
+                apEl.textContent = '⭐'.repeat(s.actionPoints) + '☆'.repeat(Math.max(0, apCap - s.actionPoints));
             }
-            _setBar('pve-self-ap-bar', s.actionPoints >= pvpConfig.apMax ? 100 : s.actionProgress * 100);
+            _setBar('pve-self-ap-bar', s.actionPoints >= apCap ? 100 : s.actionProgress * 100);
 
             // ── Buttons ──────────────────────────────────────────────
             const canAct     = !frozen && b.active && !b.waitingChoice;
@@ -147,11 +148,24 @@ const uiPve = (() => {
                     s.phase === 'guard_ready' || s.phase === 'guard_windup');
             }
 
-            // Skill button + skill-point pips
+            // Skill pips + per-skill button states (cost-gated)
             const spEl = document.getElementById('pve-self-sp');
             if (spEl) spEl.textContent = '✨'.repeat(b.skillPoints) + '·'.repeat(3 - b.skillPoints);
-            const btnSkill = document.getElementById('pve-btn-skill');
-            if (btnSkill) btnSkill.disabled = !canAct || b.skillPoints < 3;
+            const costs = pveLogic.SKILL_COSTS;
+            for (const kind in costs) {
+                const btn = document.getElementById(`pve-skill-${kind}`);
+                if (btn) btn.disabled = !canAct || b.skillPoints < costs[kind];
+            }
+
+            // Active buff indicators
+            const buffEl = document.getElementById('pve-buff-display');
+            if (buffEl && b.buffs) {
+                const parts = [];
+                if (Date.now() < b.buffs.chargeHasteUntil) parts.push('⚡疾速');
+                if (b.buffs.instantCharge) parts.push('🔥满蓄待发');
+                if (b.buffs.autoParry > 0) parts.push('🔮弹反护体');
+                buffEl.textContent = parts.join(' ');
+            }
 
             // ── Log ──────────────────────────────────────────────────
             const logEl = document.getElementById('pve-log');
@@ -251,6 +265,8 @@ const uiPve = (() => {
             const lootEl = document.getElementById('pve-win-loot');
             if (lootEl) {
                 let html = `🧪 EXP +${exp} &nbsp; 💰 +${gold}`;
+                html += `<br><span style="color:#e9c46a;">本次探索累计 💰 ${state.world.runGold}</span>` +
+                        `<span style="color:#888;font-size:11px;">（阵亡将全部丢失，回城才能入账）</span>`;
                 if (drops && drops.length) {
                     html += '<br>' + drops.map(d => {
                         const m = content.materials[d.id];

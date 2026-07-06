@@ -299,7 +299,7 @@ const ui = {
                 <div class="equip-slot-card ${item ? 'filled' : ''}" onclick="${item ? `ui.openEquippedModal('${slot}')` : ''}">
                     <span class="slot-label">${meta.label}</span>
                     <span class="slot-icon">${item ? item.icon : '○'}</span>
-                    <span class="slot-name">${item ? item.name : meta.hint}</span>
+                    <span class="slot-name">${item ? item.name + (player.getEnhanceLevel(id) > 0 ? `+${player.getEnhanceLevel(id)}` : '') : meta.hint}</span>
                     ${item ? `<button class="unequip-btn" onclick="event.stopPropagation();player.equipItem('${slot}',null);">✕</button>` : ''}
                 </div>
             `;
@@ -349,17 +349,31 @@ const ui = {
         if (!itemId) return;
         const item = content.items[itemId];
         const meta = content.slotMeta[slot];
+        const enhLvl  = player.getEnhanceLevel(itemId);
+        const enhTag  = enhLvl > 0 ? ` +${enhLvl}` : '';
+        const enhMult = 1 + 0.1 * enhLvl;
 
-        document.getElementById('modal-title').innerText = `${item.icon} ${item.name}（已装备·${meta.label}）`;
+        document.getElementById('modal-title').innerText = `${item.icon} ${item.name}${enhTag}（已装备·${meta.label}）`;
         const statsArr = [];
-        if (item.stats.atk > 0) statsArr.push(`⚔️ +${item.stats.atk}`);
-        if (item.stats.def > 0) statsArr.push(`🛡️ +${item.stats.def}`);
+        if (item.stats.atk > 0) statsArr.push(`⚔️ +${Math.round(item.stats.atk * enhMult)}`);
+        if (item.stats.def > 0) statsArr.push(`🛡️ +${Math.round(item.stats.def * enhMult)}`);
         if (item.stats.int > 0) statsArr.push(`🧠 +${item.stats.int}`);
         document.getElementById('modal-stats').innerText = statsArr.length ? statsArr.join('  ') : '无属性加成';
 
         document.getElementById('modal-effects').innerHTML = this._renderEffectsHtml(item.effects);
         document.getElementById('modal-desc').innerText = item.desc;
+
+        // Enhancement is weapons/shields only (see player.enhanceItem)
+        let enhBtn = '';
+        if (item.type === 'weapon' || item.type === 'shield') {
+            const cost   = player.getEnhanceCost(itemId);
+            const maxed  = enhLvl >= player.ENHANCE_MAX;
+            const canPay = state.resources.gold >= cost;
+            enhBtn = `<button class="btn-gold" onclick="player.enhanceItem('${itemId}');ui.openEquippedModal('${slot}');" ${(!maxed && canPay) ? '' : 'disabled'}>` +
+                     (maxed ? '⚒️ 已满级' : `⚒️ 强化 (${cost}💰)`) + `</button>`;
+        }
         document.getElementById('modal-btns').innerHTML =
+            enhBtn +
             `<button onclick="ui.closeModal();ui.openInventoryModal();">🔄 更换</button>` +
             `<button class="btn-unequip" onclick="player.equipItem('${slot}',null);ui.closeModal();">卸下</button>`;
 
@@ -398,7 +412,7 @@ const ui = {
         // 2. Render the atk/def/spd stats below
         const statsEl = document.getElementById('player-display-stats');
         if (statsEl) {
-            statsEl.innerHTML = `⚔️ ${s.atk} &nbsp; 🛡️ ${s.def} &nbsp; 🧠 ${s.int} &nbsp; ⚡ ${Number(s.spd).toFixed(1)}`;
+            statsEl.innerHTML = `⚔️ ${s.atk} &nbsp; 🛡️ ${s.def} &nbsp; 🧠 ${s.int} &nbsp; ⚡ ${Number(s.spd).toFixed(1)} &nbsp; 💥 ${Math.round(player.getCritChance() * 100)}%`;
         }
 
         const btnLvl = document.getElementById('btn-lvl-up');

@@ -25,13 +25,17 @@ const pvpConfig = {
     apMax:             3,
     apRecoveryMs:      2000,  // Base recovery time per AP point, scaled by 10/spd
 
+    // Crit (rolled on clean hits/interrupts; chance comes from the
+    // attacker's profile: luck stat + crit_chance item effects)
+    critMult:          1.5,
+
     // Clash detection window, fixed value, not affected by any stat
     clashWindowMs:     100
 };
 
 // ── State initialiser ────────────────────────────────────────────────────
 
-function _makeSideState(maxHp) {
+function _makeSideState(maxHp, apMax = pvpConfig.apMax) {
     return {
         hp:            maxHp,
         maxHp,
@@ -39,7 +43,8 @@ function _makeSideState(maxHp) {
         phaseTimer:    0,
         chargeStartT:  0,
         chargeMs:      0,
-        actionPoints:  pvpConfig.apMax,
+        actionPoints:  apMax,
+        apMax,
         actionProgress: 0,
         lastStrikeT:   0,   // Wall-clock time (Date.now()) when strike_out last began; clash detection
         lastChargeMs:  0,   // Charge duration of the last fired attack; used for clash damage calc
@@ -111,6 +116,7 @@ const combatResolver = (() => {
         // defenderDmg: damage the defender takes
         // logText: a ready-to-display string, no further translation needed
         let attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, exchange, logText;
+        let crit = false;
 
         if (isClash) {
             const defChargeMs = defender.lastChargeMs || defenderStats.earlyReleaseMs;
@@ -131,29 +137,41 @@ const combatResolver = (() => {
         } else if (isBlock) {
             const guardMult  = defenderStats.guardDamageMultiplier;
             const blockedDmg = Math.max(1, Math.round(applyDefense(rawDmg, defenderStats.def) * 0.4 * guardMult));
-            attackerDmg    = 0;
+            // Thorns (guard_thorns effect): a successful block reflects a
+            // share of the attack's raw damage back at the attacker
+            const thorns   = defenderStats.guardThorns || 0;
+            attackerDmg    = thorns > 0 ? applyDefense(Math.round(rawDmg * thorns), attackerStats.def) : 0;
             defenderDmg    = blockedDmg;
             attackerStunMs = 0;
             defenderStunMs = 150;
             exchange   = 'blocked';
-            logText    = `🛡️ 格挡！减为 ${defenderDmg} 点伤害`;
+            logText    = `🛡️ 格挡！减为 ${defenderDmg} 点伤害` +
+                         (attackerDmg > 0 ? `，🌵 荆棘反伤 ${attackerDmg} 点` : '');
         } else if (isInterrupt) {
+            crit = Math.random() < (attackerStats.critChance || 0);
             attackerDmg    = 0;
             defenderDmg    = applyDefense(rawDmg, defenderStats.def);
+            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
             attackerStunMs = 0;
             defenderStunMs = pvpConfig.interruptStunMs;
             exchange   = 'interrupt';
-            logText    = `⚡ 打断！蓄力被打断，受到 ${defenderDmg} 点伤害`;
+            logText    = crit
+                ? `💥 暴击打断！蓄力被打断，受到 ${defenderDmg} 点伤害`
+                : `⚡ 打断！蓄力被打断，受到 ${defenderDmg} 点伤害`;
         } else {
+            crit = Math.random() < (attackerStats.critChance || 0);
             attackerDmg    = 0;
             defenderDmg    = applyDefense(rawDmg, defenderStats.def);
+            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
             attackerStunMs = 0;
             defenderStunMs = 0;
             exchange   = 'hit';
-            logText    = `⚔️ 命中！造成 ${defenderDmg} 点伤害`;
+            logText    = crit
+                ? `💥 暴击！造成 ${defenderDmg} 点伤害`
+                : `⚔️ 命中！造成 ${defenderDmg} 点伤害`;
         }
 
-        return { exchange, attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, logText };
+        return { exchange, attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, logText, crit };
     }
 
     return {
