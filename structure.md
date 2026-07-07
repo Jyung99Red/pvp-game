@@ -51,19 +51,19 @@
 
 | File | 角色 |
 |------|------|
-| `data.js` | 静态配置,战斗复用其中的装备/属性数值 |
-| `player.js` | `getStats()` / `getJudgmentMultiplier()` / `getGuardDamageMultiplier()` / `getCritChance()` / `getGuardThorns()` / `getApMax()` / 逐项时序 getter,组装成 profile 传给结算器 |
-| `effects.js` | `STAT_REGISTRY` / `EFFECT_REGISTRY`,装备效果的单一登记处 |
-| `combat_resolver.js` | **PVP/PVE 共享的纯判定核心**：`pvpConfig` 时序常量、side-state 工厂、蓄力伤害插值、防御减免、弹反窗口、五类交锋判定；无 DOM/网络/全局写 |
-| `tick.js` / `ui.js` | 主循环与视图切换,PVP 和 PVE 共用 |
-| `fx.js` / `icons.js` | 共享特效与图标库,PVE 和 PVP 都在用 |
-| `pve_logic.js` | PVE 引擎：Roguelike 楼层、本地 AI 状态机(佯攻/连段/狂暴)、技能与 buff、runGold 结算；调用 `combat_resolver` 做判定 |
-| `ui_pve.js` | PVE 战斗 UI 渲染,只读 `state.pveBattle`,不写游戏状态 |
+| `core/data.js` | 静态配置,战斗复用其中的装备/属性数值 |
+| `core/player.js` | `getStats()` / `getJudgmentMultiplier()` / `getGuardDamageMultiplier()` / `getCritChance()` / `getGuardThorns()` / `getApMax()` / 逐项时序 getter,组装成 profile 传给结算器 |
+| `core/effects.js` | `STAT_REGISTRY` / `EFFECT_REGISTRY`,装备效果的单一登记处 |
+| `core/combat_resolver.js` | **PVP/PVE 共享的纯判定核心**：`pvpConfig` 时序常量、side-state 工厂、蓄力伤害插值、防御减免、弹反窗口、五类交锋判定；无 DOM/网络/全局写 |
+| `core/tick.js` / `ui/ui.js` | 主循环与视图切换,PVP 和 PVE 共用 |
+| `ui/fx.js` / `ui/icons.js` | 共享特效与图标库,PVE 和 PVP 都在用 |
+| `pve/pve_logic.js` | PVE 引擎：Roguelike 楼层、本地 AI 状态机(佯攻/连段/狂暴)、技能与 buff、runGold 结算；调用 `combat_resolver` 做判定 |
+| `pve/ui_pve.js` | PVE 战斗 UI 渲染,只读 `state.pveBattle`,不写游戏状态 |
 | `partials/*.html` | 从 `index.html` 拆出的 4 个 view 片段(base/pve-battle/pvp-room/pvp-battle),启动时由 `index.html` 里的 `fetch()` 注入 |
-| `pvp_logic.js` | PVP 引擎：状态机、Host 判定、网络消息处理；判定/伤害公式已抽到 `combat_resolver.js`,本文件只做应用+广播 |
-| `pvp_net.js` | PeerJS 连接、时钟同步、消息收发 |
-| `pvp_room.js` | 房间创建/加入的 UI 流程、hello 握手判断是否要开新一局 |
-| `ui_pvp.js` | PVP 战斗 UI 渲染,只读 `state.pvpBattle`,不写游戏状态 |
+| `pvp/pvp_logic.js` | PVP 引擎：状态机、Host 判定、网络消息处理；判定/伤害公式已抽到 `combat_resolver.js`,本文件只做应用+广播 |
+| `pvp/pvp_net.js` | PeerJS 连接、时钟同步、消息收发 |
+| `pvp/pvp_room.js` | 房间创建/加入的 UI 流程、hello 握手判断是否要开新一局 |
+| `pvp/ui_pvp.js` | PVP 战斗 UI 渲染,只读 `state.pvpBattle`,不写游戏状态 |
 
 ---
 

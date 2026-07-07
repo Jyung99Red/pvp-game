@@ -73,25 +73,25 @@
 
         <!-- 引入所有的 JS 文件 -->
 
-        <script src="data.js"></script>
-        <script src="effects.js"></script>
-        <script src="save.js"></script>
-        <script src="player.js"></script>
-        <script src="tick.js"></script>
-        <script src="fx.js"></script>
-        <script src="combat_resolver.js"></script>
+        <script src="core/data.js"></script>
+        <script src="core/effects.js"></script>
+        <script src="core/save.js"></script>
+        <script src="core/player.js"></script>
+        <script src="core/tick.js"></script>
+        <script src="ui/fx.js"></script>
+        <script src="core/combat_resolver.js"></script>
 
-        <script src="icons.js"></script>
-        <script src="ui.js"></script>
-        <script src="ui_pve.js"></script>
-        <script src="pve_logic.js"></script>
+        <script src="ui/icons.js"></script>
+        <script src="ui/ui.js"></script>
+        <script src="pve/ui_pve.js"></script>
+        <script src="pve/pve_logic.js"></script>
 
         <!-- PVP and external dependencies -->
         <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-        <script src="pvp_logic.js"></script>
-        <script src="pvp_net.js"></script>
-        <script src="pvp_room.js"></script>
-        <script src="ui_pvp.js"></script>
+        <script src="pvp/pvp_logic.js"></script>
+        <script src="pvp/pvp_net.js"></script>
+        <script src="pvp/pvp_room.js"></script>
+        <script src="pvp/ui_pvp.js"></script>
 
         <!-- 启动游戏：先把拆分出去的 view 片段 fetch 回来注入，再跑 ui.init() -->
         <script>
