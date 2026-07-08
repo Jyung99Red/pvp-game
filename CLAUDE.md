@@ -27,9 +27,10 @@ are unaffected by which subfolder a `.js` file lives in.
 ### Script load order (index.html)
 
 `core/data.js` → `core/effects.js` → `core/save.js` → `core/player.js` →
-`core/tick.js` → `ui/fx.js` → `core/combat_resolver.js` → `ui/icons.js` →
-`ui/ui.js` → `pve/ui_pve.js` → `pve/pve_logic.js` → peerjs (CDN) →
-`pvp/pvp_logic.js` → `pvp/pvp_net.js` → `pvp/pvp_room.js` → `pvp/ui_pvp.js`
+`core/tick.js` → `ui/fx.js` → `core/combat_resolver.js` →
+`core/arena_effects.js` → `ui/icons.js` → `ui/ui.js` → `pve/ui_pve.js` →
+`pve/pve_logic.js` → peerjs (CDN) → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
+`pvp/pvp_room.js` → `pvp/ui_pvp.js`
 
 ### Core systems
 
@@ -42,12 +43,26 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`core/combat_resolver.js`** — shared pure combat core for PVP and PVE:
   `pvpConfig` timing constants, side-state factory (`_makeSideState(maxHp, apMax)`),
   charge-damage lerp (threshold→3000ms, 0.3x→1.1x atk), defense reduction, parry
-  window, and the five-way exchange judgment (clash / parry / block / interrupt /
-  hit). Per-side profiles carry `earlyReleaseMs` / `parryWindowBaseMs` (per-item
-  charge threshold / parry window), plus `critChance` (rolled on clean hits/
+  window, and the exchange judgment. The five built-in judgments (clash /
+  parry / block / interrupt / hit) are **registered rules** — `resolveExchange`
+  walks a priority-ordered rule list (clash 400 > parry 300 > block 200 >
+  interrupt 100 > hit 0, the always-true fallback) and applies the first match;
+  a new mechanic is one `registerExchangeRule({name, priority, when, resolve})`
+  call, and its result travels over the PVP `result` message unchanged. Per-side
+  profiles carry `earlyReleaseMs` / `parryWindowBaseMs` (per-item charge
+  threshold / parry window), plus `critChance` (rolled on clean hits/
   interrupts → `critMult` damage), `guardThorns` (reflect a share of blocked
   damage), and `apMax` (action-point cap). `resolveExchange` is pure and returns
   a `crit` flag; the caller applies HP/stun/log.
+- **`core/arena_effects.js`** — battlefield-effect registry + per-battle
+  runner, pure logic. Effects change the environment over time rather than
+  either side: built-ins are `ap_surge` (past `atMs` both sides' AP recharges
+  `apRateMult`× faster) and `burning_ground` (from `startMs`, every
+  `intervalMs` both sides take `pct` of own maxHp). Wired into PVE only:
+  `content.enemies[key].arena = ['key' | {key, ...opts}]` (currently the two
+  bosses), instantiated per-fight via `arenaEffects.create()`, driven by
+  `arenaEffects.tick()` in `pve_logic._loop`, which applies the returned
+  log/damage events itself (same death priority as exchanges).
 - **`pve/pve_logic.js`** — PVE engine on the shared core. Roguelike floor dungeon:
   `enterDungeon()` resumes from the checkpoint floor, `continueNext()` descends;
   every 9th floor is a boss floor (clearing it advances the checkpoint), boss

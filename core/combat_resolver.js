@@ -87,6 +87,141 @@ const combatResolver = (() => {
         return pvpConfig.apRecoveryMs * (10 / (spd || 10));
     }
 
+    // ── Exchange rule registry ───────────────────────────────────────────
+    // Each rule: { name, priority, when(ctx), resolve(ctx) }.
+    // resolveExchange walks the rules in descending priority and applies the
+    // first whose when(ctx) returns true; equal priorities keep registration
+    // order. The built-in judgments are registered below (clash 400 > parry
+    // 300 > block 200 > interrupt 100 > hit 0); a new mechanic is one
+    // registerExchangeRule() call, no resolver edit needed. Later rules can
+    // rely on earlier ones having NOT matched (e.g. block only sees
+    // guard_ready cases that fell outside the parry window).
+    //
+    // ctx (read-only for rules): { chargeMs, rawDmg, attacker, defender,
+    //   attackerStats, defenderStats, wallNow }.
+    // A rule's resolve() must return the full result shape:
+    //   { exchange, attackerDmg, defenderDmg, attackerStunMs, defenderStunMs,
+    //     logText, crit }
+    // -- the result travels verbatim over the PVP `result` message, so any
+    // extra fields a custom rule adds will reach the Guest too.
+
+    const _rules = [];
+
+    function registerExchangeRule(rule) {
+        _rules.push(rule);
+        _rules.sort((a, b) => b.priority - a.priority);
+    }
+
+    function _rollCrit(stats) {
+        return Math.random() < (stats.critChance || 0);
+    }
+
+    registerExchangeRule({
+        name: 'clash', priority: 400,
+        when(ctx) {
+            return ctx.defender.phase === 'strike_out' &&
+                   (ctx.wallNow - ctx.defender.lastStrikeT) <= pvpConfig.clashWindowMs;
+        },
+        resolve(ctx) {
+            const defChargeMs = ctx.defender.lastChargeMs || ctx.defenderStats.earlyReleaseMs;
+            const attackerDmg = applyDefense(
+                Math.round(calcChargeDamage(defChargeMs, ctx.defenderStats.atk, ctx.defenderStats.earlyReleaseMs) * 0.5),
+                ctx.attackerStats.def);
+            const defenderDmg = applyDefense(Math.round(ctx.rawDmg * 0.5), ctx.defenderStats.def);
+            return {
+                exchange: 'clash', attackerDmg, defenderDmg,
+                attackerStunMs: pvpConfig.clashRecoveryMs,
+                defenderStunMs: pvpConfig.clashRecoveryMs,
+                logText: `💥 对撞！双方各受伤害`, crit: false
+            };
+        }
+    });
+
+    registerExchangeRule({
+        name: 'parry', priority: 300,
+        when(ctx) {
+            if (ctx.defender.phase !== 'guard_ready') return false;
+            const timeSinceGuard = ctx.defender.lastGuardReadyT > 0
+                ? (ctx.wallNow - ctx.defender.lastGuardReadyT) : Infinity;
+            return timeSinceGuard <= parryWindow(
+                ctx.defenderStats.judgmentMultiplier, ctx.defenderStats.parryWindowBaseMs);
+        },
+        resolve(ctx) {
+            const counterDmg  = Math.max(1, Math.round(ctx.rawDmg * 0.5));
+            const attackerDmg = applyDefense(counterDmg, ctx.attackerStats.def);
+            return {
+                exchange: 'parry', attackerDmg, defenderDmg: 0,
+                attackerStunMs: pvpConfig.parryStunMs, defenderStunMs: 0,
+                logText: `✨ 弹反！反击 ${attackerDmg} 点，攻击方硬直`, crit: false
+            };
+        }
+    });
+
+    registerExchangeRule({
+        // guard_ready outside the parry window (parry already claimed the
+        // inside-window case at higher priority)
+        name: 'block', priority: 200,
+        when(ctx) { return ctx.defender.phase === 'guard_ready'; },
+        resolve(ctx) {
+            const guardMult  = ctx.defenderStats.guardDamageMultiplier;
+            const blockedDmg = Math.max(1, Math.round(
+                applyDefense(ctx.rawDmg, ctx.defenderStats.def) * 0.4 * guardMult));
+            // Thorns (guard_thorns effect): a successful block reflects a
+            // share of the attack's raw damage back at the attacker
+            const thorns      = ctx.defenderStats.guardThorns || 0;
+            const attackerDmg = thorns > 0
+                ? applyDefense(Math.round(ctx.rawDmg * thorns), ctx.attackerStats.def) : 0;
+            return {
+                exchange: 'blocked', attackerDmg, defenderDmg: blockedDmg,
+                attackerStunMs: 0, defenderStunMs: 150,
+                logText: `🛡️ 格挡！减为 ${blockedDmg} 点伤害` +
+                         (attackerDmg > 0 ? `，🌵 荆棘反伤 ${attackerDmg} 点` : ''),
+                crit: false
+            };
+        }
+    });
+
+    registerExchangeRule({
+        // Defender is mid-charge and gets hit by an attack that isn't a
+        // clash/parry/block -- this counts as an interrupt: their charge is
+        // forcibly cancelled (defenderStunMs knocks them out of 'charging')
+        // on top of taking the hit.
+        name: 'interrupt', priority: 100,
+        when(ctx) { return ctx.defender.phase === 'charging'; },
+        resolve(ctx) {
+            const crit = _rollCrit(ctx.attackerStats);
+            let defenderDmg = applyDefense(ctx.rawDmg, ctx.defenderStats.def);
+            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
+            return {
+                exchange: 'interrupt', attackerDmg: 0, defenderDmg,
+                attackerStunMs: 0, defenderStunMs: pvpConfig.interruptStunMs,
+                logText: crit
+                    ? `💥 暴击打断！蓄力被打断，受到 ${defenderDmg} 点伤害`
+                    : `⚡ 打断！蓄力被打断，受到 ${defenderDmg} 点伤害`,
+                crit
+            };
+        }
+    });
+
+    registerExchangeRule({
+        // Clean hit -- the always-true fallback at the bottom of the chain
+        name: 'hit', priority: 0,
+        when() { return true; },
+        resolve(ctx) {
+            const crit = _rollCrit(ctx.attackerStats);
+            let defenderDmg = applyDefense(ctx.rawDmg, ctx.defenderStats.def);
+            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
+            return {
+                exchange: 'hit', attackerDmg: 0, defenderDmg,
+                attackerStunMs: 0, defenderStunMs: 0,
+                logText: crit
+                    ? `💥 暴击！造成 ${defenderDmg} 点伤害`
+                    : `⚔️ 命中！造成 ${defenderDmg} 点伤害`,
+                crit
+            };
+        }
+    });
+
     // ── Exchange judgment (pure) ─────────────────────────────────────────
     // attacker/defender are side-state objects (see _makeSideState);
     // attackerStats/defenderStats are combat profiles
@@ -97,86 +232,20 @@ const combatResolver = (() => {
     // Reads state, writes NOTHING; the caller applies the returned result.
     function resolveExchange(attackerChargeMs, attacker, defender,
                              attackerStats, defenderStats, wallNow) {
-        const rawDmg = calcChargeDamage(attackerChargeMs, attackerStats.atk, attackerStats.earlyReleaseMs);
-
-        const isClash  = defender.phase === 'strike_out' &&
-                         (wallNow - defender.lastStrikeT) <= pvpConfig.clashWindowMs;
-        const timeSinceGuard = defender.lastGuardReadyT > 0
-            ? (wallNow - defender.lastGuardReadyT) : Infinity;
-        const isParry  = !isClash && defender.phase === 'guard_ready' &&
-                         timeSinceGuard <= parryWindow(defenderStats.judgmentMultiplier, defenderStats.parryWindowBaseMs);
-        const isBlock  = !isClash && defender.phase === 'guard_ready' && !isParry;
-        // Defender is mid-charge and gets hit by an attack that isn't a
-        // clash/parry/block -- this counts as an interrupt: their charge is
-        // forcibly cancelled (defenderStunMs knocks them out of 'charging')
-        // on top of taking the hit.
-        const isInterrupt = !isClash && !isParry && !isBlock && defender.phase === 'charging';
-
-        // attackerDmg: damage the attacker takes (clash/parry can hurt the attacker too)
-        // defenderDmg: damage the defender takes
-        // logText: a ready-to-display string, no further translation needed
-        let attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, exchange, logText;
-        let crit = false;
-
-        if (isClash) {
-            const defChargeMs = defender.lastChargeMs || defenderStats.earlyReleaseMs;
-            attackerDmg   = applyDefense(Math.round(calcChargeDamage(defChargeMs, defenderStats.atk, defenderStats.earlyReleaseMs) * 0.5), attackerStats.def);
-            defenderDmg   = applyDefense(Math.round(rawDmg * 0.5), defenderStats.def);
-            attackerStunMs = pvpConfig.clashRecoveryMs;
-            defenderStunMs = pvpConfig.clashRecoveryMs;
-            exchange  = 'clash';
-            logText   = `💥 对撞！双方各受伤害`;
-        } else if (isParry) {
-            const counterDmg = Math.max(1, Math.round(rawDmg * 0.5));
-            attackerDmg    = applyDefense(counterDmg, attackerStats.def);
-            defenderDmg    = 0;
-            attackerStunMs = pvpConfig.parryStunMs;
-            defenderStunMs = 0;
-            exchange   = 'parry';
-            logText    = `✨ 弹反！反击 ${attackerDmg} 点，攻击方硬直`;
-        } else if (isBlock) {
-            const guardMult  = defenderStats.guardDamageMultiplier;
-            const blockedDmg = Math.max(1, Math.round(applyDefense(rawDmg, defenderStats.def) * 0.4 * guardMult));
-            // Thorns (guard_thorns effect): a successful block reflects a
-            // share of the attack's raw damage back at the attacker
-            const thorns   = defenderStats.guardThorns || 0;
-            attackerDmg    = thorns > 0 ? applyDefense(Math.round(rawDmg * thorns), attackerStats.def) : 0;
-            defenderDmg    = blockedDmg;
-            attackerStunMs = 0;
-            defenderStunMs = 150;
-            exchange   = 'blocked';
-            logText    = `🛡️ 格挡！减为 ${defenderDmg} 点伤害` +
-                         (attackerDmg > 0 ? `，🌵 荆棘反伤 ${attackerDmg} 点` : '');
-        } else if (isInterrupt) {
-            crit = Math.random() < (attackerStats.critChance || 0);
-            attackerDmg    = 0;
-            defenderDmg    = applyDefense(rawDmg, defenderStats.def);
-            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
-            attackerStunMs = 0;
-            defenderStunMs = pvpConfig.interruptStunMs;
-            exchange   = 'interrupt';
-            logText    = crit
-                ? `💥 暴击打断！蓄力被打断，受到 ${defenderDmg} 点伤害`
-                : `⚡ 打断！蓄力被打断，受到 ${defenderDmg} 点伤害`;
-        } else {
-            crit = Math.random() < (attackerStats.critChance || 0);
-            attackerDmg    = 0;
-            defenderDmg    = applyDefense(rawDmg, defenderStats.def);
-            if (crit) defenderDmg = Math.round(defenderDmg * pvpConfig.critMult);
-            attackerStunMs = 0;
-            defenderStunMs = 0;
-            exchange   = 'hit';
-            logText    = crit
-                ? `💥 暴击！造成 ${defenderDmg} 点伤害`
-                : `⚔️ 命中！造成 ${defenderDmg} 点伤害`;
+        const ctx = {
+            chargeMs: attackerChargeMs,
+            rawDmg: calcChargeDamage(attackerChargeMs, attackerStats.atk, attackerStats.earlyReleaseMs),
+            attacker, defender, attackerStats, defenderStats, wallNow
+        };
+        for (const rule of _rules) {
+            if (rule.when(ctx)) return rule.resolve(ctx);
         }
-
-        return { exchange, attackerDmg, defenderDmg, attackerStunMs, defenderStunMs, logText, crit };
+        // Unreachable: the built-in 'hit' rule always matches
     }
 
     return {
         makeSideState: _makeSideState,
         calcChargeDamage, applyDefense, parryWindow, apRecoveryMs,
-        resolveExchange
+        resolveExchange, registerExchangeRule
     };
 })();

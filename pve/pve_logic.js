@@ -157,12 +157,13 @@ const pveLogic = (() => {
 
     // ── Tick one side per frame (clone of pvp_logic._tickSide, spd passed in) ──
 
-    function _tickSide(side, dt, now, spd, onAutoFire, chargeRate = 1) {
+    function _tickSide(side, dt, now, spd, onAutoFire, chargeRate = 1, apRateMult = 1) {
         const apCap = side.apMax || pvpConfig.apMax;
-        // AP recovery (paused while charging or guarding)
+        // AP recovery (paused while charging or guarding);
+        // apRateMult > 1 = arena ap_surge effect speeding both sides up
         if (!['charging', 'guard_windup', 'guard_ready'].includes(side.phase)) {
             if (side.actionPoints < apCap) {
-                side.actionProgress += dt / combatResolver.apRecoveryMs(spd);
+                side.actionProgress += (dt * apRateMult) / combatResolver.apRecoveryMs(spd);
                 if (side.actionProgress >= 1) {
                     side.actionPoints++;
                     side.actionProgress = side.actionPoints < apCap
@@ -372,6 +373,25 @@ const pveLogic = (() => {
         if (b.enemy.hp  <= 0) { _onVictory(); return; }
     }
 
+    // Apply the events arenaEffects.tick() emitted this frame: log lines
+    // and environmental damage. Same death rules as exchanges (defeat
+    // takes priority when a burn tick kills both).
+    function _applyArenaEvents(events) {
+        const b = state.pveBattle;
+        for (const ev of events) {
+            if (!b.active || b.waitingChoice) return;
+            if (ev.text) _pushLog(ev.text);
+            if (ev.type === 'damage') {
+                b.player.hp = Math.max(0, b.player.hp - ev.playerDmg);
+                b.enemy.hp  = Math.max(0, b.enemy.hp  - ev.enemyDmg);
+                // Player HP authority: write back like any exchange does
+                state.player.currentHp = b.player.hp;
+                if (b.player.hp <= 0) { _onDefeat();  return; }
+                if (b.enemy.hp  <= 0) { _onVictory(); return; }
+            }
+        }
+    }
+
     // ── Victory / defeat / drops ──────────────────────────────────────────
 
     function _rollDrops(enemyId) {
@@ -451,9 +471,16 @@ const pveLogic = (() => {
             if (b.player.phase === 'guard_windup' && b.player.phaseTimer <= dt) _guardWindupComplete(b.player, now);
             if (b.enemy.phase  === 'guard_windup' && b.enemy.phaseTimer  <= dt) _guardWindupComplete(b.enemy, now);
 
+            // Arena effects tick first so this frame's apRateMult is fresh;
+            // their damage/log events are applied after the exchanges below
+            // (a fire() may already have ended the fight)
+            const arenaEvents = arenaEffects.tick(
+                b.arena, { player: b.player, enemy: b.enemy }, dt);
+            const apRateMult = b.arena ? b.arena.apRateMult : 1;
+
             const hasteRate = now < b.buffs.chargeHasteUntil ? 1.5 : 1;
-            _tickSide(b.player, dt, now, _selfProfile.spd,  () => _fire(b.player, true), hasteRate);
-            _tickSide(b.enemy,  dt, now, _enemyProfile.spd, () => _fire(b.enemy, true));
+            _tickSide(b.player, dt, now, _selfProfile.spd,  () => _fire(b.player, true), hasteRate, apRateMult);
+            _tickSide(b.enemy,  dt, now, _enemyProfile.spd, () => _fire(b.enemy, true), 1, apRateMult);
 
             _aiThink(dt, now);
             // AI releases its charge at the decided target duration --
@@ -466,6 +493,8 @@ const pveLogic = (() => {
                     _fire(b.enemy, false);
                 }
             }
+
+            if (b.active && !b.waitingChoice) _applyArenaEvents(arenaEvents);
         }
 
         uiPve.updateFrame();
@@ -505,6 +534,9 @@ const pveLogic = (() => {
             player: playerSide,
             enemy:  combatResolver.makeSideState(_enemyProfile.maxHp, _enemyProfile.apMax),
             enemyProfile: _enemyProfile,
+            // Battlefield effects from content.enemies[key].arena (null for
+            // most enemies; currently only bosses define any)
+            arena: arenaEffects.create(eData.arena),
             skillPoints: 0,
             // Skill buffs (see useSkill): haste = faster charge fill until
             // the timestamp; instantCharge = next charge press is instantly

@@ -243,7 +243,11 @@ const content = {
                 enrageThreshold: 0.3,
                 enrageAtkMult:   1.4,
                 enrageSpdMult:   1.25
-            }
+            },
+            // Arena effect (arena_effects.js): dragon flame ignites the
+            // ground 20s in -- both sides burn every 3s, stalling loses
+            arena: [{ key: 'burning_ground',
+                      logText: '🔥 龙焰点燃了地面！双方持续受到灼烧' }]
         },
         abyss_lord: {
             name: "深渊领主", hp: 850, atk: 70, def: 20, exp: 700,
@@ -266,7 +270,11 @@ const content = {
                 enrageAtkMult:   1.5,
                 enrageSpdMult:   1.3,
                 guardChance:     0.4
-            }
+            },
+            // Arena effect: 30s in the abyss surges -- BOTH sides' AP
+            // recharges 2x, the whole fight shifts up-tempo
+            arena: [{ key: 'ap_surge', atMs: 30000, apRateMult: 2,
+                      logText: '🌀 深渊涌动！双方行动力恢复加速' }]
         }
     },
 
