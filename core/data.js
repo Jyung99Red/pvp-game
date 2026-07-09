@@ -206,7 +206,7 @@ const content = {
                 act1: { name: "影袭", dmgMult: 1.0, recoveryMs: 100 },
                 act2: { name: "致命突刺", dmgMult: 1.6, recoveryMs: 300 }
             },
-            ai: { spd: 12, feintChance: 0.25, decideDelayMs: [200, 500] },
+            ai: { spd: 12, decideDelayMs: [200, 500] },
             drops: [{ id: 'shadow_crystal', chance: 0.60, amount: [1, 2] }]
         },
         stone_golem: {
@@ -235,8 +235,6 @@ const content = {
                 { id: 'dragon_fang', chance: 0.50, amount: [1, 1] }
             ],
             ai: {
-                feintChance:     0.35,
-                feintAbortMs:    [400, 900],
                 comboChance:     0.5,
                 comboMax:        2,
                 comboDelayMs:    [150, 300],
@@ -261,8 +259,6 @@ const content = {
                 { id: 'dragon_fang', chance: 0.80, amount: [1, 2] }
             ],
             ai: {
-                feintChance:     0.4,
-                feintAbortMs:    [350, 800],
                 comboChance:     0.6,
                 comboMax:        3,
                 comboDelayMs:    [120, 260],

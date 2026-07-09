@@ -37,12 +37,15 @@ const uiPve = (() => {
 
     // One-shot FX edge detection (see ui_pvp.js for rationale)
     const _prevPhase = { self: null, enemy: null };
+    // Tracks whether each fighter was inside the "about to release" window
+    // last frame, so the pre-release red flash fires exactly once per charge.
+    const _prevNear  = { self: false, enemy: false };
 
     function _weaponNodeEl(key) {
         return document.getElementById(key === 'self' ? 'pve-self-weapon-icon' : 'pve-enemy-weapon-icon');
     }
 
-    function _updateFighterFx(key, sideState, chargeProgress) {
+    function _updateFighterFx(key, sideState, chargeProgress, nearRelease) {
         const nodeEl = _weaponNodeEl(key);
         const iconEl = nodeEl ? nodeEl.querySelector('.pvp-weapon-icon') : null;
         const phase  = sideState.phase;
@@ -50,6 +53,8 @@ const uiPve = (() => {
 
         if (phase === 'charging') {
             fx.pvpChargeIcon(iconEl, chargeProgress);
+            // Rising edge into the final 100ms before release: one-shot red flash
+            if (nearRelease && !_prevNear[key]) fx.pvpChargeFlash(iconEl);
         } else if (prev === 'charging') {
             if (phase === 'stunned') {
                 fx.pvpChargeInterrupt(iconEl);
@@ -68,6 +73,7 @@ const uiPve = (() => {
         }
 
         _prevPhase[key] = phase;
+        _prevNear[key]  = phase === 'charging' && nearRelease;
     }
 
     return {
@@ -80,8 +86,17 @@ const uiPve = (() => {
             const frozen = Date.now() < b.startFreezeUntil;
 
             // ── Fighter node visuals ──
-            _updateFighterFx('self',  s, s.phase === 'charging' ? s.chargeMs / pvpConfig.chargeMaxMs : 0);
-            _updateFighterFx('enemy', e, e.phase === 'charging' ? e.chargeMs / pvpConfig.chargeMaxMs : 0);
+            // Player charges freely toward the full-charge cap; the enemy is
+            // driven toward its own decided attack target, so its icon is
+            // normalized against that target -- reaching the peak exactly at
+            // release (方案 B). Flash fires in the final 200ms before each side
+            // hits its release point.
+            const sTarget = pvpConfig.chargeMaxMs;
+            const eTarget = (b.ai && b.ai.targetChargeMs) || pvpConfig.chargeMaxMs;
+            const sNear = s.phase === 'charging' && (sTarget - s.chargeMs) <= 200;
+            const eNear = e.phase === 'charging' && (eTarget - e.chargeMs) <= 200;
+            _updateFighterFx('self',  s, s.phase === 'charging' ? Math.min(s.chargeMs / sTarget, 1) : 0, sNear);
+            _updateFighterFx('enemy', e, e.phase === 'charging' ? Math.min(e.chargeMs / eTarget, 1) : 0, eNear);
 
             // ── Enemy ─────────────────────────────────────────────────
             _setBar('pve-enemy-hp',      _pct(e.hp, e.maxHp));
@@ -90,13 +105,15 @@ const uiPve = (() => {
             _setText('pve-enemy-status', b.ai && b.ai.enraged ? '⚡ 狂暴' : '');
             _setClass('pve-enemy-weapon-icon', 'warning', !!(b.ai && b.ai.enraged));
 
-            // Enemy charge bar: locally simulated, read directly
+            // Enemy charge bar: locally simulated, normalized against the
+            // enemy's own target so it fills in lockstep with the weapon icon.
             const eCharging = e.phase === 'charging';
-            const eProgress = eCharging ? Math.min(e.chargeMs / pvpConfig.chargeMaxMs, 1) : 0;
+            const eProgress = eCharging ? Math.min(e.chargeMs / eTarget, 1) : 0;
             _setBar('pve-enemy-charge', eProgress * 100);
             const eChargeEl = document.getElementById('pve-enemy-charge');
             if (eChargeEl) {
-                const earlyPct = (b.enemyProfile ? b.enemyProfile.earlyReleaseMs : pvpConfig.earlyReleaseMs) / pvpConfig.chargeMaxMs;
+                const earlyMs  = b.enemyProfile ? b.enemyProfile.earlyReleaseMs : pvpConfig.earlyReleaseMs;
+                const earlyPct = earlyMs / eTarget;
                 eChargeEl.classList.toggle('charge-early',  eCharging && eProgress < earlyPct);
                 eChargeEl.classList.toggle('charge-normal', eCharging && eProgress >= earlyPct);
             }
@@ -190,7 +207,11 @@ const uiPve = (() => {
                 node.classList.remove('shield-windup', 'shield-ready', 'shield-cancelled',
                                        'slashed', 'node-parry-glow', 'node-guard-shrink', 'node-shrink');
                 const icon = node.querySelector('.pvp-weapon-icon');
-                if (icon) { icon.style.transition = 'none'; icon.style.transform = ''; }
+                if (icon) {
+                    icon.classList.remove('charge-flash');
+                    icon.style.transition = 'none';
+                    icon.style.transform = '';
+                }
             });
 
             const clashEl = document.getElementById('pve-clash-fx');

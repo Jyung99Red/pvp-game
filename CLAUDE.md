@@ -42,7 +42,7 @@ are unaffected by which subfolder a `.js` file lives in.
   banked (see run-gold below).
 - **`core/combat_resolver.js`** — shared pure combat core for PVP and PVE:
   `pvpConfig` timing constants, side-state factory (`_makeSideState(maxHp, apMax)`),
-  charge-damage lerp (threshold→3000ms, 0.3x→1.1x atk), defense reduction, parry
+  charge-damage lerp (threshold→2000ms, 0.3x→1.1x atk), defense reduction, parry
   window, and the exchange judgment. The five built-in judgments (clash /
   parry / block / interrupt / hit) are **registered rules** — `resolveExchange`
   walks a priority-ordered rule list (clash 400 > parry 300 > block 200 >
@@ -69,13 +69,14 @@ are unaffected by which subfolder a `.js` file lives in.
   identity rotates through `content.bossRotation`. Non-boss floors draw from
   `content.floorPools` keyed by **absolute** floor number (floors past the last
   tier keep drawing from it), stats scale 8%/floor. Enemy AI state machine
-  (`_aiThink`) has a boss toolkit — feints (fake charges, visually identical to
-  real ones), combo chains, enrage at an HP threshold — all off by default,
-  enabled per-enemy via `content.enemies[key].ai` overrides (`elder_dragon`,
-  `abyss_lord`, and light touches on the deep-floor mobs). Player skills
-  (`useSkill(kind)`): heal / haste (faster charge fill) / instant-full-charge /
-  auto-parry, driven by `state.pveBattle.buffs`. **Run-gold**: victory gold
-  accumulates into `world.runGold`, banked into `resources.gold` only in
+  (`_aiThink`) has a boss toolkit — combo chains, enrage at an HP threshold —
+  all off by default, enabled per-enemy via `content.enemies[key].ai` overrides
+  (`elder_dragon`, `abyss_lord`, and light touches on the deep-floor mobs).
+  Player skills (`useSkill(kind)`): heal / haste (faster charge fill) /
+  instant-full-charge / auto-parry, driven by `state.pveBattle.buffs`.
+  `pveBattle.skillPoints` carries across floors via `continueNext()`; only a
+  fresh `enterDungeon()` entry (i.e. having returned to base) resets it to 0.
+  **Run-gold**: victory gold accumulates into `world.runGold`, banked into `resources.gold` only in
   `endFight` when leaving alive (retreat/flee), lost entirely on death.
 - **`pvp/pvp_logic.js`** — WebRTC PVP on the same core. Host is the sole judgment
   authority; Guest mirrors state from broadcast `result` messages. Clash/parry
@@ -99,10 +100,16 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`core/tick.js`** — 1s interval: game clock, passive/hot-spring HP regen.
   Building production is generic over `content.buildings[*].baseProduce`
   (currently none produce anything — gold comes from combat).
-- **UI** — `ui/ui.js` (base view, modals, buildings, shop, smithy),
-  `pve/ui_pve.js` / `pvp/ui_pvp.js` (per-frame battle renderers, pure readers
-  of their state objects), `ui/fx.js` (CSS-class animation triggers + battle
-  log lines), `ui/icons.js` (inline SVG icons).
+- **UI** — `ui/ui.js` (base view, modals, buildings, and the base item UIs:
+  equip slots — an empty slot opens the backpack — the backpack grid, which
+  lists currently-equipped items first tagged 已装备, and the shop/smithy as
+  4-col grids of materials/equipment whose cells open a detail/buy/craft popup
+  reusing `#modal-overlay`), `pve/ui_pve.js` / `pvp/ui_pvp.js` (per-frame battle
+  renderers, pure readers of their state objects; in PVE the enemy charge icon/
+  bar normalize against its own `ai.targetChargeMs` so the icon peaks exactly at
+  release, and both sides fire a one-shot red flash in the final 200ms before
+  release), `ui/fx.js` (CSS-class animation triggers + battle log lines,
+  incl. `pvpChargeFlash`), `ui/icons.js` (inline SVG icons).
 
 ### Testing notes
 

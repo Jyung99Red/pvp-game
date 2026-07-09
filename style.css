@@ -245,6 +245,29 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 }
 .inv-cell.is-material { border-color: #443; background: #16160f; }
 
+/* Equipped item shown inside the backpack: gold frame + top "已装备" ribbon */
+.inv-cell.equipped { border-color: var(--gold); background: #20200f; padding-top: 10px; }
+.inv-cell .cell-badge {
+    position: absolute; top: 0; left: 0; right: 0;
+    font-size: 8px; font-weight: bold; text-align: center; line-height: 1.4;
+    background: rgba(233,196,106,0.9); color: #1a1a1a; border-radius: 4px 4px 0 0;
+}
+
+/* Shop / smithy grid cell extras (reuse .inv-grid / .inv-cell) */
+.inv-cell .cell-price { font-size: 9px; font-weight: bold; color: var(--gold); line-height: 1; margin-top: 2px; text-shadow: 1px 1px 0 #000; }
+.inv-cell .cell-corner {
+    position: absolute; top: 1px; right: 3px; font-size: 10px; font-weight: bold; line-height: 1;
+}
+.inv-cell .cell-corner.ok { color: #7CFC7C; }
+.inv-cell.craftable { border-color: #3a6a3a; }
+.inv-cell.locked    { opacity: 0.5; }
+.inv-cell.locked.has-item:active { filter: none; }
+
+/* Material requirements line inside the detail modal (smithy/shop) */
+.modal-reqs { font-size: 12px; margin-top: 6px; color: #aaa; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.modal-reqs .ok  { color: #88ff88; }
+.modal-reqs .bad { color: #ff8888; }
+
 /* ── Item info modal ── */
 .modal-overlay-shared, #modal-overlay, #smithy-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
@@ -279,13 +302,6 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
 .effect-info    { background: #2a2a45; color: #b8a8ff; }
 .modal-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .modal-btns button { flex: 1; min-width: 80px; margin: 0; padding: 10px 6px; font-size: 12px; }
-
-/* ── Recipe cards ── */
-.recipe-card { background: #1a1a20; border: 1px solid #3a3a4a; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
-.recipe-name { font-size: 13px; font-weight: bold; margin-bottom: 5px; }
-.recipe-reqs { font-size: 12px; margin-bottom: 7px; color: #aaa; }
-.recipe-reqs .ok  { color: #88ff88; }
-.recipe-reqs .bad { color: #ff8888; }
 
 .flex-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
 .hidden { display: none !important; }
@@ -387,6 +403,17 @@ button:disabled { opacity: 0.35; cursor: not-allowed; }
     fill: #fff;
     transform-origin: 50% 85%;
 }
+/* 满蓄力释放前的一次性红闪：用 filter 做（不动 color），
+   避免和逐帧写入的 inline transform/color 冲突。 */
+.pvp-weapon-icon.charge-flash {
+    animation: pvp-charge-flash 200ms ease-out;
+}
+@keyframes pvp-charge-flash {
+    0%   { filter: none; }
+    50%  { filter: brightness(2) drop-shadow(0 0 7px #ff2020); }
+    100% { filter: none; }
+}
+
 #pvp-clash-fx {
     align-self: center;
     font-size: 32px;

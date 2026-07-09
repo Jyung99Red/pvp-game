@@ -162,7 +162,7 @@ const ui = {
 
     openSmithyModal() {
         if ((state.base.buildings.smithy || 0) === 0) { ui.log('铁匠铺尚未建造！'); return; }
-        this._renderSmithyRecipes();
+        this._renderSmithyGrid();
         document.getElementById('smithy-overlay').classList.add('open');
     },
 
@@ -170,40 +170,77 @@ const ui = {
         document.getElementById('smithy-overlay').classList.remove('open');
     },
 
-    _renderSmithyRecipes() {
-        const equip = state.player.equip;
-        const inv   = state.inventory.items;
-        let html = '';
-        for (const itemId in content.recipes) {
-            const recipe  = content.recipes[itemId];
-            const item    = content.items[itemId];
-            const already = inv[itemId] || 0;
-            const equippedCount = Object.values(equip).filter(e => e === itemId).length;
-
-            let reqHtml  = '';
-            let canCraft = true;
-            for (const matId in recipe.materials) {
-                const needed = recipe.materials[matId];
-                const owned  = state.inventory.materials[matId] || 0;
-                if (owned < needed) canCraft = false;
-                const m = content.materials[matId];
-                reqHtml += `<span class="${owned >= needed ? 'ok' : 'bad'}">${m.icon}${m.name} ${owned}/${needed}</span>  `;
-            }
-
-            html += `<div class="recipe-card">
-                <div class="recipe-name">${item.icon} ${item.name} ${(already + equippedCount) > 0 ? `<span style="color:#888;font-size:11px;">（持有 ×${already + equippedCount}）</span>` : ''}</div>
-                <div class="recipe-reqs">${reqHtml}</div>
-                <button onclick="player.craftItem('${itemId}');ui._renderSmithyRecipes();" ${canCraft ? '' : 'disabled'} class="btn-success">
-                    ${canCraft ? '🔨 制作' : '材料不足'}
-                </button>
-            </div>`;
+    // Whether every material for a recipe is currently in stock
+    _canCraft(recipe) {
+        for (const matId in recipe.materials) {
+            if ((state.inventory.materials[matId] || 0) < recipe.materials[matId]) return false;
         }
-        document.getElementById('smithy-recipe-list').innerHTML = html;
+        return true;
+    },
+
+    // Total copies of an item owned (bag + equipped instances)
+    _ownedCount(itemId) {
+        const bag = state.inventory.items[itemId] || 0;
+        const worn = Object.values(state.player.equip).filter(e => e === itemId).length;
+        return bag + worn;
+    },
+
+    // Smithy: 4-per-row grid of craftable equipment; tap a cell for details/craft
+    _renderSmithyGrid() {
+        let cells = '';
+        for (const itemId in content.recipes) {
+            const item     = content.items[itemId];
+            const canCraft = this._canCraft(content.recipes[itemId]);
+            const owned    = this._ownedCount(itemId);
+            cells += `
+                <div class="inv-cell has-item ${canCraft ? 'craftable' : 'locked'}" onclick="ui.openRecipeModal('${itemId}')">
+                    <span class="cell-icon">${item.icon}</span>
+                    <span class="cell-name">${item.name}</span>
+                    ${canCraft ? '<span class="cell-corner ok">✓</span>' : ''}
+                    ${owned > 0 ? `<span class="cell-qty">×${owned}</span>` : ''}
+                </div>`;
+        }
+        document.getElementById('smithy-recipe-list').innerHTML = `<div class="inv-grid">${cells}</div>`;
+    },
+
+    // Detail/craft popup for a recipe (reuses the item modal, sits above the smithy grid)
+    openRecipeModal(itemId) {
+        const item   = content.items[itemId];
+        const recipe = content.recipes[itemId];
+        if (!item || !recipe) return;
+
+        const owned = this._ownedCount(itemId);
+        document.getElementById('modal-title').innerText =
+            `${item.icon} ${item.name}` + (owned > 0 ? `（持有 ×${owned}）` : '');
+
+        const statsArr = [];
+        if (item.stats.atk > 0) statsArr.push(`⚔️ +${item.stats.atk}`);
+        if (item.stats.def > 0) statsArr.push(`🛡️ +${item.stats.def}`);
+        if (item.stats.int > 0) statsArr.push(`🧠 +${item.stats.int}`);
+        if (item.stats.spd > 0) statsArr.push(`⚡ +${item.stats.spd}`);
+        document.getElementById('modal-stats').innerText = statsArr.length ? statsArr.join('  ') : '无属性加成';
+        document.getElementById('modal-effects').innerHTML = this._renderEffectsHtml(item.effects);
+
+        let reqHtml = '<div class="modal-reqs">所需材料：';
+        for (const matId in recipe.materials) {
+            const needed = recipe.materials[matId];
+            const have   = state.inventory.materials[matId] || 0;
+            const m      = content.materials[matId];
+            reqHtml += `<span class="${have >= needed ? 'ok' : 'bad'}">${m.icon}${m.name} ${have}/${needed}</span> `;
+        }
+        reqHtml += '</div>';
+        document.getElementById('modal-desc').innerHTML = `<div>${item.desc}</div>${reqHtml}`;
+
+        const canCraft = this._canCraft(recipe);
+        document.getElementById('modal-btns').innerHTML =
+            `<button class="btn-success" onclick="player.craftItem('${itemId}');ui.openRecipeModal('${itemId}');ui._renderSmithyGrid();" ${canCraft ? '' : 'disabled'}>${canCraft ? '🔨 制作' : '材料不足'}</button>`;
+
+        document.getElementById('modal-overlay').classList.add('open');
     },
 
     openShopModal() {
         if ((state.base.buildings.shop || 0) === 0) { ui.log('商店尚未建造！'); return; }
-        this._renderShopList();
+        this._renderShopGrid();
         document.getElementById('shop-overlay').classList.add('open');
     },
 
@@ -211,23 +248,41 @@ const ui = {
         document.getElementById('shop-overlay').classList.remove('open');
     },
 
-    _renderShopList() {
-        let html = '';
+    // Shop: 4-per-row grid of materials; tap a cell for details/purchase
+    _renderShopGrid() {
+        let cells = '';
         for (const matId in content.shopPrices) {
-            const price = content.shopPrices[matId];
-            const m = content.materials[matId];
-            const owned = state.inventory.materials[matId] || 0;
+            const price     = content.shopPrices[matId];
+            const m         = content.materials[matId];
             const canAfford = state.resources.gold >= price;
-
-            html += `<div class="recipe-card">
-                <div class="recipe-name">${m.icon} ${m.name} ${owned > 0 ? `<span style="color:#888;font-size:11px;">（持有 ×${owned}）</span>` : ''}</div>
-                <div class="recipe-reqs">💰 ${price}</div>
-                <button onclick="player.buyMaterial('${matId}');ui._renderShopList();ui.updateBase();" ${canAfford ? '' : 'disabled'} class="btn-success">
-                    ${canAfford ? '🛒 购买' : '金币不足'}
-                </button>
-            </div>`;
+            cells += `
+                <div class="inv-cell has-item is-material ${canAfford ? '' : 'locked'}" onclick="ui.openShopItemModal('${matId}')">
+                    <span class="cell-icon">${m.icon}</span>
+                    <span class="cell-name">${m.name}</span>
+                    <span class="cell-price">💰${price}</span>
+                </div>`;
         }
-        document.getElementById('shop-list').innerHTML = html;
+        document.getElementById('shop-list').innerHTML = `<div class="inv-grid">${cells}</div>`;
+    },
+
+    // Detail/buy popup for a shop material (reuses the item modal, sits above the shop grid)
+    openShopItemModal(matId) {
+        const m     = content.materials[matId];
+        const price = content.shopPrices[matId];
+        if (!m || price == null) return;
+
+        const owned     = state.inventory.materials[matId] || 0;
+        const canAfford = state.resources.gold >= price;
+
+        document.getElementById('modal-title').innerText = `${m.icon} ${m.name}`;
+        document.getElementById('modal-stats').innerText = `💰 单价 ${price}`;
+        document.getElementById('modal-effects').innerHTML = '';
+        document.getElementById('modal-desc').innerHTML =
+            `<div>合成材料</div><div class="modal-reqs">当前持有 ×${owned} ｜ 金币 ${state.resources.gold}</div>`;
+        document.getElementById('modal-btns').innerHTML =
+            `<button class="btn-success" onclick="player.buyMaterial('${matId}');ui.openShopItemModal('${matId}');ui._renderShopGrid();ui.updateBase();" ${canAfford ? '' : 'disabled'}>${canAfford ? '🛒 购买' : '金币不足'}</button>`;
+
+        document.getElementById('modal-overlay').classList.add('open');
     },
 
     _renderEffectsHtml(effects) {
@@ -295,8 +350,9 @@ const ui = {
             const id   = equip[slot];
             const item = id ? content.items[id] : null;
             const meta = content.slotMeta[slot];
+            // Empty slot → tap opens the backpack so you can pick something to wear
             slotHtml += `
-                <div class="equip-slot-card ${item ? 'filled' : ''}" onclick="${item ? `ui.openEquippedModal('${slot}')` : ''}">
+                <div class="equip-slot-card ${item ? 'filled' : ''}" onclick="${item ? `ui.openEquippedModal('${slot}')` : `ui.openInventoryModal()`}">
                     <span class="slot-label">${meta.label}</span>
                     <span class="slot-icon">${item ? item.icon : '○'}</span>
                     <span class="slot-name">${item ? item.name + (player.getEnhanceLevel(id) > 0 ? `+${player.getEnhanceLevel(id)}` : '') : meta.hint}</span>
@@ -306,42 +362,58 @@ const ui = {
         });
         document.getElementById('equip-slots').innerHTML = slotHtml;
 
-        const cells = [];
+        // Backpack cells: currently-equipped items first (badged "已装备", tap to
+        // manage), then unequipped item stacks, then materials. Equipped items
+        // are shown for reference/quick-swap and don't count toward the bag total.
+        const equippedCells = [];
+        slotOrder.forEach(slot => {
+            if (equip[slot]) equippedCells.push({ kind: 'equipped', slot, id: equip[slot] });
+        });
+        const bagCells = [];
         for (const id in inv) {
-            if ((inv[id] || 0) > 0) cells.push({ kind: 'item', id, qty: inv[id] });
+            if ((inv[id] || 0) > 0) bagCells.push({ kind: 'item', id, qty: inv[id] });
         }
         for (const id in content.materials) {
             const qty = state.inventory.materials[id] || 0;
-            if (qty > 0) cells.push({ kind: 'material', id, qty });
+            if (qty > 0) bagCells.push({ kind: 'material', id, qty });
         }
 
+        const rendered  = [...equippedCells, ...bagCells];
+        // Always show at least GRID_TOTAL slots; grow in whole rows when fuller
+        const padTarget = Math.max(GRID_TOTAL, Math.ceil(rendered.length / GRID_COLS) * GRID_COLS);
         let gridHtml = '';
-        for (let i = 0; i < GRID_TOTAL; i++) {
-            if (i < cells.length) {
-                const c = cells[i];
-                if (c.kind === 'item') {
-                    const item = content.items[c.id];
-                    gridHtml += `
-                        <div class="inv-cell has-item" onclick="ui.openItemModal('${c.id}')">
-                            <span class="cell-icon">${item.icon}</span>
-                            <span class="cell-name">${item.name}</span>
-                            ${c.qty > 1 ? `<span class="cell-qty">×${c.qty}</span>` : ''}
-                        </div>`;
-                } else {
-                    const m = content.materials[c.id];
-                    gridHtml += `
-                        <div class="inv-cell has-item is-material">
-                            <span class="cell-icon">${m.icon}</span>
-                            <span class="cell-name">${m.name}</span>
-                            <span class="cell-qty">×${c.qty}</span>
-                        </div>`;
-                }
+        for (let i = 0; i < padTarget; i++) {
+            const c = rendered[i];
+            if (!c) { gridHtml += `<div class="inv-cell"></div>`; continue; }
+            if (c.kind === 'equipped') {
+                const item = content.items[c.id];
+                const enh  = player.getEnhanceLevel(c.id);
+                gridHtml += `
+                    <div class="inv-cell has-item equipped" onclick="ui.openEquippedModal('${c.slot}')">
+                        <span class="cell-badge">已装备</span>
+                        <span class="cell-icon">${item.icon}</span>
+                        <span class="cell-name">${item.name}${enh > 0 ? `+${enh}` : ''}</span>
+                    </div>`;
+            } else if (c.kind === 'item') {
+                const item = content.items[c.id];
+                gridHtml += `
+                    <div class="inv-cell has-item" onclick="ui.openItemModal('${c.id}')">
+                        <span class="cell-icon">${item.icon}</span>
+                        <span class="cell-name">${item.name}</span>
+                        ${c.qty > 1 ? `<span class="cell-qty">×${c.qty}</span>` : ''}
+                    </div>`;
             } else {
-                gridHtml += `<div class="inv-cell"></div>`;
+                const m = content.materials[c.id];
+                gridHtml += `
+                    <div class="inv-cell has-item is-material">
+                        <span class="cell-icon">${m.icon}</span>
+                        <span class="cell-name">${m.name}</span>
+                        <span class="cell-qty">×${c.qty}</span>
+                    </div>`;
             }
         }
         document.getElementById('inventory-grid').innerHTML = gridHtml;
-        document.getElementById('inv-count').innerText = `${cells.length}/${GRID_TOTAL}`;
+        document.getElementById('inv-count').innerText = `${bagCells.length}/${GRID_TOTAL}`;
     },
 
     openEquippedModal(slot) {

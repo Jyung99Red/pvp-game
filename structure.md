@@ -56,10 +56,10 @@
 | `core/effects.js` | `STAT_REGISTRY` / `EFFECT_REGISTRY`,装备效果的单一登记处 |
 | `core/combat_resolver.js` | **PVP/PVE 共享的纯判定核心**：`pvpConfig` 时序常量、side-state 工厂、蓄力伤害插值、防御减免、弹反窗口、五类交锋判定(注册式规则表,见下)；无 DOM/网络/全局写 |
 | `core/arena_effects.js` | 场地效果注册表 + 逐帧驱动器(纯逻辑)：`ap_surge`(双方AP恢复加速)、`burning_ground`(双方持续灼烧)；PVE boss 通过 `content.enemies[key].arena` 启用 |
-| `core/tick.js` / `ui/ui.js` | 主循环与视图切换,PVP 和 PVE 共用 |
+| `core/tick.js` / `ui/ui.js` | 主循环与视图切换,PVP 和 PVE 共用;`ui.js` 还管基地非战斗 UI——装备槽(空槽点击开背包)、背包(4 列网格,已装备项前置并标"已装备")、商店/铁匠铺(4 列装备/素材网格,点格子弹 `#modal-overlay` 详情/购买/制作) |
 | `ui/fx.js` / `ui/icons.js` | 共享特效与图标库,PVE 和 PVP 都在用 |
-| `pve/pve_logic.js` | PVE 引擎：Roguelike 楼层、本地 AI 状态机(佯攻/连段/狂暴)、技能与 buff、runGold 结算；调用 `combat_resolver` 做判定 |
-| `pve/ui_pve.js` | PVE 战斗 UI 渲染,只读 `state.pveBattle`,不写游戏状态 |
+| `pve/pve_logic.js` | PVE 引擎：Roguelike 楼层、本地 AI 状态机(连段/狂暴)、技能与 buff(skillPoints 跨楼层保留,回城才清零)、runGold 结算；调用 `combat_resolver` 做判定 |
+| `pve/ui_pve.js` | PVE 战斗 UI 渲染,只读 `state.pveBattle`,不写游戏状态。敌人蓄力 icon/条按其自身 `ai.targetChargeMs` 归一(出手瞬间正好到顶),玩家仍按 `chargeMaxMs`;双方在释放前 200ms 触发一次性红闪(`fx.pvpChargeFlash`) |
 | `partials/*.html` | 从 `index.html` 拆出的 4 个 view 片段(base/pve-battle/pvp-room/pvp-battle),启动时由 `index.html` 里的 `fetch()` 注入 |
 | `pvp/pvp_logic.js` | PVP 引擎：状态机、Host 判定、网络消息处理；判定/伤害公式已抽到 `combat_resolver.js`,本文件只做应用+广播 |
 | `pvp/pvp_net.js` | PeerJS 连接、时钟同步、消息收发 |
@@ -71,11 +71,11 @@
 ## 战斗机制 — 蓄力攻击系统
 
 ### 蓄力阶段
-按下                            松手 / 3秒自动出手
+按下                            松手 / 2秒自动出手
 │                                      │
 ▼                                      ▼
 ─┼──────────┬─────────────────────────────────►
-0s        0.5s                         3s
+0s        0.3s                         2s
 [EARLY]    [CHARGE ZONE]              [MAX]
 
 ### 伤害公式（`combat_resolver.js`，PVP/PVE 共享）
@@ -89,7 +89,7 @@ function calcChargeDamage(chargeMs, atk, earlyReleaseMs = pvpConfig.earlyRelease
     const t = Math.min(
         (chargeMs - earlyReleaseMs) / (chargeMaxMs - earlyReleaseMs), 1.0
     );
-    const ratio = lerp(0.3, 1.1, t);          // 阈值→0.3倍atk，3s→1.1倍atk
+    const ratio = lerp(0.3, 1.1, t);          // 阈值→0.3倍atk，2s→1.1倍atk
     return Math.max(1, Math.round(atk * ratio));
 }
 ```
@@ -114,13 +114,13 @@ function applyDefense(rawDmg, def) {
 ### 状态机（per player）
     press attack
 IDLE ─────────────────► CHARGING
-▲                         │ release OR held ≥ 3s
+▲                         │ release OR held ≥ 2s
 │                         ▼
 │                    STRIKE_OUT ──► 交锋判定
 │                         │ strikeRecoveryMs (300ms，仅 hit/blocked 时走完整流程)
 └─────────────────────────┘
     press guard
-IDLE ─────────────────► GUARD_WINDUP (300ms)
+IDLE ─────────────────► GUARD_WINDUP (200ms)
 │
 GUARD_READY ── 超过 guardMaxHoldMs(2000ms)未被击中 → 自动收回 idle
 │ 被击中:
@@ -132,13 +132,13 @@ GUARD_READY ── 超过 guardMaxHoldMs(2000ms)未被击中 → 自动收回 id
 **对手蓄力中被命中 = 打断：** 若防御方此刻 `phase === 'charging'`（既不在
 `strike_out` 也不在 `guard_ready`，所以走不到拼刀/弹反/格挡分支），来犯的
 攻击按普通命中公式结算伤害，同时把防御方强制踢出 `charging`，扣
-`interruptStunMs`(250ms) 硬直——蓄力作废，按下攻击键时已经扣掉的那 1 点 AP
+`interruptStunMs`(300ms) 硬直——蓄力作废，按下攻击键时已经扣掉的那 1 点 AP
 不退还，等同于一次白白浪费的出招。
 
 **`phase` 的真实取值只有 7 个：** `idle | charging | strike_out |
 strike_recover | guard_windup | guard_ready | stunned`。无论是被弹反、被
 格挡还是蓄力中被打断，最终都统一落在 `stunned`，区别只在硬直时长(1000ms /
-150ms / 250ms)和作用对象(攻击方 / 防守方)——`phase` 上曾经还声明过
+150ms / 300ms)和作用对象(攻击方 / 防守方)——`phase` 上曾经还声明过
 `'parry'` / `'blocked'` 两个值，但从未被真正赋值过(底层都走 `'stunned'`)，
 已经从 `PHASES` 列表、`_tickSide` 的兜底分支、`ui_pvp.js` 的标签映射表里
 一并删掉了。
@@ -178,7 +178,7 @@ parry 300 > block 200 > interrupt 100 > hit 0 兜底)，`resolveExchange` 逐条
 ### AP 恢复
 
 `apRecoveryMs(spd) = pvpConfig.apRecoveryMs(2000ms) * (10 / spd)`。
-spd 越高恢复越快;蓄力/举盾期间不恢复 AP。AP 上限默认 `pvpConfig.apMax`(3),
+spd 越高恢复越快;蓄力/举盾期间不恢复 AP。AP 上限默认 `pvpConfig.apMax`(5),
 但可由装备(`ap_max_bonus` 效果)提升,存在 side-state 的 `apMax` 字段上,
 `_tickSide` 与 UI 星标都读它。
 
@@ -205,8 +205,8 @@ state.pvpBattle = {
         phaseTimer: 0,
         chargeStartT: 0,
         chargeMs: 0,
-        actionPoints: 3,
-        apMax: 3,              // 由 profile 传入，装备可提升（ap_max_bonus）
+        actionPoints: 5,
+        apMax: 5,              // 由 profile 传入，装备可提升（ap_max_bonus）
         actionProgress: 0,
         lastStrikeT: 0,        // Date.now()，出招瞬间，拼刀判定用
         lastChargeMs: 0,       // 上一次出招的蓄力时长，拼刀伤害用

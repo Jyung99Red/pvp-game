@@ -49,10 +49,22 @@ const fx = {
         el.style.color = `rgb(255, ${shade}, ${shade})`;
     },
 
+    // Fires once in the final ~100ms before release: a quick red blink that
+    // telegraphs the incoming strike. Uses a filter-based CSS keyframe (not
+    // color), so it layers on top of the per-frame inline transform/color the
+    // charge icon keeps writing. Remove-then-reflow restarts the one-shot.
+    pvpChargeFlash(el) {
+        if (!el) return;
+        el.classList.remove('charge-flash');
+        void el.offsetWidth;
+        el.classList.add('charge-flash');
+    },
+
     // The moment of release/striking: a one-shot ease-out back to the resting pose instead of snapping instantly.
     // Duration is fixed (independent of charge time), so transition is used instead of keyframes.
     pvpChargeRelease(el, duration = 280) {
         if (!el) return;
+        el.classList.remove('charge-flash');
         el.style.transition = `transform ${duration}ms ease-out, color ${duration}ms ease-out`;
         el.style.transform = '';
         el.style.color = '';
@@ -65,6 +77,7 @@ const fx = {
     // ease position + color back to the resting pose.
     pvpChargeInterrupt(el, stutterStepMs = 40, returnMs = 220) {
         if (!el) return;
+        el.classList.remove('charge-flash');
         const DOWN_PX = 10, STEPS = 4;
         for (let i = 1; i <= STEPS; i++) {
             setTimeout(() => {

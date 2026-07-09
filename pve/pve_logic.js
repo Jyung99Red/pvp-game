@@ -105,8 +105,6 @@ const pveLogic = (() => {
             guardHoldMs:   o.guardHoldMs   || [500, 1400],
             // Phase 3: boss-fight toolkit -- every enemy defaults to "off",
             // only content.enemies[key].ai overrides turn these on.
-            feintChance:     o.feintChance     != null ? o.feintChance : 0,
-            feintAbortMs:    o.feintAbortMs    || [400, 900],
             comboChance:     o.comboChance     != null ? o.comboChance : 0,
             comboDelayMs:    o.comboDelayMs    || [150, 350],
             comboMax:        o.comboMax        != null ? o.comboMax : 1,
@@ -245,46 +243,16 @@ const pveLogic = (() => {
             _setPhase(e, 'guard_windup', pvpConfig.guardWindupMs);
             ai.guardReleaseAt = now + pvpConfig.guardWindupMs + _rand(ai.params.guardHoldMs);
         } else {
-            const eData = content.enemies[b.enemyId];
-            // Combo follow-ups always commit for real -- feinting mid-chain
-            // would just delay the combo, not add any bluff value.
-            const isComboFollowUp = ai.comboCount > 0;
-            const doFeint = !isComboFollowUp && Math.random() < ai.params.feintChance;
-
-            if (doFeint) {
-                // Fake charge: identical visuals to a real attack (same
-                // 'charging' phase, same charge bar/animation) -- the player
-                // can't tell them apart, that's the point. Aborts in _loop
-                // once chargeMs reaches this shorter fake target.
-                ai.isFeint = true;
-                ai.targetChargeMs = _rand(ai.params.feintAbortMs);
-                ai.currentAct = null;
-            } else {
-                ai.isFeint = false;
-                const act    = _rollAct(ai.params.actWeights);
-                const jitter = 1 + (Math.random() * 2 - 1) * ai.params.chargeJitter;
-                ai.currentAct     = act;
-                ai.targetChargeMs = Math.min(_chargeMsFor(eData, act) * jitter, pvpConfig.chargeMaxMs);
-            }
+            const eData  = content.enemies[b.enemyId];
+            const act    = _rollAct(ai.params.actWeights);
+            const jitter = 1 + (Math.random() * 2 - 1) * ai.params.chargeJitter;
+            ai.currentAct     = act;
+            ai.targetChargeMs = Math.min(_chargeMsFor(eData, act) * jitter, pvpConfig.chargeMaxMs);
             e.actionPoints--;
             e.chargeStartT = now;
             e.chargeMs     = 0;
             _setPhase(e, 'charging', 0);
         }
-    }
-
-    // Feint reached its (short) fake target duration -- abort back to idle
-    // without ever calling _fire, so no exchange is resolved. Logged only
-    // after the fact so it doesn't spoil the bluff while it's happening.
-    function _abortFeint() {
-        const b = state.pveBattle, e = b.enemy, ai = b.ai;
-        e.chargeMs = 0;
-        e.chargeStartT = 0;
-        _setPhase(e, 'idle', 0);
-        ai.isFeint = false;
-        ai.comboCount = 0;
-        _pushLog(`🎭 ${content.enemies[b.enemyId].name} 只是佯攻！`);
-        ai.thinkTimer = _rand(ai.params.decideDelayMs);
     }
 
     // ── Fire + resolve (both sides funnel through here; no network) ──────
@@ -483,15 +451,10 @@ const pveLogic = (() => {
             _tickSide(b.enemy,  dt, now, _enemyProfile.spd, () => _fire(b.enemy, true), 1, apRateMult);
 
             _aiThink(dt, now);
-            // AI releases its charge at the decided target duration --
-            // a feint aborts back to idle instead of firing for real
+            // AI releases its charge at the decided target duration
             if (b.enemy.phase === 'charging' && b.ai.targetChargeMs > 0 &&
                 b.enemy.chargeMs >= b.ai.targetChargeMs) {
-                if (b.ai.isFeint) {
-                    _abortFeint();
-                } else {
-                    _fire(b.enemy, false);
-                }
+                _fire(b.enemy, false);
             }
 
             if (b.active && !b.waitingChoice) _applyArenaEvents(arenaEvents);
@@ -516,6 +479,10 @@ const pveLogic = (() => {
     function _beginFight(enemyId, eData, floor, isFreshEntry) {
         _stopLoop();
 
+        // Skill points carry across floors within a run (continueNext);
+        // only a fresh dungeon entry (i.e. leaving/returning to base first) resets them.
+        const carriedSkillPoints = isFreshEntry ? 0 : (state.pveBattle ? state.pveBattle.skillPoints : 0);
+
         _selfProfile  = _buildLocalProfile();
         _enemyProfile = _buildEnemyProfile(eData);
 
@@ -537,7 +504,7 @@ const pveLogic = (() => {
             // Battlefield effects from content.enemies[key].arena (null for
             // most enemies; currently only bosses define any)
             arena: arenaEffects.create(eData.arena),
-            skillPoints: 0,
+            skillPoints: carriedSkillPoints,
             // Skill buffs (see useSkill): haste = faster charge fill until
             // the timestamp; instantCharge = next charge press is instantly
             // full; autoParry = charges that convert an incoming clean hit
@@ -551,7 +518,6 @@ const pveLogic = (() => {
                 guardReleaseAt: 0,
                 currentAct: null,
                 comboCount: 0,
-                isFeint: false,
                 enraged: false,
                 baseAtk: _enemyProfile.atk,
                 baseSpd: _enemyProfile.spd

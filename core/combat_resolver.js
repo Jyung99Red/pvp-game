@@ -6,12 +6,12 @@
 
 const pvpConfig = {
     // Charge attack
-    chargeMaxMs:       3000,
-    earlyReleaseMs:    500,
+    chargeMaxMs:       2000,
+    earlyReleaseMs:    300,
     earlyReleaseDmg:   1,
 
     // Defense
-    guardWindupMs:     300,   // Guard startup delay before guard_ready actually engages
+    guardWindupMs:     200,   // Guard startup delay before guard_ready actually engages
     guardMaxHoldMs:    2000,  // Max hold duration; auto-cancels back to idle past this
     parryWindowMs:     200,   // Base perfect-parry window, scaled by judgmentMultiplier
 
@@ -19,10 +19,10 @@ const pvpConfig = {
     strikeRecoveryMs:  300,
     parryStunMs:       1000,  // Stun duration applied to the attacker after being parried
     clashRecoveryMs:   600,
-    interruptStunMs:   250,   // Stun duration applied to a defender whose charge gets interrupted by an incoming hit
+    interruptStunMs:   300,   // Stun duration applied to a defender whose charge gets interrupted by an incoming hit
 
     // AP (action points)
-    apMax:             3,
+    apMax:             5,
     apRecoveryMs:      2000,  // Base recovery time per AP point, scaled by 10/spd
 
     // Crit (rolled on clean hits/interrupts; chance comes from the
