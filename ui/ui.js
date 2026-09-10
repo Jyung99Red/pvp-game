@@ -74,6 +74,12 @@ const ui = {
         pveLogic.enterDungeon();
     },
 
+    enterTraining() {
+        if (state.world.status !== 'base' || (state.pvpBattle && state.pvpBattle.active) || pvpNet.role) return;
+        save.save();
+        location.href = 'training.html';
+    },
+
     switchTab(tabId) {
         if (state.pveBattle && state.pveBattle.active && tabId !== 'battle') { ui.log("正在战斗中！"); return; }
 
@@ -104,6 +110,7 @@ const ui = {
         if (tabId === 'battle' && !(state.pveBattle && state.pveBattle.active)) {
             document.getElementById('pve-enemy-name').innerText = "当前无战斗";
             uiPve.hideOverlays();
+            uiPve.showEmpty?.();
         }
 
         // Mapping hooks for PVP view transitions

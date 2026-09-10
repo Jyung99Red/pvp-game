@@ -1,13 +1,17 @@
-# Combat Architecture (PVP + PVE)
+# Combat Architecture
 
-战斗判定的纯逻辑核心统一在 `combat_resolver.js`(蓄力伤害插值、防御减免、
-弹反窗口、五类交锋判定 clash/parry/block/interrupt/hit、side-state 工厂、
-`pvpConfig` 时序常量),PVP 和 PVE 两套引擎都调用同一份,保证手感一致。
+正式 PVE 默认已迁移至空间战斗。`pve/pve_logic.js` 管地下城生命周期，
+`pve/pve_profiles.js` 把装备成长转换成档案，`pve/spatial_engine.js` 与训练场共享
+移动、朝向、范围、伤害、技能和模拟时钟。`pve/spatial_data.js` 定义所有怪物招式。
+`ui/combat_input.js` 管输入捕获，`ui/ui_spatial_battle.js` 共享绘制，`pve/ui_pve.js`
+管理正式页面结果和监听生命周期。`core/tick.js` 在活动空间战斗期间不写 HP。
 
-- **PVP**(`pvp_logic.js`)：WebRTC 联机,Host 判定权威,Guest 只镜像。
-- **PVE**(`pve_logic.js`)：Roguelike 地下城,敌人由本地 AI 状态机模拟,
-  同一套蓄力/格挡机制打 AI。**已取代早期的单人战斗系统**(旧
-  `battle.js` / `ui_battle.js` / 左右手双通道操作已删除)。
+`index.html` 从基地进入空间地下城；用户于 2026-09-10 试玩确认后，旧 PVE 回退代码与选择器已删除。存档格式 v1 不变。
+完整映射与测试记录见 `pve/SPATIAL_MIGRATION.md`。
+
+PVP 继续通过 `combat_resolver.js` 使用蓄力伤害、弹反、格挡、拼刀等交锋规则。
+正式 PVE 仅从该文件复用 AP 恢复公式，范围判定与动作推进由空间引擎完成。
+下面的交锋机制与网络章节描述 PVP；正式 PVE 规则见迁移报告。
 
 两套引擎与各自的 UI(`ui_pvp.js` / `ui_pve.js`)通过 `ui.switchTab()` 切换
 不同 `view-section` 共存,全程一起加载,互不冻结、互不干扰。
@@ -17,7 +21,7 @@
 
 ---
 
-## System Overview（以 PVP 为例；PVE 用 ui_pve/pve_logic 替换上两层，无网络层）
+## System Overview（PVP）
 ┌──────────────────────────────────────────────────────┐
 │                     UI Layer                          │
 │   ui_pvp.js · fx.js · icons.js                        │
@@ -27,7 +31,7 @@
 ┌───────────────────────▼───────────────────────────────┐
 │                   Logic Layer                          │
 │   pvp_logic.js  ── 调用 ──►  combat_resolver.js         │
-│   状态机 + Host 判定权威        纯判定/伤害公式(PVP/PVE共享) │
+│   状态机 + Host 判定权威        纯判定/伤害公式(PVP交锋判定) │
 │   不调用 document.*；帧推进靠 tick(dt, now) 传入的时间   │
 └───────────────────────┬───────────────────────────────┘
 │ send / receive
@@ -54,12 +58,15 @@
 | `core/data.js` | 静态配置,战斗复用其中的装备/属性数值 |
 | `core/player.js` | `getStats()` / `getJudgmentMultiplier()` / `getGuardDamageMultiplier()` / `getCritChance()` / `getGuardThorns()` / `getApMax()` / 逐项时序 getter,组装成 profile 传给结算器 |
 | `core/effects.js` | `STAT_REGISTRY` / `EFFECT_REGISTRY`,装备效果的单一登记处 |
-| `core/combat_resolver.js` | **PVP/PVE 共享的纯判定核心**：`pvpConfig` 时序常量、side-state 工厂、蓄力伤害插值、防御减免、弹反窗口、五类交锋判定(注册式规则表,见下)；无 DOM/网络/全局写 |
+| `core/combat_resolver.js` | **PVP的纯判定核心**：`pvpConfig` 时序常量、side-state 工厂、蓄力伤害插值、防御减免、弹反窗口、五类交锋判定(注册式规则表,见下)；无 DOM/网络/全局写 |
 | `core/arena_effects.js` | 场地效果注册表 + 逐帧驱动器(纯逻辑)：`ap_surge`(双方AP恢复加速)、`burning_ground`(双方持续灼烧)；PVE boss 通过 `content.enemies[key].arena` 启用 |
 | `core/tick.js` / `ui/ui.js` | 主循环与视图切换,PVP 和 PVE 共用;`ui.js` 还管基地非战斗 UI——装备槽(空槽点击开背包)、背包(4 列网格,已装备项前置并标"已装备")、商店/铁匠铺(4 列装备/素材网格,点格子弹 `#modal-overlay` 详情/购买/制作) |
 | `ui/fx.js` / `ui/icons.js` | 共享特效与图标库,PVE 和 PVP 都在用 |
-| `pve/pve_logic.js` | PVE 引擎：Roguelike 楼层、本地 AI 状态机(连段/狂暴)、技能与 buff(skillPoints 跨楼层保留,回城才清零)、runGold 结算；调用 `combat_resolver` 做判定 |
-| `pve/ui_pve.js` | PVE 战斗 UI 渲染,只读 `state.pveBattle`,不写游戏状态。敌人蓄力 icon/条按其自身 `ai.targetChargeMs` 归一(出手瞬间正好到顶),玩家仍按 `chargeMaxMs`;双方在释放前 200ms 触发一次性红闪(`fx.pvpChargeFlash`) |
+| `pve/pve_logic.js` | 正式地下城生命周期：楼层、技能点、奖励、runGold 与检查点；驱动空间引擎和场地效果 |
+| `pve/ui_pve.js` | 正式空间战场适配：输入监听、共享视图、暂停和结果界面 |
+| `pve/spatial_engine.js` / `pve/spatial_data.js` / `pve/pve_profiles.js` | 共享空间引擎、显式招式配置和养成档案 |
+| `core/spatial_combat.js` / `core/combat_gestures.js` | 几何与手势语义 |
+| `ui/combat_input.js` / `ui/ui_spatial_battle.js` | Pointer 捕获与只读 Canvas/HUD；训练和正式 PVE 共用 |
 | `partials/*.html` | 从 `index.html` 拆出的 4 个 view 片段(base/pve-battle/pvp-room/pvp-battle),启动时由 `index.html` 里的 `fetch()` 注入 |
 | `pvp/pvp_logic.js` | PVP 引擎：状态机、Host 判定、网络消息处理；判定/伤害公式已抽到 `combat_resolver.js`,本文件只做应用+广播 |
 | `pvp/pvp_net.js` | PeerJS 连接、时钟同步、消息收发 |
@@ -68,7 +75,7 @@
 
 ---
 
-## 战斗机制 — 蓄力攻击系统
+## PVP 战斗机制 — 蓄力攻击系统
 
 ### 蓄力阶段
 按下                            松手 / 2秒自动出手
@@ -78,7 +85,7 @@
 0s        0.3s                         2s
 [EARLY]    [CHARGE ZONE]              [MAX]
 
-### 伤害公式（`combat_resolver.js`，PVP/PVE 共享）
+### 伤害公式（`combat_resolver.js`，PVP）
 
 ```js
 // combat_resolver.js — calcChargeDamage
@@ -387,8 +394,8 @@ correctRemote(remote_t) = remote_t - clockOffset
 - `pvp_net.js`：只管信令、传输、时钟对齐,不做战斗数值计算。
 - `ui_pvp.js` / `ui_pve.js`：只读各自的 state 对象,从不写游戏状态。
 - Guest 永不自行判定,Host 的 `result` 消息是唯一权威。
-- 判定/伤害公式统一在 `combat_resolver.js`,PVP 与 PVE **共享同一套**;
-  `player.js` 的 getter 只负责把装备/属性组装成 profile 传进去。
+- PVP 交锋规则在 `combat_resolver.js`；空间 PVE 在 `spatial_engine.js`。
+  `player.js` getter 与 `pve_profiles.js` 负责把装备/属性组装成各自的 profile。
 - CHARGING 状态下 guard 输入完全锁定。
 - 断线即结束当前对局，没有"原地恢复战斗"的路径——这是有意的设计取舍
   （快节奏对战，断线重连判定的边界情况太多，不如直接开新局更可靠）。

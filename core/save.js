@@ -87,6 +87,12 @@ const save = (() => {
 
         if (data.progress) Object.assign(state.progress, data.progress);
 
+        // Reload returns to base, including saves written on the defeat screen.
+        // Zero HP cannot pass passive regen's alive gate; mirror death return.
+        if (state.player.currentHp <= 0) {
+            state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * .1));
+        }
+
         return true;
     }
 

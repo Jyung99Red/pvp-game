@@ -1,152 +1,59 @@
-<!-- ═══════════════════════════════════════════════════
-     VIEW: PVE Battle (exploration fights)
-     Cloned from pvp-battle.html; same charge/guard visuals,
-     enemy side is locally simulated (no network sync).
-     Root keeps id="view-battle" so the nav tab wiring
-     (tab-battle / switchTab('battle')) works unchanged.
-     ═══════════════════════════════════════════════════ -->
-<div id="view-battle" class="view-section hidden pvp-battle-view">
-
-    <!-- Enemy panel -->
-    <div class="panel" style="margin-bottom:8px;">
-        <div class="flex-row" style="margin-bottom:6px;">
-            <div style="display:flex;align-items:center;gap:6px;">
-                <div id="pve-enemy-sprite" class="character-node">👹</div>
-                <div>
-                    <h3 id="pve-enemy-name" style="margin:0;">敌人</h3>
-                    <span id="pve-floor-label" style="font-size:10px;color:#888;"></span>
-                </div>
-            </div>
-            <span id="pve-enemy-phase" style="font-size:12px;color:#f4a261;"></span>
-            <span id="pve-enemy-status" style="font-size:12px;color:#ff6b6b;font-weight:bold;"></span>
-            <div id="pve-enemy-guard-icon" class="hidden" style="font-size:18px;">🛡️</div>
+<div id="view-battle" class="view-section hidden training spatial-fullscreen">
+    <section class="arena" aria-label="俯视战场">
+        <canvas id="pve-s-arena" aria-label="蓝色剑盾角色对战地下城敌人，橙色范围是起手，红色范围是锁定攻击"></canvas>
+    <header class="topbar">
+        <button type="button" onclick="pveLogic.flee()">撤退</button>
+        <div><strong id="pve-floor-label">地下城</strong><span id="pve-enemy-name">敌人</span></div>
+        <button id="pve-s-pause" type="button" onclick="pveLogic.pause()">暂停</button>
+    </header>
+    <section class="vitals" aria-label="双方状态">
+        <div class="vital"><div><span>你 · 剑盾</span><b id="pve-s-player-hp">120 / 120</b></div><meter id="pve-s-player-meter" min="0" max="120" value="120">120</meter></div>
+        <div class="vital enemy"><div><span id="pve-enemy-vital">敌人</span><b id="pve-s-enemy-hp">360 / 360</b></div><meter id="pve-s-enemy-meter" min="0" max="360" value="360">360</meter></div>
+    </section>
+        <div class="arena-top"><span id="pve-s-enemy-state">观察起手 → 走位或接招</span><span id="pve-s-clock">0:00</span></div>
+        <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
+        <div id="pve-s-overlay" class="overlay" hidden>
+            <div class="overlay-card"><h1>已暂停</h1><p>触摸已释放，点击继续战斗。</p>
+            <button type="button" onclick="pveLogic.resume()">继续战斗</button></div>
         </div>
-
-        <!-- Enemy HP -->
-        <div class="bar-wrap" id="pve-enemy-hp-wrap">
-            <div id="pve-enemy-hp" class="bar-inner hp-bar" style="width:100%;"></div>
-            <div id="pve-enemy-hp-txt" class="bar-text">- / -</div>
-        </div>
-
-        <!-- Enemy charge bar: the attack telegraph — always occupies its
-             slot (no hidden toggle) so the layout never shifts -->
-        <div class="bar-wrap pvp-charge-wrap" id="pve-enemy-charge-wrap" style="margin-top:4px;">
-            <div id="pve-enemy-charge" class="bar-inner" style="width:0%;background:#e76f51;"></div>
-            <div class="bar-text">蓄力</div>
-        </div>
-    </div>
-
-    <!-- Battle arena (visual feedback) -->
-    <div class="battle-arena pvp-arena" id="pve-arena">
-        <div class="pvp-arena-node">
-            <div class="player-node pvp-weapon-node" id="pve-enemy-weapon-icon"></div>
-        </div>
-        <div id="pve-clash-fx">💥</div>
-        <div class="pvp-arena-node">
-            <div class="player-node pvp-weapon-node" id="pve-self-weapon-icon"></div>
-        </div>
-    </div>
-
-    <!-- Self panel -->
-    <div class="panel" style="margin-bottom:8px;">
-        <div class="flex-row" style="margin-bottom:6px;">
-            <h3 style="margin:0;">英雄</h3>
-            <span id="pve-self-phase" style="font-size:12px;color:#48cae4;"></span>
-            <span id="pve-self-ap" style="color:#48cae4;font-weight:bold;">★★★</span>
-            <button onclick="pveLogic.flee()"
-                style="width:auto;margin:0;padding:2px 6px;font-size:10px;background:#5a1f1f;">🏃 撤退</button>
-        </div>
-
-        <!-- Self HP -->
-        <div class="bar-wrap" id="pve-self-hp-wrap">
-            <div id="pve-self-hp" class="bar-inner hp-bar" style="width:100%;"></div>
-            <div id="pve-self-hp-txt" class="bar-text">- / -</div>
-        </div>
-
-        <!-- AP recovery bar -->
-        <div class="bar-wrap" style="margin-top:4px;">
-            <div id="pve-self-ap-bar" class="bar-inner action-bar" style="width:100%;"></div>
-            <div class="bar-text" style="font-size:10px;">行动力恢复</div>
-        </div>
-
-        <!-- Charge bar: always occupies its slot, same as PVP -->
-        <div class="bar-wrap pvp-charge-wrap" id="pve-self-charge-wrap" style="margin-top:4px;">
-            <div id="pve-self-charge" class="bar-inner charge-early" style="width:0%;"></div>
-            <div id="pve-self-charge-txt" class="bar-text">蓄力 0%</div>
-        </div>
-
-        <!-- Action buttons -->
-        <div class="btn-row" style="margin-top:12px;">
-            <button id="pve-btn-charge"
-                onpointerdown="event.preventDefault(); this.setPointerCapture(event.pointerId); pveLogic.onChargePress()"
-                onpointerup="pveLogic.onChargeRelease()"
-                onpointercancel="pveLogic.onChargeRelease()"
-                oncontextmenu="return false;"
-                style="height:52px;font-size:15px;background:#c1440e;">
-                ⚔️ 攻击<br><small>按住蓄力</small>
+    <section class="feedback" aria-label="操作反馈">
+        <div class="ap-row"><span>行动力</span><div id="pve-s-ap" aria-label="行动力 5 / 5"></div><span id="pve-s-player-state">准备就绪</span></div>
+        <div class="charge-track"><div id="pve-s-charge-fill"></div></div>
+        <div id="pve-s-notice" role="status">轻点出刀，拖动走位；长按蓄力，上划松手出招。</div>
+    </section>
+    <section class="controls" aria-label="双按钮操作区">
+        <div class="control-group">
+            <button id="pve-s-action-pad" class="pad action-pad" type="button" aria-label="移动和攻击：点击轻击，拖动移动，长按蓄力后向上划松手重击，原地松手取消">
+                <span class="pad-arrow">↑</span><span class="pad-icon">✦</span><strong id="pve-s-action-label">移动 / 攻击</strong><span class="pad-knob"></span>
             </button>
-            <button id="pve-btn-guard"
-                onpointerdown="event.preventDefault(); this.setPointerCapture(event.pointerId); pveLogic.onGuardPress()"
-                onpointerup="pveLogic.onGuardRelease()"
-                onpointercancel="pveLogic.onGuardRelease()"
-                oncontextmenu="return false;"
-                style="height:52px;font-size:15px;background:#1d6a8a;">
-                🛡️ 防御<br><small>按住格挡</small>
-            </button>
+            <p>点击轻击 · 拖动走位<br>长按后 ↑ 松手重击 · 原地松手取消</p>
         </div>
-
-        <!-- Skills (spend skill pips; earned by landing hits / parrying) -->
-        <div class="flex-row" style="margin-top:8px;margin-bottom:4px;">
-            <span style="font-size:11px;color:#888;">技能点 <span id="pve-self-sp" style="color:#e9c46a;">···</span></span>
-            <span id="pve-buff-display" style="font-size:10px;color:#66ddff;"></span>
+        <div class="control-group">
+            <button id="pve-s-guard-pad" class="pad guard-pad" type="button" aria-label="防御：按住原地举盾，拖动调整朝向，松手撤防"><span class="pad-icon">◇</span><strong id="pve-s-guard-label">防御 / 转向</strong><span class="pad-knob"></span></button>
+            <p>按住原地防御 · 拖动转向<br>蓝色盾弧内可挡 · 举盾瞬间可弹反</p>
         </div>
-        <div class="btn-row">
-            <button id="pve-skill-heal" class="btn-skill" onclick="pveLogic.useSkill('heal')" disabled>💚 治疗<br><small>-3</small></button>
-            <button id="pve-skill-haste" class="btn-skill" onclick="pveLogic.useSkill('haste')" disabled>⚡ 疾速<br><small>-1</small></button>
-            <button id="pve-skill-full" class="btn-skill" onclick="pveLogic.useSkill('full')" disabled>🔥 满蓄<br><small>-2</small></button>
-            <button id="pve-skill-parry" class="btn-skill" onclick="pveLogic.useSkill('parry')" disabled>🔮 弹反<br><small>-2</small></button>
-        </div>
+    </section>
+    <section class="skill-dock" aria-label="战斗技能">
+    <div class="skill-status">技能 <span id="pve-self-sp">0 / 3</span></div>
+    <div class="skills">
+        <button id="pve-skill-heal" onclick="pveLogic.useSkill('heal')">治疗 · 3</button>
+        <button id="pve-skill-haste" onclick="pveLogic.useSkill('haste')">疾速 · 1</button>
+        <button id="pve-skill-full" onclick="pveLogic.useSkill('full')" title="下一次长按满蓄，上划松手出招；取消不退技能点">满蓄 · 2</button>
+        <button id="pve-skill-parry" onclick="pveLogic.useSkill('parry')" title="下一次范围内受击自动弹反，不限朝向、不耗行动力">弹反 · 2</button>
     </div>
-
-    <!-- Battle log (5 lines, resolver logText) -->
-    <div id="pve-log"
-        style="height:80px;overflow:hidden;font-size:11px;color:#888;
-               white-space:pre-line;padding:0 4px;margin-top:auto;">
+    </section>
+    <div id="pve-buff-display" class="buff-status"></div>
+    <div id="pve-log"></div><div id="log"></div>
+    </section>
+    <div id="pve-empty-overlay" class="result-overlay hidden">
+        <h2>准备探索地下城</h2><p>轻点攻击，拖动走位；长按蓄力后上划松手重击。</p>
+        <button onclick="pveLogic.enterDungeon()">下地下城</button><button onclick="ui.switchTab('base')">回到基地</button>
     </div>
-
-    <!-- Global game log (ui.log writes here from everywhere) -->
-    <div id="log" style="height:90px;"></div>
-
-    <!-- Win-choice overlay -->
-    <div id="pve-win-overlay" class="hidden"
-        style="position:fixed;inset:0;background:rgba(0,0,0,0.8);
-               display:flex;flex-direction:column;align-items:center;
-               justify-content:center;z-index:999;padding:24px;">
-        <div style="font-size:30px;font-weight:bold;margin-bottom:12px;color:#e9c46a;">⚔️ 战斗胜利</div>
-        <div id="pve-win-loot" style="color:#ccc;font-size:14px;line-height:1.9;margin-bottom:20px;text-align:center;"></div>
-        <div class="btn-row" style="gap:12px;">
-            <button onclick="pveLogic.continueNext()"
-                style="background:#c1440e;padding:12px 24px;font-size:15px;">
-                ➡️ 继续深入
-            </button>
-            <button onclick="pveLogic.safeRetreat()"
-                style="background:#2a9d8f;padding:12px 24px;font-size:15px;">
-                🏕️ 携宝回城
-            </button>
-        </div>
+    <div id="pve-win-overlay" class="result-overlay hidden">
+        <h2>战斗胜利</h2><div id="pve-win-loot"></div>
+        <div class="btn-row"><button onclick="pveLogic.continueNext()">继续深入</button><button onclick="pveLogic.safeRetreat()">携宝回城</button></div>
     </div>
-
-    <!-- Defeat overlay -->
-    <div id="pve-defeat-overlay" class="hidden"
-        style="position:fixed;inset:0;background:rgba(0,0,0,0.85);
-               display:flex;flex-direction:column;align-items:center;
-               justify-content:center;z-index:1000;padding:24px;text-align:center;">
-        <div style="font-size:32px;font-weight:bold;margin-bottom:8px;color:#dc2f02;">💀 英雄倒下</div>
-        <div style="color:#aaa;font-size:13px;margin-bottom:16px;">被送回基地疗伤...</div>
-        <button onclick="pveLogic.endFight(false)"
-            style="background:#333;padding:12px 24px;font-size:15px;">
-            🏕️ 回到基地
-        </button>
+    <div id="pve-defeat-overlay" class="result-overlay hidden">
+        <h2>英雄倒下</h2><p>本次携带金币已失去。</p><button onclick="pveLogic.endFight(false)">回到基地</button>
     </div>
-
 </div>

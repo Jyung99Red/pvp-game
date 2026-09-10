@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>走位训练场 · 放置地牢</title>
+    <link rel="stylesheet" href="pve/training.css?v=spatial-20260910-clean">
+</head>
+<body>
+<main class="training">
+    <header class="topbar">
+        <a href="index.html" aria-label="返回基地">‹ 基地</a>
+        <div><strong>走位训练场</strong><span>攻守实验 / 01</span></div>
+        <button id="pause" type="button">暂停</button>
+    </header>
+    <section class="vitals" aria-label="双方状态">
+        <div class="vital"><div><span>你 · 剑盾</span><b id="player-hp">120 / 120</b></div><meter id="player-meter" min="0" max="120" value="120">120</meter></div>
+        <div class="vital enemy"><div><span>岩角兽</span><b id="enemy-hp">360 / 360</b></div><meter id="enemy-meter" min="0" max="360" value="360">360</meter></div>
+    </section>
+    <section class="arena" aria-label="俯视战场">
+        <canvas id="arena" aria-label="蓝色剑盾角色对战岩角兽，橙色范围是起手，红色范围是锁定攻击"></canvas>
+        <div class="arena-top"><span id="enemy-state">观察起手 → 走位或接招</span><span id="clock">0:00</span></div>
+        <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
+        <div id="overlay" class="overlay">
+            <div class="overlay-card">
+                <span class="eyebrow">POSITION / TIMING</span>
+                <h1 id="overlay-title">找位置，再出手。</h1>
+                <p id="overlay-copy">绕到扇形侧后方，退开周身践踏。<br>也可以原地举盾，精准接招。</p>
+                <p id="summary" class="summary">固定属性 · 无翻滚 · 不影响养成存档</p>
+                <button id="start" type="button">开始练习</button>
+            </div>
+        </div>
+    </section>
+    <section class="feedback" aria-label="操作反馈">
+        <div class="ap-row"><span>行动力</span><div id="ap" aria-label="行动力 5 / 5"></div><span id="player-state">准备就绪</span></div>
+        <div class="charge-track"><div id="charge-fill"></div></div>
+        <div id="notice" role="status">轻点出刀，拖动走位；长按蓄力，上划松手出招。</div>
+    </section>
+    <section class="controls" aria-label="双按钮操作区">
+        <div class="control-group">
+            <button id="action-pad" class="pad action-pad" type="button" aria-label="移动和攻击：点击轻击，拖动移动，长按蓄力后向上划松手重击，原地松手取消">
+                <span class="pad-arrow">↑</span><span class="pad-icon">✦</span><strong id="action-label">移动 / 攻击</strong><span class="pad-knob"></span>
+            </button>
+            <p>点击轻击 · 拖动走位<br>长按后 ↑ 松手重击 · 原地松手取消</p>
+        </div>
+        <div class="control-group">
+            <button id="guard-pad" class="pad guard-pad" type="button" aria-label="防御：按住原地举盾，拖动调整朝向，松手撤防"><span class="pad-icon">◇</span><strong id="guard-label">防御 / 转向</strong><span class="pad-knob"></span></button>
+            <p>按住原地防御 · 拖动转向<br>蓝色盾弧内可挡 · 举盾瞬间可弹反</p>
+        </div>
+    </section>
+    <footer>蓄力时不能走位 · 满蓄不会自动出手</footer>
+</main>
+<script src="core/spatial_combat.js?v=spatial-20260910-clean"></script>
+<script src="core/combat_gestures.js?v=spatial-20260910-clean"></script>
+<script src="pve/spatial_data.js?v=spatial-20260910-clean"></script>
+<script src="pve/spatial_engine.js?v=spatial-20260910-clean"></script>
+<script src="ui/combat_input.js?v=spatial-20260910-clean"></script>
+<script src="ui/ui_spatial_battle.js?v=spatial-20260910-clean"></script>
+<script src="pve/training.js?v=spatial-20260910-clean"></script>
+</body>
+</html>

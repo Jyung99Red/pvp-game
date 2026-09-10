@@ -1,0 +1,104 @@
+/* Formal dungeon: a full-screen arena with floating HUD and touch controls. */
+#view-battle.spatial-fullscreen {
+    --cyan: #81e6d9; --gold: #efc181; --muted: #adc1c1;
+    --pad-size: 116px; --guard-size: 76px;
+    --bottom: max(22px, env(safe-area-inset-bottom));
+    position: fixed; inset: 0; z-index: 100; width: 100%; height: 100dvh;
+    margin: 0; padding: 0; max-width: none; overflow: hidden;
+    color-scheme: dark; color: #e5efed; background: #101b20;
+    font: 13px system-ui, sans-serif; overscroll-behavior: none;
+}
+#view-battle * { box-sizing: border-box; }
+#view-battle .arena { position: absolute; inset: 0; overflow: hidden; }
+#view-battle canvas { display: block; width: 100%; height: 100%; }
+#view-battle button {
+    color: inherit; font: inherit; cursor: pointer; margin: 0;
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    border: 1px solid #72959366; background: #11272cda;
+}
+#view-battle button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+#view-battle .topbar, #view-battle .vitals, #view-battle .arena-top {
+    position: absolute; left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+    max-width: 660px; margin: 0 auto;
+}
+#view-battle .topbar { top: max(8px, env(safe-area-inset-top)); height: 38px; display: flex; align-items: center; justify-content: space-between; }
+#view-battle .topbar div { text-align: center; text-shadow: 0 2px 5px #000; }
+#view-battle .topbar strong { font-size: 14px; letter-spacing: 2px; }
+#view-battle .topbar span { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+#view-battle .topbar button { width: auto; min-height: 36px; padding: 6px 12px; border-radius: 18px; }
+#view-battle .vitals { top: calc(54px + env(safe-area-inset-top)); display: flex; gap: 14px; pointer-events: none; }
+#view-battle .vital { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid #87b4ad26; border-radius: 10px; background: #0b1a20c9; }
+#view-battle .vital > div { display: flex; justify-content: space-between; gap: 4px; font-size: 11px; }
+#view-battle .vital span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#view-battle .vital b { white-space: nowrap; color: var(--muted); font-size: 10px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#view-battle meter { display: block; width: 100%; height: 6px; margin-top: 6px; border: 0; background: #263639; border-radius: 3px; }
+#view-battle meter::-webkit-meter-bar { border: 0; background: #263639; }
+#view-battle meter::-webkit-meter-optimum-value { background: var(--cyan); }
+#view-battle .enemy meter::-webkit-meter-optimum-value { background: #ec9676; }
+#view-battle meter::-moz-meter-bar { background: var(--cyan); }
+#view-battle .enemy meter::-moz-meter-bar { background: #ec9676; }
+#view-battle .arena-top { top: calc(106px + env(safe-area-inset-top)); display: flex; justify-content: space-between; font-size: 11px; pointer-events: none; text-shadow: 0 1px 5px #000; }
+#view-battle #pve-s-clock { color: var(--muted); font-variant-numeric: tabular-nums; }
+#view-battle .legend { display: none; }
+#view-battle .feedback { position: absolute; bottom: calc(var(--bottom) + 136px); left: 50%; transform: translateX(-50%); width: min(340px, calc(100% - 24px)); pointer-events: none; text-shadow: 0 1px 5px #000; }
+#view-battle .ap-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
+#view-battle #pve-s-ap { display: flex; flex-wrap: wrap; gap: 3px; max-width: 140px; }
+#view-battle #pve-s-ap i { width: 13px; height: 4px; border-radius: 2px; background: #3c5157; }
+#view-battle #pve-s-ap i.full { background: var(--gold); }
+#view-battle #pve-s-player-state { margin-left: auto; color: var(--cyan); }
+#view-battle .charge-track { height: 3px; background: #26363980; margin-top: 6px; border-radius: 3px; overflow: hidden; }
+#view-battle #pve-s-charge-fill { height: 100%; width: 0; background: var(--gold); }
+#view-battle #pve-s-notice { padding-top: 5px; min-height: 20px; font-size: 10px; line-height: 1.5; }
+#view-battle .controls { position: absolute; left: 50%; bottom: var(--bottom); width: 0; height: 0; }
+#view-battle .control-group { position: absolute; bottom: 0; left: calc(var(--pad-size) / -2); }
+#view-battle .control-group + .control-group { left: calc(var(--pad-size) / 2 + 8px); bottom: 76px; }
+#view-battle .pad {
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    position: relative; width: var(--pad-size); height: var(--pad-size); padding: 10px;
+    border-radius: 50%; border: 2px solid #79aca888;
+    background: radial-gradient(circle at 40% 35%, #355b60d9, #142a30d9 75%);
+    box-shadow: 0 5px 28px #0005, inset 0 0 0 7px #88b9b50c;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+#view-battle .guard-pad { width: var(--guard-size); height: var(--guard-size); border-color: #99b3d088; background: radial-gradient(circle at 40% 35%, #3a4e6ad9, #1a2c41d9 75%); gap: 5px; }
+#view-battle .pad.active { border-color: var(--cyan); box-shadow: 0 0 24px #81e6d926, inset 0 0 0 7px #81e6d918; }
+#view-battle .pad.armed { border-color: var(--gold); box-shadow: 0 0 24px #efc18155; }
+#view-battle .pad-icon { font-size: 29px; line-height: 1; color: var(--cyan); pointer-events: none; }
+#view-battle .guard-pad .pad-icon { color: #b9d7ff; font-size: 25px; }
+#view-battle .pad strong { max-width: 90px; font-size: 11px; line-height: 1.4; pointer-events: none; }
+#view-battle .guard-pad strong { font-size: 10px; }
+#view-battle .pad-arrow { position: absolute; top: 5px; font-size: 13px; opacity: .5; pointer-events: none; }
+#view-battle .pad-knob { position: absolute; top: calc(50% - 18px); left: calc(50% - 18px); width: 36px; height: 36px; border: 1px solid #e5efed77; border-radius: 50%; background: #e5efed12; opacity: 0; pointer-events: none; }
+#view-battle .pad.active .pad-knob { opacity: 1; }
+#view-battle .control-group p { display: none; }
+#view-battle .skill-dock { position: absolute; right: calc(50% + var(--pad-size) / 2 + 12px); bottom: var(--bottom); width: 98px; }
+#view-battle .skill-status { color: var(--muted); font-size: 10px; margin-bottom: 6px; text-align: center; }
+#view-battle .skills { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#view-battle .skills button { min-height: 42px; border-radius: 12px; padding: 5px 1px; font-size: 10px; }
+#view-battle .skills button:disabled { opacity: .55; }
+#view-battle .buff-status { position: absolute; bottom: calc(var(--bottom) + 116px); left: 12px; right: 12px; text-align: center; color: var(--gold); font-size: 10px; pointer-events: none; }
+#view-battle #pve-log, #view-battle #log { display: none; }
+#view-battle .overlay, #view-battle .result-overlay { position: absolute; inset: 0; z-index: 10; background: #081216e8; backdrop-filter: blur(5px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 16px; padding: 24px; text-align: center; }
+#view-battle .overlay-card { max-width: 320px; width: 100%; }
+#view-battle .overlay h1 { font-size: 26px; }
+#view-battle .overlay p { color: var(--muted); line-height: 1.8; }
+#view-battle .overlay button, #view-battle .result-overlay button { max-width: 320px; min-height: 44px; border-radius: 10px; }
+#view-battle .result-overlay { z-index: 11; }
+#view-battle.hidden, #view-battle .hidden, #view-battle [hidden] { display: none; }
+@media (max-width: 359px) {
+    #view-battle.spatial-fullscreen { --pad-size: 104px; --guard-size: 68px; }
+    #view-battle .skill-dock { width: 88px; right: calc(50% + var(--pad-size) / 2 + 6px); }
+    #view-battle .vitals { gap: 8px; }
+    #view-battle .vital { padding: 7px; }
+    #view-battle .control-group + .control-group { bottom: 72px; }
+}
+@media (max-height: 480px) and (min-width: 600px) {
+    #view-battle.spatial-fullscreen { --pad-size: 100px; --guard-size: 68px; --bottom: 16px; }
+    #view-battle .topbar, #view-battle .vitals, #view-battle .arena-top { right: auto; left: 12px; width: 180px; }
+    #view-battle .topbar div { display: none; }
+    #view-battle .vitals { flex-direction: column; gap: 8px; }
+    #view-battle .arena-top { top: 162px; font-size: 10px; }
+    #view-battle .skill-dock { left: 18px; right: auto; }
+    #view-battle .feedback { left: auto; right: 12px; transform: none; width: 170px; bottom: 192px; }
+    #view-battle .buff-status { left: auto; width: 180px; bottom: 174px; }
+}

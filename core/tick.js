@@ -33,14 +33,16 @@ const tick = {
             }
         }
 		
-		// --- 3. Passive player HP regen (every 2 ticks = 2s, +1 HP) ---
-        if (state.time.tick % 2 === 0 && state.player.currentHp > 0 && state.player.currentHp < player.getStats().maxHp) {
+		const spatialOwnsHp = state.pveBattle?.spatial && state.pveBattle.active && !state.pveBattle.waitingChoice;
+        const allowRegen = !spatialOwnsHp && !(state.pveBattle?.spatial && state.world.status === 'fighting' && document.hidden);
+        // --- 3. Passive player HP regen (every 2 ticks = 2s, +1 HP) ---
+        if (allowRegen && state.time.tick % 2 === 0 && state.player.currentHp > 0 && state.player.currentHp < player.getStats().maxHp) {
             player.heal(1);
         }
 
         // --- 4. Hot spring healing check ---
         const hotSpringLv = state.base.buildings.hotSpring || 0;
-        if (hotSpringLv > 0 && state.player.currentHp > 0 && state.player.currentHp < player.getStats().maxHp) {
+        if (allowRegen && hotSpringLv > 0 && state.player.currentHp > 0 && state.player.currentHp < player.getStats().maxHp) {
             let healAmt = 0;
             if (state.world.status === 'base') {
                 healAmt = hotSpringLv;

@@ -135,64 +135,55 @@ const content = {
         vigor_ring: { materials: { shadow_crystal: 3, goblin_ear: 1 } }
     },
 
-    // Enemy acts: dmgMult scales the AI's target charge duration (heavier act
-    // = longer charge = more damage via the charge lerp); recoveryMs is extra
-    // AI think-time after firing that act. (The old windupMs telegraph field
-    // is gone -- the visible charge bar IS the telegraph now.)
+    // Enemy act names are display metadata; spatial_data.js owns geometry and timings.
     enemies: {
         test_combat: {
             name: "测试木桩", hp: 200, atk: 5, def: 1, exp: 20,
-            baseMsCharge: 1000,
             acts: {
-                act1: { name: "快斩", dmgMult: 1.0, recoveryMs: 100 },
-                act2: { name: "重击", dmgMult: 1.5, recoveryMs: 1000 }
+                act1: { name: "快斩" },
+                act2: { name: "重击" }
             },
             drops: []
         },
         goblin: {
             name: "哥布林", hp: 55, atk: 12, def: 4, exp: 20,
             iconKey: 'goblin',
-            baseMsCharge: 2200,
             acts: {
-                act1: { name: "乱挥", dmgMult: 1.0, recoveryMs: 200 },
-                act2: { name: "猛扑", dmgMult: 1.2 }
+                act1: { name: "乱挥" },
+                act2: { name: "猛扑" }
             },
             drops: [{ id: 'goblin_ear', chance: 0.85, amount: [1, 2] }]
         },
         wolf: {
             name: "野狼", hp: 50, atk: 18, def: 3, exp: 15,
-            baseMsCharge: 1900,
             acts: {
-                act1: { name: "撕咬", dmgMult: 1.0, recoveryMs: 0 },
-                act2: { name: "扑击", dmgMult: 1.3, recoveryMs: 0 }
+                act1: { name: "撕咬" },
+                act2: { name: "扑击" }
             },
             drops: [{ id: 'wolf_pelt', chance: 0.90, amount: [1, 2] }]
         },
 		orc: {
             name: "兽人苦工", hp: 80, atk: 25, def: 8, exp: 50,
-            baseMsCharge: 2400,
             acts: {
-                act1: { name: "挥锤", dmgMult: 1.0, recoveryMs: 250 },
-                act2: { name: "砸地", dmgMult: 1.5 }
+                act1: { name: "挥锤" },
+                act2: { name: "砸地" }
             },
             drops: [{ id: 'orc_tooth', chance: 0.75, amount: [1, 1] }]
         },
         young_dragon: {
             name: "幼龙", hp: 200, atk: 30, def: 8, exp: 120,
-            baseMsCharge: 1800,
             acts: {
-                act1: { name: "爪击", dmgMult: 1.0, recoveryMs: 100 },
-                act2: { name: "火焰吐息", dmgMult: 1.5 }
+                act1: { name: "爪击" },
+                act2: { name: "火焰吐息" }
             },
             drops: [{ id: 'dragon_scale', chance: 0.80, amount: [1, 2] }]
         },
         // ── Deep floors (10+) ──
         skeleton_warrior: {
             name: "骷髅武士", hp: 130, atk: 34, def: 10, exp: 80,
-            baseMsCharge: 2000,
             acts: {
-                act1: { name: "骨刃斩", dmgMult: 1.0, recoveryMs: 200 },
-                act2: { name: "碎骨击", dmgMult: 1.5, recoveryMs: 400 }
+                act1: { name: "骨刃斩" },
+                act2: { name: "碎骨击" }
             },
             drops: [
                 { id: 'orc_tooth', chance: 0.40, amount: [1, 1] },
@@ -201,22 +192,20 @@ const content = {
         },
         shadow_assassin: {
             name: "暗影刺客", hp: 95, atk: 42, def: 6, exp: 100,
-            baseMsCharge: 1300,
             acts: {
-                act1: { name: "影袭", dmgMult: 1.0, recoveryMs: 100 },
-                act2: { name: "致命突刺", dmgMult: 1.6, recoveryMs: 300 }
+                act1: { name: "影袭" },
+                act2: { name: "致命突刺" }
             },
-            ai: { spd: 12, decideDelayMs: [200, 500] },
+            ai: { spd: 12 },
             drops: [{ id: 'shadow_crystal', chance: 0.60, amount: [1, 2] }]
         },
         stone_golem: {
             name: "岩石傀儡", hp: 320, atk: 30, def: 24, exp: 120,
-            baseMsCharge: 2800,
             acts: {
-                act1: { name: "岩拳", dmgMult: 1.0, recoveryMs: 300 },
-                act2: { name: "地裂", dmgMult: 1.6, recoveryMs: 600 }
+                act1: { name: "岩拳" },
+                act2: { name: "地裂" }
             },
-            ai: { spd: 8, guardChance: 0.5, guardHoldMs: [800, 1600] },
+            ai: { spd: 8 },
             drops: [
                 { id: 'orc_tooth', chance: 0.60, amount: [1, 2] },
                 { id: 'shadow_crystal', chance: 0.25, amount: [1, 1] }
@@ -225,10 +214,9 @@ const content = {
         // ── Bosses (content.bossRotation) ──
         elder_dragon: {
             name: "古龙", hp: 500, atk: 55, def: 15, exp: 400,
-            baseMsCharge: 1500,
             acts: {
-                act1: { name: "龙爪斩", dmgMult: 1.0, recoveryMs: 100 },
-                act2: { name: "龙焰冲击", dmgMult: 2.0, recoveryMs: 200 }
+                act1: { name: "龙爪斩" },
+                act2: { name: "龙焰冲击" }
             },
             drops: [
                 { id: 'dragon_scale', chance: 1.00, amount: [2, 4] },
@@ -249,10 +237,9 @@ const content = {
         },
         abyss_lord: {
             name: "深渊领主", hp: 850, atk: 70, def: 20, exp: 700,
-            baseMsCharge: 1400,
             acts: {
-                act1: { name: "深渊爪", dmgMult: 1.0, recoveryMs: 100 },
-                act2: { name: "湮灭波动", dmgMult: 2.0, recoveryMs: 250 }
+                act1: { name: "深渊爪" },
+                act2: { name: "湮灭波动" }
             },
             drops: [
                 { id: 'shadow_crystal', chance: 1.00, amount: [2, 3] },
@@ -264,8 +251,7 @@ const content = {
                 comboDelayMs:    [120, 260],
                 enrageThreshold: 0.4,
                 enrageAtkMult:   1.5,
-                enrageSpdMult:   1.3,
-                guardChance:     0.4
+                enrageSpdMult:   1.3
             },
             // Arena effect: 30s in the abyss surges -- BOTH sides' AP
             // recharges 2x, the whole fight shifts up-tempo
