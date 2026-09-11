@@ -209,3 +209,8 @@ Static checks only; current gesture regressions and real-device QA remain pendin
 
 Latest user authorization: parry costs 3 SP. Commit and push current work first,
 then run tests; this supersedes the earlier no-tests restriction.
+
+Latest validation: focused training/PVE suite updated to current gestures and tuning;
+38 tests passed, 0 failed. Includes held movement through stun, four-way skill cancel,
+haste motion, heal safeguards, parry 3 SP and foreground lifecycle/reward protection.
+Real-device layout/background/context-loss QA remains pending.

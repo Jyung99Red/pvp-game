@@ -18,7 +18,7 @@ test('shared view mounts on training Document and formal Element roots, and redr
             key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
         const nodes = new Map();
         function element() {
-            return { textContent: '', style: {}, classList: { toggle() {} },
+            return { textContent: '', style: {}, classList: { toggle() {} }, addEventListener() {}, querySelectorAll: () => [],
                 setAttribute() {}, appendChild(node) { return node; }, remove() {},
                 getBoundingClientRect: () => ({ width: 390, height: 844, top: 700, bottom: 90 }),
                 querySelector: () => ({ style: {} }) };
@@ -31,7 +31,7 @@ test('shared view mounts on training Document and formal Element roots, and redr
         const canvas = root.querySelector('[id="arena"]');
         canvas.getContext = () => canvasContext;
         canvas.getBoundingClientRect = () => ({ width: 390, height: 844, top: 0 });
-        const c = vm.createContext({ root, document: { createElement: element }, window: { devicePixelRatio: 1 },
+        const c = vm.createContext({ root, AbortController, document: { createElement: element }, window: { devicePixelRatio: 1, addEventListener() {} },
             ResizeObserver: class { constructor(callback) { resized = callback; } observe() {} disconnect() { disconnected = true; } } });
         for (const file of ['core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js', 'ui/ui_spatial_battle.js']) {
             vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), c);
@@ -58,15 +58,15 @@ function incoming(b, timer = .1) {
 }
 test('tap attacks at the same position and spends exactly one AP', () => {
     const b = setup(), { x, y } = b.player;
-    L.press(b, 'action'); advance(b, .08); L.release(b, 'action');
+    L.press(b, 'move'); advance(b, .08); L.release(b, 'move');
     assert.equal(b.stats.attacks, 1); assert.equal(b.player.ap, 4);
     assert.equal(b.player.x, x); assert.equal(b.player.y, y);
 });
 test('upward movement starts immediately and release never attacks, even after a long hold', () => {
     const b = setup(); b.enemy.x = 50; b.enemy.y = 50;
-    L.press(b, 'action'); L.drag(b, 'action', 0, -60); advance(b, .01);
+    L.press(b, 'move'); L.drag(b, 'move', 0, -60); advance(b, .01);
     assert.ok(b.player.y < 275);
-    advance(b, 1.8); L.release(b, 'action');
+    advance(b, 1.8); L.release(b, 'move');
     assert.equal(b.stats.attacks, 0); assert.equal(b.player.charge, 0);
     const y = b.player.y; advance(b, .2); assert.equal(b.player.y, y);
 });
@@ -97,17 +97,20 @@ test('pointer cancellation and pause cannot release an armed attack', () => {
     const time = b.time, x = b.player.x; advance(b, 5);
     assert.equal(b.time, time); assert.equal(b.player.x, x);
 });
-test('guard overrides movement, rotates in place, and rotation never refreshes parry time', () => {
-    const b = setup(); L.press(b, 'action'); L.drag(b, 'action', 60, 0); advance(b, .1);
+test('guard and left movement coexist at 30% speed; turning does not refresh parry', () => {
+    const b = setup(); b.enemy.x = 50; b.enemy.y = 50;
+    L.press(b, 'move'); L.drag(b, 'move', 60, 0);
     assert.equal(L.press(b, 'guard'), true);
-    const { x, y } = b.player; advance(b, .2);
+    const x = b.player.x; advance(b, .2);
+    assert.ok(Math.abs(b.player.x - x - 115 * .3 * .2) < 1e-8);
     const ready = b.player.guardReadyAt;
     L.drag(b, 'guard', 60, 0); advance(b, .5);
-    assert.equal(b.player.x, x); assert.equal(b.player.y, y);
     assert.equal(b.player.facing, 0); assert.equal(b.player.guardReadyAt, ready);
-    L.release(b, 'guard'); advance(b, .2); L.release(b, 'action');
-    assert.equal(b.player.x, x); assert.equal(b.stats.attacks, 0);
+    L.release(b, 'move'); L.release(b, 'guard');
+    const stopped = b.player.x; advance(b, .2); assert.equal(b.player.x, stopped);
+    assert.equal(b.stats.attacks, 0);
 });
+
 test('geometry covers front, back, radial edges and circular reach', () => {
     const origin = { x: 0, y: 0 }, sector = { kind: 'sector', range: 100, arc: Math.PI / 2 };
     assert.equal(S.contains(sector, origin, 0, { x: 80, y: 0, radius: 10 }), true);
@@ -118,11 +121,11 @@ test('geometry covers front, back, radial edges and circular reach', () => {
 });
 test('one attack damages once, misses outside range, and light hits do not interrupt windup', () => {
     const b = setup(); incoming(b, 1);
-    L.press(b, 'action'); L.release(b, 'action'); advance(b, .2);
+    L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
     assert.equal(b.enemy.hp, 342); assert.equal(b.enemy.phase, 'windup');
     advance(b, .2); assert.equal(b.enemy.hp, 342);
     const c = setup(); c.enemy.y = 50;
-    L.press(c, 'action'); L.release(c, 'action'); advance(c, .2);
+    L.press(c, 'move'); L.release(c, 'move'); advance(c, .2);
     assert.equal(c.enemy.hp, 360); assert.equal(c.stats.misses, 1);
 });
 test('front guard, rear hit and precise guard produce different outcomes', () => {
@@ -141,22 +144,22 @@ test('locked windup stops tracking, and moving outside its sector avoids damage'
 });
 test('a lethal player hit ends the fight before a pending enemy hit can execute', () => {
     const b = setup(); incoming(b, .1); b.enemy.hp = 1; b.player.hp = 1;
-    L.press(b, 'action'); L.release(b, 'action'); advance(b, .2);
+    L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
     assert.equal(b.result, 'victory'); assert.equal(b.player.hp, 1); assert.equal(b.running, false);
 });
 
 test('semantic commands cannot bypass charge, AP, pause or finished state', () => {
     const b = setup();
     assert.equal(L.dispatch(b, { type: 'heavy' }), false);
-    L.press(b, 'action'); b.player.ap = 0; advance(b, .3);
-    assert.equal(b.action.mode, 'blocked'); assert.equal(b.player.phase, 'idle');
+    b.player.ap = 0; assert.equal(L.press(b, 'action'), false);
+    assert.equal(b.action, null); assert.equal(b.player.phase, 'idle');
     L.pause(b); assert.equal(L.dispatch(b, { type: 'light' }), false);
     assert.equal(b.stats.attacks, 0);
 });
 
 test('events describe damage and finish once, draining cannot change combat', () => {
     const b = setup(); incoming(b, .1); b.enemy.hp = 1;
-    L.press(b, 'action'); L.release(b, 'action'); advance(b, .2);
+    L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
     const events = L.drainEvents(b);
     assert.equal(events.filter(e => e.type === 'finished').length, 1);
     assert.ok(events.some(e => e.type === 'hp_changed' && e.side === 'enemy' && e.hp === 0));
@@ -166,10 +169,10 @@ test('events describe damage and finish once, draining cannot change combat', ()
     assert.equal(L.drainEvents(b).length, 0);
 });
 
-test('hit invalidates both inputs and instances do not share mutable fighter state', () => {
+test('hit invalidates right input and instances do not share mutable fighter state', () => {
     const b = setup(), other = setup(); incoming(b, .1);
-    L.press(b, 'action'); const version = b.inputVersion; advance(b, .2);
-    assert.ok(b.inputVersion > version); assert.equal(b.action, null); assert.equal(b.guard, null);
+    L.press(b, 'action'); const version = b.actionInputVersion; advance(b, .2);
+    assert.ok(b.actionInputVersion > version); assert.equal(b.action, null); assert.equal(b.guard, null);
     L.release(b, 'action'); assert.equal(b.stats.attacks, 0);
     assert.equal(other.player.hp, 120); assert.equal(other.events.length, 0);
     assert.equal(Object.isFrozen(L.config.heavy), true);
@@ -179,6 +182,7 @@ test('hit invalidates both inputs and instances do not share mutable fighter sta
 test('pointer adapter owns each channel, cancels lost capture and removes listeners', () => {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'ui/combat_input.js'), 'utf8'), context);
     const Input = vm.runInContext('combatInput', context);
+    context.window = { addEventListener() {}, removeEventListener() {} };
     function pad() {
         const listeners = new Map(), held = new Set();
         return {
@@ -187,19 +191,21 @@ test('pointer adapter owns each channel, cancels lost capture and removes listen
             setPointerCapture: id => held.add(id), hasPointerCapture: id => held.has(id),
             releasePointerCapture(id) { held.delete(id); this.fire('lostpointercapture', id); },
             fire(type, id, x = 0, y = 0) { listeners.get(type)?.({ pointerId: id, button: 0, clientX: x, clientY: y, preventDefault() {} }); },
+            dataset: {}, style: {}, classList: { remove() {} }, querySelectorAll: () => [], querySelector: () => ({ style: {} }),
+            getBoundingClientRect: () => ({left: -40, top: -40, width: 80, height: 80}),
             listeners, held
         };
     }
-    const action = pad(), guard = pad(), b = setup();
-    const input = Input.attach({ action, guard }, {
+    const action = pad(), guard = pad(), move = pad(), b = setup();
+    const input = Input.attach({ action, guard, move }, {
         press: channel => L.press(b, channel),
         drag: (channel, dx, dy) => L.drag(b, channel, dx, dy),
         release: (channel, cancelled) => L.release(b, channel, cancelled)
     });
     action.fire('pointerdown', 1); action.fire('pointermove', 1, 60);
-    guard.fire('pointerdown', 2); action.fire('pointerdown', 3);
-    assert.equal(action.held.size, 1); assert.equal(guard.held.size, 1);
-    guard.fire('pointerup', 2); action.fire('pointerup', 1);
+    guard.fire('pointerdown', 2); move.fire('pointerdown', 2); action.fire('pointerdown', 3);
+    assert.equal(action.held.size, 1); assert.equal(guard.held.size, 0); assert.equal(move.held.size, 1);
+    action.fire('pointercancel', 1); move.fire('pointercancel', 2);
     assert.equal(b.stats.attacks, 0);
     action.fire('pointerdown', 4); advance(b, .5); action.fire('pointermove', 4, 0, -50);
     action.releasePointerCapture(4);
@@ -207,4 +213,52 @@ test('pointer adapter owns each channel, cancels lost capture and removes listen
     L.pause(b); input.destroy();
     assert.equal(action.listeners.size, 0); assert.equal(guard.listeners.size, 0);
     assert.equal(action.held.size, 0); assert.equal(guard.held.size, 0);
+});
+
+test('hit preserves held left movement through stun; release during stun stops it', () => {
+    for (const releaseDuringStun of [false, true]) {
+        const b=setup(); incoming(b,.01);
+        L.press(b,'move'); L.drag(b,'move',60,0); L.press(b,'action');
+        advance(b,.02); assert.equal(b.player.phase,'stunned');
+        assert.ok(b.move); assert.equal(b.action,null);
+        const x=b.player.x;
+        advance(b,.1); assert.equal(b.player.x,x);
+        if (releaseDuringStun) L.release(b,'move');
+        advance(b,.4);
+        assert.equal(b.stats.attacks,0);
+        if (releaseDuringStun) assert.equal(b.player.x,x);
+        else assert.ok(b.player.x>x);
+    }
+});
+
+test('skill directions require dead zone exit; center cancellation is optional', () => {
+    for (const [x,y,kind] of [[0,-40,'heal'],[40,0,'haste'],[0,40,'full'],[-40,0,'parry']]) {
+        const b=setup(); L.press(b,'skill'); L.drag(b,'skill',x,y);
+        assert.equal(L.release(b,'skill'),kind);
+    }
+    for (const cancelAtCenter of [false,true]) {
+        const b=setup(); b.controls.cancelAtCenter=cancelAtCenter;
+        L.press(b,'skill'); L.drag(b,'skill',20,0); assert.equal(L.release(b,'skill'),null);
+        L.press(b,'skill'); L.drag(b,'skill',40,0); L.drag(b,'skill',0,0);
+        assert.equal(L.release(b,'skill'),cancelAtCenter ? null : 'haste');
+        L.press(b,'skill'); L.drag(b,'skill',0,-40); assert.equal(L.release(b,'skill',true),null);
+    }
+});
+
+test('haste applies move and non-charge turn bonuses; charge remains 65 percent', () => {
+    for (const stance of ['idle','charging','guard']) {
+        const b=setup(); b.enemy.x=40; b.enemy.y=40;
+        if (stance==='charging') L.press(b,'action');
+        if (stance==='guard') { L.press(b,'guard'); advance(b,.2); }
+        L.useSkill(b,'haste');
+        L.press(b,'move'); L.drag(b,'move',60,0);
+        if (stance==='charging') L.drag(b,'action',60,0);
+        if (stance==='guard') L.drag(b,'guard',60,0);
+        const x=b.player.x, facing=b.player.facing;
+        advance(b,.01);
+        const moveMult=stance==='charging' ? .7 : stance==='guard' ? .3 : 1;
+        const turn=stance==='charging' ? 5.2 : stance==='guard' ? 4.2 : 8.4;
+        assert.ok(Math.abs(b.player.x-x-115*1.1*moveMult*.01)<1e-8);
+        assert.ok(Math.abs(b.player.facing-facing-turn*.01)<1e-8);
+    }
 });

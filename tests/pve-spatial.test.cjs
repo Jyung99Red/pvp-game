@@ -18,43 +18,43 @@ function seconds(t, s, fps=60) { for(let i=0;i<Math.round(s*fps);i++) t.pveLogic
 function quiet(t) { t.state.pveBattle.enemy.phase='recover'; t.state.pveBattle.enemy.timer=1000; }
 function victory(t) { t.state.pveBattle.enemy.hp=0; t.pveLogic.advance(.01); }
 
-test('a rapid held drag during light attack or recovery starts moving as recovery ends',()=>{
+test('left movement held through light attack resumes after recovery and stops on release',()=>{
  for (const delay of [0, .15]) {
   const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
   const b=t.state.pveBattle.spatial, L=t.spatialEngine, x=b.player.x;
-  L.press(b,'action'); L.release(b,'action'); seconds(t,delay);
-  assert.equal(L.press(b,'action'),true); L.drag(b,'action',60,0);
-  seconds(t,.1); assert.equal(b.player.x,x); // No attack/recovery cancellation.
+  L.press(b,'move'); L.release(b,'move'); seconds(t,delay);
+  assert.equal(L.press(b,'move'),true); L.drag(b,'move',60,0);
+  seconds(t,.1); assert.equal(b.player.x,x);
   seconds(t,.4); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
-  L.release(b,'action'); const stopped=b.player.x;
+  L.release(b,'move'); const stopped=b.player.x;
   seconds(t,.2); assert.equal(b.player.x,stopped); assert.equal(b.stats.attacks,1);
  }
 });
 
-test('buffered taps, holds, released drags and pause never queue a delayed attack or move',()=>{
- for (const gesture of ['tap','hold','release','cancel','pause']) {
-  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
-  const b=t.state.pveBattle.spatial, L=t.spatialEngine, x=b.player.x;
-  L.press(b,'action'); L.release(b,'action'); assert.equal(L.press(b,'action'),true);
-  if (['release','cancel','pause'].includes(gesture)) L.drag(b,'action',60,0);
-  if (gesture==='pause') { t.pveLogic.pause(); t.pveLogic.resume(); }
-  else if (gesture!=='hold') L.release(b,'action',gesture==='cancel');
-  seconds(t,.8);
-  assert.equal(b.player.x,x); assert.equal(b.player.phase,'idle'); assert.equal(b.stats.attacks,1);
-  L.release(b,'action'); seconds(t,.3); assert.equal(b.stats.attacks,1);
- }
+test('latest queued command replaces earlier input; cancelled move and pause do not drift',()=>{
+ const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
+ const b=t.state.pveBattle.spatial,L=t.spatialEngine,x=b.player.x;
+ L.press(b,'move'); L.release(b,'move');
+ L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'light');
+ L.press(b,'guard'); assert.equal(b.queuedCommand.type,'guard');
+ L.release(b,'guard'); assert.equal(b.queuedCommand,null);
+ L.press(b,'move'); L.drag(b,'move',60,0); L.release(b,'move',true);
+ seconds(t,.5); assert.equal(b.player.x,x); assert.equal(b.stats.attacks,1);
+ L.press(b,'action'); L.drag(b,'action',60,0); t.pveLogic.pause(); t.pveLogic.resume();
+ seconds(t,.5); assert.equal(b.stats.attacks,1); assert.equal(b.player.x,x);
 });
 
-test('heavy release uses its windup before impact, then recovery before a buffered move',()=>{
+test('heavy has .22 windup and .60 recovery before held movement resumes',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
- const b=t.state.pveBattle.spatial, L=t.spatialEngine;
- b.enemy.y=b.player.y-70; const hp=b.enemy.hp, x=b.player.x;
+ const b=t.state.pveBattle.spatial,L=t.spatialEngine;
+ b.enemy.y=b.player.y-70; const hp=b.enemy.hp,x=b.player.x;
  L.press(b,'action'); seconds(t,.3); L.drag(b,'action',0,-60); L.release(b,'action');
- assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.18);
- assert.equal(L.press(b,'action'),true); L.drag(b,'action',60,0);
- seconds(t,.1); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
- seconds(t,.1); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
- assert.equal(b.player.x,x); seconds(t,.5); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
+ assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.22);
+ L.press(b,'move'); L.drag(b,'move',60,0);
+ seconds(t,.2); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
+ seconds(t,.05); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
+ seconds(t,.55); assert.equal(b.player.x,x);
+ seconds(t,.1); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
 });
 
 test('every configured enemy validates; profiles apply enhancement, defense, timing, crit and AP',()=>{
@@ -106,14 +106,14 @@ test('simulation owns regen; paused battle has no HP or time drift; choice regen
 
 test('all four skills retain costs; full charge awaits swipe, cancellation spends no AP',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
- b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,0);
- b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,2);
+ b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,1);
+ b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,1);
  L.press(e,'action'); seconds(t,.5); assert.ok(b.player.charge>.5); const q=b.player.charge;
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
- L.release(e,'action'); t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
+ L.release(e,'action'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
  L.press(e,'action'); seconds(t,.3); assert.equal(b.player.charge,2); assert.equal(e.stats.attacks,0);
  L.release(e,'action'); assert.equal(b.player.ap,e.config.apMax); assert.equal(b.buffs.instantCharge,false);
- b.skillPoints=2; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
+ b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
 });
 
 test('auto parry checks spatial reach and protects from the rear without spending AP',()=>{
@@ -167,7 +167,7 @@ test('crit changes actual damage and equipment threshold changes heavy yield wit
   for(let i=0;i<50;i++) t.spatialEngine.step(b,.01);
   assert.equal(b.action.mode,'charge');
   t.spatialEngine.drag(b,'action',0,-50); t.spatialEngine.release(b,'action');
-  for(let i=0;i<20;i++) t.spatialEngine.step(b,.01);
+  for(let i=0;i<25;i++) t.spatialEngine.step(b,.01);
   return t.spatialEngine.drainEvents(b).find(e=>e.type==='hit');
  }
  const normal=strike(0,.3), crit=strike(1,.3), slow=strike(0,.7);
@@ -193,4 +193,40 @@ test('refreshing a defeat save returns alive at base without granting rewards',(
  assert.equal(fresh.state.player.currentHp,10); assert.equal(fresh.state.world.status,'base');
  assert.equal(fresh.state.resources.gold,0); assert.equal(fresh.state.inventory.exp,0);
  fresh.pveLogic.enterDungeon(); assert.equal(fresh.state.pveBattle.player.hp,10);
+});
+
+test('full-HP heal never spends SP or replaces a queued action; parry requires 3 SP',()=>{
+ const t=setup();t.pveLogic.enterDungeon();quiet(t);
+ const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
+ b.skillPoints=3;L.press(e,'move');L.release(e,'move');L.press(e,'guard');
+ const queued=e.queuedCommand;
+ t.pveLogic.useSkill('heal');assert.equal(b.skillPoints,3);assert.equal(e.queuedCommand,queued);
+ L.release(e,'guard');seconds(t,.5);
+ b.skillPoints=2;t.pveLogic.useSkill('parry');assert.equal(b.buffs.autoParry,0);assert.equal(b.skillPoints,2);
+ b.skillPoints=3;t.pveLogic.useSkill('parry');assert.equal(b.buffs.autoParry,1);assert.equal(b.skillPoints,0);
+});
+
+test('queued heal charges only at execution and cancels for free if HP becomes full',()=>{
+ for(const fillBeforeExecution of [false,true]) {
+  const t=setup();t.pveLogic.enterDungeon();quiet(t);
+  const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
+  b.player.hp=50;b.skillPoints=3;
+  L.press(e,'move');L.release(e,'move');t.pveLogic.useSkill('heal');
+  assert.equal(b.skillPoints,3);assert.equal(e.queuedCommand.kind,'heal');
+  if(fillBeforeExecution)b.player.hp=b.player.maxHp;
+  seconds(t,.5);
+  assert.equal(b.skillPoints,fillBeforeExecution?3:1);
+  assert.equal(b.player.hp,fillBeforeExecution?b.player.maxHp:80);
+ }
+});
+
+test('foreground restore preserves battle and rewards and resume schedules one loop',()=>{
+ const t=setup();t.pveLogic.enterDungeon();quiet(t);seconds(t,.2);
+ const b=t.state.pveBattle,time=b.spatial.time;
+ t.pveLogic.restore();t.pveLogic.restore();assert.equal(t.loops.size,0);
+ assert.equal(t.state.pveBattle,b);assert.equal(b.spatial.time,time);
+ t.pveLogic.resume();t.pveLogic.resume();assert.equal(t.loops.size,1);
+ victory(t);const exp=t.state.inventory.exp,gold=t.state.world.runGold;
+ t.pveLogic.restore();t.pveLogic.resume();
+ assert.equal(t.loops.size,0);assert.equal(t.state.inventory.exp,exp);assert.equal(t.state.world.runGold,gold);
 });
