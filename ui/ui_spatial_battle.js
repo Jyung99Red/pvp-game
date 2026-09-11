@@ -4,8 +4,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     let battle;
     const $ = id => root.querySelector(`[id="${prefix}${id}"]`);
     const canvas = $('arena'), ctx = canvas.getContext('2d');
-    const pads = { action: $('action-pad'), guard: $('guard-pad') };
-    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'action-label', 'guard-label'].map(id => [id, $(id)]));
+    const pads = { move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad') };
+    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'action-label', 'guard-label'].map(id => [id, $(id)]));
     const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
@@ -16,7 +16,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (fullscreen) {
             const landscape = width >= 600 && height <= 480;
             worldTop = landscape ? 26 : root.querySelector('.vitals').getBoundingClientRect().bottom - rect.top + 25;
-            worldBottom = height - (pads.action.getBoundingClientRect().top - rect.top) + (landscape ? 12 : 36);
+            worldBottom = height - (pads.move.getBoundingClientRect().top - rect.top) + (landscape ? 12 : 36);
             worldInset = landscape ? 202 : 12;
         }
         canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
@@ -24,11 +24,14 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
-    let notice = '轻点出刀，拖动走位；长按蓄力，上划松手出招。', effects = [], lastTime = 0;
+    let notice = '左手移动 / 轻击，右手重击 / 防御转向。', effects = [], lastTime = 0;
+    const hitFlashes = { player: 0, enemy: 0 };
     function consume(events) {
         const dt = Math.max(0, battle.time - lastTime); lastTime = battle.time;
         effects.forEach(e => e.life -= dt); effects = effects.filter(e => e.life > 0);
+        for (const side of ['player', 'enemy']) hitFlashes[side] = Math.max(0, hitFlashes[side] - dt);
         for (const e of events) {
+            if (e.type === 'hp_changed' && e.hp < e.previous) hitFlashes[e.side] = .28;
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
             const messages = {
                 ap_insufficient: '行动力不足，走位等待恢复',
@@ -68,21 +71,47 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
     }
     function fighter(body, enemy) {
+        const flash = hitFlashes[enemy ? 'enemy' : 'player'] / .28;
+        const tint = color => {
+            if (!flash) return color;
+            const rgb = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
+            return `rgb(${rgb.map((v, i) => Math.round(v + ([255, 58, 70][i] - v) * flash)).join(',')})`;
+        };
         ctx.save(); ctx.translate(body.x, body.y);
         ctx.fillStyle = '#050b0e66'; ctx.beginPath(); ctx.ellipse(1, 6, body.radius * 1.25, body.radius * .6, 0, 0, Math.PI * 2); ctx.fill();
         ctx.rotate(body.facing);
         if (enemy) {
-            polygon([[-23, -12], [-12, -24], [8, -22], [25, -12], [27, 11], [8, 22], [-13, 23], [-25, 10]], '#705747', '#be9975');
-            polygon([[-12, -13], [0, -20], [15, -10], [19, 9], [0, 18], [-13, 9]], '#9a7858', '#b6966e');
+            polygon([[-23, -12], [-12, -24], [8, -22], [25, -12], [27, 11], [8, 22], [-13, 23], [-25, 10]], tint('#705747'), tint('#be9975'));
+            polygon([[-12, -13], [0, -20], [15, -10], [19, 9], [0, 18], [-13, 9]], tint('#9a7858'), tint('#b6966e'));
             polygon([[13, -13], [34, -20], [24, -3]], '#e1ceb0');
             polygon([[13, 13], [34, 20], [24, 3]], '#e1ceb0');
             circle(20, -7, 2, '#ffb879'); circle(20, 7, 2, '#ffb879');
         } else {
-            circle(0, 0, 12, '#254f57', '#83d9d3');
-            polygon([[9, 0], [-3, -7], [-3, 7]], '#baeee2');
-            polygon([[9, -11], [29, -10], [32, -8], [29, -6], [9, -7]], '#dae6dc', '#81e6d9');
-            ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(11, -15); ctx.lineTo(11, -3); ctx.stroke();
-            polygon([[2, 11], [7, 7], [13, 10], [12, 20], [5, 22], [0, 17]], '#477582', '#9ac8df');
+            circle(0, 0, 12, tint('#254f57'), tint('#83d9d3'));
+            polygon([[9, 0], [-3, -7], [-3, 7]], tint('#baeee2'));
+            let angle = 0;
+            const reach = 32;
+            if (body.phase === 'charging') {
+                const a = spatialEngine.heavyShape(battle);
+                angle = -a.arc / 2;
+            } else if (body.phase === 'attack' || body.phase === 'recover') {
+                const a = body.attack.shape;
+                if (body.phase === 'attack') {
+                    const progress = S.clamp(1 - body.timer / Math.max(.001, a.windup), 0, 1);
+                    angle = -a.arc / 2 + a.arc * progress;
+                    ctx.beginPath(); ctx.arc(0, 0, reach * .92, -a.arc / 2, angle);
+                    ctx.strokeStyle = '#b6fff19a'; ctx.lineWidth = body.attack.heavy ? 7 : 4; ctx.stroke();
+                } else {
+                    const remaining = S.clamp(body.timer / Math.max(.001, a.recovery), 0, 1);
+                    angle = a.arc / 2 * remaining;
+                }
+            }
+            // Fixed blade geometry; only rotation follows the attack sector, never scale.
+            ctx.save(); ctx.rotate(angle);
+            polygon([[11, -3], [reach - 9, -3], [reach, 0], [reach - 9, 3], [11, 3]], tint('#dae6dc'), '#81e6d9');
+            ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(14, -7); ctx.lineTo(14, 7); ctx.stroke();
+            ctx.restore();
+            polygon([[2, 11], [7, 7], [13, 10], [12, 20], [5, 22], [0, 17]], tint('#477582'), tint('#9ac8df'));
         }
         ctx.restore();
         if (!enemy && ['guard_start', 'guard'].includes(body.phase)) {
@@ -123,7 +152,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.strokeStyle = locked ? '#f27365' : '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
         if (['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
-        if (p.phase === 'charging') shape(C.heavy, p, p.facing, '#81e6d9', .55);
+        if (p.phase === 'charging') shape(spatialEngine.heavyShape(battle), p, p.facing, L.armed(battle.action) ? '#81e6d9' : '#f27365', .65);
         else if (p.phase === 'attack') {
             const progress = 1 - p.timer / (p.attack.heavy ? C.heavy.windup : C.light.windup);
             shape(p.attack.shape, p.attack.origin, p.attack.facing, '#81e6d9', .4 + progress * .5);
@@ -140,16 +169,18 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function controls() {
         for (const [channel, pad] of Object.entries(pads)) {
-            const g = channel === 'action' ? battle.action : battle.guard;
+            const g = channel === 'action' ? battle.action : channel === 'move' ? battle.move : battle.guard;
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
             pad.classList.toggle('armed', channel === 'action' && L.armed(g));
-            const dx = g ? g.dx : 0, dy = g ? g.dy : 0;
+            pad.classList.toggle('cancel-ready', channel === 'action' && g?.mode === 'charge' && !L.armed(g));
+            const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
             const len = Math.hypot(dx, dy), factor = len > 42 ? 42 / len : 1;
             pad.querySelector('.pad-knob').style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
         }
         const g = battle.action;
-        text('action-label', g && g.mode === 'charge' ? (L.armed(g) ? '松手 · 重击' : '原地松手 · 取消') : g && g.mode === 'move' ? (battle.player.phase === 'idle' ? '移动中 · 松手停' : '收招后移动') : '移动 / 攻击');
-        text('guard-label', fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
+        text('move-label', battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 轻击');
+        text('action-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '中心松手取消') : '重击 / 转向');
+        text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = []) {
         battle = snapshot;
@@ -161,14 +192,16 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = e.hp;
         apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
-        const phases = { idle: battle.action && battle.action.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 原地', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: '收招', guard_start: '举盾中', guard: '防御中 · 原地', stunned: '受击硬直' };
+        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 左移右转', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 左移右转', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         text('enemy-state', e.phase === 'windup' ? `${e.attack.label || (e.attack.kind === 'circle' ? '周身践踏' : '扇形重扫')} · ${e.timer <= e.attack.lock ? '朝向锁定！' : '准备中'}` : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
-        const chargeHint = L.armed(battle.action) ? '已准备出招 · 松手重击；滑回起点可取消' : '向上划出再松手攻击 · 原地松手取消';
-        text('notice', p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : notice);
+        const chargeHint = L.armed(battle.action) ? '松手重击 · 回到红色中心取消' : '中心松手取消 · 向外拖动转向';
+        const q = battle.queuedCommand;
+        const queuedName = q?.type === 'skill' ? ({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' }[q.kind]) : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
+        text('notice', p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice);
     }
     resize();
     return { render, destroy() { observer.disconnect(); apDots.forEach(dot => dot.remove()); } };

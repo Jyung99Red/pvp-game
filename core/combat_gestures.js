@@ -1,7 +1,7 @@
 // Pure gesture recognition. No combat state, DOM or wall clock.
 const combatGestures = (() => {
-    const config = Object.freeze({ deadZone: 12, holdSeconds: .24, releaseDistance: 32 });
-    function begin(time) { return { mode: 'pending', start: time, dx: 0, dy: 0 }; }
+    const config = Object.freeze({ deadZone: 12, holdSeconds: .24, cancelRadius: 18 });
+    function begin(time, cx = 0, cy = 0) { return { mode: 'pending', start: time, dx: 0, dy: 0, cx, cy }; }
     function hold(g, time) {
         if (g && g.mode === 'pending' && time - g.start >= config.holdSeconds) {
             g.mode = 'charge';
@@ -9,12 +9,12 @@ const combatGestures = (() => {
         }
         return null;
     }
-    function drag(g, dx, dy) {
-        g.dx = dx; g.dy = dy;
-        if (['pending', 'move_pending'].includes(g.mode) && Math.hypot(dx, dy) > config.deadZone) g.mode = 'move';
+    function drag(g, dx, dy, cx = dx, cy = dy) {
+        g.dx = dx; g.dy = dy; g.cx = cx; g.cy = cy;
+        if (g.mode === 'pending' && Math.hypot(dx, dy) > config.deadZone) g.mode = 'move';
     }
     function armed(g) {
-        return !!g && g.mode === 'charge' && g.dy <= -config.releaseDistance && Math.abs(g.dx) <= -g.dy;
+        return !!g && g.mode === 'charge' && Math.hypot(g.cx ?? g.dx, g.cy ?? g.dy) > config.cancelRadius;
     }
     function release(g, cancelled) {
         if (cancelled) return { type: 'cancel_charge' };

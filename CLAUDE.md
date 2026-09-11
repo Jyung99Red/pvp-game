@@ -134,3 +134,18 @@ recognizer emits semantic commands, the input adapter owns pointer capture, and
 the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/training.test.cjs` for focused regression checks.
 Formal PVE uses this engine with profiles. PVP retains `combat_resolver` exchange
 judgments; formal profiles reuse only its AP recovery helper. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
+
+## Spatial controls update (2026-09-11)
+
+Formal PVE and training use independent left movement/light and right heavy/guard
+pads (heavy below-left of guard). Left drag moves; right drag only turns. Heavy
+press charges immediately at 70% move/turn speed; outside-center release attacks,
+center release cancels. Left movement works while charging or guarding. Weapon
+geometry stays fixed size; only its swing angle and the range preview change.
+`spatialEngine.heavyShape` is shared by preview and hit snapshots.
+Equipment feeds `player.getSpatialMotion()` into profiles; temporary modifiers
+use `spatialEngine.setMotionBuff`. One latest command is buffered during
+attack/recovery/stun; queued skills spend SP only when executed.
+See `pve/COMBAT_CONTROLS.md` for configuration and cancellation semantics.
+The user requested no tests for this revision; previous passing test counts
+are historical, and old gesture expectations need updating on the next test pass.

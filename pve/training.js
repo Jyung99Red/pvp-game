@@ -3,9 +3,9 @@
     const L = spatialEngine, $ = id => document.getElementById(id);
     let battle = L.create(), previous = performance.now(), frameId, inputVersion = 0;
     let view = uiSpatialBattle.create(document);
-    const input = combatInput.attach({ action: $('action-pad'), guard: $('guard-pad') }, {
-        press: channel => L.press(battle, channel),
-        drag: (channel, dx, dy) => L.drag(battle, channel, dx, dy),
+    const input = combatInput.attach({ move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad') }, {
+        press: (channel, cx, cy) => L.press(battle, channel, cx, cy),
+        drag: (channel, dx, dy, cx, cy) => L.drag(battle, channel, dx, dy, cx, cy),
         release: (channel, cancelled) => L.release(battle, channel, cancelled)
     });
     function showOverlay(kind) {
@@ -19,7 +19,7 @@
             $('start').textContent = '重新练习';
         } else {
             $('overlay-title').textContent = '已暂停';
-            $('overlay-copy').textContent = '拖动走位，点击轻击。长按蓄力后，上划松手出招，原地松手取消。';
+            $('overlay-copy').textContent = '左手拖动走位、轻点轻击。右手按住重击或防御，拖动只转向；重击中心松手取消。';
             $('summary').textContent = '切换窗口会自动暂停 · 触摸已安全释放';
             $('start').textContent = '继续练习';
         }

@@ -59,6 +59,14 @@ const player = {
     getGuardDamageMultiplier() {
         return this._applyEffectPass(1.0, 'guard_damage_reduce');
     },
+    getSpatialMotion() {
+        return {
+            move: this._applyEffectPass(1, 'spatial_move_speed'),
+            turn: this._applyEffectPass(1, 'spatial_turn_speed'),
+            chargeMove: this._applyEffectPass(1, 'charge_move_speed'),
+            chargeTurn: this._applyEffectPass(1, 'charge_turn_speed')
+        };
+    },
 
     getStats() {
         const stats = { ...state.player.baseStats };

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>走位训练场 · 放置地牢</title>
-    <link rel="stylesheet" href="pve/training.css?v=spatial-20260910-clean">
+    <link rel="stylesheet" href="pve/training.css?v=spatial-20260911-dual">
 </head>
 <body>
 <main class="training">
@@ -34,28 +34,33 @@
     <section class="feedback" aria-label="操作反馈">
         <div class="ap-row"><span>行动力</span><div id="ap" aria-label="行动力 5 / 5"></div><span id="player-state">准备就绪</span></div>
         <div class="charge-track"><div id="charge-fill"></div></div>
-        <div id="notice" role="status">轻点出刀，拖动走位；长按蓄力，上划松手出招。</div>
+        <div id="notice" role="status">左手移动 / 轻击，右手重击 / 防御转向。</div>
     </section>
-    <section class="controls" aria-label="双按钮操作区">
-        <div class="control-group">
-            <button id="action-pad" class="pad action-pad" type="button" aria-label="移动和攻击：点击轻击，拖动移动，长按蓄力后向上划松手重击，原地松手取消">
-                <span class="pad-arrow">↑</span><span class="pad-icon">✦</span><strong id="action-label">移动 / 攻击</strong><span class="pad-knob"></span>
+    <section class="controls" aria-label="双指操作：左手移动，右手重击或防御">
+        <div class="control-group move-group">
+            <button id="move-pad" class="pad move-pad" type="button" aria-label="移动和轻击：拖动移动，轻点轻击，可与右侧重击或防御同时操作">
+                <span class="pad-icon">✥</span><strong id="move-label">移动 / 轻击</strong><span class="pad-knob"></span>
             </button>
-            <p>点击轻击 · 拖动走位<br>长按后 ↑ 松手重击 · 原地松手取消</p>
         </div>
-        <div class="control-group">
-            <button id="guard-pad" class="pad guard-pad" type="button" aria-label="防御：按住原地举盾，拖动调整朝向，松手撤防"><span class="pad-icon">◇</span><strong id="guard-label">防御 / 转向</strong><span class="pad-knob"></span></button>
-            <p>按住原地防御 · 拖动转向<br>蓝色盾弧内可挡 · 举盾瞬间可弹反</p>
+        <div class="control-group action-group">
+            <button id="action-pad" class="pad action-pad" type="button" aria-label="重击：按住蓄力，拖动只转向，中心外松手攻击，红色中心松手取消">
+                <span class="pad-icon">×</span><strong id="action-label">重击 / 转向</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
+            </button>
+        </div>
+        <div class="control-group guard-group">
+            <button id="guard-pad" class="pad guard-pad" type="button" aria-label="防御：按住举盾，拖动只转向，左手可同时移动，松手撤防">
+                <span class="pad-icon">○</span><strong id="guard-label">防御 / 转向</strong><span class="pad-knob"></span>
+            </button>
         </div>
     </section>
-    <footer>蓄力时不能走位 · 满蓄不会自动出手</footer>
+    <footer>左手移动，右手转向 · 蓄力移速 / 转速为 70%</footer>
 </main>
-<script src="core/spatial_combat.js?v=spatial-20260910-clean"></script>
-<script src="core/combat_gestures.js?v=spatial-20260910-clean"></script>
-<script src="pve/spatial_data.js?v=spatial-20260910-clean"></script>
-<script src="pve/spatial_engine.js?v=spatial-20260910-clean"></script>
-<script src="ui/combat_input.js?v=spatial-20260910-clean"></script>
-<script src="ui/ui_spatial_battle.js?v=spatial-20260910-clean"></script>
-<script src="pve/training.js?v=spatial-20260910-clean"></script>
+<script src="core/spatial_combat.js?v=spatial-20260911-dual"></script>
+<script src="core/combat_gestures.js?v=spatial-20260911-dual"></script>
+<script src="pve/spatial_data.js?v=spatial-20260911-dual"></script>
+<script src="pve/spatial_engine.js?v=spatial-20260911-dual"></script>
+<script src="ui/combat_input.js?v=spatial-20260911-dual"></script>
+<script src="ui/ui_spatial_battle.js?v=spatial-20260911-dual"></script>
+<script src="pve/training.js?v=spatial-20260911-dual"></script>
 </body>
 </html>

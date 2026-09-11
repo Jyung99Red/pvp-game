@@ -11,9 +11,9 @@ const uiPve = (() => {
             $('pve-enemy-name').textContent = eData.name; $('pve-enemy-vital').textContent = eData.name;
             view = uiSpatialBattle.create($('view-battle'), engine.config, 'pve-s-');
             version = engine.inputVersion;
-            input = combatInput.attach({ action: $('pve-s-action-pad'), guard: $('pve-s-guard-pad') }, {
-                press: channel => spatialEngine.press(engine, channel),
-                drag: (channel, dx, dy) => spatialEngine.drag(engine, channel, dx, dy),
+            input = combatInput.attach({ move: $('pve-s-move-pad'), action: $('pve-s-action-pad'), guard: $('pve-s-guard-pad') }, {
+                press: (channel, cx, cy) => spatialEngine.press(engine, channel, cx, cy),
+                drag: (channel, dx, dy, cx, cy) => spatialEngine.drag(engine, channel, dx, dy, cx, cy),
                 release: (channel, cancelled) => spatialEngine.release(engine, channel, cancelled)
             });
             abort = new AbortController();

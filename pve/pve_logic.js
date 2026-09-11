@@ -104,6 +104,14 @@ const pveLogic = (() => {
         for (const e of events) {
             if ((e.type === 'hit' && e.side === 'player') || e.type === 'parry') b.skillPoints = Math.min(3, b.skillPoints + 1);
         }
+        for (const e of events) {
+            const cost = e.type === 'skill_ready' && SKILL_COSTS[e.kind];
+            if (cost && b.spatial.running && !b.settled && b.skillPoints >= cost && spatialEngine.useSkill(b.spatial, e.kind)) {
+                b.skillPoints -= cost;
+                events.push(...spatialEngine.drainEvents(b.spatial));
+            }
+        }
+        _sync();
         uiPve.updateFrame(events);
     }
     function advance(seconds) {
@@ -214,6 +222,8 @@ const pveLogic = (() => {
         useSkill(kind) {
             const b = state.pveBattle, cost = SKILL_COSTS[kind];
             if (!b?.active || b.waitingChoice || !b.spatial.running || !cost || b.skillPoints < cost) return;
+            // Queued skills spend points only when executed, never when replaced/cancelled.
+            if (spatialEngine.queueSkill(b.spatial, kind)) { _processEvents(); return; }
             if (!spatialEngine.useSkill(b.spatial, kind)) return;
             b.skillPoints -= cost; _sync(); _processEvents();
         }

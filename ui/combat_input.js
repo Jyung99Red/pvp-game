@@ -12,20 +12,25 @@ const combatInput = { attach(pads, commands) {
         listen(pad, 'contextmenu', e => e.preventDefault());
         listen(pad, 'pointerdown', e => {
             e.preventDefault();
-            if (e.button !== 0 || [...pointers.values()].some(g => g.channel === channel)) return;
-            if (!commands.press(channel)) return;
+            if (e.button !== 0 || pointers.size >= 2 || [...pointers.values()].some(g => g.channel === channel)) return;
+            const rect = pad.getBoundingClientRect();
+            if (!commands.press(channel, e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2)) return;
             pointers.set(e.pointerId, { channel, pad, x: e.clientX, y: e.clientY });
             pad.setPointerCapture(e.pointerId);
         });
         listen(pad, 'pointermove', e => {
             const g = pointers.get(e.pointerId);
             if (!g) return;
-            commands.drag(channel, e.clientX - g.x, e.clientY - g.y);
+            const rect = pad.getBoundingClientRect();
+            commands.drag(channel, e.clientX - g.x, e.clientY - g.y, e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2);
         });
         function end(e, cancelled) {
             const g = pointers.get(e.pointerId);
             if (!g) return;
-            if (!cancelled) commands.drag(channel, e.clientX - g.x, e.clientY - g.y);
+            if (!cancelled) {
+                const rect = pad.getBoundingClientRect();
+                commands.drag(channel, e.clientX - g.x, e.clientY - g.y, e.clientX - rect.left - rect.width / 2, e.clientY - rect.top - rect.height / 2);
+            }
             pointers.delete(e.pointerId);
             commands.release(channel, cancelled);
             if (pad.hasPointerCapture(e.pointerId)) pad.releasePointerCapture(e.pointerId);

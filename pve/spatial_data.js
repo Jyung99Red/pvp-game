@@ -3,6 +3,8 @@ const spatialData = (() => {
     const training = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,
+        playerTurn: 8, chargeMoveMultiplier: .7, chargeTurnMultiplier: .7,
+        motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 },
         player: { x: 180, y: 275, radius: 12, facing: -Math.PI / 2, hp: 120, maxHp: 120 },
         enemy: { x: 180, y: 160, radius: 23, facing: Math.PI / 2, hp: 360, maxHp: 360 },
         ai: { initialDelay: .8, delay: .45, speed: 47, stopDistance: 88, attackDistance: 150, turn: 3, trackingTurn: 1.6 },
@@ -11,7 +13,7 @@ const spatialData = (() => {
         blockMultiplier: .25, parryDamage: 10, parryCost: .5,
         guardStartup: .16, parryWindow: .18, apMax: 5,
         light: { kind: 'sector', range: 82, arc: Math.PI * .56, damage: 18, windup: .10, recovery: .28 },
-        heavy: { kind: 'sector', range: 103, arc: Math.PI * .68, damage: 28, chargeBonus: 30, windup: .18, recovery: .48 },
+        heavy: { kind: 'sector', minRange: 60, range: 103, minArc: Math.PI * .28, arc: Math.PI * .68, damage: 28, chargeBonus: 30, windup: .18, recovery: .48 },
         sweep: { kind: 'sector', range: 145, arc: Math.PI * .64, windup: 1.25, lock: .45, active: .16, recovery: 1.15, damage: 25 },
         stomp: { kind: 'circle', range: 110, windup: 1.4, lock: .55, active: .16, recovery: 1.3, damage: 30 }
     };

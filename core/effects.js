@@ -11,6 +11,22 @@ const STAT_REGISTRY = {
 // mirrors the `mult *= (...)` pattern used by player.js's multiplier getters.
 // label(value) renders the effect's display HTML for the item modal.
 const EFFECT_REGISTRY = {
+    spatial_move_speed: {
+        apply(mult, value) { return mult * Math.max(0, 1 + value); },
+        label(value) { return `<span class="effect-tag effect-buff">移动速度 ${value >= 0 ? '+' : ''}${Math.round(value * 100)}%</span>`; }
+    },
+    spatial_turn_speed: {
+        apply(mult, value) { return mult * Math.max(0, 1 + value); },
+        label(value) { return `<span class="effect-tag effect-buff">转向速度 ${value >= 0 ? '+' : ''}${Math.round(value * 100)}%</span>`; }
+    },
+    charge_move_speed: {
+        apply(mult, value) { return mult * Math.max(0, 1 + value); },
+        label(value) { return `<span class="effect-tag effect-buff">蓄力移速 ${value >= 0 ? '+' : ''}${Math.round(value * 100)}%</span>`; }
+    },
+    charge_turn_speed: {
+        apply(mult, value) { return mult * Math.max(0, 1 + value); },
+        label(value) { return `<span class="effect-tag effect-buff">蓄力转速 ${value >= 0 ? '+' : ''}${Math.round(value * 100)}%</span>`; }
+    },
     action_speed_penalty: {
         appliesTo: 'actionSpeed',
         apply(mult, value) { return mult * (1 + value); },

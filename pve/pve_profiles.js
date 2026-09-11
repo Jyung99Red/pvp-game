@@ -6,6 +6,7 @@ const pveProfiles = (() => {
         const C = JSON.parse(JSON.stringify(spatialData.training)), stats = player.getStats(), ai = enemyData.ai || {};
         const clamp = spatialCombat.clamp;
         C.formal = true; C.enemyName = enemyData.name;
+        C.motion = player.getSpatialMotion();
         Object.assign(C.player, { maxHp: stats.maxHp, hp: clamp(state.player.currentHp, 0, stats.maxHp), def: stats.def });
         Object.assign(C.enemy, { maxHp: enemyData.hp, hp: enemyData.hp, def: enemyData.def });
         C.apMax = Math.max(1, Math.floor(player.getApMax()));

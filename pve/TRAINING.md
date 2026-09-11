@@ -6,21 +6,18 @@ no save writes and no connection to the original PVE/PVP battle state.
 
 ## Controls
 
-- Action pad: release a short tap to light attack; drag beyond 12 CSS pixels
-  to move immediately. A movement gesture stays movement until released.
-- Hold within the dead zone for 240ms to enter stationary charge. Charge is
-  measured from initial press and caps at 1.6s without auto-firing.
-- Once charging, drag upward at least 32 CSS pixels within a 90-degree upward
-  cone and release to heavy attack. Release in place, sideways or downward
-  to cancel without spending AP. Returning to the touch origin disarms a
-  prepared heavy attack. Screen-up is the gesture; the attack faces the enemy.
-- Guard pad: hold to guard in place; drag relative to the initial contact to
-  turn. Guard starts after 160ms, with a 180ms parry window. Only attacks from
-  the front half-plane are blocked. Turning never refreshes that window.
-- Guard overrides an existing movement gesture, which cannot resume until
-  re-pressed. Charge/attack/recovery cannot be cancelled into guard.
-- Pointer cancellation, lost capture, blur and backgrounding cannot fire an
-  attack. Backgrounding pauses the fight and requires explicit resume.
+- Left bottom pad: tap to light attack, drag beyond 12 CSS pixels to move.
+  Holding this pad never charges. Movement is independent of right-hand input.
+- Right heavy pad: press to charge immediately; drag to turn only. Release
+  outside the 18 CSS pixel center radius to attack, or in the red center to cancel.
+- Right guard pad sits above/right of heavy (X/circle-style staggered layout).
+  Hold to guard and drag to turn; left-hand movement remains available.
+- At most two pointers: one on movement and one on heavy or guard. Heavy and
+  guard remain exclusive. Charge movement/turn speed is 70% by default.
+- Movement pauses during attack/recovery/stun and resumes if still held;
+  the next combat command is replaceable. Pause/cancel/hits clear input.
+- Weapon geometry stays fixed size; its swing angle follows the attack sector.
+  The sector still grows with charge and is snapshotted for hit resolution.
 
 ## Combat and boundaries
 
@@ -89,3 +86,9 @@ Browser smoke checks cover start/light hit, defeat/retry, pause/resume and portr
 layout. Actual phone multi-touch, long-hold/swipe and screen-lock QA remain manual.
 Formal PVE now uses the same engine, including progression profiles and skills.
 PVP keeps its original path. See `SPATIAL_MIGRATION.md` for implemented M2–M4 rules.
+## Controls update / 2026-09-11
+
+See `COMBAT_CONTROLS.md` for motion hooks, command buffering and animation timing.
+This revision was not tested at the user’s request. Earlier passing counts refer
+only to the preceding revision; old immobile/directional-charge test expectations
+need updating with the next testing pass.
