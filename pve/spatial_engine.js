@@ -7,7 +7,7 @@ const spatialEngine = (() => {
         const positive = v => Number.isFinite(v) && v > 0;
         if (![C.width, C.height, C.fullCharge, C.apMax].every(positive)) throw new Error('Invalid arena or combat limits');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
-        if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .7, C.chargeTurnMultiplier ?? .7, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
+        if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .7, C.chargeTurnMultiplier ?? .65, C.guardMoveMultiplier ?? .3, C.guardTurnMultiplier ?? .5, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         if ((C.heavy.minRange != null && (!positive(C.heavy.minRange) || C.heavy.minRange > C.heavy.range)) ||
             (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
         if (![C.guardStartup, C.parryWindow, C.apRegen, C.hitStun, C.playerSpeed, C.guardTurn, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
@@ -37,7 +37,8 @@ const spatialEngine = (() => {
             time: 0, elapsed: 0, running: false, started: false, result: null,
             player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0 },
             enemy: { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
-            move: null, action: null, guard: null, queuedCommand: null, motionBuffs: [], events: [], inputVersion: 0,
+            controls: { cancelAtCenter: true, autoFace: false, ...C.controls },
+            move: null, action: null, guard: null, skill: null, queuedCommand: null, motionBuffs: [], events: [], inputVersion: 0, actionInputVersion: 0,
             stats: { attacks: 0, hits: 0, misses: 0, dodges: 0, blocks: 0, parries: 0, cancels: 0 }
         };
     }
@@ -106,20 +107,29 @@ const spatialEngine = (() => {
         b.motionBuffs.push({ id, ...values, until: b.time + seconds }); return true;
     }
     function motion(b, key) {
-        return (b.config.motion?.[key] ?? 1) * b.motionBuffs.reduce((value, buff) => value * (buff.until > b.time ? buff[key] : 1), 1);
+        // Haste boosts movement in every stance, but its turn bonus excludes charging.
+        const haste = b.time < b.buffs.chargeHasteUntil;
+        const skill = haste && key === 'move' ? 1.1 : haste && key === 'turn' && b.player.phase !== 'charging' ? 1.05 : 1;
+        return skill * (b.config.motion?.[key] ?? 1) * b.motionBuffs.reduce((value, buff) => value * (buff.until > b.time ? buff[key] : 1), 1);
     }
     function movePlayer(b, dx, dy, dt, charging = false) {
         const C = b.config, p = b.player, len = Math.hypot(dx, dy);
         const deadZone = combatGestures.config.deadZone;
         if (len <= deadZone) return;
-        const slow = charging ? (C.chargeMoveMultiplier ?? .7) * motion(b, 'chargeMove') : 1;
+        const slow = charging ? (C.chargeMoveMultiplier ?? .7) * motion(b, 'chargeMove') : ['guard_start', 'guard'].includes(p.phase) ? (C.guardMoveMultiplier ?? .3) : 1;
         const speed = C.playerSpeed * motion(b, 'move') * slow * Math.min(1, (len - deadZone) / C.moveRamp);
         S.move(p, dx / len * speed, dy / len * speed, dt, C, b.enemy);
     }
     const armed = combatGestures.armed;
     function press(b, channel, cx = 0, cy = 0) {
-        if (!canAct(b) || !['move', 'action', 'guard'].includes(channel)) return false;
+        if (!canAct(b) || !['move', 'action', 'guard', 'skill'].includes(channel)) return false;
         const p = b.player;
+        if (channel === 'skill') {
+            if (b.skill || b.action || b.guard) return false;
+            b.skill = { cx, cy, kind: null, outside: false, hasDragged: false, cancelAtCenter: b.controls.cancelAtCenter };
+            return true;
+        }
+        if (channel !== 'move' && b.skill) return false;
         if (channel === 'move') {
             if (b.move) return false;
             b.move = combatGestures.begin(b.time, cx, cy); return true;
@@ -128,6 +138,7 @@ const spatialEngine = (() => {
             if (b.action || (b.guard && !b.guard.queued) || (p.phase !== 'idle' && !locked(b))) return false;
             if (b.guard?.queued) b.guard = null;
             b.action = combatGestures.begin(b.time, cx, cy);
+            b.action.cancelAtCenter = b.controls.cancelAtCenter;
             b.action.mode = 'charge';
             if (locked(b)) { b.action.queued = true; b.queuedCommand = { type: 'input', gesture: b.action }; }
             else if (!dispatch(b, { type: 'charge' })) { b.action = null; emit(b, 'ap_insufficient'); return false; }
@@ -137,13 +148,20 @@ const spatialEngine = (() => {
             if (b.action) b.action.mode = 'blocked';
             b.guard = { dx: 0, dy: 0, cx, cy };
             if (locked(b)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
-            p.facing = S.facing(p, b.enemy);
+            if (b.controls.autoFace) p.facing = S.facing(p, b.enemy);
             p.phase = 'guard_start'; p.timer = b.config.guardStartup;
         }
         return true;
     }
     function drag(b, channel, dx, dy, cx = dx, cy = dy) {
         if (!canAct(b) || ![dx, dy, cx, cy].every(Number.isFinite)) return;
+        if (channel === 'skill' && b.skill) {
+            const g = b.skill;
+            g.cx = cx; g.cy = cy;
+            g.hasDragged ||= Math.hypot(dx, dy) > combatGestures.config.skillDeadZone;
+            if (g.hasDragged) combatGestures.selectSkill(g, cx, cy);
+            return;
+        }
         if (channel === 'move' && b.move) { combatGestures.drag(b.move, dx, dy, cx, cy); return; }
         if (channel === 'action' && b.action) {
             const g = b.action;
@@ -158,7 +176,7 @@ const spatialEngine = (() => {
         const p = b.player;
         if (p.ap < 1) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; return; }
         p.ap -= 1;
-        if (!heavy) p.facing = S.facing(p, b.enemy);
+        if (!heavy && b.controls.autoFace) p.facing = S.facing(p, b.enemy);
         p.attack = {
             shape: heavy ? heavyShape(b) : { ...C.light },
             damage: heavy ? Math.round(C.heavy.damage + C.heavy.chargeBonus * (C.chargeThreshold != null ? S.clamp((p.charge - C.chargeThreshold) / (C.fullCharge - C.chargeThreshold), 0, 1) : p.charge / C.fullCharge)) : C.light.damage,
@@ -169,8 +187,12 @@ const spatialEngine = (() => {
         emit(b, 'attack_started', { heavy });
     }
     function release(b, channel, cancelled = false) {
+        if (channel === 'skill') {
+            const kind = !cancelled && canAct(b) ? combatGestures.selectedSkill(b.skill) : null;
+            b.skill = null; return kind;
+        }
         if (channel === 'move') {
-            if (b.move?.mode === 'pending' && !cancelled && canAct(b) && !b.action && !b.guard) {
+            if (b.move?.mode === 'pending' && !b.move.suppressTap && !cancelled && canAct(b) && !b.action && !b.guard && !b.skill) {
                 if (locked(b)) b.queuedCommand = { type: 'light' };
                 else dispatch(b, { type: 'light' });
             }
@@ -183,7 +205,7 @@ const spatialEngine = (() => {
                 if (b.queuedCommand?.gesture === g) {
                     const command = cancelled ? null : combatGestures.release(g, false);
                     b.queuedCommand = command?.type === 'light' ? { type: 'light' } : command?.type === 'heavy' ? {
-                        type: 'heavy', charge: Math.min(b.config.fullCharge, b.time - g.start), facing: Math.atan2(g.cy, g.cx)
+                        type: 'heavy', charge: Math.min(b.config.fullCharge, b.time - g.start), facing: Math.hypot(g.cy, g.cx) > combatGestures.config.cancelRadius ? Math.atan2(g.cy, g.cx) : b.player.facing
                     } : null;
                 }
             } else if (canAct(b) && !cancelled) dispatch(b, combatGestures.release(g, false));
@@ -195,8 +217,14 @@ const spatialEngine = (() => {
             b.guard = null;
         }
     }
-    function cancelInputs(b) {
-        release(b, 'move', true); release(b, 'action', true); release(b, 'guard', true); b.queuedCommand = null; b.inputVersion++; }
+    function cancelInputs(b, preserveMove = false) {
+        if (!preserveMove) release(b, 'move', true);
+        else if (b.move) b.move.suppressTap = true;
+        release(b, 'action', true); release(b, 'guard', true); release(b, 'skill', true);
+        b.queuedCommand = null;
+        if (preserveMove) b.actionInputVersion++;
+        else b.inputVersion++;
+    }
     function pause(b) {
         cancelInputs(b); b.running = false; }
     function finish(b) {
@@ -265,7 +293,7 @@ const spatialEngine = (() => {
             }
         } else {
             damage(b, 'player', incoming);
-            cancelInputs(b); p.phase = 'stunned'; p.timer = C.hitStun;
+            cancelInputs(b, true); p.phase = 'stunned'; p.timer = C.hitStun;
             emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.ap >= 1 });
         }
     }
@@ -278,16 +306,19 @@ const spatialEngine = (() => {
             movePlayer(b, b.move.dx, b.move.dy, dt, p.phase === 'charging');
         }
         if (p.phase === 'idle') {
-            p.facing = S.facing(p, b.enemy);
+            if (b.controls.autoFace) p.facing = S.facing(p, b.enemy);
+            else if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
+                p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? 8) * motion(b, 'turn'));
+            }
         } else if (p.phase === 'charging') {
             if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.cancelRadius) {
-                p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? 8) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? .7) * motion(b, 'chargeTurn'));
+                p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? 8) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? .65) * motion(b, 'chargeTurn'));
             }
-            p.charge = C.formal ? Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) * (b.time <= b.buffs.chargeHasteUntil ? 1.5 : 1)) : Math.min(C.fullCharge, b.time - g.start);
+            p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) * (b.time <= b.buffs.chargeHasteUntil ? 1.5 : 1));
             p.chargeUpdatedAt = b.time;
         } else if (['guard_start', 'guard'].includes(p.phase)) {
             if (b.guard && Math.hypot(b.guard.cx, b.guard.cy) > combatGestures.config.deadZone) {
-                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * C.guardTurn * motion(b, 'turn'));
+                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * C.guardTurn * motion(b, 'turn') * (C.guardTurnMultiplier ?? .5));
             }
         }
         if (['idle', 'recover', 'stunned'].includes(p.phase)) p.ap = Math.min(C.apMax, p.ap + dt * C.apRegen * b.apRateMult);
@@ -366,7 +397,10 @@ const spatialEngine = (() => {
     }
     function useSkill(b, kind) {
         if (!canAct(b)) return false;
-        if (kind === 'heal') heal(b, Math.floor(b.player.maxHp * .3));
+        if (kind === 'heal') {
+            if (b.player.hp >= b.player.maxHp) return false;
+            heal(b, Math.floor(b.player.maxHp * .3));
+        }
         else if (kind === 'haste') b.buffs.chargeHasteUntil = b.time + 10;
         else if (kind === 'full') {
             if (b.buffs.instantCharge) return false;
@@ -380,6 +414,7 @@ const spatialEngine = (() => {
     }
     function queueSkill(b, kind) {
         if (!canAct(b) || !locked(b) || !['heal', 'haste', 'full', 'parry'].includes(kind)) return false;
+        if (kind === 'heal' && b.player.hp >= b.player.maxHp) return false;
         if (b.action?.queued) b.action.mode = 'blocked';
         if (b.guard?.queued) b.guard = null;
         b.queuedCommand = { type: 'skill', kind }; return true;

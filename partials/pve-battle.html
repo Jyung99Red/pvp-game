@@ -4,29 +4,40 @@
     <header class="topbar">
         <button type="button" onclick="pveLogic.flee()">撤退</button>
         <div><strong id="pve-floor-label">地下城</strong><span id="pve-enemy-name">敌人</span></div>
-        <button id="pve-s-pause" type="button" onclick="pveLogic.pause()">暂停</button>
+        <button id="pve-s-pause" type="button" onclick="pveLogic.pause()">暂停 / 设置</button>
     </header>
     <section class="vitals" aria-label="双方状态">
         <div class="vital"><div><span>你 · 剑盾</span><b id="pve-s-player-hp">120 / 120</b></div><meter id="pve-s-player-meter" min="0" max="120" value="120">120</meter></div>
         <div class="vital enemy"><div><span id="pve-enemy-vital">敌人</span><b id="pve-s-enemy-hp">360 / 360</b></div><meter id="pve-s-enemy-meter" min="0" max="360" value="360">360</meter></div>
     </section>
-        <div class="arena-top"><span id="pve-s-enemy-state">观察起手 → 走位或接招</span><span id="pve-s-clock">0:00</span></div>
+
         <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
         <div id="pve-s-overlay" class="overlay" hidden>
             <div class="overlay-card"><h1>已暂停</h1><p>触摸已释放，点击继续战斗。</p>
+            <fieldset class="combat-settings"><legend>玩家操作</legend>
+                <label><input type="checkbox" data-combat-setting="cancelAtCenter" checked> 中心松手取消（重击 / 技能）</label>
+                <small>关闭后重击直接释放；技能沿用本次最后选中方向，未拖出死区不释放。</small>
+                <label><input type="checkbox" data-combat-setting="autoFace"> 自动朝向怪物</label>
+                <small>默认跟随移动方向；停止移动保留朝向，重击 / 防御由右手转向。</small>
+            </fieldset>
             <button type="button" onclick="pveLogic.resume()">继续战斗</button></div>
         </div>
     <section class="feedback" aria-label="操作反馈">
         <div class="ap-row"><span>行动力</span><div id="pve-s-ap" aria-label="行动力 5 / 5"></div><span id="pve-s-player-state">准备就绪</span></div>
         <div class="charge-track"><div id="pve-s-charge-fill"></div></div>
         <div id="pve-s-notice" role="status">左手移动 / 轻击，右手重击 / 防御转向。</div>
+        <div class="skill-status">技能 <span id="pve-self-sp">0 / 3</span></div>
+        <div id="pve-s-battle-log" class="battle-log" aria-label="最近战斗记录"></div>
+        <div class="arena-top"><span id="pve-s-enemy-state">观察起手 → 走位或接招</span><span id="pve-s-clock">0:00</span></div>
+        <div id="pve-log" aria-label="场地记录"></div>
     </section>
     <section class="controls" aria-label="双指操作：左手移动，右手重击或防御">
-        <div class="control-group move-group">
-            <button id="pve-s-move-pad" class="pad move-pad" type="button" aria-label="移动和轻击：拖动移动，轻点轻击，可与右侧重击或防御同时操作">
+        <div class="control-group move-group" aria-label="在左侧区域按下移动，轻点轻击">
+            <button id="pve-s-move-pad" class="pad move-pad" data-dynamic hidden type="button" aria-label="移动和轻击：拖动移动，轻点轻击，可与右侧重击或防御同时操作">
                 <span class="pad-icon">✥</span><strong id="pve-s-move-label">移动 / 轻击</strong><span class="pad-knob"></span>
             </button>
         </div>
+        <div class="right-controls" aria-label="右手操作，四宫格预留">
         <div class="control-group action-group">
             <button id="pve-s-action-pad" class="pad action-pad" type="button" aria-label="重击：按住蓄力，拖动只转向，中心外松手攻击，红色中心松手取消">
                 <span class="pad-icon">×</span><strong id="pve-s-action-label">重击 / 转向</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
@@ -37,18 +48,21 @@
                 <span class="pad-icon">○</span><strong id="pve-s-guard-label">防御 / 转向</strong><span class="pad-knob"></span>
             </button>
         </div>
+    <section class="skill-dock" aria-label="四向技能">
+
+        <button id="pve-s-skill-pad" class="pad skill-pad" type="button" aria-label="拖动选择技能，松手释放：上治疗、右疾速、下满蓄、左弹反">
+            <strong id="pve-s-skill-label">技能</strong><span class="pad-knob"></span>
+            <span data-skill="heal" class="skill-direction skill-up">治疗 · 2</span>
+            <span data-skill="haste" class="skill-direction skill-right">疾速 · 2</span>
+            <span data-skill="full" class="skill-direction skill-down">满蓄 · 2</span>
+            <span data-skill="parry" class="skill-direction skill-left">弹反 · 3</span>
+        </button>
     </section>
-    <section class="skill-dock" aria-label="战斗技能">
-    <div class="skill-status">技能 <span id="pve-self-sp">0 / 3</span></div>
-    <div class="skills">
-        <button id="pve-skill-heal" onclick="pveLogic.useSkill('heal')">治疗 · 3</button>
-        <button id="pve-skill-haste" onclick="pveLogic.useSkill('haste')">疾速 · 1</button>
-        <button id="pve-skill-full" onclick="pveLogic.useSkill('full')" title="下一次按住重击即满蓄，中心外松手出招；取消不退技能点">满蓄 · 2</button>
-        <button id="pve-skill-parry" onclick="pveLogic.useSkill('parry')" title="下一次范围内受击自动弹反，不限朝向、不耗行动力">弹反 · 2</button>
-    </div>
+        </div>
     </section>
+
     <div id="pve-buff-display" class="buff-status"></div>
-    <div id="pve-log"></div><div id="log"></div>
+    <div id="log"></div>
     </section>
     <div id="pve-empty-overlay" class="result-overlay hidden">
         <h2>准备探索地下城</h2><p>左手拖动移动、轻点轻击；右手按住重击或防御，拖动转向。</p>

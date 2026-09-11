@@ -6,8 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>放置地牢</title>
     <!-- 引入独立出来的 CSS 样式 -->
-    <link rel="stylesheet" href="style.css?v=spatial-20260911-dual">
-    <link rel="stylesheet" href="pve/spatial_pve.css?v=spatial-20260911-dual">
 </head>
 
 <body>
@@ -74,45 +72,7 @@
 
         <!-- 引入所有的 JS 文件 -->
 
-        <script src="core/data.js?v=spatial-20260911-dual"></script>
-        <script src="core/effects.js?v=spatial-20260911-dual"></script>
-        <script src="core/save.js?v=spatial-20260911-dual"></script>
-        <script src="core/player.js?v=spatial-20260911-dual"></script>
-        <script src="core/tick.js?v=spatial-20260911-dual"></script>
-        <script src="ui/fx.js?v=spatial-20260911-dual"></script>
-        <script src="core/combat_resolver.js?v=spatial-20260911-dual"></script>
-        <script src="core/arena_effects.js?v=spatial-20260911-dual"></script>
-
-        <script src="ui/icons.js?v=spatial-20260911-dual"></script>
-        <script src="ui/ui.js?v=spatial-20260911-dual"></script>
-        <script src="core/spatial_combat.js?v=spatial-20260911-dual"></script>
-        <script src="core/combat_gestures.js?v=spatial-20260911-dual"></script>
-        <script src="pve/spatial_data.js?v=spatial-20260911-dual"></script>
-        <script src="pve/spatial_engine.js?v=spatial-20260911-dual"></script>
-        <script src="pve/pve_profiles.js?v=spatial-20260911-dual"></script>
-        <script src="ui/combat_input.js?v=spatial-20260911-dual"></script>
-        <script src="ui/ui_spatial_battle.js?v=spatial-20260911-dual"></script>
-        <script src="pve/ui_pve.js?v=spatial-20260911-dual"></script>
-        <script src="pve/pve_logic.js?v=spatial-20260911-dual"></script>
-
-        <!-- PVP and external dependencies -->
-        <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-        <script src="pvp/pvp_logic.js?v=spatial-20260911-dual"></script>
-        <script src="pvp/pvp_net.js?v=spatial-20260911-dual"></script>
-        <script src="pvp/pvp_room.js?v=spatial-20260911-dual"></script>
-        <script src="pvp/ui_pvp.js?v=spatial-20260911-dual"></script>
-
-        <!-- 启动游戏：先把拆分出去的 view 片段 fetch 回来注入，再跑 ui.init() -->
-        <script>
-            window.onload = async () => {
-                const mounts = ['base', 'pve-battle', 'pvp-room', 'pvp-battle'];
-                await Promise.all(mounts.map(async id => {
-                    const el = document.getElementById('mount-' + id);
-                    el.outerHTML = await fetch('partials/' + id + '.html', { cache: 'no-store' }).then(r => r.text());
-                }));
-                ui.init();
-            };
-        </script>
+        <script src="core/client_boot.js?v=spatial-20260911-mobile3" data-entry="game"></script>
 
 </body>
 

@@ -2,7 +2,7 @@
 const pveLogic = (() => {
     let _rAF = null, _lastTime = 0, _accumulator = 0, _nextId = 0;
     let _random = Math.random;
-    const SKILL_COSTS = { heal: 3, haste: 1, full: 2, parry: 2 };
+    const SKILL_COSTS = { heal: 2, haste: 2, full: 2, parry: 3 };
     function _isBossFloor(floor) {
         return floor % content.bossFloorInterval === 0;
     }
@@ -166,20 +166,32 @@ const pveLogic = (() => {
         ui.switchTab('battle'); uiPve.initFight(eData, fresh);
         spatialEngine.start(engine); _lastTime = performance.now();
         _rAF = requestAnimationFrame(_loop);
+        if (document.hidden) pause();
     }
     function pause() {
         const b = state.pveBattle;
         if (!b?.active || b.waitingChoice || !b.spatial.running) return;
         spatialEngine.pause(b.spatial); _stopLoop(); uiPve.clearInputs(); uiPve.showPause(true); _sync();
     }
+    // Foreground/BFCache return must restore presentation without recreating a fight.
+    function restore() {
+        const b = state.pveBattle;
+        if (!b?.spatial || b.ended || document.hidden) return;
+        if (b.active && !b.waitingChoice && !b.spatial.result && b.spatial.started) {
+            spatialEngine.pause(b.spatial); _stopLoop(); uiPve.clearInputs();
+            uiPve.showPause(true); _sync();
+        }
+        uiPve.refresh();
+    }
     function resume() {
         const b = state.pveBattle;
         if (!b?.active || b.waitingChoice || b.spatial.result || b.spatial.running) return;
+        _stopLoop(); uiPve.refresh();
         spatialEngine.start(b.spatial); uiPve.showPause(false); _lastTime = performance.now();
         _rAF = requestAnimationFrame(_loop);
     }
     return {
-        SKILL_COSTS, advance, pause, resume,
+        SKILL_COSTS, advance, pause, resume, restore,
         setRandom(random) { _random = random; },
         enterDungeon() {
             if (state.world.status !== 'base' || state.pveBattle?.active) return;

@@ -1,0 +1,113 @@
+/* Shared touch layout. Keep the right-hand cluster in a single 2x2 grid. */
+.training { position: relative; --control-size: 76px; --control-gap: 12px; }
+.training .controls { position: relative; height: 192px; flex-basis: 192px; padding: 0; pointer-events: none; }
+.training .controls .move-group {
+    position: absolute; left: 22px; bottom: 0; width: min(42%, 260px); height: 176px;
+    pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
+    border: 1px dashed #9bc8c214; border-radius: 24px;
+}
+.training .move-group::before {
+    content: '此区域按下移动 / 轻点轻击'; position: absolute; inset: auto 4px 8px;
+    text-align: center; color: #adc1c177; font-size: 9px; pointer-events: none;
+}
+.training .controls .move-pad { width: 128px; height: 128px; position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.training .move-pad[hidden] { display: none; }
+.training .pad.no-center-cancel .cancel-zone,
+#view-battle .pad.no-center-cancel .cancel-zone { display: none; }
+.training .right-controls {
+    position: absolute; right: 8px; bottom: 0; display: grid;
+    grid-template-columns: repeat(2, var(--control-size)); grid-template-rows: repeat(2, var(--control-size));
+    gap: var(--control-gap); pointer-events: none;
+}
+.training .right-controls .control-group,
+.training .right-controls .skill-dock {
+    position: relative; inset: auto; width: var(--control-size); height: var(--control-size);
+    transform: none; margin: 0; pointer-events: none;
+}
+.training .right-controls .guard-group { grid-area: 1 / 1; }
+.training .right-controls .skill-dock { grid-area: 1 / 2; }
+.training .right-controls .action-group { grid-area: 2 / 1; }
+.training .right-controls .pad {
+    position: relative; inset: auto; width: var(--control-size); height: var(--control-size);
+    pointer-events: auto; touch-action: none; border-radius: 50%; padding: 5px;
+}
+.training .right-controls .skill-pad { border: 2px solid #b99cd6; background: radial-gradient(circle, #584569e8, #242139ed); }
+.training .skill-pad strong { font-size: 10px; }
+.training .skill-status { position: static; color: #adc1c1; font-size: 10px; text-align: left; margin: 3px 0; }
+.training .skill-pad .skill-direction {
+    display: none; position: absolute; min-width: 48px; padding: 4px; border-radius: 8px;
+    font-size: 10px; color: #d7c9e7; background: #191b27ed; border: 1px solid #b99cd644;
+    pointer-events: none; white-space: nowrap;
+}
+.training .skill-pad.active { z-index: 2; }
+.training .skill-pad.active strong { visibility: hidden; }
+.training .skill-pad.active .skill-direction { display: block; }
+.training .skill-up { bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); }
+.training .skill-down { top: calc(100% + 4px); left: 50%; transform: translateX(-50%); }
+.training .skill-left { right: calc(100% + 4px); top: 50%; transform: translateY(-50%); }
+.training .skill-right { left: auto; right: -12px; top: 50%; transform: translateY(-50%); }
+.training .skill-pad .selected { color: #fff4cb; border-color: #efc181; box-shadow: 0 0 14px #efc18155; }
+.training .skill-pad .unavailable { opacity: .4; }
+.training .skill-pad .unavailable.selected { opacity: .85; color: #ff8d9a; border-color: #ff8d9a; }
+.training .skill-pad.cancel-ready { border-color: #ff7584; }
+.training .battle-log { white-space: pre-line; font-size: 10px; line-height: 1.5; color: #d1dfda; }
+.training .feedback .arena-top { position: static; display: flex; justify-content: space-between; font-size: 10px; margin-top: 4px; }
+.training .combat-settings { margin: 16px 0; padding: 12px; border: 1px solid #63888766; border-radius: 10px; text-align: left; }
+.training .combat-settings legend { font-size: 13px; color: #c8ebe6; }
+.training .combat-settings label { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 8px 0; }
+.training .combat-settings input { width: 18px; height: 18px; accent-color: #81e6d9; flex-shrink: 0; }
+.training .combat-settings small { display: block; font-size: 10px; line-height: 1.6; color: #adc1c1; }
+.training > .overlay { position: absolute; inset: 0; z-index: 20; overflow-y: auto; }
+#view-battle .controls { position: absolute; left: 0; right: 0; bottom: max(32px, env(safe-area-inset-bottom)); height: 192px; }
+#view-battle .controls .move-group { left: max(20px, env(safe-area-inset-left)); bottom: 0; width: min(42%, 260px); height: 176px; }
+#view-battle .controls .move-pad { position: absolute; width: 128px; height: 128px; }
+#view-battle .right-controls { right: max(18px, env(safe-area-inset-right)); }
+#view-battle .right-controls .control-group,
+#view-battle .right-controls .skill-dock { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); transform: none; }
+#view-battle .right-controls .pad { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); }
+#view-battle .feedback {
+    position: absolute; top: calc(104px + env(safe-area-inset-top)); bottom: auto;
+    left: 50%; right: auto; transform: translateX(-50%); width: calc(100% - 24px); max-width: 660px;
+    padding: 6px 8px; border-radius: 8px; background: linear-gradient(#0b1a20a6, #0b1a2026);
+}
+#view-battle .feedback .arena-top { position: static; inset: auto; width: auto; margin: 3px 0 0; font-size: 10px; }
+#view-battle .skill-status { position: static; margin: 3px 0; text-align: left; }
+#view-battle #pve-log { display: block; white-space: pre-line; margin: 0; font-size: 10px; line-height: 1.5; color: #efc181; }
+#view-battle #pve-log:empty, .training .battle-log:empty { display: none; }
+#view-battle .buff-status { top: calc(94px + env(safe-area-inset-top)); bottom: auto; left: 20px; right: 20px; font-size: 9px; text-align: right; }
+#view-battle .overlay { overflow-y: auto; }
+@media (max-width: 359px) {
+    .training { --control-size: 68px; --control-gap: 10px; }
+    #view-battle .controls .move-group { left: 18px; width: 40%; }
+}
+.training .vital { background: #0b1a2059; border-color: #87b4ad20; }
+#view-battle .vital { background: #0b1a2059; border-color: #87b4ad20; }
+.training meter { opacity: .65; }
+.training .feedback [role="status"]:empty { display: none; }
+@media (orientation: landscape) and (max-height: 540px) and (min-width: 600px) {
+    .training { --control-size: 68px; --control-gap: 10px; }
+    #view-battle .topbar { top: max(4px, env(safe-area-inset-top)); left: 12px; right: 12px; height: 32px; width: auto; max-width: none; }
+    #view-battle .topbar div { display: block; }
+    #view-battle .topbar button { min-height: 30px; padding: 3px 10px; }
+    #view-battle .vitals { top: 42px; left: 50%; right: auto; width: min(480px, calc(100% - 220px)); max-width: none; transform: translateX(-50%); flex-direction: row; gap: 10px; }
+    #view-battle .vital { padding: 5px 8px; }
+    #view-battle .controls { bottom: max(18px, env(safe-area-inset-bottom)); height: 154px; }
+    #view-battle .controls .move-group { width: 176px; height: 140px; }
+    #view-battle .feedback { top: 84px; left: 12px; transform: none; width: 176px; padding: 4px; font-size: 9px; }
+    #view-battle .feedback #pve-s-notice { font-size: 9px; min-height: 0; padding-top: 2px; line-height: 1.3; }
+    #view-battle .buff-status { top: 76px; left: 20px; width: auto; transform: none; }
+    #view-battle .overlay { justify-content: flex-start; }
+    body > .training:not(.spatial-fullscreen) {
+        min-height: 0; max-width: none; height: 100dvh; padding: 4px 12px 12px;
+        display: grid; grid-template-columns: 176px minmax(0, 1fr) 166px;
+        grid-template-rows: 36px minmax(0, 1fr); gap: 8px;
+    }
+    body > .training > .topbar { grid-area: 1 / 1 / 2 / 4; height: 36px; }
+    body > .training > .arena { grid-area: 2 / 2; min-height: 0; }
+    body > .training > .vitals { position: absolute; left: 12px; top: 48px; width: 168px; padding: 0; gap: 8px; flex-direction: column; }
+    body > .training > .feedback { position: absolute; left: 12px; top: 130px; width: 168px; padding: 0; }
+    body > .training > .controls { position: static; grid-area: 2 / 3; height: auto; }
+    body > .training .controls .move-group { left: 20px; bottom: 18px; width: 160px; height: 112px; }
+    body > .training .right-controls { right: 20px; bottom: 18px; }
+    body > .training > footer { display: none; }
+}

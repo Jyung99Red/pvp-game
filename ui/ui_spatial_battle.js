@@ -1,37 +1,41 @@
 // Read-only battle view. Presentation effects belong to this instance, never the engine.
 const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const L = combatGestures, S = spatialCombat;
-    let battle;
+    let battle, contextLost = false;
+    const abort = new AbortController();
     const $ = id => root.querySelector(`[id="${prefix}${id}"]`);
     const canvas = $('arena'), ctx = canvas.getContext('2d');
-    const pads = { move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad') };
-    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'action-label', 'guard-label'].map(id => [id, $(id)]));
+    const pads = { move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
+    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'action-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
     const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
     function resize() {
         const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+        if (rect.width < 1 || rect.height < 1 || contextLost) return;
         width = rect.width; height = rect.height;
         if (fullscreen) {
-            const landscape = width >= 600 && height <= 480;
-            worldTop = landscape ? 26 : root.querySelector('.vitals').getBoundingClientRect().bottom - rect.top + 25;
-            worldBottom = height - (pads.move.getBoundingClientRect().top - rect.top) + (landscape ? 12 : 36);
-            worldInset = landscape ? 202 : 12;
+            worldTop = Math.max(12, root.querySelector('.vitals').getBoundingClientRect().top - rect.top);
+            worldBottom = 12; worldInset = 8;
         }
         canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
-    let notice = '左手移动 / 轻击，右手重击 / 防御转向。', effects = [], lastTime = 0;
+    let notice = '左手移动 / 轻击，右手重击 / 防御转向。', effects = [], lastTime = 0, logs = [];
     const hitFlashes = { player: 0, enemy: 0 };
     function consume(events) {
         const dt = Math.max(0, battle.time - lastTime); lastTime = battle.time;
         effects.forEach(e => e.life -= dt); effects = effects.filter(e => e.life > 0);
         for (const side of ['player', 'enemy']) hitFlashes[side] = Math.max(0, hitFlashes[side] - dt);
         for (const e of events) {
-            if (e.type === 'hp_changed' && e.hp < e.previous) hitFlashes[e.side] = .28;
+            if (e.type === 'hp_changed' && e.hp < e.previous) {
+                hitFlashes[e.side] = .28;
+                if (e.side === 'enemy') effects.push({ type: 'impact', x: battle.enemy.x, y: battle.enemy.y,
+                    damage: e.previous - e.hp, life: .55 });
+            }
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
             const messages = {
                 ap_insufficient: '行动力不足，走位等待恢复',
@@ -44,7 +48,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
                 block: `格挡 −${e.damage} · 消耗 1 行动力`
             };
-            if (messages[e.type]) notice = messages[e.type];
+            if (messages[e.type]) {
+                if (['hit', 'miss', 'parry', 'block', 'thorns', 'stagger', 'enrage'].includes(e.type)) {
+                    logs.unshift(messages[e.type]); logs.length = Math.min(logs.length, 2);
+                    notice = '';
+                } else notice = messages[e.type];
+            }
         }
     }
     function circle(x, y, r, fill, stroke) {
@@ -71,11 +80,13 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
     }
     function fighter(body, enemy) {
-        const flash = hitFlashes[enemy ? 'enemy' : 'player'] / .28;
+        const stunned = !enemy && body.phase === 'stunned';
+        const flash = stunned ? .75 : hitFlashes[enemy ? 'enemy' : 'player'] / .28;
+        const flashColor = stunned ? [255, 157, 45] : [255, 58, 70];
         const tint = color => {
             if (!flash) return color;
             const rgb = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
-            return `rgb(${rgb.map((v, i) => Math.round(v + ([255, 58, 70][i] - v) * flash)).join(',')})`;
+            return `rgb(${rgb.map((v, i) => Math.round(v + (flashColor[i] - v) * flash)).join(',')})`;
         };
         ctx.save(); ctx.translate(body.x, body.y);
         ctx.fillStyle = '#050b0e66'; ctx.beginPath(); ctx.ellipse(1, 6, body.radius * 1.25, body.radius * .6, 0, 0, Math.PI * 2); ctx.fill();
@@ -114,6 +125,17 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             polygon([[2, 11], [7, 7], [13, 10], [12, 20], [5, 22], [0, 17]], tint('#477582'), tint('#9ac8df'));
         }
         ctx.restore();
+        if (stunned) {
+            ctx.save(); ctx.strokeStyle = '#ff9d2d'; ctx.lineWidth = 2.5;
+            const pulse = .65 + .35 * Math.sin(battle.time * 28);
+            ctx.globalAlpha = pulse;
+            circle(body.x, body.y, body.radius + 9, '#ff9d2d24', '#ff9d2d');
+            for (let i = 0; i < 3; i++) {
+                const x = body.x + (i - 1) * 7;
+                ctx.beginPath(); ctx.moveTo(x, body.y - 26); ctx.lineTo(x, body.y - 20); ctx.stroke();
+            }
+            ctx.restore();
+        }
         if (!enemy && ['guard_start', 'guard'].includes(body.phase)) {
             ctx.beginPath(); ctx.arc(body.x, body.y, 27, body.facing - Math.PI / 2, body.facing + Math.PI / 2);
             ctx.lineWidth = body.phase === 'guard' ? 4 : 2;
@@ -121,6 +143,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
     }
     function draw() {
+        if (contextLost || !battle || canvas.width < 1 || canvas.height < 1) return;
         const p = battle.player, e = battle.enemy;
         ctx.clearRect(0, 0, width, height);
         if (fullscreen) {
@@ -134,7 +157,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         // Uniform scaling keeps the entire fixed world visible and preserves reach.
         const availableHeight = Math.max(1, height - worldTop - worldBottom);
         const scale = Math.max(.01, Math.min((width - worldInset * 2) / C.width, availableHeight / C.height));
-        ctx.save(); ctx.translate((width - C.width * scale) / 2, worldTop + (availableHeight - C.height * scale) / 2); ctx.scale(scale, scale);
+        ctx.save(); ctx.translate((width - C.width * scale) / 2, worldTop + (fullscreen ? 0 : (availableHeight - C.height * scale) / 2)); ctx.scale(scale, scale);
         ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
         ctx.strokeStyle = '#294044'; ctx.lineWidth = .6;
         for (let x = 0; x <= C.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke(); }
@@ -159,8 +182,29 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.beginPath(); ctx.arc(p.x, p.y, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
             ctx.strokeStyle = '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
-        effects.forEach(fx => shape(fx.shape, fx.origin, fx.facing, fx.color, fx.life / .24));
+        effects.filter(fx => fx.type === 'strike').forEach(fx => shape(fx.shape, fx.origin, fx.facing, fx.color, fx.life / .24));
         fighter(e, true); fighter(p, false);
+        for (const fx of effects.filter(fx => fx.type === 'impact')) {
+            const t = 1 - fx.life / .55;
+            ctx.save(); ctx.globalAlpha = Math.min(1, fx.life / .2);
+            const age = .55 - fx.life, burstDuration = .18;
+            if (age < burstDuration) {
+                const burst = age / burstDuration;
+                ctx.save(); ctx.globalAlpha = 1 - burst;
+                ctx.lineWidth = 2; circle(fx.x, fx.y, 16 + burst * 28, null, '#ffd69b');
+                ctx.strokeStyle = '#fff0c3';
+                for (let i = 0; i < 8; i++) {
+                    const angle = i * Math.PI / 4 + .2, distance = 14 + burst * 30;
+                    ctx.beginPath(); ctx.moveTo(fx.x + Math.cos(angle) * distance, fx.y + Math.sin(angle) * distance);
+                    ctx.lineTo(fx.x + Math.cos(angle) * (distance + 9 * (1 - burst)), fx.y + Math.sin(angle) * (distance + 9 * (1 - burst))); ctx.stroke();
+                }
+                ctx.restore();
+            }
+            ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center';
+            ctx.lineWidth = 3; ctx.strokeStyle = '#251c19'; ctx.fillStyle = '#fff1cb';
+            ctx.strokeText(`−${fx.damage}`, fx.x, fx.y - 28 - t * 30);
+            ctx.fillText(`−${fx.damage}`, fx.x, fx.y - 28 - t * 30); ctx.restore();
+        }
         ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
         ctx.fillText(C.enemyName || '岩角兽', e.x, e.y - 44);
         for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
@@ -169,17 +213,23 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function controls() {
         for (const [channel, pad] of Object.entries(pads)) {
-            const g = channel === 'action' ? battle.action : channel === 'move' ? battle.move : battle.guard;
+            const g = channel === 'action' ? battle.action : channel === 'move' ? battle.move : channel === 'skill' ? battle.skill : battle.guard;
+            if (channel === 'move' && !g) pad.hidden = true;
+            pad.classList.toggle('no-center-cancel', !battle.controls.cancelAtCenter);
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
-            pad.classList.toggle('armed', channel === 'action' && L.armed(g));
-            pad.classList.toggle('cancel-ready', channel === 'action' && g?.mode === 'charge' && !L.armed(g));
+            pad.classList.toggle('armed', channel === 'action' ? L.armed(g) : channel === 'skill' && !!L.selectedSkill(g));
+            pad.classList.toggle('cancel-ready', channel === 'action' ? g?.mode === 'charge' && !L.armed(g) : channel === 'skill' && !!g && !L.selectedSkill(g));
             const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
             const len = Math.hypot(dx, dy), factor = len > 42 ? 42 / len : 1;
             pad.querySelector('.pad-knob').style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
         }
+        const selected = L.selectedSkill(battle.skill);
+        for (const node of pads.skill.querySelectorAll('[data-skill]')) node.classList.toggle('selected', node.dataset.skill === selected);
+        const skillNames = { heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' };
+        text('skill-label', selected ? `松手${skillNames[selected]}` : battle.skill ? (battle.skill.kind ? '取消释放' : '向外拖动') : '技能');
         const g = battle.action;
         text('move-label', battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 轻击');
-        text('action-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '中心松手取消') : '重击 / 转向');
+        text('action-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '中心松手取消') : '重击');
         text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = []) {
@@ -187,6 +237,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         consume(events);
         draw(); controls();
         const p = battle.player, e = battle.enemy;
+        text('battle-log', logs.join('\n'));
         text('player-hp', `${p.hp} / ${p.maxHp}`); text('enemy-hp', `${e.hp} / ${e.maxHp}`);
         nodes['player-meter'].max = p.maxHp; nodes['enemy-meter'].max = e.maxHp;
         nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = e.hp;
@@ -198,11 +249,17 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
-        const chargeHint = L.armed(battle.action) ? '松手重击 · 回到红色中心取消' : '中心松手取消 · 向外拖动转向';
+        const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回到红色中心取消' : '中心松手取消 · 向外拖动转向';
         const q = battle.queuedCommand;
         const queuedName = q?.type === 'skill' ? ({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' }[q.kind]) : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
-        text('notice', p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice);
+        const selected = L.selectedSkill(battle.skill);
+        const skillHint = battle.skill ? (selected ? `松手释放${({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' })[selected]}` : battle.skill.kind ? '已回到中心 · 松手取消技能' : '向外拖动选择技能 · 上治疗 / 右疾速 / 下满蓄 / 左弹反') : '';
+        text('notice', skillHint || (p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice));
     }
+    window.addEventListener('resize', resize, { signal: abort.signal });
+    window.visualViewport?.addEventListener('resize', resize, { signal: abort.signal });
+    canvas.addEventListener('contextlost', e => { e.preventDefault(); contextLost = true; }, { signal: abort.signal });
+    canvas.addEventListener('contextrestored', () => { contextLost = false; resize(); }, { signal: abort.signal });
     resize();
-    return { render, destroy() { observer.disconnect(); apDots.forEach(dot => dot.remove()); } };
+    return { render, refresh: resize, destroy() { abort.abort(); observer.disconnect(); apDots.forEach(dot => dot.remove()); } };
 } };

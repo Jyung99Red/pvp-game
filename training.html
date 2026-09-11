@@ -4,14 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>走位训练场 · 放置地牢</title>
-    <link rel="stylesheet" href="pve/training.css?v=spatial-20260911-dual">
 </head>
 <body>
 <main class="training">
     <header class="topbar">
         <a href="index.html" aria-label="返回基地">‹ 基地</a>
         <div><strong>走位训练场</strong><span>攻守实验 / 01</span></div>
-        <button id="pause" type="button">暂停</button>
+        <button id="pause" type="button">暂停 / 设置</button>
     </header>
     <section class="vitals" aria-label="双方状态">
         <div class="vital"><div><span>你 · 剑盾</span><b id="player-hp">120 / 120</b></div><meter id="player-meter" min="0" max="120" value="120">120</meter></div>
@@ -19,29 +18,24 @@
     </section>
     <section class="arena" aria-label="俯视战场">
         <canvas id="arena" aria-label="蓝色剑盾角色对战岩角兽，橙色范围是起手，红色范围是锁定攻击"></canvas>
-        <div class="arena-top"><span id="enemy-state">观察起手 → 走位或接招</span><span id="clock">0:00</span></div>
+
         <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
-        <div id="overlay" class="overlay">
-            <div class="overlay-card">
-                <span class="eyebrow">POSITION / TIMING</span>
-                <h1 id="overlay-title">找位置，再出手。</h1>
-                <p id="overlay-copy">绕到扇形侧后方，退开周身践踏。<br>也可以原地举盾，精准接招。</p>
-                <p id="summary" class="summary">固定属性 · 无翻滚 · 不影响养成存档</p>
-                <button id="start" type="button">开始练习</button>
-            </div>
-        </div>
     </section>
     <section class="feedback" aria-label="操作反馈">
         <div class="ap-row"><span>行动力</span><div id="ap" aria-label="行动力 5 / 5"></div><span id="player-state">准备就绪</span></div>
         <div class="charge-track"><div id="charge-fill"></div></div>
         <div id="notice" role="status">左手移动 / 轻击，右手重击 / 防御转向。</div>
+        <div class="skill-status">技能 <span id="training-sp">练习不限次数</span></div>
+        <div id="battle-log" class="battle-log" aria-label="最近战斗记录"></div>
+        <div class="arena-top"><span id="enemy-state">观察起手 → 走位或接招</span><span id="clock">0:00</span></div>
     </section>
     <section class="controls" aria-label="双指操作：左手移动，右手重击或防御">
-        <div class="control-group move-group">
-            <button id="move-pad" class="pad move-pad" type="button" aria-label="移动和轻击：拖动移动，轻点轻击，可与右侧重击或防御同时操作">
+        <div class="control-group move-group" aria-label="在左侧区域按下移动，轻点轻击">
+            <button id="move-pad" class="pad move-pad" data-dynamic hidden type="button" aria-label="移动和轻击：拖动移动，轻点轻击，可与右侧重击或防御同时操作">
                 <span class="pad-icon">✥</span><strong id="move-label">移动 / 轻击</strong><span class="pad-knob"></span>
             </button>
         </div>
+        <div class="right-controls" aria-label="右手操作，四宫格预留">
         <div class="control-group action-group">
             <button id="action-pad" class="pad action-pad" type="button" aria-label="重击：按住蓄力，拖动只转向，中心外松手攻击，红色中心松手取消">
                 <span class="pad-icon">×</span><strong id="action-label">重击 / 转向</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
@@ -52,15 +46,36 @@
                 <span class="pad-icon">○</span><strong id="guard-label">防御 / 转向</strong><span class="pad-knob"></span>
             </button>
         </div>
+    <section class="skill-dock" aria-label="四向技能">
+
+        <button id="skill-pad" class="pad skill-pad" type="button" aria-label="拖动选择技能，松手释放：上治疗、右疾速、下满蓄、左弹反">
+            <strong id="skill-label">技能</strong><span class="pad-knob"></span>
+            <span data-skill="heal" class="skill-direction skill-up">治疗</span>
+            <span data-skill="haste" class="skill-direction skill-right">疾速</span>
+            <span data-skill="full" class="skill-direction skill-down">满蓄</span>
+            <span data-skill="parry" class="skill-direction skill-left">弹反</span>
+        </button>
     </section>
-    <footer>左手移动，右手转向 · 蓄力移速 / 转速为 70%</footer>
+        </div>
+    </section>
+
+    <footer>左手移动，右手转向 · 蓄力移速70% / 转速65%</footer>
+        <div id="overlay" class="overlay">
+            <div class="overlay-card">
+                <span class="eyebrow">POSITION / TIMING</span>
+                <h1 id="overlay-title">找位置，再出手。</h1>
+                <p id="overlay-copy">绕到扇形侧后方，退开周身践踏。<br>也可以原地举盾，精准接招。</p>
+                <p id="summary" class="summary">固定属性 · 无翻滚 · 不影响养成存档</p>
+                <fieldset class="combat-settings"><legend>玩家操作</legend>
+                <label><input type="checkbox" data-combat-setting="cancelAtCenter" checked> 中心松手取消（重击 / 技能）</label>
+                <small>关闭后重击直接释放；技能沿用本次最后选中方向，未拖出死区不释放。</small>
+                <label><input type="checkbox" data-combat-setting="autoFace"> 自动朝向怪物</label>
+                <small>默认跟随移动方向；停止移动保留朝向，重击 / 防御由右手转向。</small>
+            </fieldset>
+                <button id="start" type="button">开始练习</button>
+            </div>
+        </div>
 </main>
-<script src="core/spatial_combat.js?v=spatial-20260911-dual"></script>
-<script src="core/combat_gestures.js?v=spatial-20260911-dual"></script>
-<script src="pve/spatial_data.js?v=spatial-20260911-dual"></script>
-<script src="pve/spatial_engine.js?v=spatial-20260911-dual"></script>
-<script src="ui/combat_input.js?v=spatial-20260911-dual"></script>
-<script src="ui/ui_spatial_battle.js?v=spatial-20260911-dual"></script>
-<script src="pve/training.js?v=spatial-20260911-dual"></script>
+<script src="core/client_boot.js?v=spatial-20260911-mobile3" data-entry="training"></script>
 </body>
 </html>

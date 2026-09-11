@@ -10,7 +10,7 @@ LF on commit, so a whole-file CRLF/LF flip can never sneak into the diff.
 ## Architecture
 
 Browser vanilla-JS idle/action RPG. No bundler, no modules — plain global-scope
-`<script>` tags loaded in order by `index.html`; views are fetch-loaded HTML
+`<script>` tags loaded in manifest order by `core/client_boot.js`; views are fetch-loaded HTML
 partials mounted at startup. Serve over http (partials use `fetch`, `file://`
 won't work): `python -m http.server 8422`.
 
@@ -24,13 +24,13 @@ engine, network, room flow, its battle UI). `index.html`, `style.css`,
 and icon SVGs resolve relative to the document, not the script file, so they
 are unaffected by which subfolder a `.js` file lives in.
 
-### Script load order (index.html)
+### Script load order (client-assets.json)
 
 `core/data.js` → `core/effects.js` → `core/save.js` → `core/player.js` →
 `core/tick.js` → `ui/fx.js` → `core/combat_resolver.js` →
 `core/arena_effects.js` → `ui/icons.js` → `ui/ui.js` → `core/spatial_combat.js` → `core/combat_gestures.js` →
 `pve/spatial_data.js` → `pve/spatial_engine.js` → `pve/pve_profiles.js` →
-`ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_pve.js` → `pve/pve_logic.js` → peerjs (CDN) → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
+`core/combat_settings.js` → `ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_pve.js` → `pve/pve_logic.js` → peerjs (CDN) → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
 `pvp/pvp_room.js` → `pvp/ui_pvp.js`
 
 ### Core systems
@@ -149,3 +149,63 @@ attack/recovery/stun; queued skills spend SP only when executed.
 See `pve/COMBAT_CONTROLS.md` for configuration and cancellation semantics.
 The user requested no tests for this revision; previous passing test counts
 are historical, and old gesture expectations need updating on the next test pass.
+
+## Operation preferences and four-way skills (2026-09-11)
+
+Movement uses a dynamic left touch area: locate the hidden pad at each pointerdown,
+reset/hide on release, cancellation and resize. Four-way skill pad: up heal, right
+haste, down full, left parry. Require >24 CSS px drag and outside the 24px center
+before selection; about 7-degree direction hysteresis. Center cancellation defaults
+on (heavy + skills); off retains the current gesture's last selected skill, never
+casts an unselected tap. The engine returns the selected skill from release; the
+page adapter retains SP/queue ownership. Training allows free skill practice.
+`core/combat_settings.js` binds pause/settings and persists cancelAtCenter/autoFace
+outside progression saves. Default autoFace=false: movement turns toward its vector,
+idle retains facing, light and guard startup do not snap to the enemy. The renderer
+remains read-only. Guard startup/guard use 30% move and 50% turn speed. Charge turn
+remains 70% (5.6 rad/s baseline), heavy windup/recovery remain .18/.48 seconds.
+Monster HP loss adds impact sparks, ring and floating damage using simulation time.
+`pve/combat_controls.css` supplies shared controls after the page-specific stylesheet.
+This revision only received syntax/diff checks; regression and device QA remain pending.
+
+## Mobile lifecycle and layout follow-up (2026-09-11)
+
+A direct hit now clears only right-hand input and the queued command. The engine
+keeps the held move gesture with suppressTap=true; actionInputVersion clears only
+right-hand pointer capture in adapters. Stun still stops physical movement; holding
+resumes after stun, releasing during stun stops it. Pause/blur/cancel/resize/end
+continue to clear all pointers. Do not convert a held movement pointer into a tap.
+
+Foreground, BFCache and Canvas context restoration refresh the view and present
+pause for an unfinished fight without recreating battle state or rewards. Zero-size
+canvas observations are ignored. Training retains its listeners across pagehide
+and restarts its frame loop on pageshow instead of forcing location.reload().
+
+Both entry shells use core/client_boot.js and client-assets.json. The loader fetches
+local styles, ordered scripts and formal partials with cache:no-store before opening
+the game, preventing a cached shell from combining stale combat assets with a fresh
+partial. Update the manifest when adding/removing a script, stylesheet or formal view.
+Local scripts are still global classic script tags; there are no modules or bundler.
+
+The right-hand controls share a 2x2 grid: guard upper-left, skill upper-right, attack
+lower-left, lower-right reserved. Move touch area is lower. Formal AP/SP, recent
+battle log and enemy readout overlay below HP; the full-width world starts at HP level.
+User manually confirmed previous operation feel. Latest follow-up only has static
+checks; exact mobile background/rotation/base-to-battle reproduction remains pending.
+
+## Latest tuning (2026-09-11, third mobile feedback)
+
+Supersedes prior 70% charge-turn and .18/.48 heavy timings: chargeTurnMultiplier=.65
+(5.2 rad/s baseline), heavy windup=.22 and recovery=.60. Charge move remains .7.
+Heal costs 2 SP and rejects full HP both before queueing and at execution, with no
+SP charge or queue replacement. Haste costs 2 SP, lasts 10 simulation seconds and
+retains 1.5x charge progress; motion() additionally applies 1.10 move in all stances
+and 1.05 turn only outside charging. Refresh does not stack. Guard multipliers unchanged.
+Combat events go only to recent logs, not duplicated into operation notice. Monster
+impact ring/sparks last .18s while damage numbers remain .55s; player stun has orange
+phase-bound tint/ring/marks. Shared controls have 128px move pad, larger touch area,
+compact right grid, translucent HP, and a compact landscape layout (<=540px high).
+Static checks only; current gesture regressions and real-device QA remain pending.
+
+Latest user authorization: parry costs 3 SP. Commit and push current work first,
+then run tests; this supersedes the earlier no-tests restriction.
