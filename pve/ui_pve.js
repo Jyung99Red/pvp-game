@@ -1,6 +1,7 @@
 // Formal PVE page adapter. Shared spatial view, isolated DOM and one listener group.
 const uiPve = (() => {
     let view = null, input = null, version = 0, actionVersion = 0, abort = null, settings = null;
+    let renderedAt = 0;
     const $ = id => document.getElementById(id);
     const _setClass = (id, name, enabled) => $(id)?.classList.toggle(name, enabled);
     return {
@@ -36,7 +37,9 @@ const uiPve = (() => {
             if (!view || !b?.spatial) return;
             if (b.spatial.inputVersion !== version) { input.clear(); version = b.spatial.inputVersion; }
             if (b.spatial.actionInputVersion !== actionVersion) { input.clear(true); actionVersion = b.spatial.actionInputVersion; }
-            view.render(b.spatial, events);
+            const at = performance.now(), dt = renderedAt ? Math.min(.1, Math.max(0, (at - renderedAt) / 1000)) : 0;
+            renderedAt = at;
+            view.render(b.spatial, events, dt);
             $('pve-self-sp').textContent = `${b.skillPoints} / 3`;
             for (const [kind, cost] of Object.entries(pveLogic.SKILL_COSTS)) {
                 const node = $('pve-s-skill-pad').querySelector(`[data-skill="${kind}"]`);
@@ -49,7 +52,7 @@ const uiPve = (() => {
         },
         refresh() { view?.refresh(); this.updateFrame(); },
         clearInputs() { input?.clear(); },
-        destroy() { input?.destroy(); view?.destroy(); settings?.destroy(); abort?.abort(); input = null; view = null; settings = null; abort = null; },
+        destroy() { renderedAt = 0; input?.destroy(); view?.destroy(); settings?.destroy(); abort?.abort(); input = null; view = null; settings = null; abort = null; },
         showPause(show) { $('pve-s-overlay').hidden = !show; this.updateFrame(); },
         showWinChoice(drops, exp, gold) {
             const lootEl = document.getElementById('pve-win-loot');

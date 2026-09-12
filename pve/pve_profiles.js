@@ -5,6 +5,10 @@ const pveProfiles = (() => {
         if (!moves[enemyId]) throw new Error(`Missing spatial moves: ${enemyId}`);
         const C = JSON.parse(JSON.stringify(spatialData.training)), stats = spatialProfiles.local(), ai = enemyData.ai || {};
         C.formal = true; C.enemyName = enemyData.name;
+        C.width = 510; C.height = 566;
+        C.camera = { width: 396, height: 440, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 };
+        C.player.x += 75; C.player.y += 83;
+        C.enemy.x += 75; C.enemy.y += 83;
         spatialProfiles.apply(C, stats, state.player.currentHp);
         Object.assign(C.enemy, { maxHp: enemyData.hp, hp: enemyData.hp, def: enemyData.def });
         C.enemyApMax = Math.max(1, ai.apMax || 5);

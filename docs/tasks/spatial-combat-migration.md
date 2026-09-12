@@ -208,3 +208,18 @@ PVP场地扩为510×566（约两倍面积），视野396×440（宽高各略扩1
 带0.16秒、最多24单位的移动方向预判与边界限制。显示变换不改变战斗坐标、操作方向或命中。
 场地规则变更使协议升级v3，双方刷新后重新联机。PVE/训练视野维持原规则。
 本修订按用户要求不运行测试，先前53项通过与浏览器检查不代表本修订已验证。
+
+
+## PVE camera / PVP perspective / heavy timing (2026-09-12)
+
+Latest user correction sets player heavy windup to exactly .45 seconds (recovery .60),
+shared by PVE, PVP and training. PVP protocol is now v4 to exclude older timing rules.
+Formal PVE now uses the same 510x566 arena and 396x440 follow camera as PVP;
+its original spawn positions are translated by (75,83), preserving encounter distance.
+Training arena stays 360x400. PVE supplies presentation dt to the shared camera.
+PVP guest view rotates the world 180 degrees so each side starts below its opponent.
+Guest move/action/guard input vectors are rotated back before prediction/networking;
+skill directions stay screen-relative. Pad knobs convert world gestures back to screen
+coordinates; actor labels and floating damage remain upright. World rules and snapshots
+remain in canonical coordinates. Perspective is fixed per side, not changed when circling.
+User requested direct push; no tests or browser QA were run for this revision.

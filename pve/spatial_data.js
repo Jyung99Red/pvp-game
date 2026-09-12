@@ -14,7 +14,7 @@ const spatialData = (() => {
         blockMultiplier: .25, parryDamage: 10, parryCost: .5,
         guardStartup: .16, parryWindow: .18, apMax: 5,
         light: { kind: 'sector', range: 82, arc: Math.PI * .56, damage: 18, windup: .10, recovery: .28 },
-        heavy: { kind: 'sector', minRange: 60, range: 103, minArc: Math.PI * .28, arc: Math.PI * .68, damage: 28, chargeBonus: 30, windup: .22, recovery: .6 },
+        heavy: { kind: 'sector', minRange: 60, range: 103, minArc: Math.PI * .28, arc: Math.PI * .68, damage: 28, chargeBonus: 30, windup: .45, recovery: .6 },
         sweep: { kind: 'sector', range: 145, arc: Math.PI * .64, windup: 1.25, lock: .45, active: .16, recovery: 1.15, damage: 25 },
         stomp: { kind: 'circle', range: 110, windup: 1.4, lock: .55, active: .16, recovery: 1.3, damage: 30 }
     };

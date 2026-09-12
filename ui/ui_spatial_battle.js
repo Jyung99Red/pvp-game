@@ -13,6 +13,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const viewWidth = Math.min(C.width, C.camera?.width || C.width);
     const viewHeight = Math.min(C.height, C.camera?.height || C.height);
     let camera = null;
+    function worldText(value, x, y, offset, stroke = false) {
+        ctx.save(); ctx.translate(x, y);
+        if (C.reverseView) ctx.rotate(Math.PI);
+        if (stroke) ctx.strokeText(value, 0, offset);
+        ctx.fillText(value, 0, offset); ctx.restore();
+    }
     // Local presentation only: no camera coordinates enter combat or networking.
     function updateCamera(dt) {
         if (!C.camera) return;
@@ -196,6 +202,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const scale = Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
         ctx.save(); ctx.translate((width - viewWidth * scale) / 2, worldTop + (fullscreen ? 0 : (availableHeight - viewHeight * scale) / 2)); ctx.scale(scale, scale);
         ctx.beginPath(); ctx.rect(0, 0, viewWidth, viewHeight); ctx.clip();
+        if (C.reverseView) { ctx.translate(viewWidth, viewHeight); ctx.rotate(Math.PI); }
         if (camera) ctx.translate(viewWidth / 2 - camera.x, viewHeight / 2 - camera.y);
         ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
         ctx.strokeStyle = '#294044'; ctx.lineWidth = .6;
@@ -243,13 +250,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             }
             ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'center';
             ctx.lineWidth = 3; ctx.strokeStyle = '#251c19'; ctx.fillStyle = '#fff1cb';
-            ctx.strokeText(`−${fx.damage}`, fx.x, fx.y - 28 - t * 30);
-            ctx.fillText(`−${fx.damage}`, fx.x, fx.y - 28 - t * 30); ctx.restore();
+            worldText(`−${fx.damage}`, fx.x, fx.y, -28 - t * 30, true); ctx.restore();
         }
         ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
-        ctx.fillText(C.enemyName || '岩角兽', e.x, e.y - 44);
+        worldText(C.enemyName || '岩角兽', e.x, e.y, -44);
         if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
-        ctx.fillStyle = '#a8e1db'; ctx.fillText('你', p.x, p.y + 37);
+        ctx.fillStyle = '#a8e1db'; worldText('你', p.x, p.y, 37);
         ctx.restore();
     }
     function controls() {
@@ -261,7 +267,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             pad.classList.toggle('armed', channel === 'action' ? L.armed(g) : channel === 'skill' && !!L.selectedSkill(g));
             pad.classList.toggle('cancel-ready', channel === 'action' ? g?.mode === 'charge' && !L.armed(g) : channel === 'skill' && !!g && !L.selectedSkill(g));
             const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
-            const len = Math.hypot(dx, dy), factor = len > 42 ? 42 / len : 1;
+            const len = Math.hypot(dx, dy), factor = (len > 42 ? 42 / len : 1) * (C.reverseView && channel !== 'skill' ? -1 : 1);
             pad.querySelector('.pad-knob').style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
         }
         const selected = L.selectedSkill(battle.skill);

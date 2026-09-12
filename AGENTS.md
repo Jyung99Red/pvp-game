@@ -260,3 +260,18 @@ PVE/training retain their full-world view. Guard arcs and swing trails isolate C
 state; fighters explicitly set outline width so opponent guard cannot thicken self.
 User explicitly requested no tests for this revision. Prior 53 passing tests and
 browser QA are historical, not validation of these camera/arena/rendering changes.
+
+
+## PVE camera / PVP perspective / heavy timing (2026-09-12)
+
+Latest user correction sets player heavy windup to exactly .45 seconds (recovery .60),
+shared by PVE, PVP and training. PVP protocol is now v4 to exclude older timing rules.
+Formal PVE now uses the same 510x566 arena and 396x440 follow camera as PVP;
+its original spawn positions are translated by (75,83), preserving encounter distance.
+Training arena stays 360x400. PVE supplies presentation dt to the shared camera.
+PVP guest view rotates the world 180 degrees so each side starts below its opponent.
+Guest move/action/guard input vectors are rotated back before prediction/networking;
+skill directions stay screen-relative. Pad knobs convert world gestures back to screen
+coordinates; actor labels and floating damage remain upright. World rules and snapshots
+remain in canonical coordinates. Perspective is fixed per side, not changed when circling.
+User requested direct push; no tests or browser QA were run for this revision.

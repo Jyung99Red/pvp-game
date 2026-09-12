@@ -12,15 +12,17 @@ const uiPvp = (() => {
         settings = combatSettings.attach(root, () => state.pvpBattle?.spatial,
             values => pvpLogic.input({ type: 'settings', ...values }));
         settings.apply(local);
-        const config = { ...local.config, opponentConfig: b.duel.sides[1 - i].config, enemyName: `对手 Lv.${b.duel.profiles[1 - i].level}` };
+        const config = { ...local.config, reverseView: i === 1, opponentConfig: b.duel.sides[1 - i].config, enemyName: `对手 Lv.${b.duel.profiles[1 - i].level}` };
         $('pvp-enemy-vital').textContent = config.enemyName;
         $('pvp-enemy-name').textContent = '蓝色是你 · 红色是对手';
         view = uiSpatialBattle.create(root, config, 'pvp-s-');
         version = local.inputVersion; actionVersion = local.actionInputVersion;
+        // Guest sees the world rotated 180 degrees. Skill selection stays screen-relative.
+        const worldValues = (channel, values) => i === 1 && channel !== 'skill' ? values.map(v => -v) : values;
         input = combatInput.attach({ move: $('pvp-s-move-pad'), action: $('pvp-s-action-pad'), guard: $('pvp-s-guard-pad'), skill: $('pvp-s-skill-pad') }, {
             cancel: () => pvpLogic.cancelLocal(),
-            press: (channel, ...values) => pvpLogic.input({ type: 'press', channel, values }),
-            drag: (channel, ...values) => pvpLogic.input({ type: 'drag', channel, values }),
+            press: (channel, ...values) => pvpLogic.input({ type: 'press', channel, values: worldValues(channel, values) }),
+            drag: (channel, ...values) => pvpLogic.input({ type: 'drag', channel, values: worldValues(channel, values) }),
             release: (channel, cancelled) => pvpLogic.input({ type: 'release', channel, cancelled })
         });
         abort = new AbortController(); const options = { signal: abort.signal };
