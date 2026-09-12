@@ -32,6 +32,7 @@ const spatialEngine = (() => {
     function create(config = C, random = Math.random) {
         validate(config);
         const C = JSON.parse(JSON.stringify(config));
+        C.skills = spatialData.skillRules(C.skillMode || (C.pvp ? 'fair' : 'pve'), C.skillOverrides || {});
         return {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
@@ -109,7 +110,9 @@ const spatialEngine = (() => {
     function motion(b, key) {
         // Haste boosts movement in every stance, but its turn bonus excludes charging.
         const haste = b.time < b.buffs.chargeHasteUntil;
-        const skill = haste && key === 'move' ? 1.1 : haste && key === 'turn' && b.player.phase !== 'charging' ? 1.05 : 1;
+        const hasteRule = b.config.skills?.haste || {};
+        const skill = haste && key === 'move' ? (hasteRule.moveMultiplier ?? 1.1) :
+            haste && key === 'turn' && b.player.phase !== 'charging' ? (hasteRule.turnMultiplier ?? 1.05) : 1;
         return skill * (b.config.motion?.[key] ?? 1) * b.motionBuffs.reduce((value, buff) => value * (buff.until > b.time ? buff[key] : 1), 1);
     }
     function movePlayer(b, dx, dy, dt, charging = false) {
@@ -248,7 +251,7 @@ const spatialEngine = (() => {
     function damage(b, side, amount) {
         const body = b[side], previous = body.hp;
         body.hp = Math.max(0, body.hp - amount);
-        emit(b, 'hp_changed', { side, previous, hp: body.hp });
+        emit(b, 'hp_changed', { side, previous, hp: body.hp, x: body.x, y: body.y });
     }
     function playerHit(b) {
         const C = b.config;
@@ -314,7 +317,8 @@ const spatialEngine = (() => {
             if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.cancelRadius) {
                 p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? 8) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? .65) * motion(b, 'chargeTurn'));
             }
-            p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) * (b.time <= b.buffs.chargeHasteUntil ? 1.5 : 1));
+            p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) *
+                (b.time <= b.buffs.chargeHasteUntil ? (C.skills?.haste?.chargeRate ?? 1.5) : 1));
             p.chargeUpdatedAt = b.time;
         } else if (['guard_start', 'guard'].includes(p.phase)) {
             if (b.guard && Math.hypot(b.guard.cx, b.guard.cy) > combatGestures.config.deadZone) {
@@ -396,12 +400,13 @@ const spatialEngine = (() => {
         damage(b, 'player', Math.max(0, playerDamage)); damage(b, 'enemy', Math.max(0, enemyDamage));
     }
     function useSkill(b, kind) {
-        if (!canAct(b)) return false;
+        const skill = b.config.skills?.[kind];
+        if (!canAct(b) || !skill) return false;
         if (kind === 'heal') {
             if (b.player.hp >= b.player.maxHp) return false;
-            heal(b, Math.floor(b.player.maxHp * .3));
+            heal(b, Math.floor(b.player.maxHp * skill.healRatio));
         }
-        else if (kind === 'haste') b.buffs.chargeHasteUntil = b.time + 10;
+        else if (kind === 'haste') b.buffs.chargeHasteUntil = b.time + skill.duration;
         else if (kind === 'full') {
             if (b.buffs.instantCharge) return false;
             if (b.player.phase === 'charging') b.player.charge = b.config.fullCharge;
@@ -413,7 +418,7 @@ const spatialEngine = (() => {
         return true;
     }
     function queueSkill(b, kind) {
-        if (!canAct(b) || !locked(b) || !['heal', 'haste', 'full', 'parry'].includes(kind)) return false;
+        if (!canAct(b) || !locked(b) || !b.config.skills?.[kind]) return false;
         if (kind === 'heal' && b.player.hp >= b.player.maxHp) return false;
         if (b.action?.queued) b.action.mode = 'blocked';
         if (b.guard?.queued) b.guard = null;

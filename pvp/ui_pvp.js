@@ -8,13 +8,16 @@ const uiPvp = (() => {
         destroy(); hideResult(); hideRematchRequest(); hideDisconnectOverlay();
         menu = false; $('pvp-s-overlay').hidden = true;
         const b = state.pvpBattle, local = b.spatial, i = b.role === 'host' ? 0 : 1;
+        const mode = b.mode || 'progression', modeInfo = pvpLogic.MODES[mode];
         const root = $('view-pvp-battle');
         settings = combatSettings.attach(root, () => state.pvpBattle?.spatial,
             values => pvpLogic.input({ type: 'settings', ...values }));
         settings.apply(local);
-        const config = { ...local.config, reverseView: i === 1, opponentConfig: b.duel.sides[1 - i].config, enemyName: `对手 Lv.${b.duel.profiles[1 - i].level}` };
+        const config = { ...local.config, reverseView: i === 1, opponentConfig: b.duel.sides[1 - i].config,
+            enemyName: mode === 'fair' ? '统一属性' : `对手 Lv.${b.duel.profiles[1 - i].level}` };
         $('pvp-enemy-vital').textContent = config.enemyName;
-        $('pvp-enemy-name').textContent = '蓝色是你 · 红色是对手';
+        $('pvp-enemy-name').textContent = `${modeInfo?.label || '空间对战'} · 蓝色是你 · 红色是对手`;
+        $('pvp-mode-label') && ($('pvp-mode-label').textContent = modeInfo?.label || mode);
         view = uiSpatialBattle.create(root, config, 'pvp-s-');
         version = local.inputVersion; actionVersion = local.actionInputVersion;
         // Guest sees the world rotated 180 degrees. Skill selection stays screen-relative.
@@ -53,7 +56,8 @@ const uiPvp = (() => {
         view.render({ ...local, enemy: { ...target, ...remote } }, events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
         $('pvp-floor-label').textContent = !b.ready ? '等待双方准备' : b.countdown > 0 ? `准备 · ${Math.ceil(b.countdown)}` : '空间对战';
         $('pvp-self-sp').textContent = `${local.skillPoints} / 3`;
-        for (const [kind, cost] of Object.entries(pvpLogic.SKILL_COSTS)) {
+        for (const [kind, skill] of Object.entries(local.config.skills || spatialData.skills)) {
+            const cost = skill.cost;
             const node = $('pvp-s-skill-pad').querySelector(`[data-skill="${kind}"]`);
             const unavailable = !b.active || b.countdown > 0 || local.skillPoints < cost || (kind === 'heal' && local.player.hp >= local.player.maxHp);
             node.classList.toggle('unavailable', unavailable); node.setAttribute('aria-disabled', String(unavailable));

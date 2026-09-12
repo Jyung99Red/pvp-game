@@ -18,11 +18,21 @@ function light(t,i) { input(t,i,'press','move',[0,0]);input(t,i,'release','move'
 function guard(t,i) { input(t,i,'press','guard',[0,0]); }
 function skill(t,i,kind) { return t.D.input(t.d,i,{type:'skill',kind}); }
 
+test('fair profile uses the shared rules, closer camera and independent enlarged arena',()=>{
+ const t=context(), fair=t.spatialProfiles.fair(), d=t.spatialDuel.create([fair,fair]);
+ const [a,b]=d.sides;
+ assert.equal(fair.level,1); assert.equal(fair.maxHp,120); assert.equal(fair.atk,30); assert.equal(fair.def,8);
+ assert.equal(a.config.width,570); assert.equal(a.config.height,630);
+ assert.equal(a.config.camera.width,374); assert.equal(a.config.camera.height,416);
+ assert.deepEqual([a.player.x,a.player.y],[285,405]); assert.deepEqual([b.player.x,b.player.y],[285,225]);
+ assert.equal(a.config.skills.parry.cost,3); assert.notEqual(a.config.skills,b.config.skills);
+});
+
 test('symmetric players share spatial tuning, equipment profiles and independent state',()=>{
  const t=setup({atk:90,def:12,motion:{move:1.2,turn:1.1,chargeMove:1,chargeTurn:1}});
  const [a,b]=t.d.sides;
  assert.equal(a.player.radius,b.player.radius);assert.equal(a.player.hp,a.player.maxHp);
- assert.equal(a.config.heavy.windup,.22);assert.equal(b.config.heavy.recovery,.6);
+ assert.equal(a.config.heavy.windup,.45);assert.equal(b.config.heavy.recovery,.6);
  assert.equal(a.config.fullCharge,2);assert.equal(a.config.motion.move,1.2);
  a.buffs.autoParry=1; assert.equal(b.buffs.autoParry,0);
  assert.equal(a.enemy,b.player);assert.equal(b.enemy,a.player);

@@ -13,6 +13,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const viewWidth = Math.min(C.width, C.camera?.width || C.width);
     const viewHeight = Math.min(C.height, C.camera?.height || C.height);
     let camera = null;
+    let hintVisible = false, presentationDt = 0;
+    const shieldPose = { player: 0, enemy: 0 };
     function worldText(value, x, y, offset, stroke = false) {
         ctx.save(); ctx.translate(x, y);
         if (C.reverseView) ctx.rotate(Math.PI);
@@ -42,6 +44,26 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         camera.y = clampY(camera.y + (clampY(p.y + camera.leadY) - camera.y) * weight);
         camera.px = p.x; camera.py = p.y;
     }
+    // Keep the world/screen mapping in one place.  The same transform drives
+    // the canvas and the off-screen enemy indicator; reverseView is the fixed
+    // faction mapping, never a camera rotation.
+    function viewportLayout() {
+        const availableHeight = Math.max(1, height - worldTop - worldBottom);
+        const scale = Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
+        return {
+            scale,
+            x: (width - viewWidth * scale) / 2,
+            y: worldTop + (fullscreen ? 0 : (availableHeight - viewHeight * scale) / 2)
+        };
+    }
+    function worldToScreen(x, y) {
+        if (!camera) return null;
+        const layout = viewportLayout();
+        let vx = x - camera.x + viewWidth / 2, vy = y - camera.y + viewHeight / 2;
+        if (C.reverseView) { vx = viewWidth - vx; vy = viewHeight - vy; }
+        return { x: layout.x + vx * layout.scale, y: layout.y + vy * layout.scale };
+    }
+    function skillDefinition(kind) { return C.skills?.[kind] || spatialData.skills?.[kind] || { name: kind }; }
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
     function resize() {
         const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -65,7 +87,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         for (const e of events) {
             if (e.type === 'hp_changed' && e.hp < e.previous) {
                 hitFlashes[e.side] = .28;
-                if (e.side === 'enemy' || C.pvp) effects.push({ type: 'impact', x: battle[e.side].x, y: battle[e.side].y,
+                if (e.side === 'enemy' || C.pvp) effects.push({ type: 'impact', x: e.x ?? battle[e.side].x, y: e.y ?? battle[e.side].y,
                     damage: e.previous - e.hp, life: .55 });
             }
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
@@ -141,7 +163,10 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         } else {
             circle(0, 0, 12, tint(enemy ? '#713f40' : '#254f57'), tint(enemy ? '#f29385' : '#83d9d3'));
             polygon([[9, 0], [-3, -7], [-3, 7]], tint('#baeee2'));
-            let angle = 0;
+            // The idle blade rests at the fighter's side.  Attack sectors only
+            // rotate this fixed-size blade around the hand, so zoom never
+            // changes weapon geometry or combat reach.
+            let angle = Math.PI * .48;
             const reach = 32;
             if (body.phase === 'charging') {
                 const a = spatialEngine.heavyShape({ config: enemy ? C.opponentConfig : C, player: body });
@@ -164,7 +189,26 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             polygon([[11, -3], [reach - 9, -3], [reach, 0], [reach - 9, 3], [11, 3]], tint('#dae6dc'), '#81e6d9');
             ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(14, -7); ctx.lineTo(14, 7); ctx.stroke();
             ctx.restore();
-            polygon([[2, 11], [7, 7], [13, 10], [12, 20], [5, 22], [0, 17]], tint('#477582'), tint('#9ac8df'));
+            const side = enemy ? -1 : 1;
+            polygon([[2, side * 11], [7, side * 7], [13, side * 10], [12, side * 20], [5, side * 22], [0, side * 17]], tint('#477582'), tint('#9ac8df'));
+            const key = enemy ? 'enemy' : 'player', guarding = ['guard_start', 'guard'].includes(body.phase);
+            const targetPose = guarding ? 1 : 0;
+            if (presentationDt > 0) {
+                const speed = guarding ? 16 : 11;
+                shieldPose[key] += (targetPose - shieldPose[key]) * (1 - Math.exp(-speed * presentationDt));
+            }
+            const pose = shieldPose[key];
+            if (pose > .01) {
+                // A shield starts beside the body and eases to the forward
+                // guard position.  The engine still owns the real startup and
+                // parry window; this is presentation-only.
+                const shieldAngle = side * Math.PI * .72 * (1 - pose);
+                ctx.save(); ctx.rotate(shieldAngle);
+                polygon([[9, -10], [23, -8], [28, 0], [23, 8], [9, 10]], '#5f7890cc', '#c7e1ff');
+                ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(12, -7); ctx.lineTo(24, 0); ctx.lineTo(12, 7); ctx.stroke();
+                ctx.restore();
+            }
         }
         ctx.restore();
         if (stunned) {
@@ -185,6 +229,49 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.restore();
         }
     }
+    function arenaDecor() {
+        // Stage A has visual boundary references only.  Collision remains the
+        // existing arena clamp until the complete wall/visibility stage lands.
+        const depth = 10, block = 30, edge = C.pvp ? '#48626a' : '#405d5e', hi = C.pvp ? '#75a0a0' : '#688b82';
+        ctx.fillStyle = edge;
+        ctx.fillRect(0, 0, C.width, depth); ctx.fillRect(0, C.height - depth, C.width, depth);
+        ctx.fillRect(0, depth, depth, C.height - depth * 2); ctx.fillRect(C.width - depth, depth, depth, C.height - depth * 2);
+        ctx.strokeStyle = hi; ctx.lineWidth = 1;
+        for (let x = block; x < C.width; x += block) {
+            ctx.beginPath(); ctx.moveTo(x, 1); ctx.lineTo(x, depth - 1); ctx.moveTo(x, C.height - depth + 1); ctx.lineTo(x, C.height - 1); ctx.stroke();
+        }
+        for (let y = block; y < C.height; y += block) {
+            ctx.beginPath(); ctx.moveTo(1, y); ctx.lineTo(depth - 1, y); ctx.moveTo(C.width - depth + 1, y); ctx.lineTo(C.width - 1, y); ctx.stroke();
+        }
+        ctx.strokeStyle = '#c5e4d988'; ctx.lineWidth = 2;
+        for (const [x, y, sx, sy] of [[depth, depth, 1, 1], [C.width - depth, depth, -1, 1],
+            [depth, C.height - depth, 1, -1], [C.width - depth, C.height - depth, -1, -1]]) {
+            ctx.beginPath(); ctx.moveTo(x, y + sy * 15); ctx.lineTo(x, y); ctx.lineTo(x + sx * 15, y); ctx.stroke();
+        }
+    }
+    function drawOffscreenHint() {
+        if (!C.camera || !camera || !battle?.enemy) return;
+        const layout = viewportLayout(), target = worldToScreen(battle.enemy.x, battle.enemy.y), local = worldToScreen(battle.player.x, battle.player.y);
+        if (!target) return;
+        const left = layout.x + 14, right = layout.x + viewWidth * layout.scale - 14;
+        const top = Math.max(layout.y + 14, worldTop + 8), bottom = Math.min(layout.y + viewHeight * layout.scale - 14, height - (fullscreen ? 198 : 12));
+        const inside = (point, pad) => point.x >= left + pad && point.x <= right - pad && point.y >= top + pad && point.y <= bottom - pad;
+        hintVisible = hintVisible ? !inside(target, 20) : !inside(target, 8);
+        if (!hintVisible || right <= left || bottom <= top) return;
+        let sx = local?.x ?? (left + right) / 2, sy = local?.y ?? (top + bottom) / 2;
+        sx = S.clamp(sx, left + 4, right - 4); sy = S.clamp(sy, top + 4, bottom - 4);
+        const dx = target.x - sx, dy = target.y - sy, len = Math.hypot(dx, dy) || 1;
+        const tx = dx > 0 ? (right - sx) / dx : (left - sx) / dx;
+        const ty = dy > 0 ? (bottom - sy) / dy : (top - sy) / dy;
+        const hit = Math.max(0, Math.min(...[tx, ty].filter(v => v > 0 && Number.isFinite(v))));
+        const x = sx + dx * hit, y = sy + dy * hit, angle = Math.atan2(dy, dx);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+        ctx.fillStyle = C.pvp ? '#f29a87' : '#efc181';
+        ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -7); ctx.lineTo(-4, 0); ctx.lineTo(-7, 7); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        ctx.save(); ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#e7d2a4';
+        ctx.fillText(C.pvp ? '对手' : '敌人', x, y <= top + 20 ? y + 22 : y - 12); ctx.restore();
+    }
     function draw() {
         if (contextLost || !battle || canvas.width < 1 || canvas.height < 1) return;
         const p = battle.player, e = battle.enemy;
@@ -198,9 +285,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             for (let y = 0; y < height; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
         }
         // Camera window controls zoom independently of arena size; input axes stay fixed.
-        const availableHeight = Math.max(1, height - worldTop - worldBottom);
-        const scale = Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
-        ctx.save(); ctx.translate((width - viewWidth * scale) / 2, worldTop + (fullscreen ? 0 : (availableHeight - viewHeight * scale) / 2)); ctx.scale(scale, scale);
+        const layout = viewportLayout(), scale = layout.scale;
+        ctx.save(); ctx.translate(layout.x, layout.y); ctx.scale(scale, scale);
         ctx.beginPath(); ctx.rect(0, 0, viewWidth, viewHeight); ctx.clip();
         if (C.reverseView) { ctx.translate(viewWidth, viewHeight); ctx.rotate(Math.PI); }
         if (camera) ctx.translate(viewWidth / 2 - camera.x, viewHeight / 2 - camera.y);
@@ -209,6 +295,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         for (let x = 0; x <= C.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke(); }
         for (let y = 0; y <= C.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke(); }
         ctx.strokeStyle = '#496265'; ctx.strokeRect(0, 0, C.width, C.height);
+        arenaDecor();
         circle(C.width / 2, C.height / 2, 135, null, '#31494a');
         circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
         // Clip telegraphs at the arena boundary; actors are clamped by logic.
@@ -257,6 +344,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
         ctx.fillStyle = '#a8e1db'; worldText('你', p.x, p.y, 37);
         ctx.restore();
+        drawOffscreenHint();
     }
     function controls() {
         for (const [channel, pad] of Object.entries(pads)) {
@@ -272,7 +360,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
         const selected = L.selectedSkill(battle.skill);
         for (const node of pads.skill.querySelectorAll('[data-skill]')) node.classList.toggle('selected', node.dataset.skill === selected);
-        const skillNames = { heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' };
+        const skillNames = Object.fromEntries(Object.keys(spatialData.skills || {}).map(kind => [kind, skillDefinition(kind).name]));
         text('skill-label', selected ? `松手${skillNames[selected]}` : battle.skill ? (battle.skill.kind ? '取消释放' : '向外拖动') : '技能');
         const g = battle.action;
         text('move-label', battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 轻击');
@@ -281,8 +369,13 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function render(snapshot, events = [], frameDt = 0) {
         battle = snapshot;
+        presentationDt = Math.min(.1, Math.max(0, frameDt));
         updateCamera(frameDt);
         consume(events);
+        for (const node of Array.from(pads.skill.querySelectorAll('[data-skill]'))) {
+            const skill = skillDefinition(node.dataset.skill);
+            node.textContent = `${skill.name} · ${skill.cost ?? ''}`.replace(/ · $/, '');
+        }
         draw(); controls();
         const p = battle.player, e = battle.enemy;
         text('battle-log', logs.join('\n'));
@@ -300,9 +393,9 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
         const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回到红色中心取消' : '中心松手取消 · 向外拖动转向';
         const q = battle.queuedCommand;
-        const queuedName = q?.type === 'skill' ? ({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' }[q.kind]) : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
+        const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
         const selected = L.selectedSkill(battle.skill);
-        const skillHint = battle.skill ? (selected ? `松手释放${({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反' })[selected]}` : battle.skill.kind ? '已回到中心 · 松手取消技能' : '向外拖动选择技能 · 上治疗 / 右疾速 / 下满蓄 / 左弹反') : '';
+        const skillHint = battle.skill ? (selected ? `松手释放${skillDefinition(selected).name}` : battle.skill.kind ? '已回到中心 · 松手取消技能' : '向外拖动选择技能 · 上治疗 / 右疾速 / 下满蓄 / 左弹反') : '';
         text('notice', skillHint || (p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice));
     }
     window.addEventListener('resize', resize, { signal: abort.signal });

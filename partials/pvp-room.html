@@ -10,6 +10,13 @@
             <p style="color:#aaa;font-size:13px;margin-bottom:12px;">
                 双方需联网（不必同一 Wi-Fi），扫码或输房间号即可连接
             </p>
+            <fieldset class="pvp-mode-picker">
+                <legend>选择对战模式</legend>
+                <input id="pvp-mode-fair" type="radio" name="pvp-mode" value="fair" checked hidden>
+                <input id="pvp-mode-progression" type="radio" name="pvp-mode" value="progression" hidden>
+                <button type="button" data-pvp-mode="fair" onclick="pvpRoom.chooseMode('fair')"><strong>公平对决</strong><small>双方统一属性</small></button>
+                <button type="button" data-pvp-mode="progression" onclick="pvpRoom.chooseMode('progression')"><strong>养成对战</strong><small>使用当前装备与等级</small></button>
+            </fieldset>
             <div class="btn-row">
                 <button onclick="pvpRoom.hostRoom()" style="height:52px;font-size:15px;">
                     🏠 创建房间
@@ -33,6 +40,7 @@
     <div class="pvp-step hidden" id="pvp-step-host-waiting">
         <div class="panel">
             <h3>🏠 等待对方加入</h3>
+            <p class="pvp-room-mode-line">模式：<strong class="pvp-mode-label">公平对决</strong></p>
 
             <p style="font-size:12px;color:#aaa;text-align:center;">
                 把下面的房间号告诉对方
@@ -90,6 +98,7 @@
     <div class="pvp-step hidden" id="pvp-step-ready">
         <div class="panel" style="text-align:center;">
             <h3>✅ 已连接</h3>
+            <p>模式：<strong class="pvp-mode-label">公平对决</strong></p>
             <p style="color:#aaa;font-size:13px;">等待战斗开始...</p>
         </div>
     </div>

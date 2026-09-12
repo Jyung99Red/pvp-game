@@ -41,7 +41,8 @@ const uiPve = (() => {
             renderedAt = at;
             view.render(b.spatial, events, dt);
             $('pve-self-sp').textContent = `${b.skillPoints} / 3`;
-            for (const [kind, cost] of Object.entries(pveLogic.SKILL_COSTS)) {
+            for (const [kind, skill] of Object.entries(b.spatial.config.skills || spatialData.skills)) {
+                const cost = skill.cost;
                 const node = $('pve-s-skill-pad').querySelector(`[data-skill="${kind}"]`);
                 const unavailable = !b.spatial.running || b.waitingChoice || b.skillPoints < cost || (kind === 'heal' && b.player.hp >= b.player.maxHp);
                 node.classList.toggle('unavailable', unavailable);

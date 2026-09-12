@@ -1,15 +1,15 @@
 // Two human actors, one simulation clock. No network, DOM or progression writes.
 const spatialDuel = (() => {
     const E = spatialEngine, S = spatialCombat;
-    const SKILL_COSTS = Object.freeze({ heal: 2, haste: 2, full: 2, parry: 3 });
+    const SKILL_COSTS = Object.freeze({ ...spatialData.skillCosts });
     const clone = value => JSON.parse(JSON.stringify(value));
     function create(profiles, random = Math.random) {
         const normalized = profiles.map(spatialProfiles.normalize);
         const sides = normalized.map((profile, i) => {
             const C = spatialProfiles.apply(clone(spatialData.training), profile);
-            C.formal = true; C.pvp = true;
-            C.width = 510; C.height = 566;
-            C.camera = { width: 396, height: 440, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 };
+            C.formal = true; C.pvp = true; C.skillMode = 'fair'; C.skillOverrides = {};
+            C.width = 570; C.height = 630;
+            C.camera = { ...spatialData.camera };
             Object.assign(C.player, { x: C.width / 2, y: C.height / 2 + (i ? -90 : 90), facing: i ? Math.PI / 2 : -Math.PI / 2 });
             Object.assign(C.enemy, { x: C.width / 2, y: C.height / 2 + (i ? 90 : -90), radius: 12 });
             const b = E.create(C, random); b.skillPoints = 0; E.start(b); return b;
@@ -19,7 +19,7 @@ const spatialDuel = (() => {
     }
     function emit(d, actor, type, extra = {}) { d.events.push({ type, actor, time: d.time, ...extra }); }
     function skill(d, i, kind, queued = true) {
-        const b = d.sides[i], cost = SKILL_COSTS[kind];
+        const b = d.sides[i], cost = b?.config.skills?.[kind]?.cost;
         if (d.result || !cost || b.skillPoints < cost || (kind === 'heal' && b.player.hp >= b.player.maxHp)) return false;
         if (queued && E.queueSkill(b, kind)) return true;
         if (!E.useSkill(b, kind)) return false;
@@ -57,7 +57,7 @@ const spatialDuel = (() => {
     function hurt(d, i, amount) {
         const p = d.sides[i].player, previous = p.hp;
         p.hp = Math.max(0, p.hp - amount);
-        emit(d, i, 'hp_changed', { previous, hp: p.hp });
+        emit(d, i, 'hp_changed', { previous, hp: p.hp, x: p.x, y: p.y });
     }
     function stun(d, i) {
         const b = d.sides[i]; E.cancelInputs(b, true);

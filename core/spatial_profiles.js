@@ -1,5 +1,15 @@
 // Shared progression -> human actor adapter. Profiles are frozen per match.
 const spatialProfiles = (() => {
+    const MODES = Object.freeze({
+        fair: Object.freeze({ id: 'fair', label: '公平对决', description: '双方使用统一属性' }),
+        progression: Object.freeze({ id: 'progression', label: '养成对战', description: '使用当前装备与等级属性' })
+    });
+    const FAIR_PROFILE = Object.freeze({
+        level: 1, maxHp: 120, atk: 30, def: 8, spd: 10, apMax: 5,
+        critChance: 0, guardThorns: 0, earlyReleaseMs: 300, parryWindowBaseMs: 180,
+        judgmentMultiplier: 1, guardDamageMultiplier: 1,
+        motion: Object.freeze({ move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 })
+    });
     function local() {
         return { ...player.getStats(), level: state.player.level,
             judgmentMultiplier: player.getJudgmentMultiplier(), guardDamageMultiplier: player.getGuardDamageMultiplier(),
@@ -25,6 +35,18 @@ const spatialProfiles = (() => {
         }
         return out;
     }
+    function fair() { return normalize({ ...FAIR_PROFILE, motion: { ...FAIR_PROFILE.motion } }); }
+    function isFair(p) {
+        try {
+            const n = normalize(p), f = fair();
+            return ['level', 'maxHp', 'atk', 'def', 'spd', 'judgmentMultiplier', 'guardDamageMultiplier',
+                'earlyReleaseMs', 'parryWindowBaseMs', 'critChance', 'guardThorns', 'apMax'].every(key => n[key] === f[key]) &&
+                ['move', 'turn', 'chargeMove', 'chargeTurn'].every(key => n.motion[key] === f.motion[key]);
+        } catch (_) { return false; }
+    }
+    function forMode(mode, progression = local()) {
+        return mode === 'fair' ? fair() : normalize(progression);
+    }
     function apply(C, stats, hp = stats.maxHp) {
         const clamp = spatialCombat.clamp;
         C.motion = { ...stats.motion };
@@ -40,5 +62,5 @@ const spatialProfiles = (() => {
         C.heavy.damage = stats.atk * .3; C.heavy.chargeBonus = stats.atk * .8;
         return C;
     }
-    return { local, normalize, apply };
+    return { MODES, FAIR_PROFILE, local, fair, isFair, forMode, normalize, apply };
 })();

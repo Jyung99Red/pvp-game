@@ -1,5 +1,16 @@
 // Fixed training preset. Combat times are seconds; gestures use CSS pixels.
 const spatialData = (() => {
+    // One definition feeds the pads, availability checks and both formal
+    // execution paths.  Mode-specific overrides are deliberately data-only so
+    // future PVE upgrades cannot leak into PVP.
+    const skillDefinitions = {
+        heal: { id: 'heal', name: '治疗', direction: 'up', cost: 2, healRatio: .3 },
+        haste: { id: 'haste', name: '疾速', direction: 'right', cost: 2, duration: 10, chargeRate: 1.5, moveMultiplier: 1.1, turnMultiplier: 1.05 },
+        full: { id: 'full', name: '满蓄', direction: 'down', cost: 2 },
+        parry: { id: 'parry', name: '弹反', direction: 'left', cost: 3 }
+    };
+    const skillCosts = Object.fromEntries(Object.entries(skillDefinitions).map(([id, skill]) => [id, skill.cost]));
+    const camera = Object.freeze({ width: 374, height: 416, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 });
     const training = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,
@@ -34,5 +45,16 @@ const spatialData = (() => {
         abyss_lord: [sector(145, .6, 1.05, .4, .8, .7), circle(130, 1.6, .55, 1.2, 1.1)]
     };
     function freeze(value) { Object.values(value).forEach(v => { if (v && typeof v === 'object') freeze(v); }); return Object.freeze(value); }
-    return { training: freeze(training), enemyMoves: freeze(moves) };
+    function skillRules(mode = 'pve', overrides = {}) {
+        const rules = {};
+        for (const [id, definition] of Object.entries(skillDefinitions)) {
+            // The first PVP ruleset intentionally matches the base values.  A
+            // different ruleset gets a new protocol version before changing it.
+            const modeOverride = overrides?.[mode]?.[id] || {};
+            const directOverride = overrides?.[id] || {};
+            rules[id] = { ...definition, ...modeOverride, ...directOverride };
+        }
+        return rules;
+    }
+    return { training: freeze(training), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera, skillRules };
 })();

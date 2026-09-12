@@ -44,15 +44,15 @@ test('latest queued command replaces earlier input; cancelled move and pause do 
  seconds(t,.5); assert.equal(b.stats.attacks,1); assert.equal(b.player.x,x);
 });
 
-test('heavy has .22 windup and .60 recovery before held movement resumes',()=>{
+test('heavy has .45 windup and .60 recovery before held movement resumes',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine;
  b.enemy.y=b.player.y-70; const hp=b.enemy.hp,x=b.player.x;
  L.press(b,'action'); seconds(t,.3); L.drag(b,'action',0,-60); L.release(b,'action');
- assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.22);
+ assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.45);
  L.press(b,'move'); L.drag(b,'move',60,0);
  seconds(t,.2); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
- seconds(t,.05); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
+ seconds(t,.25); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
  seconds(t,.55); assert.equal(b.player.x,x);
  seconds(t,.1); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
 });
@@ -162,12 +162,12 @@ test('crit changes actual damage and equipment threshold changes heavy yield wit
  const t=setup(); const config=t.pveProfiles.create('goblin',t.content.enemies.goblin);
  function strike(crit, threshold) {
   const C=JSON.parse(JSON.stringify(config)); C.critChance=crit; C.chargeThreshold=threshold;
-  const b=t.spatialEngine.create(C,()=>0); t.spatialEngine.start(b); b.enemy.y=200; b.enemy.phase='recover'; b.enemy.timer=100;
+  const b=t.spatialEngine.create(C,()=>0); t.spatialEngine.start(b); b.enemy.y=b.player.y-70; b.enemy.phase='recover'; b.enemy.timer=100;
   t.spatialEngine.press(b,'action');
   for(let i=0;i<50;i++) t.spatialEngine.step(b,.01);
   assert.equal(b.action.mode,'charge');
   t.spatialEngine.drag(b,'action',0,-50); t.spatialEngine.release(b,'action');
-  for(let i=0;i<25;i++) t.spatialEngine.step(b,.01);
+  for(let i=0;i<50;i++) t.spatialEngine.step(b,.01);
   return t.spatialEngine.drainEvents(b).find(e=>e.type==='hit');
  }
  const normal=strike(0,.3), crit=strike(1,.3), slow=strike(0,.7);

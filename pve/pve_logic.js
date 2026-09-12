@@ -1,8 +1,9 @@
 // Dungeon lifecycle owns rewards; spatialEngine owns all live combat HP/input/time.
 const pveLogic = (() => {
     let _rAF = null, _lastTime = 0, _accumulator = 0, _nextId = 0;
+    let _displayEvents = [], _pendingOutcome = null;
     let _random = Math.random;
-    const SKILL_COSTS = { heal: 2, haste: 2, full: 2, parry: 3 };
+    const SKILL_COSTS = Object.freeze({ ...spatialData.skillCosts });
     function _isBossFloor(floor) {
         return floor % content.bossFloorInterval === 0;
     }
@@ -75,8 +76,7 @@ const pveLogic = (() => {
         b.waitingChoice = true;
         _stopLoop();
         uiPve.clearInputs();
-        uiPve.updateFrame();
-        uiPve.showWinChoice(drops, eData.exp, goldReward);
+        _pendingOutcome = { type: 'victory', drops, exp: eData.exp, gold: goldReward };
     }
 
     function _onDefeat() {
@@ -88,8 +88,7 @@ const pveLogic = (() => {
         b.active = false;
         _stopLoop();
         uiPve.clearInputs();
-        uiPve.updateFrame();
-        uiPve.showDefeat();
+        _pendingOutcome = { type: 'defeat' };
     }
 
 
@@ -105,14 +104,25 @@ const pveLogic = (() => {
             if ((e.type === 'hit' && e.side === 'player') || e.type === 'parry') b.skillPoints = Math.min(3, b.skillPoints + 1);
         }
         for (const e of events) {
-            const cost = e.type === 'skill_ready' && SKILL_COSTS[e.kind];
+            const cost = e.type === 'skill_ready' && b.spatial.config.skills?.[e.kind]?.cost;
             if (cost && b.spatial.running && !b.settled && b.skillPoints >= cost && spatialEngine.useSkill(b.spatial, e.kind)) {
                 b.skillPoints -= cost;
                 events.push(...spatialEngine.drainEvents(b.spatial));
             }
         }
         _sync();
+        _displayEvents.push(...events);
+    }
+    function _present() {
+        const b = state.pveBattle;
+        if (!b?.spatial) return;
+        const events = _displayEvents.splice(0);
         uiPve.updateFrame(events);
+        if (_pendingOutcome) {
+            const outcome = _pendingOutcome; _pendingOutcome = null;
+            if (outcome.type === 'victory') uiPve.showWinChoice(outcome.drops, outcome.exp, outcome.gold);
+            else uiPve.showDefeat();
+        }
     }
     function advance(seconds) {
         const b = state.pveBattle;
@@ -149,10 +159,11 @@ const pveLogic = (() => {
         const b = state.pveBattle;
         if (!b?.spatial?.running || b.waitingChoice) return;
         advance((now - _lastTime) / 1000); _lastTime = now;
+        _present();
         if (b.spatial.running && !b.waitingChoice) _rAF = requestAnimationFrame(_loop);
     }
     function _beginFight(enemyId, eData, floor, fresh) {
-        _stopLoop(); uiPve.destroy();
+        _stopLoop(); _displayEvents = []; _pendingOutcome = null; uiPve.destroy();
         const skillPoints = fresh ? 0 : state.pveBattle?.skillPoints || 0;
         const engine = spatialEngine.create(pveProfiles.create(enemyId, eData), _random);
         state.pveBattle = {
@@ -232,7 +243,7 @@ const pveLogic = (() => {
             uiPve.hideOverlays(); ui.switchTab('base'); ui.updateBase();
         },
         useSkill(kind) {
-            const b = state.pveBattle, cost = SKILL_COSTS[kind];
+            const b = state.pveBattle, cost = b?.spatial?.config.skills?.[kind]?.cost;
             if (!b?.active || b.waitingChoice || !b.spatial.running || !cost || b.skillPoints < cost) return;
             // Queued skills spend points only when executed, never when replaced/cancelled.
             if (spatialEngine.queueSkill(b.spatial, kind)) { _processEvents(); return; }

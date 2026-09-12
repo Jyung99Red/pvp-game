@@ -1,15 +1,18 @@
 // Host-authoritative spatial PVP. Guest predicts local motion; never judges hits.
 const pvpLogic = (() => {
-    const VERSION = 4, D = spatialDuel;
+    const VERSION = 5, RULE_VERSION = 1, D = spatialDuel;
     let frame = null, lastFrame = 0, accumulator = 0, lastReceive = 0, lastSend = 0;
     let battleId = null, inputSeq = 0, receivedSeq = 0, snapshotSeq = 0, appliedSnapshot = -1;
-    let pending = [], eventId = 0, seenEvent = 0, history = [], localReady = false, remoteReady = false, latency = 25;
-    let selfRematch = false, otherRematch = false, rematchProfile = null, previousOpponent = null;
+    let pending = [], eventId = 0, seenEvent = 0, history = [], presentation = [], predictedPresentation = new Map();
+    let localReady = false, remoteReady = false, latency = 25;
+    let selfRematch = false, otherRematch = false, rematchProfile = null, rematchMode = null, previousOpponent = null;
+    let selectedMode = 'fair';
     const seenBattles = new Set();
     const now = () => performance.now();
     const id = () => globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
     const localIndex = () => state.pvpBattle?.role === 'host' ? 0 : 1;
-    const send = payload => pvpNet.send({ ...payload, version: VERSION, battleId, eventAck: seenEvent });
+    const send = payload => pvpNet.send({ ...payload, version: VERSION, ruleVersion: RULE_VERSION,
+        mode: state.pvpBattle?.mode || selectedMode, battleId, eventAck: seenEvent });
     function stopFrame() { if (frame !== null) cancelAnimationFrame(frame); frame = null; }
     function collect() {
         const b = state.pvpBattle;
@@ -21,6 +24,27 @@ const pvpLogic = (() => {
         }
         return events;
     }
+    function queuePresentation(events) {
+        const b = state.pvpBattle;
+        if (!b || !events?.length) return;
+        const at = now();
+        for (const e of events) {
+            const key = `${e.actor ?? e.side}|${e.type}|${e.time}|${e.kind || ''}|${e.damage || ''}`;
+            // Guest prediction may show a local discrete action immediately;
+            // when the same authoritative event arrives, consume that preview
+            // instead of playing it twice.  Authoritative events are otherwise
+            // never coalesced, even when two events share a simulation tick.
+            if (b.role === 'guest' && e.id != null && predictedPresentation.has(key)) {
+                predictedPresentation.delete(key); continue;
+            }
+            if (b.role === 'guest' && e.id == null && ['attack_started', 'charge_cancelled', 'skill_used'].includes(e.type)) {
+                predictedPresentation.set(key, at);
+            }
+            presentation.push(e);
+        }
+        for (const [key, timestamp] of predictedPresentation) if (at - timestamp >= 5000) predictedPresentation.delete(key);
+    }
+    function present() { uiPvp.updateFrame(presentation.splice(0)); }
     function aliases() {
         const b = state.pvpBattle, i = localIndex();
         b.spatial = b.duel.sides[i]; b.self = b.spatial.player; b.opponent = b.duel.sides[1 - i].player;
@@ -37,24 +61,28 @@ const pvpLogic = (() => {
         stopFrame(); uiPvp.clearInputs();
         uiPvp.showResult(result === 'draw' ? 'draw' : result === b.role ? 'self' : 'opponent');
     }
-    function initialize(role, profiles, nextId) {
+    function initialize(role, profiles, nextId, mode) {
         stopFrame(); uiPvp.destroy();
         battleId = nextId; seenBattles.add(nextId);
         if (seenBattles.size > 128) seenBattles.delete(seenBattles.values().next().value);
-        state.pvpBattle = { role, battleId, active: true, duel: D.create(profiles), countdown: 1.5, ready: false, shownResult: false };
+        selectedMode = mode;
+        state.pvpBattle = { role, battleId, mode, ruleVersion: RULE_VERSION, active: true, duel: D.create(profiles), countdown: 1.5, ready: false, shownResult: false };
         inputSeq = receivedSeq = snapshotSeq = eventId = seenEvent = 0; appliedSnapshot = -1;
-        pending = []; history = []; accumulator = 0; latency = 25; selfRematch = otherRematch = false; rematchProfile = null;
+        pending = []; history = []; presentation = []; predictedPresentation.clear(); accumulator = 0; latency = 25;
+        selfRematch = otherRematch = false; rematchProfile = null; rematchMode = null;
         localReady = role === 'guest'; remoteReady = false;
         lastReceive = lastFrame = lastSend = now();
         aliases(); ui.switchTab('pvp-battle'); uiPvp.initFighters();
         frame = requestAnimationFrame(loop);
     }
-    function startPVP(role, opponentProfile) {
+    function startPVP(role, opponentProfile, mode = selectedMode) {
         if (role !== 'host') return false;
-        const profiles = [spatialProfiles.normalize(spatialProfiles.local()), spatialProfiles.normalize(opponentProfile || previousOpponent)];
+        if (!spatialProfiles.MODES[mode]) return false;
+        const profiles = mode === 'fair' ? [spatialProfiles.fair(), spatialProfiles.fair()] :
+            [spatialProfiles.normalize(spatialProfiles.local()), spatialProfiles.normalize(opponentProfile || previousOpponent)];
         const previousBattleId = battleId, nextId = id(); previousOpponent = profiles[1];
-        initialize('host', profiles, nextId);
-        send({ msg: 'duel_start', previousBattleId, profiles }); return true;
+        initialize('host', profiles, nextId, mode);
+        send({ msg: 'duel_start', previousBattleId, profiles, mode, ruleVersion: RULE_VERSION }); return true;
     }
     function ready() {
         const b = state.pvpBattle;
@@ -72,17 +100,19 @@ const pvpLogic = (() => {
                 if (b.countdown > 0) b.countdown = Math.max(0, b.countdown - .01);
                 else D.step(b.duel);
             } else if (b.countdown <= 0) D.predict(b.duel, 1, .01);
-            const events = collect(); uiPvp.updateFrame(events);
-            if (b.role === 'host' && b.duel.result) { publish(); finish(b.duel.result); }
+            queuePresentation(collect());
+            if (b.role === 'host' && b.duel.result) { publish(); break; }
         }
+        return b.role === 'host' && b.duel.result ? b.duel.result : null;
     }
     function loop(t) {
         frame = null;
         const b = state.pvpBattle;
         if (!b?.active) return;
         if (document.hidden || t - lastFrame > 1000 || now() - lastReceive > 5000) { interrupt(); return; }
-        advance((t - lastFrame) / 1000); lastFrame = t;
-        uiPvp.updateFrame();
+        const result = advance((t - lastFrame) / 1000); lastFrame = t;
+        present();
+        if (result) { finish(result); return; }
         if (!b.active) return;
         if (now() - lastSend >= (b.role === 'host' ? 50 : 250)) {
             if (b.role === 'host' && b.ready) publish(); else send({ msg: 'duel_heartbeat' });
@@ -94,7 +124,7 @@ const pvpLogic = (() => {
         const b = state.pvpBattle;
         if (!command || !b?.active || !b.ready || (command.type !== 'settings' && (b.countdown > 0 || uiPvp.settingsOpen?.()))) return false;
         if (b.role === 'host') {
-            const accepted = D.input(b.duel, 0, command); uiPvp.updateFrame(collect()); return accepted;
+            const accepted = D.input(b.duel, 0, command); queuePresentation(collect()); return accepted;
         }
         if (pending.length >= 256) { interrupt(); return false; }
         const accepted = D.predictInput(b.duel, 1, command);
@@ -102,7 +132,7 @@ const pvpLogic = (() => {
         const entry = { seq: ++inputSeq, command, at: now() };
         pending.push(entry); send({ msg: 'duel_input', seq: entry.seq, command });
         // Releases/settings/skills still reach authority when local prediction rejects them.
-        collect(); uiPvp.updateFrame(); return true;
+        queuePresentation(collect()); return true;
     }
     function applySnapshot(msg) {
         const b = state.pvpBattle;
@@ -124,18 +154,21 @@ const pvpLogic = (() => {
         b.duel.events.length = 0; aliases();
         const events = (msg.events || []).filter(e => e.id > seenEvent);
         for (const e of events) seenEvent = Math.max(seenEvent, e.id);
-        uiPvp.updateFrame(events);
-        if (b.duel.result) finish(b.duel.result);
+        queuePresentation(events);
+        if (b.duel.result) { present(); finish(b.duel.result); }
     }
     function receiveMessage(msg) {
-        if (!msg || typeof msg !== 'object' || msg.version !== VERSION) return;
+        if (!msg || typeof msg !== 'object' || msg.version !== VERSION ||
+            (['duel_start', 'duel_rematch'].includes(msg.msg) && msg.ruleVersion !== RULE_VERSION)) return;
         if (msg.msg === 'duel_start') {
-            if (pvpNet.role !== 'guest' || typeof msg.battleId !== 'string' || seenBattles.has(msg.battleId)) return;
+            if (pvpNet.role !== 'guest' || !spatialProfiles.MODES[msg.mode] || msg.mode !== selectedMode ||
+                typeof msg.battleId !== 'string' || seenBattles.has(msg.battleId)) return;
             if (battleId && (state.pvpBattle?.active || msg.previousBattleId !== battleId || !selfRematch)) return;
             try {
                 if (!Array.isArray(msg.profiles) || msg.profiles.length !== 2) return;
                 const profiles = msg.profiles.map(spatialProfiles.normalize);
-                previousOpponent = profiles[0]; initialize('guest', profiles, msg.battleId);
+                if (msg.mode === 'fair' && !profiles.every(spatialProfiles.isFair)) return;
+                previousOpponent = profiles[0]; initialize('guest', profiles, msg.battleId, msg.mode);
                 send({ msg: 'duel_ready', controls: state.pvpBattle.spatial.controls });
             } catch (_) { interrupt(); }
             return;
@@ -145,7 +178,12 @@ const pvpLogic = (() => {
         lastReceive = now();
         if (b.role === 'host' && Number.isSafeInteger(msg.eventAck) && msg.eventAck >= 0 && msg.eventAck <= eventId) history = history.filter(e => e.id > msg.eventAck);
         if (msg.msg === 'duel_rematch' && !b.active && b.duel.result) {
-            try { rematchProfile = spatialProfiles.normalize(msg.profile); } catch (_) { return; }
+            if (msg.mode !== b.mode) return;
+            try {
+                rematchProfile = b.mode === 'fair' ? spatialProfiles.fair() : spatialProfiles.normalize(msg.profile);
+                if (b.mode === 'fair' && !spatialProfiles.isFair(msg.profile)) return;
+            } catch (_) { return; }
+            rematchMode = msg.mode;
             otherRematch = true; uiPvp.showRematchRequest(); maybeRematch(); return;
         }
         if (!b.active) return;
@@ -159,29 +197,30 @@ const pvpLogic = (() => {
                 if (b.role !== 'host' || !Number.isSafeInteger(msg.seq) || msg.seq !== receivedSeq + 1) break;
                 receivedSeq = msg.seq;
                 if (b.ready && (b.countdown <= 0 || ['cancel', 'settings'].includes(msg.command?.type))) D.input(b.duel, 1, msg.command);
-                uiPvp.updateFrame(collect()); break;
+                queuePresentation(collect()); break;
             case 'duel_snapshot': if (b.role === 'guest') applySnapshot(msg); break;
             case 'duel_surrender':
-                if (b.role === 'host') { D.end(b.duel, 'host'); uiPvp.updateFrame(collect()); publish(); finish('host'); }
+                if (b.role === 'host') { D.end(b.duel, 'host'); queuePresentation(collect()); present(); publish(); finish('host'); }
                 break;
             case 'duel_abort': interrupt(false); break;
         }
     }
     function maybeRematch() {
-        if (selfRematch && otherRematch && pvpNet.role === 'host') startPVP('host', rematchProfile);
+        if (selfRematch && otherRematch && pvpNet.role === 'host') startPVP('host', rematchProfile, rematchMode || selectedMode);
     }
     function requestRematch() {
         const b = state.pvpBattle;
         if (!b || b.active || !b.duel.result || selfRematch) return;
         selfRematch = true;
-        send({ msg: 'duel_rematch', profile: spatialProfiles.local() }); uiPvp.showRematchWaiting(); maybeRematch();
+        const profile = b.mode === 'fair' ? spatialProfiles.fair() : spatialProfiles.local();
+        send({ msg: 'duel_rematch', profile, mode: b.mode, ruleVersion: RULE_VERSION }); uiPvp.showRematchWaiting(); maybeRematch();
     }
     function cancelLocal() {
         const b = state.pvpBattle;
         if (!b?.active) return;
         // Cancellation must bypass menu/countdown input gating.
-        if (b.role === 'host') D.input(b.duel, 0, { type: 'cancel' });
-        else { const command = { type: 'cancel' }; pending.push({ seq: ++inputSeq, command, at: now() }); send({ msg: 'duel_input', seq: inputSeq, command }); D.input(b.duel, 1, command); }
+        if (b.role === 'host') { D.input(b.duel, 0, { type: 'cancel' }); queuePresentation(collect()); }
+        else { const command = { type: 'cancel' }; pending.push({ seq: ++inputSeq, command, at: now() }); send({ msg: 'duel_input', seq: inputSeq, command }); D.input(b.duel, 1, command); queuePresentation(collect()); }
     }
     function interrupt(notifyPeer = true) {
         const b = state.pvpBattle;
@@ -193,16 +232,19 @@ const pvpLogic = (() => {
         const b = state.pvpBattle;
         if (!b?.active) return;
         cancelLocal();
-        if (b.role === 'host') { D.end(b.duel, 'guest'); uiPvp.updateFrame(collect()); publish(); finish('guest'); }
+        if (b.role === 'host') { D.end(b.duel, 'guest'); queuePresentation(collect()); present(); publish(); finish('guest'); }
         else send({ msg: 'duel_surrender' });
     }
     function abortToLobby() {
         const b = state.pvpBattle;
         if (b) { b.active = false; b.duel?.sides.forEach(spatialEngine.pause); }
         stopFrame(); uiPvp.destroy(); uiPvp.hideResult(); uiPvp.hideRematchRequest();
-        battleId = null; pending = []; selfRematch = otherRematch = false;
+        battleId = null; pending = []; presentation = []; predictedPresentation.clear(); selfRematch = otherRematch = false;
     }
-    return { VERSION, SKILL_COSTS: D.SKILL_COSTS, startPVP, receiveMessage, advance, input, cancelLocal, interrupt,
+    return { VERSION, RULE_VERSION, MODES: spatialProfiles.MODES, SKILL_COSTS: D.SKILL_COSTS, startPVP, receiveMessage, advance, input, cancelLocal, interrupt,
         surrender, requestRematch, acceptRematch: requestRematch, abortToLobby,
+        setMode(mode) { if (!spatialProfiles.MODES[mode] || pvpNet.role || state.pvpBattle?.active) return false; selectedMode = mode; return true; },
+        getSelectedMode: () => selectedMode,
+        getCombatProfile(mode = selectedMode) { return mode === 'fair' ? spatialProfiles.fair() : spatialProfiles.local(); },
         getMyCombatProfile: spatialProfiles.local, getCurrentBattleId: () => battleId };
 })();
