@@ -10,6 +10,32 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
+    const viewWidth = Math.min(C.width, C.camera?.width || C.width);
+    const viewHeight = Math.min(C.height, C.camera?.height || C.height);
+    let camera = null;
+    // Local presentation only: no camera coordinates enter combat or networking.
+    function updateCamera(dt) {
+        if (!C.camera) return;
+        const p = battle.player, settings = C.camera;
+        const clampX = x => S.clamp(x, viewWidth / 2, C.width - viewWidth / 2);
+        const clampY = y => S.clamp(y, viewHeight / 2, C.height - viewHeight / 2);
+        if (!camera || Math.hypot(p.x - camera.px, p.y - camera.py) > 80) {
+            camera = { x: clampX(p.x), y: clampY(p.y), px: p.x, py: p.y, leadX: 0, leadY: 0 };
+            return;
+        }
+        if (!(dt > 0)) return;
+        dt = Math.min(dt, .1);
+        const moving = battle.running && battle.move?.mode === 'move' && !['attack', 'recover', 'stunned'].includes(p.phase);
+        let leadX = moving ? (p.x - camera.px) / dt * settings.leadSeconds : 0;
+        let leadY = moving ? (p.y - camera.py) / dt * settings.leadSeconds : 0;
+        const factor = Math.min(1, settings.maxLead / Math.max(.001, Math.hypot(leadX, leadY)));
+        const leadWeight = 1 - Math.exp(-settings.leadRate * dt), weight = 1 - Math.exp(-settings.followRate * dt);
+        camera.leadX += (leadX * factor - camera.leadX) * leadWeight;
+        camera.leadY += (leadY * factor - camera.leadY) * leadWeight;
+        camera.x = clampX(camera.x + (clampX(p.x + camera.leadX) - camera.x) * weight);
+        camera.y = clampY(camera.y + (clampY(p.y + camera.leadY) - camera.y) * weight);
+        camera.px = p.x; camera.py = p.y;
+    }
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
     function resize() {
         const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -97,7 +123,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             const rgb = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
             return `rgb(${rgb.map((v, i) => Math.round(v + (flashColor[i] - v) * flash)).join(',')})`;
         };
-        ctx.save(); ctx.translate(body.x, body.y);
+        ctx.save(); ctx.lineWidth = 1; ctx.translate(body.x, body.y);
         ctx.fillStyle = '#050b0e66'; ctx.beginPath(); ctx.ellipse(1, 6, body.radius * 1.25, body.radius * .6, 0, 0, Math.PI * 2); ctx.fill();
         ctx.rotate(body.facing);
         if (enemy && !C.pvp) {
@@ -119,8 +145,9 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 if (body.phase === 'attack') {
                     const progress = S.clamp(1 - body.timer / Math.max(.001, a.windup), 0, 1);
                     angle = -a.arc / 2 + a.arc * progress;
-                    ctx.beginPath(); ctx.arc(0, 0, reach * .92, -a.arc / 2, angle);
+                    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, reach * .92, -a.arc / 2, angle);
                     ctx.strokeStyle = '#b6fff19a'; ctx.lineWidth = body.attack.heavy ? 7 : 4; ctx.stroke();
+                    ctx.restore();
                 } else {
                     const remaining = S.clamp(body.timer / Math.max(.001, a.recovery), 0, 1);
                     angle = a.arc / 2 * remaining;
@@ -146,9 +173,10 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.restore();
         }
         if ((!enemy || C.pvp) && ['guard_start', 'guard'].includes(body.phase)) {
-            ctx.beginPath(); ctx.arc(body.x, body.y, 27, body.facing - Math.PI / 2, body.facing + Math.PI / 2);
+            ctx.save(); ctx.beginPath(); ctx.arc(body.x, body.y, 27, body.facing - Math.PI / 2, body.facing + Math.PI / 2);
             ctx.lineWidth = body.phase === 'guard' ? 4 : 2;
             ctx.strokeStyle = body.phase === 'guard' && battle.time - body.guardReadyAt <= (enemy ? C.opponentConfig : C).parryWindow ? '#e8fbff' : '#8dbdef'; ctx.stroke();
+            ctx.restore();
         }
     }
     function draw() {
@@ -163,17 +191,19 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             for (let x = width / 2 % 48; x < width; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke(); }
             for (let y = 0; y < height; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke(); }
         }
-        // Uniform scaling keeps the entire fixed world visible and preserves reach.
+        // Camera window controls zoom independently of arena size; input axes stay fixed.
         const availableHeight = Math.max(1, height - worldTop - worldBottom);
-        const scale = Math.max(.01, Math.min((width - worldInset * 2) / C.width, availableHeight / C.height));
-        ctx.save(); ctx.translate((width - C.width * scale) / 2, worldTop + (fullscreen ? 0 : (availableHeight - C.height * scale) / 2)); ctx.scale(scale, scale);
+        const scale = Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
+        ctx.save(); ctx.translate((width - viewWidth * scale) / 2, worldTop + (fullscreen ? 0 : (availableHeight - viewHeight * scale) / 2)); ctx.scale(scale, scale);
+        ctx.beginPath(); ctx.rect(0, 0, viewWidth, viewHeight); ctx.clip();
+        if (camera) ctx.translate(viewWidth / 2 - camera.x, viewHeight / 2 - camera.y);
         ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
         ctx.strokeStyle = '#294044'; ctx.lineWidth = .6;
         for (let x = 0; x <= C.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke(); }
         for (let y = 0; y <= C.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke(); }
         ctx.strokeStyle = '#496265'; ctx.strokeRect(0, 0, C.width, C.height);
-        circle(180, 200, 135, null, '#31494a');
-        circle(180, 200, 131, null, '#243c3e');
+        circle(C.width / 2, C.height / 2, 135, null, '#31494a');
+        circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
         // Clip telegraphs at the arena boundary; actors are clamped by logic.
         ctx.beginPath(); ctx.rect(0, 0, C.width, C.height); ctx.clip();
         if (e.phase === 'windup') {
@@ -243,8 +273,9 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         text('action-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '中心松手取消') : '重击');
         text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
-    function render(snapshot, events = []) {
+    function render(snapshot, events = [], frameDt = 0) {
         battle = snapshot;
+        updateCamera(frameDt);
         consume(events);
         draw(); controls();
         const p = battle.player, e = battle.enemy;

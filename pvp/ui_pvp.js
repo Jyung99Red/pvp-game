@@ -48,7 +48,7 @@ const uiPvp = (() => {
             remote.x += (target.x - remote.x) * weight; remote.y += (target.y - remote.y) * weight;
             remote.facing += spatialCombat.angleDelta(target.facing, remote.facing) * weight;
         }
-        view.render({ ...local, enemy: { ...target, ...remote } }, events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })));
+        view.render({ ...local, enemy: { ...target, ...remote } }, events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
         $('pvp-floor-label').textContent = !b.ready ? '等待双方准备' : b.countdown > 0 ? `准备 · ${Math.ceil(b.countdown)}` : '空间对战';
         $('pvp-self-sp').textContent = `${local.skillPoints} / 3`;
         for (const [kind, cost] of Object.entries(pvpLogic.SKILL_COSTS)) {

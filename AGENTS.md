@@ -246,3 +246,17 @@ Two browser contexts completed real WebRTC room-code connection, guest hit/HP sy
 surrender and rematch. The isolated fixture also passed 60ms one-way simulated
 latency, real pointer tap, HP/SP convergence and portrait/landscape resize checks.
 Two-device mobile/network playtesting remains pending. Spatial clash is stage two.
+
+
+## PVP follow camera and outline fix (2026-09-12)
+
+PVP arena is now 510x566 (about twice the old area), with symmetric spawns
+(255,373)/(255,193). Protocol v3 supersedes v2 because clients must agree on bounds.
+Collision separation uses configured bounds. PVP config.camera selects a 396x440
+view, local-player follow smoothing and velocity lookahead (.16s, capped at 24).
+The shared renderer owns camera state; PVP supplies presentation dt, independent of
+snapshot time corrections. Camera never changes world inputs, damage, or snapshots.
+PVE/training retain their full-world view. Guard arcs and swing trails isolate Canvas
+state; fighters explicitly set outline width so opponent guard cannot thicken self.
+User explicitly requested no tests for this revision. Prior 53 passing tests and
+browser QA are historical, not validation of these camera/arena/rendering changes.

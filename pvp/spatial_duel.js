@@ -8,8 +8,10 @@ const spatialDuel = (() => {
         const sides = normalized.map((profile, i) => {
             const C = spatialProfiles.apply(clone(spatialData.training), profile);
             C.formal = true; C.pvp = true;
-            Object.assign(C.player, { x: 180, y: i ? 110 : 290, facing: i ? Math.PI / 2 : -Math.PI / 2 });
-            Object.assign(C.enemy, { x: 180, y: i ? 290 : 110, radius: 12 });
+            C.width = 510; C.height = 566;
+            C.camera = { width: 396, height: 440, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 };
+            Object.assign(C.player, { x: C.width / 2, y: C.height / 2 + (i ? -90 : 90), facing: i ? Math.PI / 2 : -Math.PI / 2 });
+            Object.assign(C.enemy, { x: C.width / 2, y: C.height / 2 + (i ? 90 : -90), radius: 12 });
             const b = E.create(C, random); b.skillPoints = 0; E.start(b); return b;
         });
         sides.forEach((b, i) => { b.enemy = sides[1 - i].player; });
@@ -110,12 +112,13 @@ const spatialDuel = (() => {
         d.sides.forEach((b, i) => { b.enemy = d.sides[1 - i].player; });
         // Symmetric separation after both movement proposals (no host-first push).
         const [a, b] = d.sides.map(side => side.player), gap = S.distance(a, b), radius = a.radius + b.radius;
+        const { width, height } = d.sides[0].config;
         if (gap < radius) {
             const dx = gap > 1e-9 ? (b.x - a.x) / gap : 0, dy = gap > 1e-9 ? (b.y - a.y) / gap : -1;
             for (let pass = 0; pass < 2; pass++) {
                 const push = Math.max(0, radius - S.distance(a, b)) / 2;
-                a.x = S.clamp(a.x - dx * push, a.radius, 360 - a.radius); a.y = S.clamp(a.y - dy * push, a.radius, 400 - a.radius);
-                b.x = S.clamp(b.x + dx * push, b.radius, 360 - b.radius); b.y = S.clamp(b.y + dy * push, b.radius, 400 - b.radius);
+                a.x = S.clamp(a.x - dx * push, a.radius, width - a.radius); a.y = S.clamp(a.y - dy * push, a.radius, height - a.radius);
+                b.x = S.clamp(b.x + dx * push, b.radius, width - b.radius); b.y = S.clamp(b.y + dy * push, b.radius, height - b.radius);
             }
             if (S.distance(a, b) < radius - 1e-7) {
                 Object.assign(a, { x: previous[0].x, y: previous[0].y });

@@ -138,12 +138,12 @@ test('two clients handshake/count down; local movement predicts before delivery;
  p.frame(30,false);assert.ok(g.state.pvpBattle.self.x>x);assert.equal(h.state.pvpBattle.opponent.x,x);
  p.deliver();for(let n=0;n<20;n++)p.frame();assert.ok(h.state.pvpBattle.opponent.x>x);
  const before=h.state.pvpBattle.self.hp;
- h.logic.receiveMessage({msg:'duel_input',version:2,battleId:h.logic.getCurrentBattleId(),seq:3,command:{type:'teleport',hp:0,x:0}});
+ h.logic.receiveMessage({msg:'duel_input',version:h.logic.VERSION,battleId:h.logic.getCurrentBattleId(),seq:3,command:{type:'teleport',hp:0,x:0}});
  assert.equal(h.state.pvpBattle.self.hp,before);
 });
 test('duplicate/wrong-session input and out-of-order snapshots cannot rewind state',()=>{
  const p=pair(),[h,g]=p.peers;
- const message={msg:'duel_input',version:2,battleId:h.logic.getCurrentBattleId(),seq:1,command:command('press','move',[0,0])};
+ const message={msg:'duel_input',version:h.logic.VERSION,battleId:h.logic.getCurrentBattleId(),seq:1,command:command('press','move',[0,0])};
  h.logic.receiveMessage(message);h.logic.receiveMessage({...message,seq:2,command:command('release','move')});
  const ap=h.state.pvpBattle.opponent.ap;h.logic.receiveMessage(message);assert.equal(h.state.pvpBattle.opponent.ap,ap);
  h.logic.receiveMessage({...message,seq:3,battleId:'previous',command:{type:'cancel'}});assert.equal(h.state.pvpBattle.opponent.phase,'attack');
@@ -159,7 +159,7 @@ test('surrender has one authoritative result; both rematch orders reset HP/SP an
   assert.notEqual(h.logic.getCurrentBattleId(),old);assert.equal(h.logic.getCurrentBattleId(),g.logic.getCurrentBattleId());
   assert.equal(h.state.pvpBattle.spatial.skillPoints,0);assert.equal(g.state.pvpBattle.spatial.skillPoints,0);
   assert.equal(h.state.pvpBattle.self.hp,h.state.pvpBattle.self.maxHp);
-  h.logic.receiveMessage({msg:'duel_surrender',version:2,battleId:old});assert.equal(h.state.pvpBattle.active,true);
+  h.logic.receiveMessage({msg:'duel_surrender',version:h.logic.VERSION,battleId:old});assert.equal(h.state.pvpBattle.active,true);
   assert.equal(JSON.stringify(h.state.player),saved);
  }
 });
