@@ -6,6 +6,8 @@ const spatialEngine = (() => {
     function validate(C) {
         const positive = v => Number.isFinite(v) && v > 0;
         if (![C.width, C.height, C.fullCharge, C.apMax].every(positive)) throw new Error('Invalid arena or combat limits');
+        if (C.walls && (!Array.isArray(C.walls) || C.walls.some(w => !w || ![w.x, w.y, w.width, w.height].every(Number.isFinite) ||
+            w.width <= 0 || w.height <= 0 || w.x < 0 || w.y < 0 || w.x + w.width > C.width || w.y + w.height > C.height))) throw new Error('Invalid arena walls');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
         if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .7, C.chargeTurnMultiplier ?? .65, C.guardMoveMultiplier ?? .3, C.guardTurnMultiplier ?? .5, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         if ((C.heavy.minRange != null && (!positive(C.heavy.minRange) || C.heavy.minRange > C.heavy.range)) ||

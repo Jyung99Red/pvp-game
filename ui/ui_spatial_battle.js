@@ -63,6 +63,33 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (C.reverseView) { vx = viewWidth - vx; vy = viewHeight - vy; }
         return { x: layout.x + vx * layout.scale, y: layout.y + vy * layout.scale };
     }
+    function wallList() { return C.walls || []; }
+    function visibilityPath() {
+        const polygon = S.visibilityPolygon(battle.player, C, wallList());
+        if (polygon.length < 3) return false;
+        ctx.beginPath(); polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.closePath(); return true;
+    }
+    function clipVisibleArea() {
+        if (!wallList().length || !visibilityPath()) return false;
+        ctx.clip(); return true;
+    }
+    function drawWalls() {
+        for (const wall of wallList()) {
+            ctx.fillStyle = '#294247'; ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            ctx.strokeStyle = '#79a5a0'; ctx.lineWidth = 2; ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+            ctx.strokeStyle = '#477074'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(wall.x + 4, wall.y + 4); ctx.lineTo(wall.x + wall.width - 4, wall.y + 4);
+            ctx.moveTo(wall.x + 4, wall.y + wall.height - 4); ctx.lineTo(wall.x + wall.width - 4, wall.y + wall.height - 4); ctx.stroke();
+        }
+    }
+    function shadeHiddenArea() {
+        if (!wallList().length || !visibilityPath()) return;
+        const polygon = S.visibilityPolygon(battle.player, C, wallList());
+        ctx.save(); ctx.beginPath(); ctx.rect(0, 0, C.width, C.height);
+        polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.closePath(); ctx.fillStyle = '#061015b8'; ctx.fill('evenodd'); ctx.restore();
+    }
     function skillDefinition(kind) { return C.skills?.[kind] || spatialData.skills?.[kind] || { name: kind }; }
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
     function resize() {
@@ -97,7 +124,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 charge_cancelled: '已取消蓄力 · 未消耗行动力',
                 stagger: '失衡！抓住空档打重击',
                 hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}${e.heavy ? ' · 失衡 +2' : ''}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
-                miss: e.side === 'player' ? '挥空 · 再靠近一点，留意朝向' : '走位避开！现在可以反击',
+                miss: e.side === 'player' ? (e.blocked ? '攻击被墙挡住' : '挥空 · 再靠近一点，留意朝向') : '走位避开！现在可以反击',
                 parry: `精准防御！反击 −${e.damage} · 失衡 +1`,
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
                 block: `格挡 −${e.damage} · 消耗 1 行动力`
@@ -106,6 +133,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 const who = e.side === 'player' ? '你' : '对手';
                 messages.attack_started = `${who}${e.heavy ? '重击' : '轻击'}起手`;
                 messages.hit = `${who}${e.crit ? '暴击' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}`;
+                messages.miss = e.side === 'player' && e.blocked ? `${who}的攻击被墙挡住` : `${who}${e.side === 'player' ? '挥空' : '未命中'}`;
                 messages.parry = `${who}弹反 · 反击 −${e.damage}`;
                 messages.block = `${who}格挡 −${e.damage}`;
                 messages.thorns = `${who}荆棘反伤 −${e.damage}`;
@@ -168,7 +196,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             // around the hand, so zoom never changes weapon geometry or reach.
             let angle = 0;
             const reach = 32;
-            const weaponSide = -1;
+            const weaponSide = -1, weaponBackOffset = -4;
             if (body.phase === 'charging') {
                 const a = spatialEngine.heavyShape({ config: enemy ? C.opponentConfig : C, player: body });
                 angle = -a.arc / 2;
@@ -186,11 +214,14 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 }
             }
             // Fixed blade geometry; only rotation follows the attack sector, never scale.
-            ctx.save(); ctx.rotate(angle); ctx.translate(0, weaponSide * 15);
+            ctx.save(); ctx.rotate(angle); ctx.translate(weaponBackOffset, weaponSide * 15);
             polygon([[11, -3], [reach - 9, -3], [reach, 0], [reach - 9, 3], [11, 3]], tint('#dae6dc'), '#81e6d9');
             ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(14, -7); ctx.lineTo(14, 7); ctx.stroke();
             ctx.restore();
-            const side = enemy ? -1 : 1;
+            // Keep the shield on the opposite local side from the weapon.
+            // Using one local side for both fighters also stays correct when
+            // the guest's fixed 180-degree view mapping is applied.
+            const shieldSide = 1;
             const key = enemy ? 'enemy' : 'player', guarding = ['guard_start', 'guard'].includes(body.phase);
             const targetPose = guarding ? 1 : 0;
             if (presentationDt > 0) {
@@ -203,12 +234,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 // The ordinary side shield returns only after the guard icon
                 // has fully lowered, preventing the two shield visuals from
                 // being visible at the same time.
-                polygon([[2, side * 11], [7, side * 7], [13, side * 10], [12, side * 20], [5, side * 22], [0, side * 17]], tint('#477582'), tint('#9ac8df'));
+                polygon([[2, shieldSide * 11], [7, shieldSide * 7], [13, shieldSide * 10], [12, shieldSide * 20], [5, shieldSide * 22], [0, shieldSide * 17]], tint('#477582'), tint('#9ac8df'));
             } else {
                 // A shield starts beside the body and eases to the forward
                 // guard position.  The engine still owns the real startup and
                 // parry window; this is presentation-only.
-                const shieldAngle = side * Math.PI * .72 * (1 - pose);
+                const shieldAngle = shieldSide * Math.PI * .72 * (1 - pose);
                 ctx.save(); ctx.rotate(shieldAngle);
                 polygon([[9, -10], [23, -8], [28, 0], [23, 8], [9, 10]], '#5f7890cc', '#c7e1ff');
                 ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 1.5;
@@ -236,8 +267,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
     }
     function arenaDecor() {
-        // Stage A has visual boundary references only.  Collision remains the
-        // existing arena clamp until the complete wall/visibility stage lands.
+        // The perimeter remains a visual boundary reference. Internal PVP
+        // walls are drawn separately so their geometry can be reused by logic.
         const depth = 10, block = 30, edge = C.pvp ? '#48626a' : '#405d5e', hi = C.pvp ? '#75a0a0' : '#688b82';
         ctx.fillStyle = edge;
         ctx.fillRect(0, 0, C.width, depth); ctx.fillRect(0, C.height - depth, C.width, depth);
@@ -257,13 +288,33 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function drawOffscreenHint() {
         if (!C.camera || !camera || !battle?.enemy) return;
-        const layout = viewportLayout(), target = worldToScreen(battle.enemy.x, battle.enemy.y), local = worldToScreen(battle.player.x, battle.player.y);
-        if (!target) return;
+        const visible = battle.enemyVisible !== false;
+        const age = battle.time - (battle.enemyLastSeenAt ?? battle.time);
+        const marker = visible ? battle.enemy : age <= 3 && battle.enemyEverSeen ? battle.enemyLastKnown : null;
+        const layout = viewportLayout(), local = worldToScreen(battle.player.x, battle.player.y);
         const left = layout.x + 14, right = layout.x + viewWidth * layout.scale - 14;
         const top = Math.max(layout.y + 14, worldTop + 8), bottom = Math.min(layout.y + viewHeight * layout.scale - 14, height - (fullscreen ? 198 : 12));
+        if (!marker) {
+            hintVisible = false;
+            ctx.save(); ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#d9b77d';
+            ctx.fillText('对手位置未知', (left + right) / 2, Math.min(bottom - 8, top + 22)); ctx.restore();
+            return;
+        }
+        const target = worldToScreen(marker.x, marker.y);
+        if (!target) return;
         const inside = (point, pad) => point.x >= left + pad && point.x <= right - pad && point.y >= top + pad && point.y <= bottom - pad;
         hintVisible = hintVisible ? !inside(target, 20) : !inside(target, 8);
-        if (!hintVisible || right <= left || bottom <= top) return;
+        if (!hintVisible || right <= left || bottom <= top) {
+            if (!visible) {
+                ctx.save(); ctx.strokeStyle = '#d9b77d'; ctx.lineWidth = 2; ctx.globalAlpha = .9;
+                ctx.beginPath(); ctx.arc(target.x, target.y, 9, 0, Math.PI * 2); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(target.x - 12, target.y); ctx.lineTo(target.x + 12, target.y);
+                ctx.moveTo(target.x, target.y - 12); ctx.lineTo(target.x, target.y + 12); ctx.stroke();
+                ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#e7d2a4';
+                ctx.fillText('最后出现', target.x, target.y - 15); ctx.restore();
+            }
+            return;
+        }
         let sx = local?.x ?? (left + right) / 2, sy = local?.y ?? (top + bottom) / 2;
         sx = S.clamp(sx, left + 4, right - 4); sy = S.clamp(sy, top + 4, bottom - 4);
         const dx = target.x - sx, dy = target.y - sy, len = Math.hypot(dx, dy) || 1;
@@ -272,15 +323,20 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const hit = Math.max(0, Math.min(...[tx, ty].filter(v => v > 0 && Number.isFinite(v))));
         const x = sx + dx * hit, y = sy + dy * hit, angle = Math.atan2(dy, dx);
         ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
-        ctx.fillStyle = C.pvp ? '#f29a87' : '#efc181';
-        ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -7); ctx.lineTo(-4, 0); ctx.lineTo(-7, 7); ctx.closePath(); ctx.fill();
+        if (visible) {
+            ctx.fillStyle = C.pvp ? '#f29a87' : '#efc181';
+            ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -7); ctx.lineTo(-4, 0); ctx.lineTo(-7, 7); ctx.closePath(); ctx.fill();
+        } else {
+            ctx.strokeStyle = '#d9b77d'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -7); ctx.lineTo(-4, 0); ctx.lineTo(-7, 7); ctx.closePath(); ctx.stroke();
+        }
         ctx.restore();
         ctx.save(); ctx.font = 'bold 10px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#e7d2a4';
-        ctx.fillText(C.pvp ? '对手' : '敌人', x, y <= top + 20 ? y + 22 : y - 12); ctx.restore();
+        ctx.fillText(visible ? (C.pvp ? '对手' : '敌人') : '最后出现', x, y <= top + 20 ? y + 22 : y - 12); ctx.restore();
     }
     function draw() {
         if (contextLost || !battle || canvas.width < 1 || canvas.height < 1) return;
-        const p = battle.player, e = battle.enemy;
+        const p = battle.player, e = battle.enemy, enemyVisible = battle.enemyVisible !== false;
         ctx.clearRect(0, 0, width, height);
         if (fullscreen) {
             const ground = ctx.createRadialGradient(width / 2, height * .42, 20, width / 2, height * .42, Math.max(width, height) * .7);
@@ -302,20 +358,22 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         for (let y = 0; y <= C.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke(); }
         ctx.strokeStyle = '#496265'; ctx.strokeRect(0, 0, C.width, C.height);
         arenaDecor();
+        drawWalls();
         circle(C.width / 2, C.height / 2, 135, null, '#31494a');
         circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
         // Clip telegraphs at the arena boundary; actors are clamped by logic.
         ctx.beginPath(); ctx.rect(0, 0, C.width, C.height); ctx.clip();
-        if (e.phase === 'windup') {
+        ctx.save(); const visibilityClipped = clipVisibleArea();
+        if (enemyVisible && e.phase === 'windup') {
             const locked = e.timer <= e.attack.lock;
             shape(e.attack, e, e.facing, locked ? '#f27365' : '#efc181');
             const progress = 1 - e.timer / e.attack.windup;
             ctx.beginPath(); ctx.arc(e.x, e.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
             ctx.strokeStyle = locked ? '#f27365' : '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
-        if (['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
-        if (C.pvp && e.phase === 'charging') shape(spatialEngine.heavyShape({ config: C.opponentConfig, player: e }), e, e.facing, '#f27365', .65);
-        if (C.pvp && e.phase === 'attack') shape(e.attack.shape, e.attack.origin, e.attack.facing, '#f27365', .8);
+        if (enemyVisible && ['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
+        if (enemyVisible && C.pvp && e.phase === 'charging') shape(spatialEngine.heavyShape({ config: C.opponentConfig, player: e }), e, e.facing, '#f27365', .65);
+        if (enemyVisible && C.pvp && e.phase === 'attack') shape(e.attack.shape, e.attack.origin, e.attack.facing, '#f27365', .8);
         if (p.phase === 'charging') shape(spatialEngine.heavyShape(battle), p, p.facing, L.armed(battle.action) ? '#81e6d9' : '#f27365', .65);
         else if (p.phase === 'attack') {
             const progress = 1 - p.timer / (p.attack.heavy ? C.heavy.windup : C.light.windup);
@@ -324,7 +382,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.strokeStyle = '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
         effects.filter(fx => fx.type === 'strike').forEach(fx => shape(fx.shape, fx.origin, fx.facing, fx.color, fx.life / .24));
-        fighter(e, true); fighter(p, false);
+        if (enemyVisible) fighter(e, true);
+        fighter(p, false);
         for (const fx of effects.filter(fx => fx.type === 'impact')) {
             const t = 1 - fx.life / .55;
             ctx.save(); ctx.globalAlpha = Math.min(1, fx.life / .2);
@@ -345,10 +404,14 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.lineWidth = 3; ctx.strokeStyle = '#251c19'; ctx.fillStyle = '#fff1cb';
             worldText(`−${fx.damage}`, fx.x, fx.y, -28 - t * 30, true); ctx.restore();
         }
-        ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
-        worldText(C.enemyName || '岩角兽', e.x, e.y, -44);
-        if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
+        if (enemyVisible) {
+            ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+            worldText(C.enemyName || '岩角兽', e.x, e.y, -44);
+            if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
+        }
         ctx.fillStyle = '#a8e1db'; worldText('你', p.x, p.y, 37);
+        ctx.restore();
+        if (wallList().length) { shadeHiddenArea(); drawWalls(); }
         ctx.restore();
         drawOffscreenHint();
     }
@@ -384,16 +447,18 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
         draw(); controls();
         const p = battle.player, e = battle.enemy;
+        const enemyVisible = battle.enemyVisible !== false, knownEnemyHp = battle.enemyKnownHp ?? e.hp;
         text('battle-log', logs.join('\n'));
-        text('player-hp', `${p.hp} / ${p.maxHp}`); text('enemy-hp', `${e.hp} / ${e.maxHp}`);
+        text('player-hp', `${p.hp} / ${p.maxHp}`);
+        text('enemy-hp', `${knownEnemyHp} / ${e.maxHp}${enemyVisible ? '' : ' · 旧信息'}`);
         nodes['player-meter'].max = p.maxHp; nodes['enemy-meter'].max = e.maxHp;
-        nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = e.hp;
+        nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = knownEnemyHp;
         apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 左移右转', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 左移右转', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
-        text('enemy-state', e.phase === 'windup' ? `${e.attack.label || (e.attack.kind === 'circle' ? '周身践踏' : '扇形重扫')} · ${e.timer <= e.attack.lock ? '朝向锁定！' : '准备中'}` : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
-        if (C.pvp) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
+        text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${e.attack.label || (e.attack.kind === 'circle' ? '周身践踏' : '扇形重扫')} · ${e.timer <= e.attack.lock ? '朝向锁定！' : '准备中'}` : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
+        if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;

@@ -1,6 +1,6 @@
 // Host-authoritative spatial PVP. Guest predicts local motion; never judges hits.
 const pvpLogic = (() => {
-    const VERSION = 5, RULE_VERSION = 1, D = spatialDuel;
+    const VERSION = 6, RULE_VERSION = 2, ARENA_LAYOUT_ID = spatialData.pvpArena.layoutId, ARENA_VERSION = spatialData.pvpArena.version, D = spatialDuel;
     let frame = null, lastFrame = 0, accumulator = 0, lastReceive = 0, lastSend = 0;
     let battleId = null, inputSeq = 0, receivedSeq = 0, snapshotSeq = 0, appliedSnapshot = -1;
     let pending = [], eventId = 0, seenEvent = 0, history = [], presentation = [], predictedPresentation = new Map();
@@ -12,6 +12,7 @@ const pvpLogic = (() => {
     const id = () => globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
     const localIndex = () => state.pvpBattle?.role === 'host' ? 0 : 1;
     const send = payload => pvpNet.send({ ...payload, version: VERSION, ruleVersion: RULE_VERSION,
+        arenaLayoutId: ARENA_LAYOUT_ID, arenaVersion: ARENA_VERSION,
         mode: state.pvpBattle?.mode || selectedMode, battleId, eventAck: seenEvent });
     function stopFrame() { if (frame !== null) cancelAnimationFrame(frame); frame = null; }
     function collect() {
@@ -28,7 +29,9 @@ const pvpLogic = (() => {
         const b = state.pvpBattle;
         if (!b || !events?.length) return;
         const at = now();
+        const observer = localIndex();
         for (const e of events) {
+            if (e.type !== 'finished' && e.actor !== observer && Array.isArray(e.visibleTo) && e.visibleTo[observer] === false) continue;
             const key = `${e.actor ?? e.side}|${e.type}|${e.time}|${e.kind || ''}|${e.damage || ''}`;
             // Guest prediction may show a local discrete action immediately;
             // when the same authoritative event arrives, consume that preview
@@ -48,6 +51,7 @@ const pvpLogic = (() => {
     function aliases() {
         const b = state.pvpBattle, i = localIndex();
         b.spatial = b.duel.sides[i]; b.self = b.spatial.player; b.opponent = b.duel.sides[1 - i].player;
+        if (b.role === 'host') b.visibility = D.visibility(b.duel);
     }
     function publish() {
         const b = state.pvpBattle;
@@ -66,7 +70,8 @@ const pvpLogic = (() => {
         battleId = nextId; seenBattles.add(nextId);
         if (seenBattles.size > 128) seenBattles.delete(seenBattles.values().next().value);
         selectedMode = mode;
-        state.pvpBattle = { role, battleId, mode, ruleVersion: RULE_VERSION, active: true, duel: D.create(profiles), countdown: 1.5, ready: false, shownResult: false };
+        state.pvpBattle = { role, battleId, mode, ruleVersion: RULE_VERSION, arenaLayoutId: ARENA_LAYOUT_ID,
+            arenaVersion: ARENA_VERSION, visibility: [true, true], active: true, duel: D.create(profiles), countdown: 1.5, ready: false, shownResult: false };
         inputSeq = receivedSeq = snapshotSeq = eventId = seenEvent = 0; appliedSnapshot = -1;
         pending = []; history = []; presentation = []; predictedPresentation.clear(); accumulator = 0; latency = 25;
         selfRematch = otherRematch = false; rematchProfile = null; rematchMode = null;
@@ -98,7 +103,7 @@ const pvpLogic = (() => {
             accumulator -= .01;
             if (b.role === 'host') {
                 if (b.countdown > 0) b.countdown = Math.max(0, b.countdown - .01);
-                else D.step(b.duel);
+                else { D.step(b.duel); b.visibility = D.visibility(b.duel); }
             } else if (b.countdown <= 0) D.predict(b.duel, 1, .01);
             queuePresentation(collect());
             if (b.role === 'host' && b.duel.result) { publish(); break; }
@@ -143,7 +148,7 @@ const pvpLogic = (() => {
         if (acknowledged.length) latency = Math.min(150, Math.max(0, (now() - acknowledged[acknowledged.length - 1].at) / 2));
         const replayFrom = now() - latency;
         pending = pending.filter(p => p.seq > msg.ack);
-        D.restore(b.duel, msg.snapshot); b.countdown = msg.countdown;
+        D.restore(b.duel, msg.snapshot); b.countdown = msg.countdown; b.visibility = msg.snapshot.visibility.slice();
         // Reapply unacknowledged inputs in order, with bounded local time between them.
         let cursor = Math.max(now() - 250, replayFrom);
         const predictTo = t => { let remain = Math.max(0, t - cursor) / 1000; while (remain > 1e-6) { const dt = Math.min(.01, remain); D.predict(b.duel, 1, dt); remain -= dt; } cursor = Math.max(cursor, t); };
@@ -159,6 +164,8 @@ const pvpLogic = (() => {
     }
     function receiveMessage(msg) {
         if (!msg || typeof msg !== 'object' || msg.version !== VERSION ||
+            (['duel_start', 'duel_rematch', 'duel_snapshot'].includes(msg.msg) &&
+                (msg.arenaLayoutId !== ARENA_LAYOUT_ID || msg.arenaVersion !== ARENA_VERSION)) ||
             (['duel_start', 'duel_rematch'].includes(msg.msg) && msg.ruleVersion !== RULE_VERSION)) return;
         if (msg.msg === 'duel_start') {
             if (pvpNet.role !== 'guest' || !spatialProfiles.MODES[msg.mode] || msg.mode !== selectedMode ||
@@ -241,7 +248,7 @@ const pvpLogic = (() => {
         stopFrame(); uiPvp.destroy(); uiPvp.hideResult(); uiPvp.hideRematchRequest();
         battleId = null; pending = []; presentation = []; predictedPresentation.clear(); selfRematch = otherRematch = false;
     }
-    return { VERSION, RULE_VERSION, MODES: spatialProfiles.MODES, SKILL_COSTS: D.SKILL_COSTS, startPVP, receiveMessage, advance, input, cancelLocal, interrupt,
+    return { VERSION, RULE_VERSION, ARENA_LAYOUT_ID, ARENA_VERSION, MODES: spatialProfiles.MODES, SKILL_COSTS: D.SKILL_COSTS, startPVP, receiveMessage, advance, input, cancelLocal, interrupt,
         surrender, requestRematch, acceptRematch: requestRematch, abortToLobby,
         setMode(mode) { if (!spatialProfiles.MODES[mode] || pvpNet.role || state.pvpBattle?.active) return false; selectedMode = mode; return true; },
         getSelectedMode: () => selectedMode,

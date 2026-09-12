@@ -28,6 +28,37 @@ test('fair profile uses the shared rules, closer camera and independent enlarged
  assert.equal(a.config.skills.parry.cost,3); assert.notEqual(a.config.skills,b.config.skills);
 });
 
+test('PVP L walls share one layout, block center lines and stop continuous movement',()=>{
+ const t=context(), fair=t.spatialProfiles.fair(), d=t.spatialDuel.create([fair,fair]), [a,b]=d.sides;
+ const C=a.config, S=t.spatialCombat;
+ assert.equal(C.wallLayoutId,'pvp-l-v1'); assert.equal(C.wallVersion,1); assert.equal(C.walls.length,4);
+ assert.equal(S.segmentBlocked({x:180,y:280},{x:180,y:360},C.walls),true);
+ assert.equal(S.hasLineOfSight({x:180,y:280},{x:180,y:360},C.walls),false);
+ a.player.x=200; a.player.y=280; b.player.x=480; b.player.y=520;
+ S.move(a.player,0,120,.5,C,b.player,C.walls);
+ assert.ok(a.player.y <= 294 + 1e-6);
+ const snap=t.spatialDuel.snapshot(d); assert.deepEqual(snap.visibility,[false,false]); assert.equal(t.spatialDuel.validSnapshot(d,snap),true);
+ assert.equal(t.spatialDuel.validSnapshot(d,{...snap,wallLayoutId:'other'}),false);
+});
+
+test('PVP events carry wall visibility for display filtering',()=>{
+ const t=setup(), [a,b]=t.d.sides;
+ a.player.x=180; a.player.y=280; a.player.facing=Math.PI/2;
+ b.player.x=180; b.player.y=360; b.player.facing=-Math.PI/2;
+ light(t,0);
+ const started=t.d.events.find(e=>e.type==='attack_started');
+ assert.deepEqual(started.visibleTo,[false,false]);
+});
+
+test('PVP melee center-line cannot hit through an L wall',()=>{
+ const t=setup({atk:100,def:0}), [a,b]=t.d.sides;
+ a.player.x=180; a.player.y=280; a.player.facing=Math.PI/2;
+ b.player.x=180; b.player.y=360; b.player.facing=-Math.PI/2;
+ light(t,0); step(t,.12);
+ assert.equal(b.player.hp,b.player.maxHp);
+ assert.ok(t.d.events.some(e=>e.type==='miss' && e.blocked));
+});
+
 test('symmetric players share spatial tuning, equipment profiles and independent state',()=>{
  const t=setup({atk:90,def:12,motion:{move:1.2,turn:1.1,chargeMove:1,chargeTurn:1}});
  const [a,b]=t.d.sides;

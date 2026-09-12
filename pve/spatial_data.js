@@ -11,6 +11,15 @@ const spatialData = (() => {
     };
     const skillCosts = Object.fromEntries(Object.entries(skillDefinitions).map(([id, skill]) => [id, skill.cost]));
     const camera = Object.freeze({ width: 350, height: 390, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 });
+    const pvpArena = {
+        width: 570, height: 630, layoutId: 'pvp-l-v1', version: 1,
+        walls: [
+            { id: 'left-vertical', x: 135, y: 200, width: 24, height: 130 },
+            { id: 'left-horizontal', x: 135, y: 306, width: 110, height: 24 },
+            { id: 'right-vertical', x: 411, y: 300, width: 24, height: 130 },
+            { id: 'right-horizontal', x: 325, y: 300, width: 110, height: 24 }
+        ]
+    };
     const training = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,
@@ -56,5 +65,5 @@ const spatialData = (() => {
         }
         return rules;
     }
-    return { training: freeze(training), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera, skillRules };
+    return { training: freeze(training), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera, pvpArena: freeze(pvpArena), skillRules };
 })();

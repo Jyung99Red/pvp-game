@@ -3,12 +3,17 @@ const spatialDuel = (() => {
     const E = spatialEngine, S = spatialCombat;
     const SKILL_COSTS = Object.freeze({ ...spatialData.skillCosts });
     const clone = value => JSON.parse(JSON.stringify(value));
+    function visibility(d) {
+        return d.sides.map((b, i) => S.hasLineOfSight(b.player, d.sides[1 - i].player, b.config.walls));
+    }
     function create(profiles, random = Math.random) {
         const normalized = profiles.map(spatialProfiles.normalize);
         const sides = normalized.map((profile, i) => {
             const C = spatialProfiles.apply(clone(spatialData.training), profile);
             C.formal = true; C.pvp = true; C.skillMode = 'fair'; C.skillOverrides = {};
-            C.width = 570; C.height = 630;
+            C.width = spatialData.pvpArena.width; C.height = spatialData.pvpArena.height;
+            C.wallLayoutId = spatialData.pvpArena.layoutId; C.wallVersion = spatialData.pvpArena.version;
+            C.walls = clone(spatialData.pvpArena.walls);
             C.camera = { ...spatialData.camera };
             Object.assign(C.player, { x: C.width / 2, y: C.height / 2 + (i ? -90 : 90), facing: i ? Math.PI / 2 : -Math.PI / 2 });
             Object.assign(C.enemy, { x: C.width / 2, y: C.height / 2 + (i ? 90 : -90), radius: 12 });
@@ -17,7 +22,7 @@ const spatialDuel = (() => {
         sides.forEach((b, i) => { b.enemy = sides[1 - i].player; });
         return { profiles: normalized, sides, time: 0, tick: 0, result: null, events: [], random };
     }
-    function emit(d, actor, type, extra = {}) { d.events.push({ type, actor, time: d.time, ...extra }); }
+    function emit(d, actor, type, extra = {}) { d.events.push({ type, actor, time: d.time, visibleTo: visibility(d), ...extra }); }
     function skill(d, i, kind, queued = true) {
         const b = d.sides[i], cost = b?.config.skills?.[kind]?.cost;
         if (d.result || !cost || b.skillPoints < cost || (kind === 'heal' && b.player.hp >= b.player.maxHp)) return false;
@@ -28,7 +33,7 @@ const spatialDuel = (() => {
     function events(d, i) {
         for (const e of E.drainEvents(d.sides[i])) {
             if (e.type === 'skill_ready') skill(d, i, e.kind, false);
-            else { const { side, ...rest } = e; d.events.push({ ...rest, actor: side === 'enemy' ? 1 - i : i }); }
+            else { const { side, ...rest } = e; d.events.push({ ...rest, actor: side === 'enemy' ? 1 - i : i, visibleTo: visibility(d) }); }
         }
     }
     function input(d, i, command) {
@@ -69,6 +74,7 @@ const spatialDuel = (() => {
         const atk = d.sides[i], def = d.sides[1 - i], a = atk.player.attack;
         const result = { i, a, type: 'miss' };
         if (!S.contains(a.shape, a.origin, a.facing, def.player)) return result;
+        if (S.segmentBlocked(a.origin, def.player, atk.config.walls)) return { ...result, blocked: true };
         const front = Math.abs(S.angleDelta(S.facing(def.player, a.origin), def.player.facing)) <= Math.PI / 2;
         const guard = def.player.phase === 'guard' && front && def.player.ap >= 1;
         const auto = def.buffs.autoParry > 0 && !guard;
@@ -84,7 +90,7 @@ const spatialDuel = (() => {
     function apply(d, r) {
         const i = r.i, j = 1 - i, atk = d.sides[i], def = d.sides[j];
         emit(d, i, 'strike', { shape: r.a.shape, origin: r.a.origin, facing: r.a.facing });
-        if (r.type === 'miss') { emit(d, i, 'miss'); return; }
+        if (r.type === 'miss') { emit(d, i, 'miss', { blocked: r.blocked }); return; }
         if (r.type === 'parry') {
             if (r.auto) def.buffs.autoParry--;
             else def.player.ap = Math.max(0, def.player.ap - def.config.parryCost);
@@ -112,19 +118,7 @@ const spatialDuel = (() => {
         d.sides.forEach((b, i) => { b.enemy = d.sides[1 - i].player; });
         // Symmetric separation after both movement proposals (no host-first push).
         const [a, b] = d.sides.map(side => side.player), gap = S.distance(a, b), radius = a.radius + b.radius;
-        const { width, height } = d.sides[0].config;
-        if (gap < radius) {
-            const dx = gap > 1e-9 ? (b.x - a.x) / gap : 0, dy = gap > 1e-9 ? (b.y - a.y) / gap : -1;
-            for (let pass = 0; pass < 2; pass++) {
-                const push = Math.max(0, radius - S.distance(a, b)) / 2;
-                a.x = S.clamp(a.x - dx * push, a.radius, width - a.radius); a.y = S.clamp(a.y - dy * push, a.radius, height - a.radius);
-                b.x = S.clamp(b.x + dx * push, b.radius, width - b.radius); b.y = S.clamp(b.y + dy * push, b.radius, height - b.radius);
-            }
-            if (S.distance(a, b) < radius - 1e-7) {
-                Object.assign(a, { x: previous[0].x, y: previous[0].y });
-                Object.assign(b, { x: previous[1].x, y: previous[1].y });
-            }
-        }
+        S.separate(a, b, d.sides[0].config, d.sides[0].config.walls, previous);
         const results = ready.map(i => judge(d, i));
         for (const i of ready) { const b = d.sides[i]; b.player.phase = 'recover'; b.player.timer = b.player.attack.shape.recovery; }
         for (const r of results) apply(d, r);
@@ -139,11 +133,16 @@ const spatialDuel = (() => {
     const fields = ['player', 'buffs', 'motionBuffs', 'controls', 'move', 'action', 'guard', 'skill', 'queuedCommand', 'stats', 'inputVersion', 'actionInputVersion', 'skillPoints', 'time', 'elapsed', 'running', 'started', 'result'];
     function snapshot(d) {
         return { time: d.time, tick: d.tick, result: d.result,
+            wallLayoutId: d.sides[0].config.wallLayoutId, wallVersion: d.sides[0].config.wallVersion,
+            visibility: visibility(d),
             sides: d.sides.map(b => clone(Object.fromEntries(fields.map(key => [key, b[key]])))) };
     }
     function validSnapshot(d, snap) {
-        if (!snap || !Number.isFinite(snap.time) || snap.time < 0 || !Number.isSafeInteger(snap.tick) || snap.tick < 0 ||
-            ![null, 'host', 'guest', 'draw'].includes(snap.result) || !Array.isArray(snap.sides) || snap.sides.length !== 2) return false;
+        if (!snap || snap.wallLayoutId !== d.sides[0].config.wallLayoutId || snap.wallVersion !== d.sides[0].config.wallVersion ||
+            !Number.isFinite(snap.time) || snap.time < 0 || !Number.isSafeInteger(snap.tick) || snap.tick < 0 ||
+            ![null, 'host', 'guest', 'draw'].includes(snap.result) || !Array.isArray(snap.visibility) ||
+            snap.visibility.length !== 2 || !snap.visibility.every(value => typeof value === 'boolean') ||
+            !Array.isArray(snap.sides) || snap.sides.length !== 2) return false;
         return snap.sides.every((b, i) => {
             const p = b?.player, C = d.sides[i].config;
             if (!p || ![p.x, p.y, p.hp, p.maxHp, p.facing, p.ap, p.timer, p.charge, b.time, b.elapsed].every(Number.isFinite) ||
@@ -162,6 +161,7 @@ const spatialDuel = (() => {
     }
     function restore(d, snap) {
         d.time = snap.time; d.tick = snap.tick; d.result = snap.result;
+        d.visibility = snap.visibility.slice();
         d.sides.forEach((b, i) => {
             const data = clone(snap.sides[i]);
             for (const key of fields) b[key] = data[key];
@@ -184,5 +184,5 @@ const spatialDuel = (() => {
         events(d, i);
         d.sides[i].player.hp = hp;
     }
-    return { create, input, step, end, snapshot, validSnapshot, restore, predict, predictInput, SKILL_COSTS };
+    return { create, input, step, end, snapshot, validSnapshot, restore, predict, predictInput, visibility, SKILL_COSTS };
 })();

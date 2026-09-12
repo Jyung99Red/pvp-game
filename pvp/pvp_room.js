@@ -79,6 +79,7 @@ const pvpRoom = (() => {
         pvpNet.on.connOpen = () => {
             _opponentProfile = null; _networkReady = false; _compatible = false;
             pvpNet.send({ msg: 'hello', version: pvpLogic.VERSION, ruleVersion: pvpLogic.RULE_VERSION,
+                arenaLayoutId: pvpLogic.ARENA_LAYOUT_ID, arenaVersion: pvpLogic.ARENA_VERSION,
                 mode: _mode, profile: pvpLogic.getCombatProfile(_mode) });
         };
         pvpNet.on.open = () => {
@@ -89,7 +90,8 @@ const pvpRoom = (() => {
         pvpNet.on.message = msg => {
             if (!msg || typeof msg !== 'object') return;
             if (msg.msg === 'hello') {
-                if (msg.version !== pvpLogic.VERSION || msg.ruleVersion !== pvpLogic.RULE_VERSION) {
+                if (msg.version !== pvpLogic.VERSION || msg.ruleVersion !== pvpLogic.RULE_VERSION ||
+                    msg.arenaLayoutId !== pvpLogic.ARENA_LAYOUT_ID || msg.arenaVersion !== pvpLogic.ARENA_VERSION) {
                     _compatible = false; setStatus('双方游戏版本或规则不同，请双方刷新页面后重新加入。'); return;
                 }
                 if (msg.mode !== _mode) {

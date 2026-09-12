@@ -2,7 +2,7 @@
 const uiPvp = (() => {
     const $ = id => document.getElementById(id);
     let view = null, input = null, settings = null, abort = null, version = 0, actionVersion = 0;
-    let menu = false, remote = null, renderedAt = 0;
+    let menu = false, remote = null, renderedAt = 0, knownEnemyHp = null, enemyLastKnown = null, enemyLastSeenAt = 0, enemyEverSeen = false;
     const toggle = (id, show) => $(id)?.classList.toggle('hidden', !show);
     function initFighters() {
         destroy(); hideResult(); hideRematchRequest(); hideDisconnectOverlay();
@@ -53,7 +53,16 @@ const uiPvp = (() => {
             remote.x += (target.x - remote.x) * weight; remote.y += (target.y - remote.y) * weight;
             remote.facing += spatialCombat.angleDelta(target.facing, remote.facing) * weight;
         }
-        view.render({ ...local, enemy: { ...target, ...remote } }, events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
+        const authoritativeVisible = b.visibility?.[i] !== false;
+        const predictionVisible = !spatialCombat.segmentBlocked(local.player, target, local.config.walls);
+        const enemyVisible = authoritativeVisible && predictionVisible;
+        if (enemyVisible) {
+            knownEnemyHp = target.hp; enemyLastKnown = { x: target.x, y: target.y };
+            enemyLastSeenAt = local.time; enemyEverSeen = true;
+        }
+        view.render({ ...local, enemy: { ...target, ...remote }, enemyVisible,
+            enemyKnownHp: knownEnemyHp ?? target.hp, enemyLastKnown, enemyLastSeenAt, enemyEverSeen },
+            events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
         $('pvp-floor-label').textContent = !b.ready ? '等待双方准备' : b.countdown > 0 ? `准备 · ${Math.ceil(b.countdown)}` : '空间对战';
         $('pvp-self-sp').textContent = `${local.skillPoints} / 3`;
         for (const [kind, skill] of Object.entries(local.config.skills || spatialData.skills)) {
@@ -68,6 +77,7 @@ const uiPvp = (() => {
     function destroy() {
         input?.destroy(); view?.destroy(); settings?.destroy(); abort?.abort();
         input = view = settings = abort = null; remote = null; menu = false; renderedAt = 0;
+        knownEnemyHp = null; enemyLastKnown = null; enemyLastSeenAt = 0; enemyEverSeen = false;
     }
     function showSettings(show) {
         pvpLogic.cancelLocal(); input?.clear(); menu = show; $('pvp-s-overlay').hidden = !show;
