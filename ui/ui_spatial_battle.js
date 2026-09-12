@@ -88,7 +88,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const polygon = S.visibilityPolygon(battle.player, C, wallList());
         ctx.save(); ctx.beginPath(); ctx.rect(0, 0, C.width, C.height);
         polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
-        ctx.closePath(); ctx.fillStyle = '#061015b8'; ctx.fill('evenodd'); ctx.restore();
+        ctx.closePath(); ctx.fillStyle = 'rgba(0, 0, 0, .58)'; ctx.fill('evenodd'); ctx.restore();
     }
     function skillDefinition(kind) { return C.skills?.[kind] || spatialData.skills?.[kind] || { name: kind }; }
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
@@ -170,6 +170,14 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         ctx.fillStyle = fill; ctx.fill();
         if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
     }
+    function shieldIcon() {
+        const shieldScale = .82;
+        ctx.save(); ctx.scale(shieldScale, shieldScale);
+        polygon([[9, -10], [23, -8], [28, 0], [23, 8], [9, 10]], '#5f7890cc', '#c7e1ff');
+        ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(12, -7); ctx.lineTo(24, 0); ctx.lineTo(12, 7); ctx.stroke();
+        ctx.restore();
+    }
     function fighter(body, enemy) {
         const stunned = (!enemy || C.pvp) && body.phase === 'stunned';
         const flash = stunned ? .75 : hitFlashes[enemy ? 'enemy' : 'player'] / .28;
@@ -234,17 +242,13 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 // The ordinary side shield returns only after the guard icon
                 // has fully lowered, preventing the two shield visuals from
                 // being visible at the same time.
-                polygon([[2, shieldSide * 11], [7, shieldSide * 7], [13, shieldSide * 10], [12, shieldSide * 20], [5, shieldSide * 22], [0, shieldSide * 17]], tint('#477582'), tint('#9ac8df'));
+                ctx.save(); ctx.rotate(shieldSide * Math.PI * .72); shieldIcon(); ctx.restore();
             } else {
                 // A shield starts beside the body and eases to the forward
                 // guard position.  The engine still owns the real startup and
                 // parry window; this is presentation-only.
                 const shieldAngle = shieldSide * Math.PI * .72 * (1 - pose);
-                ctx.save(); ctx.rotate(shieldAngle);
-                polygon([[9, -10], [23, -8], [28, 0], [23, 8], [9, 10]], '#5f7890cc', '#c7e1ff');
-                ctx.strokeStyle = '#e8fbff'; ctx.lineWidth = 1.5;
-                ctx.beginPath(); ctx.moveTo(12, -7); ctx.lineTo(24, 0); ctx.lineTo(12, 7); ctx.stroke();
-                ctx.restore();
+                ctx.save(); ctx.rotate(shieldAngle); shieldIcon(); ctx.restore();
             }
         }
         ctx.restore();
