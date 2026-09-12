@@ -33,7 +33,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         for (const e of events) {
             if (e.type === 'hp_changed' && e.hp < e.previous) {
                 hitFlashes[e.side] = .28;
-                if (e.side === 'enemy') effects.push({ type: 'impact', x: battle.enemy.x, y: battle.enemy.y,
+                if (e.side === 'enemy' || C.pvp) effects.push({ type: 'impact', x: battle[e.side].x, y: battle[e.side].y,
                     damage: e.previous - e.hp, life: .55 });
             }
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
@@ -48,8 +48,17 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
                 block: `格挡 −${e.damage} · 消耗 1 行动力`
             };
+            if (C.pvp) {
+                const who = e.side === 'player' ? '你' : '对手';
+                messages.attack_started = `${who}${e.heavy ? '重击' : '轻击'}起手`;
+                messages.hit = `${who}${e.crit ? '暴击' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}`;
+                messages.parry = `${who}弹反 · 反击 −${e.damage}`;
+                messages.block = `${who}格挡 −${e.damage}`;
+                messages.thorns = `${who}荆棘反伤 −${e.damage}`;
+                messages.skill_used = `${who}使用${({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反护体' })[e.kind]}`;
+            }
             if (messages[e.type]) {
-                if (['hit', 'miss', 'parry', 'block', 'thorns', 'stagger', 'enrage'].includes(e.type)) {
+                if (['hit', 'miss', 'parry', 'block', 'thorns', 'stagger', 'enrage', 'skill_used'].includes(e.type)) {
                     logs.unshift(messages[e.type]); logs.length = Math.min(logs.length, 2);
                     notice = '';
                 } else notice = messages[e.type];
@@ -80,7 +89,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
     }
     function fighter(body, enemy) {
-        const stunned = !enemy && body.phase === 'stunned';
+        const stunned = (!enemy || C.pvp) && body.phase === 'stunned';
         const flash = stunned ? .75 : hitFlashes[enemy ? 'enemy' : 'player'] / .28;
         const flashColor = stunned ? [255, 157, 45] : [255, 58, 70];
         const tint = color => {
@@ -91,19 +100,19 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         ctx.save(); ctx.translate(body.x, body.y);
         ctx.fillStyle = '#050b0e66'; ctx.beginPath(); ctx.ellipse(1, 6, body.radius * 1.25, body.radius * .6, 0, 0, Math.PI * 2); ctx.fill();
         ctx.rotate(body.facing);
-        if (enemy) {
+        if (enemy && !C.pvp) {
             polygon([[-23, -12], [-12, -24], [8, -22], [25, -12], [27, 11], [8, 22], [-13, 23], [-25, 10]], tint('#705747'), tint('#be9975'));
             polygon([[-12, -13], [0, -20], [15, -10], [19, 9], [0, 18], [-13, 9]], tint('#9a7858'), tint('#b6966e'));
             polygon([[13, -13], [34, -20], [24, -3]], '#e1ceb0');
             polygon([[13, 13], [34, 20], [24, 3]], '#e1ceb0');
             circle(20, -7, 2, '#ffb879'); circle(20, 7, 2, '#ffb879');
         } else {
-            circle(0, 0, 12, tint('#254f57'), tint('#83d9d3'));
+            circle(0, 0, 12, tint(enemy ? '#713f40' : '#254f57'), tint(enemy ? '#f29385' : '#83d9d3'));
             polygon([[9, 0], [-3, -7], [-3, 7]], tint('#baeee2'));
             let angle = 0;
             const reach = 32;
             if (body.phase === 'charging') {
-                const a = spatialEngine.heavyShape(battle);
+                const a = spatialEngine.heavyShape({ config: enemy ? C.opponentConfig : C, player: body });
                 angle = -a.arc / 2;
             } else if (body.phase === 'attack' || body.phase === 'recover') {
                 const a = body.attack.shape;
@@ -136,10 +145,10 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             }
             ctx.restore();
         }
-        if (!enemy && ['guard_start', 'guard'].includes(body.phase)) {
+        if ((!enemy || C.pvp) && ['guard_start', 'guard'].includes(body.phase)) {
             ctx.beginPath(); ctx.arc(body.x, body.y, 27, body.facing - Math.PI / 2, body.facing + Math.PI / 2);
             ctx.lineWidth = body.phase === 'guard' ? 4 : 2;
-            ctx.strokeStyle = body.phase === 'guard' && battle.time - body.guardReadyAt <= C.parryWindow ? '#e8fbff' : '#8dbdef'; ctx.stroke();
+            ctx.strokeStyle = body.phase === 'guard' && battle.time - body.guardReadyAt <= (enemy ? C.opponentConfig : C).parryWindow ? '#e8fbff' : '#8dbdef'; ctx.stroke();
         }
     }
     function draw() {
@@ -175,6 +184,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.strokeStyle = locked ? '#f27365' : '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
         if (['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
+        if (C.pvp && e.phase === 'charging') shape(spatialEngine.heavyShape({ config: C.opponentConfig, player: e }), e, e.facing, '#f27365', .65);
+        if (C.pvp && e.phase === 'attack') shape(e.attack.shape, e.attack.origin, e.attack.facing, '#f27365', .8);
         if (p.phase === 'charging') shape(spatialEngine.heavyShape(battle), p, p.facing, L.armed(battle.action) ? '#81e6d9' : '#f27365', .65);
         else if (p.phase === 'attack') {
             const progress = 1 - p.timer / (p.attack.heavy ? C.heavy.windup : C.light.windup);
@@ -207,7 +218,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
         ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
         ctx.fillText(C.enemyName || '岩角兽', e.x, e.y - 44);
-        for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
+        if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
         ctx.fillStyle = '#a8e1db'; ctx.fillText('你', p.x, p.y + 37);
         ctx.restore();
     }
@@ -246,6 +257,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 左移右转', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 左移右转', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         text('enemy-state', e.phase === 'windup' ? `${e.attack.label || (e.attack.kind === 'circle' ? '周身践踏' : '扇形重扫')} · ${e.timer <= e.attack.lock ? '朝向锁定！' : '准备中'}` : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
+        if (C.pvp) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;

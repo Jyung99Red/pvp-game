@@ -13,7 +13,7 @@
 .training .controls .move-pad { width: 128px; height: 128px; position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
 .training .move-pad[hidden] { display: none; }
 .training .pad.no-center-cancel .cancel-zone,
-#view-battle .pad.no-center-cancel .cancel-zone { display: none; }
+:is(#view-battle, #view-pvp-battle) .pad.no-center-cancel .cancel-zone { display: none; }
 .training .right-controls {
     position: absolute; right: 8px; bottom: 0; display: grid;
     grid-template-columns: repeat(2, var(--control-size)); grid-template-rows: repeat(2, var(--control-size));
@@ -58,45 +58,45 @@
 .training .combat-settings input { width: 18px; height: 18px; accent-color: #81e6d9; flex-shrink: 0; }
 .training .combat-settings small { display: block; font-size: 10px; line-height: 1.6; color: #adc1c1; }
 .training > .overlay { position: absolute; inset: 0; z-index: 20; overflow-y: auto; }
-#view-battle .controls { position: absolute; left: 0; right: 0; bottom: max(32px, env(safe-area-inset-bottom)); height: 192px; }
-#view-battle .controls .move-group { left: max(20px, env(safe-area-inset-left)); bottom: 0; width: min(42%, 260px); height: 176px; }
-#view-battle .controls .move-pad { position: absolute; width: 128px; height: 128px; }
-#view-battle .right-controls { right: max(18px, env(safe-area-inset-right)); }
-#view-battle .right-controls .control-group,
-#view-battle .right-controls .skill-dock { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); transform: none; }
-#view-battle .right-controls .pad { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); }
-#view-battle .feedback {
+:is(#view-battle, #view-pvp-battle) .controls { position: absolute; left: 0; right: 0; bottom: max(32px, env(safe-area-inset-bottom)); height: 192px; }
+:is(#view-battle, #view-pvp-battle) .controls .move-group { left: max(20px, env(safe-area-inset-left)); bottom: 0; width: min(42%, 260px); height: 176px; }
+:is(#view-battle, #view-pvp-battle) .controls .move-pad { position: absolute; width: 128px; height: 128px; }
+:is(#view-battle, #view-pvp-battle) .right-controls { right: max(18px, env(safe-area-inset-right)); }
+:is(#view-battle, #view-pvp-battle) .right-controls .control-group,
+:is(#view-battle, #view-pvp-battle) .right-controls .skill-dock { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); transform: none; }
+:is(#view-battle, #view-pvp-battle) .right-controls .pad { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); }
+:is(#view-battle, #view-pvp-battle) .feedback {
     position: absolute; top: calc(104px + env(safe-area-inset-top)); bottom: auto;
     left: 50%; right: auto; transform: translateX(-50%); width: calc(100% - 24px); max-width: 660px;
     padding: 6px 8px; border-radius: 8px; background: linear-gradient(#0b1a20a6, #0b1a2026);
 }
-#view-battle .feedback .arena-top { position: static; inset: auto; width: auto; margin: 3px 0 0; font-size: 10px; }
-#view-battle .skill-status { position: static; margin: 3px 0; text-align: left; }
-#view-battle #pve-log { display: block; white-space: pre-line; margin: 0; font-size: 10px; line-height: 1.5; color: #efc181; }
-#view-battle #pve-log:empty, .training .battle-log:empty { display: none; }
-#view-battle .buff-status { top: calc(94px + env(safe-area-inset-top)); bottom: auto; left: 20px; right: 20px; font-size: 9px; text-align: right; }
-#view-battle .overlay { overflow-y: auto; }
+:is(#view-battle, #view-pvp-battle) .feedback .arena-top { position: static; inset: auto; width: auto; margin: 3px 0 0; font-size: 10px; }
+:is(#view-battle, #view-pvp-battle) .skill-status { position: static; margin: 3px 0; text-align: left; }
+:is(#view-battle, #view-pvp-battle) :is(#pve-log, #pvp-log) { display: block; white-space: pre-line; margin: 0; font-size: 10px; line-height: 1.5; color: #efc181; }
+:is(#view-battle, #view-pvp-battle) :is(#pve-log, #pvp-log):empty, .training .battle-log:empty { display: none; }
+:is(#view-battle, #view-pvp-battle) .buff-status { top: calc(94px + env(safe-area-inset-top)); bottom: auto; left: 20px; right: 20px; font-size: 9px; text-align: right; }
+:is(#view-battle, #view-pvp-battle) .overlay { overflow-y: auto; }
 @media (max-width: 359px) {
     .training { --control-size: 68px; --control-gap: 10px; }
-    #view-battle .controls .move-group { left: 18px; width: 40%; }
+    :is(#view-battle, #view-pvp-battle) .controls .move-group { left: 18px; width: 40%; }
 }
 .training .vital { background: #0b1a2059; border-color: #87b4ad20; }
-#view-battle .vital { background: #0b1a2059; border-color: #87b4ad20; }
+:is(#view-battle, #view-pvp-battle) .vital { background: #0b1a2059; border-color: #87b4ad20; }
 .training meter { opacity: .65; }
 .training .feedback [role="status"]:empty { display: none; }
 @media (orientation: landscape) and (max-height: 540px) and (min-width: 600px) {
     .training { --control-size: 68px; --control-gap: 10px; }
-    #view-battle .topbar { top: max(4px, env(safe-area-inset-top)); left: 12px; right: 12px; height: 32px; width: auto; max-width: none; }
-    #view-battle .topbar div { display: block; }
-    #view-battle .topbar button { min-height: 30px; padding: 3px 10px; }
-    #view-battle .vitals { top: 42px; left: 50%; right: auto; width: min(480px, calc(100% - 220px)); max-width: none; transform: translateX(-50%); flex-direction: row; gap: 10px; }
-    #view-battle .vital { padding: 5px 8px; }
-    #view-battle .controls { bottom: max(18px, env(safe-area-inset-bottom)); height: 154px; }
-    #view-battle .controls .move-group { width: 176px; height: 140px; }
-    #view-battle .feedback { top: 84px; left: 12px; transform: none; width: 176px; padding: 4px; font-size: 9px; }
-    #view-battle .feedback #pve-s-notice { font-size: 9px; min-height: 0; padding-top: 2px; line-height: 1.3; }
-    #view-battle .buff-status { top: 76px; left: 20px; width: auto; transform: none; }
-    #view-battle .overlay { justify-content: flex-start; }
+    :is(#view-battle, #view-pvp-battle) .topbar { top: max(4px, env(safe-area-inset-top)); left: 12px; right: 12px; height: 32px; width: auto; max-width: none; }
+    :is(#view-battle, #view-pvp-battle) .topbar div { display: block; }
+    :is(#view-battle, #view-pvp-battle) .topbar button { min-height: 30px; padding: 3px 10px; }
+    :is(#view-battle, #view-pvp-battle) .vitals { top: 42px; left: 50%; right: auto; width: min(480px, calc(100% - 220px)); max-width: none; transform: translateX(-50%); flex-direction: row; gap: 10px; }
+    :is(#view-battle, #view-pvp-battle) .vital { padding: 5px 8px; }
+    :is(#view-battle, #view-pvp-battle) .controls { bottom: max(18px, env(safe-area-inset-bottom)); height: 154px; }
+    :is(#view-battle, #view-pvp-battle) .controls .move-group { width: 176px; height: 140px; }
+    :is(#view-battle, #view-pvp-battle) .feedback { top: 84px; left: 12px; transform: none; width: 176px; padding: 4px; font-size: 9px; }
+    :is(#view-battle, #view-pvp-battle) .feedback :is(#pve-s-notice, #pvp-s-notice) { font-size: 9px; min-height: 0; padding-top: 2px; line-height: 1.3; }
+    :is(#view-battle, #view-pvp-battle) .buff-status { top: 76px; left: 20px; width: auto; transform: none; }
+    :is(#view-battle, #view-pvp-battle) .overlay { justify-content: flex-start; }
     body > .training:not(.spatial-fullscreen) {
         min-height: 0; max-width: none; height: 100dvh; padding: 4px 12px 12px;
         display: grid; grid-template-columns: 176px minmax(0, 1fr) 166px;

@@ -36,7 +36,7 @@ const pvpNet = (() => {
 
     // Callbacks set by pvp_room / pvp_logic
     const on = {
-        open:     null,   // () Host side only, fires once clock sync completes
+        open:     null,   // () Host side only, data channel ready
         connOpen: null,   // () fires on both sides, the moment the data channel first opens (doesn't wait for clock sync)
         message:  null,   // (msg)
         close:    null,   // ()
@@ -58,6 +58,7 @@ const pvpNet = (() => {
         _conn = conn;
 
         function _onChannelOpen() {
+            if (_conn !== conn) { conn.close(); return; }
             _status('数据通道已建立');
             // Fires immediately on both sides, doesn't wait for clock sync --
             // pvp_room.js uses this moment to do a "hello" handshake, to
@@ -67,7 +68,8 @@ const pvpNet = (() => {
             _emit('connOpen');
 
             if (_role === 'host') {
-                _runClockSync().then(() => _emit('open'));
+                _emit('open'); // Spatial simulation does not depend on cross-device clocks.
+                _runClockSync();
             }
             // Guest waits for Host to initiate ping; it never emits 'open' itself
         }
@@ -96,10 +98,11 @@ const pvpNet = (() => {
 
         conn.on('data', (msg) => {
             // PeerJS serializes as JSON by default, so data is already a parsed object
-            _handleMessage(msg);
+            if (_conn === conn) _handleMessage(msg);
         });
 
         conn.on('close', () => {
+            if (_conn !== conn) return;
             // This only clears the specific data connection, not _peer --
             // Host's peer.on('connection') listener is persistent, so
             // technically a Guest can joinRoom() with the same room code
@@ -180,37 +183,32 @@ const pvpNet = (() => {
     const _pingCallbacks = {};
 
     function _runClockSync() {
-        return new Promise((resolve) => {
-            const samples = [];
-            let round = 0;
-
-            function sendPing() {
-                if (round >= PING_ROUNDS) {
+        const connection = _conn, samples = [];
+        let round = 0;
+        function next() {
+            if (_conn !== connection || !connection?.open) return;
+            if (round++ >= PING_ROUNDS) {
+                if (samples.length) {
                     _clockOffset = samples.reduce((a, b) => a + b.offset, 0) / samples.length;
-                    _rtt         = samples.reduce((a, b) => a + b.rtt,    0) / samples.length;
-                    _status(`时钟同步完成  offset=${_clockOffset.toFixed(1)}ms  rtt=${_rtt.toFixed(1)}ms`);
-                    resolve();
-                    return;
+                    _rtt = samples.reduce((a, b) => a + b.rtt, 0) / samples.length;
                 }
-
-                const t0 = Date.now();
-                _pingCallbacks[t0] = (t1) => {
-                    const tRecv = Date.now();
-                    const rtt    = tRecv - t0;
-                    const offset = t1 - t0 - rtt / 2;
-                    samples.push({ offset, rtt });
-                    round++;
-                    setTimeout(sendPing, PING_INTERVAL_MS);
-                };
-
-                _send({ msg: 'ping', t0 });
+                return;
             }
-
-            sendPing();
-        });
+            const t0 = Date.now();
+            const timeout = setTimeout(() => { delete _pingCallbacks[t0]; next(); }, 750);
+            _pingCallbacks[t0] = t1 => {
+                clearTimeout(timeout); delete _pingCallbacks[t0];
+                const rtt = Date.now() - t0;
+                if (Number.isFinite(t1)) samples.push({ offset: t1 - t0 - rtt / 2, rtt });
+                setTimeout(next, PING_INTERVAL_MS);
+            };
+            _send({ msg: 'ping', t0 });
+        }
+        next();
     }
 
     function _handleMessage(msg) {
+        if (!msg || typeof msg !== 'object') return;
         switch (msg.msg) {
             case 'ping':
                 _send({ msg: 'pong', t0: msg.t0, t1: Date.now() });
@@ -267,6 +265,7 @@ const pvpNet = (() => {
             _peer = _makePeer(roomCode);
 
             _peer.on('connection', (conn) => {
+                if (_conn?.open) { conn.on('open', () => conn.close()); return; }
                 _attachConn(conn);
             });
 

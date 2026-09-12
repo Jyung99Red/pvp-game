@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><base href="../"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PVP browser fixture</title></head><body><div id="mount"></div><script>
+// Isolated fixture: load real assets without ui.init(), save.load() or progression ticks.
+(async()=>{
+ window.addEventListener('error',e=>parent.postMessage({qaError:e.message},location.origin));
+ window.requestAnimationFrame=cb=>setTimeout(()=>cb(performance.now()),16);
+ window.cancelAnimationFrame=clearTimeout;
+ // A hidden automation surface must still run both fixture clients. Production is unchanged.
+ Object.defineProperty(document,'hidden',{get:()=>false});
+ const manifest=(await(await fetch('client-assets.json',{cache:'no-store'})).json()).game;
+ for(const file of manifest.styles){const s=document.createElement('style');s.textContent=await(await fetch(file,{cache:'no-store'})).text();document.head.append(s);}
+ for(const file of ['pvp-room','pvp-battle'])document.getElementById('mount').insertAdjacentHTML('beforeend',await(await fetch('partials/'+file+'.html',{cache:'no-store'})).text());
+ for(const file of manifest.scripts){const s=document.createElement('script');if(file.startsWith('https:')){await new Promise(resolve=>{s.onload=s.onerror=resolve;s.src=file;document.body.append(s);});}else{s.textContent=await(await fetch(file,{cache:'no-store'})).text();document.body.append(s);}}
+ const hooks=document.createElement('script');hooks.textContent=`window.qa={
+ host:()=>pvpRoom.hostRoom(),join:code=>pvpRoom.joinRoom(code),code:()=>document.getElementById('pvp-host-code').textContent,
+ receive:m=>pvpLogic.receiveMessage(m),profile:()=>pvpLogic.getMyCombatProfile(),
+ local:(role,send)=>{Object.defineProperty(pvpNet,'role',{get:()=>role});pvpNet.send=send;},
+ start:profile=>pvpLogic.startPVP('host',profile),input:c=>pvpLogic.input(c),surrender:()=>pvpLogic.surrender(),rematch:()=>pvpLogic.requestRematch(),
+ closeActors:()=>{const d=state.pvpBattle.duel;d.sides[0].player.y=230;d.sides[1].player.y=170;},
+ report:()=>state.pvpBattle?{active:state.pvpBattle.active,ready:state.pvpBattle.ready,countdown:state.pvpBattle.countdown,result:state.pvpBattle.duel.result,side:state.pvpBattle.role,hp:state.pvpBattle.duel.sides.map(s=>s.player.hp),sp:state.pvpBattle.duel.sides.map(s=>s.skillPoints),x:state.pvpBattle.duel.sides.map(s=>s.player.x),phase:state.pvpBattle.duel.sides.map(s=>s.player.phase),id:pvpLogic.getCurrentBattleId()}:null
+};ui.switchTab('pvp-room');`;
+ document.body.append(hooks);parent.postMessage({qaReady:true},location.origin);
+})().catch(e=>parent.postMessage({qaError:e.stack},location.origin));
+</script></body></html>

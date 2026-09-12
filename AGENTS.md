@@ -214,3 +214,35 @@ Latest validation: focused training/PVE suite updated to current gestures and tu
 38 tests passed, 0 failed. Includes held movement through stun, four-way skill cancel,
 haste motion, heal safeguards, parry 3 SP and foreground lifecycle/reward protection.
 Real-device layout/background/context-loss QA remains pending.
+
+## Handoff status (2026-09-11)
+
+User confirmed preliminary playtesting complete. PVE spatial migration is closed
+as this phase; 38 focused tests pass. Next conversation will migrate spatial combat
+to PVP (not implemented yet). Read docs/tasks/spatial-combat-migration.md for the
+consolidated current rules, delivered changes, residual QA limits and PVP handoff.
+Older no-tests/pending-playtest statements above are historical, not current blockers.
+
+
+## PVP spatial migration, stage one (2026-09-12)
+
+Supersedes the earlier statements that PVP uses the old exchange engine/protocol.
+User authorized current four skills unchanged; spatial clash is explicitly deferred
+and required in stage two. See `pvp/SPATIAL_MIGRATION.md` for current PVP rules.
+`core/spatial_profiles.js` now shares player stat mapping with PVE. `spatialEngine.advanceActor`
+reuses human actions/input for both players; `pvp/spatial_duel.js` collects simultaneous
+strikes before resolving either, owns per-side SP/buffs and draws on double KO.
+`pvp/pvp_logic.js` owns protocol v2, host 10ms simulation, 50ms snapshots, guest local
+prediction/reconciliation, event deduplication, readiness and rematch. Guest HP is
+only authoritative snapshot data. Old combatResolver remains for AP recovery, not
+PVP exchanges. Shared view/styles support both human fighters and both formal shells.
+PVP starts full HP/AP, 0 SP; no progression writes, passive healing or dungeon rewards.
+Settings do not pause; hidden/pagehide/context-loss/disconnect/timeouts abort the match.
+Run all three suites including `tests/pvp-spatial.test.cjs`; browser QA fixture is
+`tests/pvp-browser.html` (isolated progression; its hidden-tab workaround is test-only).
+
+Latest stage-one validation: all 53 tests pass (38 PVE/training + 15 PVP).
+Two browser contexts completed real WebRTC room-code connection, guest hit/HP sync,
+surrender and rematch. The isolated fixture also passed 60ms one-way simulated
+latency, real pointer tap, HP/SP convergence and portrait/landscape resize checks.
+Two-device mobile/network playtesting remains pending. Spatial clash is stage two.

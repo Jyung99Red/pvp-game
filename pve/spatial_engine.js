@@ -12,7 +12,7 @@ const spatialEngine = (() => {
             (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
         if (![C.guardStartup, C.parryWindow, C.apRegen, C.hitStun, C.playerSpeed, C.guardTurn, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
-        if (C.formal && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
+        if (C.formal && !C.pvp && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.chargeThreshold >= C.fullCharge)) throw new Error('Invalid profile');
         if (!Object.values(C.ai).every(nonnegative)) throw new Error('Invalid AI timing');
         for (const a of [C.light, C.heavy, ...(C.actions || [C.sweep, C.stomp])]) {
@@ -148,7 +148,7 @@ const spatialEngine = (() => {
             if (b.action) b.action.mode = 'blocked';
             b.guard = { dx: 0, dy: 0, cx, cy };
             if (locked(b)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
-            if (b.controls.autoFace) p.facing = S.facing(p, b.enemy);
+            if (b.controls.autoFace && !b.config.pvp) p.facing = S.facing(p, b.enemy);
             p.phase = 'guard_start'; p.timer = b.config.guardStartup;
         }
         return true;
@@ -176,7 +176,7 @@ const spatialEngine = (() => {
         const p = b.player;
         if (p.ap < 1) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; return; }
         p.ap -= 1;
-        if (!heavy && b.controls.autoFace) p.facing = S.facing(p, b.enemy);
+        if (!heavy && b.controls.autoFace && !C.pvp) p.facing = S.facing(p, b.enemy);
         p.attack = {
             shape: heavy ? heavyShape(b) : { ...C.light },
             damage: heavy ? Math.round(C.heavy.damage + C.heavy.chargeBonus * (C.chargeThreshold != null ? S.clamp((p.charge - C.chargeThreshold) / (C.fullCharge - C.chargeThreshold), 0, 1) : p.charge / C.fullCharge)) : C.light.damage,
@@ -297,7 +297,7 @@ const spatialEngine = (() => {
             emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.ap >= 1 });
         }
     }
-    function tickPlayer(b, dt) {
+    function tickPlayer(b, dt, onStrike = playerHit) {
         const C = b.config;
         const p = b.player;
         flushQueue(b);
@@ -306,7 +306,7 @@ const spatialEngine = (() => {
             movePlayer(b, b.move.dx, b.move.dy, dt, p.phase === 'charging');
         }
         if (p.phase === 'idle') {
-            if (b.controls.autoFace) p.facing = S.facing(p, b.enemy);
+            if (b.controls.autoFace) p.facing = C.pvp ? S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? 8) * motion(b, 'turn')) : S.facing(p, b.enemy);
             else if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
                 p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? 8) * motion(b, 'turn'));
             }
@@ -326,7 +326,7 @@ const spatialEngine = (() => {
             p.timer = Math.max(0, p.timer - dt);
             if (p.timer === 0) {
                 if (p.phase === 'guard_start') { p.phase = 'guard'; p.guardReadyAt = b.time; }
-                else if (p.phase === 'attack') playerHit(b);
+                else if (p.phase === 'attack') onStrike(b);
                 else if (['recover', 'stunned'].includes(p.phase)) { p.phase = 'idle'; flushQueue(b); }
             }
         }
@@ -419,5 +419,14 @@ const spatialEngine = (() => {
         if (b.guard?.queued) b.guard = null;
         b.queuedCommand = { type: 'skill', kind }; return true;
     }
-    return { heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
+    // A human-controlled actor can be advanced independently of the PVE AI.
+    // The duel adapter collects both strikes before applying either outcome.
+    function advanceActor(b, dt, onStrike) {
+        if (!canAct(b) || !Number.isFinite(dt) || dt <= 0) return;
+        dt = Math.min(dt, .05);
+        b.time += dt; b.elapsed += dt;
+        b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
+        tickPlayer(b, dt, onStrike);
+    }
+    return { advanceActor, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();

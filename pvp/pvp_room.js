@@ -51,108 +51,31 @@ const pvpRoom = (() => {
         });
     }
 
-    // ── The opponent's real combat stats (synced both ways via the hello
-    // message once connected: level + atk/def/spd/maxHp + derived multipliers,
-    // see _buildLocalProfile in pvp_logic.js). Match history isn't sent yet.
-    let _opponentProfile = null;
-
-    // The single unified "start the fight" entry point: startPVP + switch to
-    // the battle tab. All three places that can trigger a fight start (Host's
-    // first connection / Guest receiving fight_start / Host re-initiating
-    // after hello detects the opponent reconnected after a refresh) go
-    // through this one function, so none of them can forget to pass the
-    // opponent's profile. battleId only needs to be passed on the Guest side
-    // (received via the fight_start message); Host doesn't pass one, letting
-    // pvpLogic generate a fresh id itself.
-    function _beginBattle(role, battleId) {
-        pvpLogic.startPVP(role, _opponentProfile, battleId);
-        ui.switchTab('pvp-battle');
+    let _opponentProfile = null, _networkReady = false, _compatible = false;
+    function _tryStart() {
+        if (pvpNet.role !== 'host' || !_networkReady || !_compatible || !_opponentProfile || pvpLogic.getCurrentBattleId()) return;
+        pvpLogic.startPVP('host', _opponentProfile);
     }
-
-    // ── hello handshake: decide whether to start a brand new battle ────────
-    //
-    // Background (historical issue, already fixed): in an earlier version,
-    // as long as the Host's own state.pvpBattle.active was true, it treated
-    // any newly-incoming connection as "a genuine reconnect after a brief
-    // drop" and called a function named resumeAfterReconnect to try to
-    // restore the original battle, without sending fight_start again. But if
-    // the other side had actually refreshed/closed the page and reconnected
-    // with the same room code, its in-memory battle state was already wiped
-    // -- it would never receive fight_start, and had no local state to
-    // restore either, so it stayed stuck forever on "Connected to host,
-    // waiting to start...".
-    //
-    // Current approach: that "resume the battle in place" path
-    // (resumeAfterReconnect) has been removed entirely. After a disconnect
-    // the only exit is returning to the lobby (giveUpToLobby) and going
-    // through hostRoom/joinRoom again from scratch -- this hello handshake
-    // only has one job: deciding whether a freshly (re-)established
-    // connection should start a brand new battle. Rather than the weak
-    // signal of "each side reports a boolean and we guess whether state is
-    // consistent", it directly compares the precise battleId identifier:
-    // matching ids mean both sides are genuinely still in the same battle
-    // (e.g. a brief network blip mid-battle where the connection never
-    // truly dropped); any mismatch (whatever the specific cause -- a
-    // refresh, room code reuse, message reordering, or something we haven't
-    // hit yet) is uniformly treated as "the other side just joined fresh",
-    // and Host directly starts a brand new battle without trying to sync any
-    // internal battle details.
-    function _handleHello(msg) {
-        // Record the opponent's profile regardless of whether this triggers
-        // a "restart" -- including the most common case of "first connection,
-        // neither side is fighting yet". If this were only recorded inside
-        // the mismatch branch below, a normal first connection would never
-        // enter that branch and the opponent's profile would never be received.
-        if (msg.profile) _opponentProfile = msg.profile;
-
-        const localBattleId  = pvpLogic.getCurrentBattleId();
-        const remoteBattleId = msg.battleId || null;
-        if (localBattleId === remoteBattleId) return; // Exact match, nothing to do
-
-        if (localBattleId) pvpLogic.abortToLobby();
-        uiPvp.hideDisconnectOverlay();
-        setStatus('检测到对方重新进入，正在重新开始新一局...');
-
-        // Only Host re-initiates; Guest passively waits for fight_start (handled by the existing branch)
-        if (pvpNet.role === 'host') {
-            _beginBattle('host');
-            pvpNet.send({ msg: 'fight_start', battleId: pvpLogic.getCurrentBattleId() });
-        }
-    }
-
-    // ── Network callbacks ──────────────────────────────────────────────────
-
     function _attachNetCallbacks() {
-        pvpNet.on.status = (text) => setStatus(text);
-
+        pvpNet.on.status = text => setStatus(text);
         pvpNet.on.connOpen = () => {
-            pvpNet.send({
-                msg: 'hello',
-                battleId: pvpLogic.getCurrentBattleId(),
-                profile: pvpLogic.getMyCombatProfile()
-            });
+            _opponentProfile = null; _networkReady = false; _compatible = false;
+            pvpNet.send({ msg: 'hello', version: pvpLogic.VERSION, profile: pvpLogic.getMyCombatProfile() });
         };
-
         pvpNet.on.open = () => {
-            setStatus('已连接，等待开始...');
-            setStep('pvp-step-ready');
-
-            if (pvpNet.role === 'host') {
-                _beginBattle('host');
-                pvpNet.send({ msg: 'fight_start', battleId: pvpLogic.getCurrentBattleId() });
-            }
+            _networkReady = true;
+            if (_compatible) { setStatus('已连接，准备空间对战…'); setStep('pvp-step-ready'); }
+            _tryStart();
         };
-
-        pvpNet.on.message = (msg) => {
+        pvpNet.on.message = msg => {
+            if (!msg || typeof msg !== 'object') return;
             if (msg.msg === 'hello') {
-                _handleHello(msg);
-                return;
+                if (msg.version !== pvpLogic.VERSION) { setStatus('双方游戏版本不同，请双方刷新页面后重新加入。'); return; }
+                try { _opponentProfile = spatialProfiles.normalize(msg.profile); }
+                catch (_) { setStatus('对方战斗属性无效，请重新加入。'); return; }
+                _compatible = true; _tryStart(); return;
             }
-            if (msg.msg === 'fight_start' && pvpNet.role === 'guest') {
-                _beginBattle('guest', msg.battleId);
-                return;
-            }
-            pvpLogic.receiveMessage(msg);
+            if (_compatible) pvpLogic.receiveMessage(msg);
         };
 
         pvpNet.on.close = () => {
@@ -269,6 +192,7 @@ const pvpRoom = (() => {
 
         // Reset room state, return to the entry screen
         reset() {
+            pvpLogic.abortToLobby();
             pvpNet.on.close = null;
             pvpNet.close();
             _clearLastRoom();

@@ -10,7 +10,7 @@ const combatSettings = (() => {
         } catch (_) { /* Storage may be unavailable; defaults remain usable. */ }
         return values;
     }
-    function attach(root, getBattle) {
+    function attach(root, getBattle, onChange) {
         const values = read(), abort = new AbortController();
         for (const node of root.querySelectorAll('[data-combat-setting]')) {
             const name = node.dataset.combatSetting;
@@ -18,7 +18,8 @@ const combatSettings = (() => {
             node.addEventListener('change', () => {
                 values[name] = node.checked;
                 const battle = getBattle();
-                if (battle) { spatialEngine.cancelInputs(battle); Object.assign(battle.controls, values); }
+                if (onChange) onChange({ ...values });
+                else if (battle) { spatialEngine.cancelInputs(battle); Object.assign(battle.controls, values); }
                 try { localStorage.setItem(key, JSON.stringify(values)); } catch (_) { /* Session preferences still apply. */ }
             }, { signal: abort.signal });
         }
