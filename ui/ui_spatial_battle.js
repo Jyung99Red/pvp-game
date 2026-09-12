@@ -163,11 +163,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         } else {
             circle(0, 0, 12, tint(enemy ? '#713f40' : '#254f57'), tint(enemy ? '#f29385' : '#83d9d3'));
             polygon([[9, 0], [-3, -7], [-3, 7]], tint('#baeee2'));
-            // The idle blade rests at the fighter's side.  Attack sectors only
-            // rotate this fixed-size blade around the hand, so zoom never
-            // changes weapon geometry or combat reach.
-            let angle = Math.PI * .48;
+            // The blade is held parallel to the fighter's left side, with its
+            // tip pointing forward.  Attacks rotate the same fixed-size blade
+            // around the hand, so zoom never changes weapon geometry or reach.
+            let angle = 0;
             const reach = 32;
+            const weaponSide = -1;
             if (body.phase === 'charging') {
                 const a = spatialEngine.heavyShape({ config: enemy ? C.opponentConfig : C, player: body });
                 angle = -a.arc / 2;
@@ -185,12 +186,11 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 }
             }
             // Fixed blade geometry; only rotation follows the attack sector, never scale.
-            ctx.save(); ctx.rotate(angle);
+            ctx.save(); ctx.rotate(angle); ctx.translate(0, weaponSide * 15);
             polygon([[11, -3], [reach - 9, -3], [reach, 0], [reach - 9, 3], [11, 3]], tint('#dae6dc'), '#81e6d9');
             ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(14, -7); ctx.lineTo(14, 7); ctx.stroke();
             ctx.restore();
             const side = enemy ? -1 : 1;
-            polygon([[2, side * 11], [7, side * 7], [13, side * 10], [12, side * 20], [5, side * 22], [0, side * 17]], tint('#477582'), tint('#9ac8df'));
             const key = enemy ? 'enemy' : 'player', guarding = ['guard_start', 'guard'].includes(body.phase);
             const targetPose = guarding ? 1 : 0;
             if (presentationDt > 0) {
@@ -198,7 +198,13 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 shieldPose[key] += (targetPose - shieldPose[key]) * (1 - Math.exp(-speed * presentationDt));
             }
             const pose = shieldPose[key];
-            if (pose > .01) {
+            const showingGuardIcon = guarding || pose > .01;
+            if (!showingGuardIcon) {
+                // The ordinary side shield returns only after the guard icon
+                // has fully lowered, preventing the two shield visuals from
+                // being visible at the same time.
+                polygon([[2, side * 11], [7, side * 7], [13, side * 10], [12, side * 20], [5, side * 22], [0, side * 17]], tint('#477582'), tint('#9ac8df'));
+            } else {
                 // A shield starts beside the body and eases to the forward
                 // guard position.  The engine still owns the real startup and
                 // parry window; this is presentation-only.

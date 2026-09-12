@@ -10,7 +10,7 @@ const spatialData = (() => {
         parry: { id: 'parry', name: '弹反', direction: 'left', cost: 3 }
     };
     const skillCosts = Object.fromEntries(Object.entries(skillDefinitions).map(([id, skill]) => [id, skill.cost]));
-    const camera = Object.freeze({ width: 374, height: 416, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 });
+    const camera = Object.freeze({ width: 350, height: 390, followRate: 12, leadRate: 8, leadSeconds: .16, maxLead: 24 });
     const training = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,

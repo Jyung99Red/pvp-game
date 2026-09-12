@@ -23,7 +23,7 @@ test('fair profile uses the shared rules, closer camera and independent enlarged
  const [a,b]=d.sides;
  assert.equal(fair.level,1); assert.equal(fair.maxHp,120); assert.equal(fair.atk,30); assert.equal(fair.def,8);
  assert.equal(a.config.width,570); assert.equal(a.config.height,630);
- assert.equal(a.config.camera.width,374); assert.equal(a.config.camera.height,416);
+ assert.equal(a.config.camera.width,350); assert.equal(a.config.camera.height,390);
  assert.deepEqual([a.player.x,a.player.y],[285,405]); assert.deepEqual([b.player.x,b.player.y],[285,225]);
  assert.equal(a.config.skills.parry.cost,3); assert.notEqual(a.config.skills,b.config.skills);
 });
