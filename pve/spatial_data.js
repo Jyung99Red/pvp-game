@@ -42,17 +42,18 @@ const spatialData = (() => {
     // Every enemy has explicit geometry/timing. Old dmgMult never sets timing.
     const sector = (range, arc, windup, lock, recovery, multiplier) => ({ kind: 'sector', range, arc: Math.PI * arc, windup, lock, active: .16, recovery, multiplier, damage: 0 });
     const circle = (range, windup, lock, recovery, multiplier) => ({ kind: 'circle', range, windup, lock, active: .16, recovery, multiplier, damage: 0 });
-    const dashSector = (range, arc, windup, lock, recovery, multiplier, distance, speed, width) => ({
-        ...sector(range, arc, windup, lock, recovery, multiplier), dash: { distance, speed, width }
+    const dash = (windup, lock, recovery, multiplier, distance, speed, width) => ({
+        kind: 'dash', range: distance, width, windup, lock, active: 0, recovery, multiplier, damage: 0,
+        dash: { distance, speed, width }
     });
     const moves = {
         test_combat: [sector(90, .6, 1.2, .4, .8, .6), circle(85, 1.5, .5, 1, 1)],
         goblin: [sector(90, .65, 1.2, .4, .7, .6), sector(120, .4, 1.5, .5, 1, .9)],
-        wolf: [sector(85, .45, .95, .3, .6, .6), dashSector(125, .35, .7, .25, .8, .9, 150, 360, 18)],
+        wolf: [sector(85, .45, .95, .3, .6, .6), dash(1.05, .35, 1.2, .9, 150, 280, 18)],
         orc: [sector(115, .65, 1.35, .45, .9, .7), circle(105, 1.65, .55, 1.2, 1.1)],
         young_dragon: [sector(110, .65, 1.15, .4, .8, .7), sector(170, .4, 1.65, .55, 1.1, 1.1)],
         skeleton_warrior: [sector(100, .55, 1.1, .4, .8, .7), sector(135, .7, 1.5, .5, 1, 1.1)],
-        shadow_assassin: [sector(100, .35, .8, .3, .55, .6), dashSector(155, .25, .55, .25, .9, 1.1, 180, 450, 12)],
+        shadow_assassin: [sector(100, .35, .8, .3, .55, .6), dash(.55, .25, .9, 1.1, 180, 450, 12)],
         stone_golem: [sector(135, .65, 1.5, .5, 1.1, .7), circle(120, 1.8, .65, 1.4, 1.1)],
         elder_dragon: [sector(140, .65, 1.1, .4, .85, .7), sector(185, .5, 1.65, .55, 1.2, 1.1)],
         abyss_lord: [sector(145, .6, 1.05, .4, .8, .7), circle(130, 1.6, .55, 1.2, 1.1)]

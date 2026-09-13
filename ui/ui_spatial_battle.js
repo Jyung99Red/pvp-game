@@ -156,8 +156,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     function shape(shape, origin, facing, color, opacity = 1) {
         ctx.save(); ctx.globalAlpha = opacity;
         if (shape.kind === 'dash') {
-            ctx.beginPath(); ctx.moveTo(shape.start.x, shape.start.y); ctx.lineTo(shape.end.x, shape.end.y);
-            ctx.lineWidth = Math.max(2, shape.width * 2); ctx.lineCap = 'round';
+            const start = shape.start || origin;
+            const distance = shape.range ?? shape.dash?.distance ?? 0;
+            const end = shape.end || { x: start.x + Math.cos(facing) * distance, y: start.y + Math.sin(facing) * distance };
+            const width = shape.width ?? shape.dash?.width ?? 12;
+            ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y);
+            ctx.lineWidth = Math.max(2, width * 2); ctx.lineCap = 'round';
             ctx.strokeStyle = color + '38'; ctx.stroke();
             ctx.lineWidth = 1.5; ctx.strokeStyle = color; ctx.stroke(); ctx.restore(); return;
         }
@@ -472,7 +476,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 左移右转', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 左移右转', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
-        text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${e.attack.label || (e.attack.kind === 'circle' ? '周身践踏' : '扇形重扫')} · ${e.timer <= e.attack.lock ? '朝向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
+        const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
+        text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
         if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);

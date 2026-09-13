@@ -196,6 +196,7 @@ test('focus drives AP and slower time-based SP recovery without hit rewards',()=
 
 test('wolf dash locks direction, travels a real path and hits at most once',()=>{
  const t=setup(), C=t.pveProfiles.create('wolf',t.content.enemies.wolf), b=t.spatialEngine.create(C,()=>0), S=t.spatialEngine;
+ assert.equal(C.actions[1].kind,'dash'); assert.equal(C.actions[1].windup,1.05); assert.equal(C.actions[1].recovery,1.2); assert.equal(C.actions[1].dash.speed,280);
  S.start(b); const e=b.enemy,p=b.player; e.x=p.x=180; e.y=180; p.y=270; p.facing=-Math.PI/2;
  e.phase='windup'; e.timer=.01; e.attack=C.actions[1]; e.facing=Math.PI/2;
  S.step(b,.01); assert.equal(e.phase,'dash'); const before=e.y;

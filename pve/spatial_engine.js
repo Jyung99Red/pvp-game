@@ -18,7 +18,7 @@ const spatialEngine = (() => {
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.chargeThreshold >= C.fullCharge)) throw new Error('Invalid profile');
         if (!Object.values(C.ai).every(nonnegative)) throw new Error('Invalid AI timing');
         for (const a of [C.light, C.heavy, ...(C.actions || [C.sweep, C.stomp])]) {
-            if (!a || !['sector', 'circle'].includes(a.kind) || !positive(a.range) ||
+            if (!a || !['sector', 'circle', 'dash'].includes(a.kind) || !positive(a.range) ||
                 (a.kind === 'sector' && (!positive(a.arc) || a.arc > Math.PI * 2)) ||
                 ![a.windup, a.recovery, a.damage].every(v => Number.isFinite(v) && v >= 0) ||
                 (a.active != null && !nonnegative(a.active)) ||
