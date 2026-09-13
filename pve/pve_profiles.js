@@ -13,7 +13,7 @@ const pveProfiles = (() => {
         spatialProfiles.apply(C, stats, state.player.currentHp);
         Object.assign(C.enemy, { maxHp: enemyData.hp, hp: enemyData.hp, def: enemyData.def });
         C.enemyApMax = Math.max(1, ai.apMax || 5);
-        C.enemyApRegen = 1000 / combatResolver.apRecoveryMs(ai.spd || 10);
+        C.enemyApRegen = 1000 / combatResolver.apRecoveryMs(ai.focus || 10);
         C.actions = moves[enemyId].map((move, i) => ({ ...move, label: enemyData.acts?.[`act${i + 1}`]?.name || '攻击', damage: Math.max(1, Math.round(enemyData.atk * move.multiplier)) }));
         Object.assign(C.ai, {
             comboChance: ai.comboChance || 0, comboMax: ai.comboMax || 0,

@@ -5,27 +5,28 @@ const spatialProfiles = (() => {
         progression: Object.freeze({ id: 'progression', label: '养成对战', description: '使用当前装备与等级属性' })
     });
     const FAIR_PROFILE = Object.freeze({
-        level: 1, maxHp: 120, atk: 30, def: 8, spd: 10, apMax: 5,
-        critChance: 0, guardThorns: 0, earlyReleaseMs: 300, parryWindowBaseMs: 180,
+        level: 1, maxHp: 120, atk: 30, def: 8, focus: 10, insight: 10, apMax: 5,
+        critChance: 0, guardThorns: 0, chargeThresholdMs: 300, parryWindowBaseMs: 180,
         judgmentMultiplier: 1, guardDamageMultiplier: 1,
         motion: Object.freeze({ move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 })
     });
     function local() {
-        return { ...player.getStats(), level: state.player.level,
+        return { ...player.getStats(), level: state.player.level, focus: player.getFocus(), insight: player.getInsight(),
             judgmentMultiplier: player.getJudgmentMultiplier(), guardDamageMultiplier: player.getGuardDamageMultiplier(),
-            earlyReleaseMs: player.getChargeThresholdMs(), parryWindowBaseMs: player.getParryWindowBaseMs(),
+            chargeThresholdMs: player.getChargeThresholdMs(), parryWindowBaseMs: player.getParryWindowBaseMs(),
             critChance: player.getCritChance(), guardThorns: player.getGuardThorns(),
             apMax: player.getApMax(), motion: player.getSpatialMotion() };
     }
     function normalize(p) {
         if (!p || typeof p !== 'object') throw new Error('缺少对战属性');
-        const ranges = { level: [1, 100000], maxHp: [1, 1e9], atk: [0, 1e9], def: [0, 1e9], spd: [.1, 1e6],
-            judgmentMultiplier: [0, 100], guardDamageMultiplier: [0, 100], earlyReleaseMs: [0, 1900],
+        const source = { ...p };
+        const ranges = { level: [1, 100000], maxHp: [1, 1e9], atk: [0, 1e9], def: [0, 1e9], focus: [.1, 1e6], insight: [0, 1e6],
+            judgmentMultiplier: [0, 100], guardDamageMultiplier: [0, 100], chargeThresholdMs: [0, 1900],
             parryWindowBaseMs: [0, 10000], critChance: [0, 1], guardThorns: [0, 100], apMax: [1, 100] };
         const out = {};
         for (const [key, [min, max]] of Object.entries(ranges)) {
-            if (!Number.isFinite(p[key]) || p[key] < min || p[key] > max) throw new Error('无效对战属性: ' + key);
-            out[key] = p[key];
+            if (!Number.isFinite(source[key]) || source[key] < min || source[key] > max) throw new Error('无效对战属性: ' + key);
+            out[key] = source[key];
         }
         out.apMax = Math.floor(out.apMax); out.motion = {};
         for (const key of ['move', 'turn', 'chargeMove', 'chargeTurn']) {
@@ -39,8 +40,8 @@ const spatialProfiles = (() => {
     function isFair(p) {
         try {
             const n = normalize(p), f = fair();
-            return ['level', 'maxHp', 'atk', 'def', 'spd', 'judgmentMultiplier', 'guardDamageMultiplier',
-                'earlyReleaseMs', 'parryWindowBaseMs', 'critChance', 'guardThorns', 'apMax'].every(key => n[key] === f[key]) &&
+            return ['level', 'maxHp', 'atk', 'def', 'focus', 'insight', 'judgmentMultiplier', 'guardDamageMultiplier',
+                'chargeThresholdMs', 'parryWindowBaseMs', 'critChance', 'guardThorns', 'apMax'].every(key => n[key] === f[key]) &&
                 ['move', 'turn', 'chargeMove', 'chargeTurn'].every(key => n.motion[key] === f.motion[key]);
         } catch (_) { return false; }
     }
@@ -52,8 +53,11 @@ const spatialProfiles = (() => {
         C.motion = { ...stats.motion };
         Object.assign(C.player, { maxHp: stats.maxHp, hp: clamp(hp, 0, stats.maxHp), def: stats.def });
         C.apMax = Math.max(1, Math.floor(stats.apMax));
-        C.apRegen = 1000 / combatResolver.apRecoveryMs(Math.max(.1, stats.spd));
-        C.fullCharge = 2; C.chargeThreshold = clamp(stats.earlyReleaseMs / 1000, 0, 1.9);
+        // Both AP and SP use focus, while SP keeps a fixed 1.5x slower base.
+        const focus = Math.max(.1, stats.focus);
+        C.apRegen = 1000 / combatResolver.apRecoveryMs(focus);
+        C.spRegen = 1000 / combatResolver.spRecoveryMs(focus);
+        C.fullCharge = 2; C.chargeThreshold = clamp(stats.chargeThresholdMs / 1000, 0, 1.9);
         C.parryWindow = clamp(stats.parryWindowBaseMs * stats.judgmentMultiplier / 1000, 0, 1);
         C.blockMultiplier = clamp(.4 * stats.guardDamageMultiplier, 0, 1);
         C.critChance = clamp(stats.critChance, 0, 1); C.guardThorns = Math.max(0, stats.guardThorns);

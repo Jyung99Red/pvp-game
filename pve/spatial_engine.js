@@ -12,7 +12,7 @@ const spatialEngine = (() => {
         if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .7, C.chargeTurnMultiplier ?? .65, C.guardMoveMultiplier ?? .3, C.guardTurnMultiplier ?? .5, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         if ((C.heavy.minRange != null && (!positive(C.heavy.minRange) || C.heavy.minRange > C.heavy.range)) ||
             (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
-        if (![C.guardStartup, C.parryWindow, C.apRegen, C.hitStun, C.playerSpeed, C.guardTurn, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
+        if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.guardTurn, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
         if (C.formal && !C.pvp && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.chargeThreshold >= C.fullCharge)) throw new Error('Invalid profile');
@@ -22,6 +22,7 @@ const spatialEngine = (() => {
                 (a.kind === 'sector' && (!positive(a.arc) || a.arc > Math.PI * 2)) ||
                 ![a.windup, a.recovery, a.damage].every(v => Number.isFinite(v) && v >= 0) ||
                 (a.active != null && !nonnegative(a.active)) ||
+                (a.dash && (![a.dash.distance, a.dash.speed, a.dash.width].every(positive))) ||
                 (a.lock != null && (!Number.isFinite(a.lock) || a.lock < 0 || a.lock > a.windup))) throw new Error('Invalid spatial action');
         }
         for (const body of [C.player, C.enemy]) {
@@ -38,6 +39,7 @@ const spatialEngine = (() => {
         return {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
+            skillPoints: Math.max(0, Math.min(C.skillPointMax ?? 3, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
             player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0 },
             enemy: { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
             controls: { cancelAtCenter: true, autoFace: false, ...C.controls },
@@ -268,13 +270,18 @@ const spatialEngine = (() => {
         } else { b.stats.misses++; emit(b, 'miss', { side: 'player' }); }
         p.phase = 'recover'; p.timer = a.heavy ? C.heavy.recovery : C.light.recovery;
     }
-    function enemyHit(b) {
+    function enemyHit(b, path = null) {
         const C = b.config;
         const p = b.player, e = b.enemy, a = e.attack;
         const raw = a.damage * (e.enraged ? C.ai.enrageAtkMult : 1);
         const incoming = C.formal ? defended(raw, C.player.def) : raw;
-        emit(b, 'strike', { side: 'enemy', shape: a, origin: { x: e.x, y: e.y }, facing: e.facing });
-        if (!S.contains(a, e, e.facing, p)) {
+        const origin = path?.start || { x: e.x, y: e.y }, facing = path?.facing ?? e.facing;
+        const shape = path ? { kind: 'dash', start: path.start, end: path.end, width: a.dash.width } : a;
+        emit(b, 'strike', { side: 'enemy', shape, origin, facing });
+        // The moving enemy body also occupies space, so the attack corridor
+        // begins at its leading edge rather than at the centre line alone.
+        const hit = path ? S.segmentHitsBody(path.start, path.end, p, a.dash.width + e.radius) : S.contains(a, e, e.facing, p);
+        if (!hit) {
             b.stats.dodges++; emit(b, 'miss', { side: 'enemy' }); return;
         }
         const front = Math.abs(S.angleDelta(S.facing(p, e), p.facing)) <= Math.PI / 2;
@@ -328,6 +335,7 @@ const spatialEngine = (() => {
             }
         }
         if (['idle', 'recover', 'stunned'].includes(p.phase)) p.ap = Math.min(C.apMax, p.ap + dt * C.apRegen * b.apRateMult);
+        tickSkillPoints(b, dt);
         if (p.timer > 0) {
             p.timer = Math.max(0, p.timer - dt);
             if (p.timer === 0) {
@@ -345,6 +353,22 @@ const spatialEngine = (() => {
         }
         const tempo = e.enraged ? C.ai.enrageSpdMult : 1;
         if (C.formal) e.ap = Math.min(C.enemyApMax, (e.ap ?? C.enemyApMax) + dt * C.enemyApRegen * tempo * b.apRateMult);
+        if (e.phase === 'dash') {
+            const dash = e.attack.dash, speed = dash.speed * tempo;
+            const remaining = Math.max(0, e.dashRemaining);
+            const dashDt = Math.min(dt, remaining / Math.max(speed, 1e-9));
+            const start = { x: e.x, y: e.y };
+            const moved = dashDt > 0 && S.move(e, Math.cos(e.dashFacing) * speed, Math.sin(e.dashFacing) * speed, dashDt, C, p);
+            const end = { x: e.x, y: e.y }, travelled = S.distance(start, end);
+            e.dashRemaining = Math.max(0, remaining - travelled);
+            if (!e.dashHit && S.segmentHitsBody(start, end, p, dash.width + e.radius)) {
+                e.dashHit = true; enemyHit(b, { start, end, facing: e.dashFacing });
+            }
+            if (!moved || travelled <= 1e-7 || e.dashRemaining <= 1e-7) {
+                e.phase = 'recover'; e.timer = e.attack.recovery;
+            }
+            return;
+        }
         e.timer = Math.max(0, e.timer - dt * tempo);
         if (e.phase === 'approach') {
             e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.turn);
@@ -362,8 +386,14 @@ const spatialEngine = (() => {
         } else if (e.phase === 'windup') {
             if (e.timer > e.attack.lock) e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.trackingTurn);
             if (e.timer === 0) {
-                e.phase = 'active'; e.timer = e.attack.active;
-                enemyHit(b); // one hit per attack, never per render frame
+                if (e.attack.dash) {
+                    e.phase = 'dash'; e.dashFacing = e.facing;
+                    e.dashRemaining = e.attack.dash.distance; e.dashHit = false;
+                    emit(b, 'dash_started', { facing: e.dashFacing, distance: e.dashRemaining });
+                } else {
+                    e.phase = 'active'; e.timer = e.attack.active;
+                    enemyHit(b); // one hit per attack, never per render frame
+                }
             }
         } else if (e.timer === 0) {
             if (e.phase === 'active') {
@@ -418,6 +448,16 @@ const spatialEngine = (() => {
             b.buffs.autoParry = 1;
         } else return false;
         return true;
+    }
+    function tickSkillPoints(b, dt) {
+        const C = b.config, p = b.player, max = C.skillPointMax ?? 3;
+        if (!Number.isFinite(C.spRegen) || C.spRegen <= 0 || max <= 0 || p.hp <= 0 || b.skillPoints >= max) return;
+        b.skillProgress = Math.max(0, b.skillProgress || 0) + dt * C.spRegen;
+        while (b.skillProgress >= 1 - 1e-9 && b.skillPoints < max) {
+            b.skillProgress -= 1; b.skillPoints++;
+            emit(b, 'skill_point', { skillPoints: b.skillPoints });
+        }
+        if (b.skillPoints >= max) b.skillProgress = 0;
     }
     function queueSkill(b, kind) {
         if (!canAct(b) || !locked(b) || !b.config.skills?.[kind]) return false;

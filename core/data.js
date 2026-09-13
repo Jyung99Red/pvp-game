@@ -13,7 +13,7 @@ const state = {
     base: { buildings: { hotSpring: 0, smithy: 0, shop: 0 } },
     player: {
         level: 1,
-        baseStats: { maxHp: 100, atk: 10, def: 3, spd: 10, int: 10, luck: 5 },
+        baseStats: { maxHp: 100, atk: 10, def: 3, focus: 10, insight: 10, luck: 5 },
         currentHp: 100,
         equip: { left: 'wooden_sword', right: 'wooden_shield', armor: null, accessory: null }
     },
@@ -37,6 +37,7 @@ const content = {
     items: {
         wooden_sword: {
             id: 'wooden_sword', name: "木剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
+            weaponTemplate: 'basic',
             slots: ['left', 'right'],
             stats: { atk: 8, def: 0 },
             effects: [],
@@ -44,10 +45,11 @@ const content = {
         },
         iron_sword: {
             id: 'iron_sword', name: "铁剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
+            weaponTemplate: 'heavy',
             slots: ['left', 'right'],
             stats: { atk: 22, def: 0 },
-            effects: [{ type: 'charge_threshold_ms', value: 700 }],
-            desc: "攻击强劲，但蓄力阈值更高，轻点难以脱手"
+            effects: [],
+            desc: "重型武器，蓄力增伤起点比标准武器晚约 50ms"
         },
         wooden_shield: {
             id: 'wooden_shield', name: "木盾", type: "shield", icon: "🛡️", iconKey: 'shield-def',
@@ -66,9 +68,9 @@ const content = {
         swift_ring: {
             id: 'swift_ring', name: "疾速戒指", type: "accessory", icon: "💍",
             slots: ['accessory'],
-            stats: { atk: 0, def: 0, spd: 3 },
+            stats: { atk: 0, def: 0, focus: 3 },
             effects: [],
-            desc: "穿戴后行动力回复明显加快"
+            desc: "提升专注，使行动力与技能点回复加快"
         },
         wooden_armor: {
             id: 'wooden_armor', name: "布甲", type: "armor", icon: "👕",
@@ -87,16 +89,17 @@ const content = {
         wisdom_ring: {
             id: 'wisdom_ring', name: "智慧之环", type: "accessory", icon: "🧿",
             slots: ['accessory'],
-            stats: { atk: 0, def: 0, int: 10 }, // +10 int
+            stats: { atk: 0, def: 0, insight: 10 }, // +10 insight
             effects: [],
-            desc: "提升洞察力，显著延长完美拼刀与弹反的判定窗口"
+            desc: "提升心眼，延长弹反判定窗口"
         },
         assassin_dagger: {
             id: 'assassin_dagger', name: "刺客短刃", type: "weapon", icon: "🔪", iconKey: 'weapon-atk',
+            weaponTemplate: 'light',
             slots: ['left', 'right'],
             stats: { atk: 14, def: 0 },
-            effects: [{ type: 'charge_threshold_ms', value: 400 }, { type: 'crit_chance', value: 0.20 }],
-            desc: "蓄力阈值极低，出手迅捷，且极易命中要害"
+            effects: [{ type: 'crit_chance', value: 0.20 }],
+            desc: "轻型武器，蓄力增伤起点比标准武器早约 20ms，且易命中要害"
         },
         thorn_armor: {
             id: 'thorn_armor', name: "荆棘甲", type: "armor", icon: "🌵",
@@ -196,7 +199,7 @@ const content = {
                 act1: { name: "影袭" },
                 act2: { name: "致命突刺" }
             },
-            ai: { spd: 12 },
+            ai: { focus: 12 },
             drops: [{ id: 'shadow_crystal', chance: 0.60, amount: [1, 2] }]
         },
         stone_golem: {
@@ -205,7 +208,7 @@ const content = {
                 act1: { name: "岩拳" },
                 act2: { name: "地裂" }
             },
-            ai: { spd: 8 },
+            ai: { focus: 8 },
             drops: [
                 { id: 'orc_tooth', chance: 0.60, amount: [1, 2] },
                 { id: 'shadow_crystal', chance: 0.25, amount: [1, 1] }

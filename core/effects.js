@@ -2,8 +2,8 @@
 const STAT_REGISTRY = {
     atk: {},
     def: {},
-    spd: {},
-    int: {}
+    focus: {},
+    insight: {}
 };
 
 // One entry per item-effect `type` used in content.items[*].effects[].
@@ -42,12 +42,8 @@ const EFFECT_REGISTRY = {
         apply(mult, value) { return mult * (1 - value); },
         label(value) { return `<span class="effect-tag effect-buff">🛡 格挡减伤 ${value*100}%</span>`; }
     },
-    // Per-weapon/shield combat-timing overrides — absolute values, not
-    // multiplicative buffs, so no apply(); read via
-    // player.getFirstEquippedEffectValue instead of _applyEffectPass.
-    charge_threshold_ms: {
-        label(value) { return `<span class="effect-tag effect-info">⏱ 蓄力阈值 ${value}ms</span>`; }
-    },
+    // Shield parry timing override — absolute value, not a multiplicative
+    // buff, so no apply(); read by player.getParryWindowBaseMs().
     parry_window_ms: {
         label(value) { return `<span class="effect-tag effect-info">🎯 弹反窗口 ${value}ms</span>`; }
     },

@@ -95,14 +95,13 @@ const spatialDuel = (() => {
             if (r.auto) def.buffs.autoParry--;
             else def.player.ap = Math.max(0, def.player.ap - def.config.parryCost);
             hurt(d, i, r.amount); stun(d, i);
-            def.skillPoints = Math.min(3, def.skillPoints + 1);
             emit(d, j, 'parry', { damage: r.amount });
         } else if (r.type === 'block') {
             def.player.ap = Math.max(0, def.player.ap - 1); hurt(d, j, r.amount);
             emit(d, j, 'block', { damage: r.amount });
             if (r.thorns) { hurt(d, i, r.thorns); emit(d, j, 'thorns', { damage: r.thorns }); }
         } else {
-            hurt(d, j, r.amount); stun(d, j); atk.skillPoints = Math.min(3, atk.skillPoints + 1);
+            hurt(d, j, r.amount); stun(d, j);
             emit(d, i, 'hit', { damage: r.amount, heavy: r.a.heavy, crit: r.crit, rear: r.rear });
         }
     }
@@ -130,7 +129,7 @@ const spatialDuel = (() => {
         d.sides.forEach(b => { E.pause(b); b.result = result; });
         emit(d, 0, 'finished', { result });
     }
-    const fields = ['player', 'buffs', 'motionBuffs', 'controls', 'move', 'action', 'guard', 'skill', 'queuedCommand', 'stats', 'inputVersion', 'actionInputVersion', 'skillPoints', 'time', 'elapsed', 'running', 'started', 'result'];
+    const fields = ['player', 'buffs', 'motionBuffs', 'controls', 'move', 'action', 'guard', 'skill', 'queuedCommand', 'stats', 'inputVersion', 'actionInputVersion', 'skillPoints', 'skillProgress', 'time', 'elapsed', 'running', 'started', 'result'];
     function snapshot(d) {
         return { time: d.time, tick: d.tick, result: d.result,
             wallLayoutId: d.sides[0].config.wallLayoutId, wallVersion: d.sides[0].config.wallVersion,
@@ -150,7 +149,7 @@ const spatialDuel = (() => {
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
                 p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||
-                !Number.isInteger(b.skillPoints) || b.skillPoints < 0 || b.skillPoints > 3 || !b.buffs || !b.controls || !b.stats || !Array.isArray(b.motionBuffs)) return false;
+                !Number.isInteger(b.skillPoints) || b.skillPoints < 0 || b.skillPoints > C.skillPointMax || !Number.isFinite(b.skillProgress) || b.skillProgress < 0 || b.skillProgress >= 1 || !b.buffs || !b.controls || !b.stats || !Array.isArray(b.motionBuffs)) return false;
             if (['attack','recover'].includes(p.phase)) {
                 const a = p.attack;
                 if (!a?.shape || !a.origin || ![a.origin.x,a.origin.y,a.facing,a.damage,a.shape.range,a.shape.arc,a.shape.windup,a.shape.recovery].every(Number.isFinite) ||
@@ -174,15 +173,19 @@ const spatialDuel = (() => {
     // Client prediction advances only the local actor. HP/outcomes stay authoritative.
     function predictInput(d, i, command) {
         const hp = d.sides[i].player.hp;
+        const skillPoints = d.sides[i].skillPoints, skillProgress = d.sides[i].skillProgress;
         const accepted = input(d, i, command);
         d.sides[i].player.hp = hp;
+        d.sides[i].skillPoints = skillPoints; d.sides[i].skillProgress = skillProgress;
         return accepted;
     }
     function predict(d, i, dt) {
         const hp = d.sides[i].player.hp;
+        const skillPoints = d.sides[i].skillPoints, skillProgress = d.sides[i].skillProgress;
         E.advanceActor(d.sides[i], dt, b => { b.player.phase = 'recover'; b.player.timer = b.player.attack.shape.recovery; });
         events(d, i);
         d.sides[i].player.hp = hp;
+        d.sides[i].skillPoints = skillPoints; d.sides[i].skillProgress = skillProgress;
     }
     return { create, input, step, end, snapshot, validSnapshot, restore, predict, predictInput, visibility, SKILL_COSTS };
 })();

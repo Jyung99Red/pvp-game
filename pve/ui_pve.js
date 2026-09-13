@@ -40,7 +40,7 @@ const uiPve = (() => {
             const at = performance.now(), dt = renderedAt ? Math.min(.1, Math.max(0, (at - renderedAt) / 1000)) : 0;
             renderedAt = at;
             view.render(b.spatial, events, dt);
-            $('pve-self-sp').textContent = `${b.skillPoints} / 3`;
+            $('pve-self-sp').textContent = `${b.skillPoints} / 3${b.skillPoints < 3 && b.skillProgress > 0 ? ` · ${Math.floor(b.skillProgress * 100)}%` : ''}`;
             for (const [kind, skill] of Object.entries(b.spatial.config.skills || spatialData.skills)) {
                 const cost = skill.cost;
                 const node = $('pve-s-skill-pad').querySelector(`[data-skill="${kind}"]`);

@@ -96,17 +96,29 @@ const pveLogic = (() => {
         if (_rAF != null) cancelAnimationFrame(_rAF);
         _rAF = null; _accumulator = 0;
     }
-    function _sync() { state.player.currentHp = state.pveBattle.player.hp; }
+    function _sync() {
+        const b = state.pveBattle;
+        state.player.currentHp = b.player.hp;
+        // Keep the old outer mirror usable for callers/tests while the engine
+        // owns the fractional clock during normal simulation.
+        const externallyChanged = b._skillPointsMirror != null && b.skillPoints !== b._skillPointsMirror;
+        if (externallyChanged) {
+            b.spatial.skillPoints = Math.max(0, Math.min(b.spatial.config.skillPointMax, Math.floor(b.skillPoints)));
+            b.spatial.skillProgress = Math.max(0, Math.min(.999999, b.skillProgress || 0));
+        } else {
+            b.skillPoints = b.spatial.skillPoints;
+            b.skillProgress = b.spatial.skillProgress;
+        }
+        b._skillPointsMirror = b.skillPoints;
+    }
     function _processEvents() {
         const b = state.pveBattle;
         const events = spatialEngine.drainEvents(b.spatial);
         for (const e of events) {
-            if ((e.type === 'hit' && e.side === 'player') || e.type === 'parry') b.skillPoints = Math.min(3, b.skillPoints + 1);
-        }
-        for (const e of events) {
             const cost = e.type === 'skill_ready' && b.spatial.config.skills?.[e.kind]?.cost;
             if (cost && b.spatial.running && !b.settled && b.skillPoints >= cost && spatialEngine.useSkill(b.spatial, e.kind)) {
-                b.skillPoints -= cost;
+                b.spatial.skillPoints -= cost;
+                b.skillPoints = b.spatial.skillPoints;
                 events.push(...spatialEngine.drainEvents(b.spatial));
             }
         }
@@ -165,12 +177,15 @@ const pveLogic = (() => {
     function _beginFight(enemyId, eData, floor, fresh) {
         _stopLoop(); _displayEvents = []; _pendingOutcome = null; uiPve.destroy();
         const skillPoints = fresh ? 0 : state.pveBattle?.skillPoints || 0;
+        const skillProgress = fresh ? 0 : state.pveBattle?.skillProgress || 0;
         const engine = spatialEngine.create(pveProfiles.create(enemyId, eData), _random);
+        engine.skillPoints = skillPoints; engine.skillProgress = skillProgress;
         state.pveBattle = {
             battleId: ++_nextId, spatial: engine, active: true, waitingChoice: false, settled: false, ended: false,
             player: engine.player, enemy: engine.enemy, buffs: engine.buffs,
-            enemyId, enemyData: eData, floor, isBossFloor: _isBossFloor(floor), skillPoints,
-            arena: arenaEffects.create(eData.arena), log: [], regenElapsed: 0, regenTicks: state.time.tick
+            enemyId, enemyData: eData, floor, isBossFloor: _isBossFloor(floor), skillPoints, skillProgress,
+            arena: arenaEffects.create(eData.arena), log: [], regenElapsed: 0, regenTicks: state.time.tick,
+            _skillPointsMirror: skillPoints
         };
         state.world.status = 'fighting';
         fx.log.encounter(eData.name);
@@ -245,10 +260,14 @@ const pveLogic = (() => {
         useSkill(kind) {
             const b = state.pveBattle, cost = b?.spatial?.config.skills?.[kind]?.cost;
             if (!b?.active || b.waitingChoice || !b.spatial.running || !cost || b.skillPoints < cost) return;
+            // Keep direct legacy/UI writes compatible while the engine owns
+            // fractional time-based SP during simulation.
+            b.spatial.skillPoints = b.skillPoints;
+            b.spatial.skillProgress = b.skillProgress || 0;
             // Queued skills spend points only when executed, never when replaced/cancelled.
             if (spatialEngine.queueSkill(b.spatial, kind)) { _processEvents(); return; }
             if (!spatialEngine.useSkill(b.spatial, kind)) return;
-            b.skillPoints -= cost; _sync(); _processEvents();
+            b.spatial.skillPoints -= cost; b.skillPoints = b.spatial.skillPoints; _sync(); _processEvents();
         }
     };
 })();

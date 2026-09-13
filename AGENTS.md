@@ -50,8 +50,8 @@ are unaffected by which subfolder a `.js` file lives in.
   interrupt 100 > hit 0, the always-true fallback) and applies the first match;
   a new mechanic is one `registerExchangeRule({name, priority, when, resolve})`
   call, and its result travels over the PVP `result` message unchanged. Per-side
-  profiles carry `earlyReleaseMs` / `parryWindowBaseMs` (per-item charge
-  threshold / parry window), plus `critChance` (rolled on clean hits/
+  profiles carry `chargeThresholdMs` / `parryWindowBaseMs` (weapon-template
+  charge threshold / shield parry window), plus `critChance` (rolled on clean hits/
   interrupts → `critMult` damage), `guardThorns` (reflect a share of blocked
   damage), and `apMax` (action-point cap). `resolveExchange` is pure and returns
   a `crit` flag; the caller applies HP/stun/log.
@@ -84,7 +84,7 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`core/player.js`** — stat aggregation from equipment via `STAT_REGISTRY` /
   `EFFECT_REGISTRY` (defined in `effects.js`), equip/craft/buy actions, and
   derived combat getters that feed the profiles: `getChargeThresholdMs` /
-  `getParryWindowBaseMs` (first equipped item in slot order wins), `getCritChance`
+  (weapon template) / `getParryWindowBaseMs` (first equipped shield wins), `getCritChance`
   (luck 1%/pt + `crit_chance` effects), `getGuardThorns`, `getApMax`. **Weapon
   enhancement**: `enhanceItem(itemId)` spends gold for +1..+5 on weapons/shields
   (+10% atk/def per level); levels live in `state.inventory.enhance[itemId]`
@@ -92,7 +92,7 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`core/effects.js`** — registries. Adding a new item effect type = one entry
   here (display `label`, plus `apply` only for multiplicative buffs);
   combat-timing / stat-flag effects (crit_chance, guard_thorns, ap_max_bonus,
-  charge_threshold_ms, parry_window_ms) are read directly by the `player.js`
+  parry_window_ms) are read directly by the `player.js`
   getters above.
 - **`core/save.js`** — localStorage persistence. Saved: resources / inventory
   (incl. `enhance`) / base / player / progress. Never saved: world, pveBattle,
@@ -275,3 +275,15 @@ skill directions stay screen-relative. Pad knobs convert world gestures back to 
 coordinates; actor labels and floating damage remain upright. World rules and snapshots
 remain in canonical coordinates. Perspective is fixed per side, not changed when circling.
 User requested direct push; no tests or browser QA were run for this revision.
+
+## Next task handoff (2026-09-12)
+
+Read `docs/tasks/combat-presentation-arena-next.md` for the next Luna task:
+shared camera with slightly closer zoom, independent arenas, skill parameter separation
+for possible future PVE upgrades, simulation/render scheduling, guard-tapping stutter,
+side-held weapons/shield animation, larger PVP arena with L walls, and offscreen hints.
+This is a planning document only; new behavior has not been implemented. Stage A adds
+fair/progression PVP entries and presentation improvements. Camera follows by translation
+only; the existing fixed guest-side coordinate flip is not dynamic camera rotation.
+Stage B covers full walls/visibility in `docs/tasks/pvp-walls-visibility.md`; read it only
+when implementing that stage. Required spatial clash remains separate stage C.

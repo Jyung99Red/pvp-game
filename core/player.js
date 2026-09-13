@@ -20,8 +20,8 @@ const player = {
     },
 
     // First equipped item (in slot order) that carries an effect of `type`
-    // wins — used for per-item combat-timing values (not multiplicative
-    // buffs, so folding them together like _applyEffectPass doesn't apply).
+    // wins — used for absolute values such as the shield parry window (not
+    // multiplicative buffs, so folding them like _applyEffectPass doesn't apply).
     getFirstEquippedEffectValue(type, fallback) {
         const slotOrder = ['left', 'right', 'armor', 'accessory'];
         for (const slot of slotOrder) {
@@ -34,8 +34,24 @@ const player = {
         }
         return fallback;
     },
-    getChargeThresholdMs() { return this.getFirstEquippedEffectValue('charge_threshold_ms', pvpConfig.earlyReleaseMs); },
+    getWeaponTemplate() {
+        const slotOrder = ['left', 'right'];
+        for (const slot of slotOrder) {
+            const id = state.player.equip[slot], item = id && content.items[id];
+            if (item?.type === 'weapon') return item.weaponTemplate || 'basic';
+        }
+        return 'basic';
+    },
+    getChargeThresholdMs() {
+        return pvpConfig.weaponChargeThresholdMs?.[this.getWeaponTemplate()] ?? pvpConfig.chargeThresholdMs;
+    },
     getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', pvpConfig.parryWindowMs); },
+
+    getInsight() { return this.getStats().insight ?? 10; },
+    getFocus() { return this.getStats().focus ?? 10; },
+    getParryWindowMultiplier() {
+        return Math.max(0.5, 1 + (this.getInsight() - 10) * 0.03);
+    },
 
     // Crit chance: 1% per luck point + flat crit_chance item effects
     getCritChance() {
@@ -79,7 +95,7 @@ const player = {
                     let add = item.stats[statKey];
                     if (!add) return;
                     // Enhancement (+10%/level) applies to atk/def only --
-                    // utility stats (spd/int) stay at their designed values
+                    // utility stats (focus/insight) stay at their designed values
                     if (statKey === 'atk' || statKey === 'def') add = Math.round(add * enhMult);
                     stats[statKey] = (stats[statKey] || 0) + add;
                 });
@@ -130,8 +146,8 @@ const player = {
     },
 	
 	getJudgmentMultiplier() {
-        const intValue = this.getStats().int || 10;
-        return Math.max(0.5, 1 + (intValue - 10) * 0.03); 
+	    // Compatibility alias used by saved/networked combat profiles.
+        return this.getParryWindowMultiplier();
     },
 
     _applyLevelStats() {
@@ -139,8 +155,8 @@ const player = {
         state.player.baseStats.maxHp += 20;
         state.player.baseStats.atk += 3;
 		state.player.baseStats.def += 2;
-        state.player.baseStats.spd += 0.2; 
-        state.player.baseStats.int += 1;
+        state.player.baseStats.focus += 0.2;
+        state.player.baseStats.insight += 1;
         
         // Full heal on level up
         state.player.currentHp = this.getStats().maxHp;

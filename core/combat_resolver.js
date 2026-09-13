@@ -7,8 +7,8 @@
 const pvpConfig = {
     // Charge attack
     chargeMaxMs:       2000,
-    earlyReleaseMs:    300,
-    earlyReleaseDmg:   1,
+    chargeThresholdMs: 300,
+    chargeThresholdDmg: 1,
 
     // Defense
     guardWindupMs:     200,   // Guard startup delay before guard_ready actually engages
@@ -23,7 +23,12 @@ const pvpConfig = {
 
     // AP (action points)
     apMax:             5,
-    apRecoveryMs:      2000,  // Base recovery time per AP point, scaled by 10/spd
+    apRecoveryMs:      2000,  // Base recovery time per AP point, scaled by 10/focus
+    skillPointRecoveryMs: 3000, // SP is a slower, time-based combat resource
+
+    // Named weapon templates are the only source of spatial weapon charge
+    // thresholds. The scalar above is the resolver's generic default.
+    weaponChargeThresholdMs: Object.freeze({ basic: 300, heavy: 350, light: 280 }),
 
     // Crit (rolled on clean hits/interrupts; chance comes from the
     // attacker's profile: luck stat + crit_chance item effects)
@@ -59,13 +64,13 @@ const combatResolver = (() => {
 
     function _lerp(a, b, t) { return a + (b - a) * t; }
 
-    function calcChargeDamage(chargeMs, atk, earlyReleaseMs = pvpConfig.earlyReleaseMs) {
+    function calcChargeDamage(chargeMs, atk, chargeThresholdMs = pvpConfig.chargeThresholdMs) {
         // Charge < threshold: fixed 1 damage (penalty for "tap-attack" rushing)
-        if (chargeMs < earlyReleaseMs) return pvpConfig.earlyReleaseDmg;
-        // threshold -> 3000ms: linear interpolation 0.3x atk -> 1.1x atk
+        if (chargeMs < chargeThresholdMs) return pvpConfig.chargeThresholdDmg;
+        // threshold -> 2000ms: linear interpolation 0.3x atk -> 1.1x atk
         const t = Math.min(
-            (chargeMs - earlyReleaseMs) /
-            (pvpConfig.chargeMaxMs - earlyReleaseMs),
+            (chargeMs - chargeThresholdMs) /
+            (pvpConfig.chargeMaxMs - chargeThresholdMs),
             1.0
         );
         const ratio = _lerp(0.3, 1.1, t);
@@ -83,8 +88,16 @@ const combatResolver = (() => {
         return baseMs * (judgmentMultiplier || 1);
     }
 
-    function apRecoveryMs(spd) {
-        return pvpConfig.apRecoveryMs * (10 / (spd || 10));
+    function apRecoveryMs(focus) {
+        return resourceRecoveryMs(pvpConfig.apRecoveryMs, focus);
+    }
+
+    function spRecoveryMs(focus) {
+        return resourceRecoveryMs(pvpConfig.skillPointRecoveryMs, focus);
+    }
+
+    function resourceRecoveryMs(baseMs, focus) {
+        return baseMs * (10 / Math.max(.1, focus || 10));
     }
 
     // ── Exchange rule registry ───────────────────────────────────────────
@@ -123,9 +136,9 @@ const combatResolver = (() => {
                    (ctx.wallNow - ctx.defender.lastStrikeT) <= pvpConfig.clashWindowMs;
         },
         resolve(ctx) {
-            const defChargeMs = ctx.defender.lastChargeMs || ctx.defenderStats.earlyReleaseMs;
+            const defChargeMs = ctx.defender.lastChargeMs || ctx.defenderStats.chargeThresholdMs;
             const attackerDmg = applyDefense(
-                Math.round(calcChargeDamage(defChargeMs, ctx.defenderStats.atk, ctx.defenderStats.earlyReleaseMs) * 0.5),
+                Math.round(calcChargeDamage(defChargeMs, ctx.defenderStats.atk, ctx.defenderStats.chargeThresholdMs) * 0.5),
                 ctx.attackerStats.def);
             const defenderDmg = applyDefense(Math.round(ctx.rawDmg * 0.5), ctx.defenderStats.def);
             return {
@@ -234,7 +247,7 @@ const combatResolver = (() => {
                              attackerStats, defenderStats, wallNow) {
         const ctx = {
             chargeMs: attackerChargeMs,
-            rawDmg: calcChargeDamage(attackerChargeMs, attackerStats.atk, attackerStats.earlyReleaseMs),
+            rawDmg: calcChargeDamage(attackerChargeMs, attackerStats.atk, attackerStats.chargeThresholdMs),
             attacker, defender, attackerStats, defenderStats, wallNow
         };
         for (const rule of _rules) {
@@ -245,7 +258,7 @@ const combatResolver = (() => {
 
     return {
         makeSideState: _makeSideState,
-        calcChargeDamage, applyDefense, parryWindow, apRecoveryMs,
+        calcChargeDamage, applyDefense, parryWindow, apRecoveryMs, spRecoveryMs,
         resolveExchange, registerExchangeRule
     };
 })();

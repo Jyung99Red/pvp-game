@@ -360,9 +360,14 @@ const ui = {
     searchInventory(value) { this._inventorySearch = value.trim().toLocaleLowerCase(); this.updateEquip(); },
     _itemStats(itemId) {
         const item = content.items[itemId], mult = 1 + .1 * player.getEnhanceLevel(itemId);
-        return Object.entries({ atk: '攻击', def: '防御', int: '智力', spd: '速度', luck: '幸运' })
+        const stats = Object.entries({ atk: '攻击', def: '防御', insight: '心眼', focus: '专注', luck: '幸运' })
             .filter(([key]) => item.stats[key] > 0)
-            .map(([key, label]) => `${label} +${['atk', 'def'].includes(key) ? Math.round(item.stats[key] * mult) : item.stats[key]}`).join(' · ') || '无基础属性加成';
+            .map(([key, label]) => `${label} +${['atk', 'def'].includes(key) ? Math.round(item.stats[key] * mult) : item.stats[key]}`);
+        if (item.weaponTemplate) {
+            const label = { basic: '标准', heavy: '重型', light: '轻型' }[item.weaponTemplate] || item.weaponTemplate;
+            stats.push(`蓄力模板 ${label}`);
+        }
+        return stats.join(' · ') || '无基础属性加成';
     },
     updateEquip() {
         const equip = state.player.equip, cells = [], slotOrder = ['left', 'right', 'armor', 'accessory'];
@@ -433,7 +438,7 @@ const ui = {
         document.getElementById('time-display').textContent = `第 ${t.days} 天 / ${String(t.hours).padStart(2, '0')}:${String(t.minutes).padStart(2, '0')} / ${period}`;
         this._setHtml('resource-display', `<div><span>可用金币</span><strong class="gold-number">${state.resources.gold.toLocaleString()}</strong></div><div><span>持有经验</span><strong>${state.inventory.exp.toLocaleString()}</strong></div><div><span>探索起点</span><strong>${state.progress.checkpointFloor}<small> 层</small></strong></div>`);
         document.getElementById('player-level-info').textContent = `Lv.${h.level}`;
-        this._setHtml('player-display-stats', [['攻击', stats.atk], ['防御', stats.def], ['智力', stats.int], ['速度', Number(stats.spd).toFixed(1)], ['暴击', `${Math.round(player.getCritChance() * 100)}%`]].map(([label,value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join(''));
+        this._setHtml('player-display-stats', [['攻击', stats.atk], ['防御', stats.def], ['心眼', stats.insight], ['专注', Number(stats.focus).toFixed(1)], ['暴击', `${Math.round(player.getCritChance() * 100)}%`]].map(([label,value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join(''));
         const btn = document.getElementById('btn-lvl-up');
         btn.disabled = state.inventory.exp < cost; btn.textContent = '角色升级 ↑';
         document.getElementById('base-exp-text').textContent = `升级经验 ${state.inventory.exp} / ${cost}`;

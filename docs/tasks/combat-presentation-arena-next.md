@@ -57,9 +57,9 @@
 
 | 参数 | 固定值 |
 |---|---|
-| maxHp / atk / def / spd | 120 / 30 / 8 / 10 |
+| maxHp / atk / def / focus / insight | 120 / 30 / 8 / 10 / 10 |
 | apMax / critChance / guardThorns | 5 / 0 / 0 |
-| earlyReleaseMs / parryWindowBaseMs | 300 / 180 |
+| chargeThresholdMs / parryWindowBaseMs | 300 / 180 |
 | judgmentMultiplier / guardDamageMultiplier | 1 / 1 |
 | motion各项倍率 | 全部1 |
 | level档案字段 | 1，仅用于兼容；界面显示“统一属性” |

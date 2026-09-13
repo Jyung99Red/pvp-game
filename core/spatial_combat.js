@@ -11,6 +11,10 @@ const spatialCombat = (() => {
         const t = clamp((px * bx + py * by) / (bx * bx + by * by || 1), 0, 1);
         return Math.hypot(px - t * bx, py - t * by);
     }
+    function segmentHitsBody(start, end, body, width = 0) {
+        return segmentDistance(body.x - start.x, body.y - start.y, end.x - start.x, end.y - start.y) <=
+            (body.radius || 0) + Math.max(0, width) + EPS;
+    }
     const EPS = 1e-7;
     function rectEdges(rect) {
         const x2 = rect.x + rect.width, y2 = rect.y + rect.height;
@@ -155,6 +159,6 @@ const spatialCombat = (() => {
             .filter((point, i, list) => i === 0 || Math.hypot(point.x - list[i - 1].x, point.y - list[i - 1].y) > .001)
             .map(({ x, y }) => ({ x, y }));
     }
-    return { clamp, angleDelta, facing, distance, turn, contains, segmentIntersectsRect, segmentBlocked,
+    return { clamp, angleDelta, facing, distance, turn, contains, segmentDistance, segmentHitsBody, segmentIntersectsRect, segmentBlocked,
         hasLineOfSight, canOccupy, move, separate, visibilityPolygon };
 })();

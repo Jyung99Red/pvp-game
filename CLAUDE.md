@@ -50,8 +50,8 @@ are unaffected by which subfolder a `.js` file lives in.
   interrupt 100 > hit 0, the always-true fallback) and applies the first match;
   a new mechanic is one `registerExchangeRule({name, priority, when, resolve})`
   call, and its result travels over the PVP `result` message unchanged. Per-side
-  profiles carry `earlyReleaseMs` / `parryWindowBaseMs` (per-item charge
-  threshold / parry window), plus `critChance` (rolled on clean hits/
+  profiles carry `chargeThresholdMs` / `parryWindowBaseMs` (weapon-template
+  charge threshold / shield parry window), plus `critChance` (rolled on clean hits/
   interrupts → `critMult` damage), `guardThorns` (reflect a share of blocked
   damage), and `apMax` (action-point cap). `resolveExchange` is pure and returns
   a `crit` flag; the caller applies HP/stun/log.
@@ -83,8 +83,8 @@ are unaffected by which subfolder a `.js` file lives in.
   windows deliberately use local wall-clock, not network-corrected time.
 - **`core/player.js`** — stat aggregation from equipment via `STAT_REGISTRY` /
   `EFFECT_REGISTRY` (defined in `effects.js`), equip/craft/buy actions, and
-  derived combat getters that feed the profiles: `getChargeThresholdMs` /
-  `getParryWindowBaseMs` (first equipped item in slot order wins), `getCritChance`
+  derived combat getters that feed the profiles: `getChargeThresholdMs`
+  (weapon template) / `getParryWindowBaseMs` (first equipped shield wins), `getCritChance`
   (luck 1%/pt + `crit_chance` effects), `getGuardThorns`, `getApMax`. **Weapon
   enhancement**: `enhanceItem(itemId)` spends gold for +1..+5 on weapons/shields
   (+10% atk/def per level); levels live in `state.inventory.enhance[itemId]`
@@ -92,7 +92,7 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`core/effects.js`** — registries. Adding a new item effect type = one entry
   here (display `label`, plus `apply` only for multiplicative buffs);
   combat-timing / stat-flag effects (crit_chance, guard_thorns, ap_max_bonus,
-  charge_threshold_ms, parry_window_ms) are read directly by the `player.js`
+  parry_window_ms) are read directly by the `player.js`
   getters above.
 - **`core/save.js`** — localStorage persistence. Saved: resources / inventory
   (incl. `enhance`) / base / player / progress. Never saved: world, pveBattle,

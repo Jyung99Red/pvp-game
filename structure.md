@@ -89,12 +89,11 @@ PVP 继续通过 `combat_resolver.js` 使用蓄力伤害、弹反、格挡、拼
 
 ```js
 // combat_resolver.js — calcChargeDamage
-// earlyReleaseMs 由每一方 profile 传入（装备可改，见"每件装备的时序参数"），
-// 不再是写死的全局常量
-function calcChargeDamage(chargeMs, atk, earlyReleaseMs = pvpConfig.earlyReleaseMs) {
-    if (chargeMs < earlyReleaseMs) return pvpConfig.earlyReleaseDmg; // 1
+// chargeThresholdMs 由每一方 profile 传入（由武器模板决定）
+function calcChargeDamage(chargeMs, atk, chargeThresholdMs = pvpConfig.chargeThresholdMs) {
+    if (chargeMs < chargeThresholdMs) return pvpConfig.chargeThresholdDmg; // 1
     const t = Math.min(
-        (chargeMs - earlyReleaseMs) / (chargeMaxMs - earlyReleaseMs), 1.0
+        (chargeMs - chargeThresholdMs) / (chargeMaxMs - chargeThresholdMs), 1.0
     );
     const ratio = lerp(0.3, 1.1, t);          // 阈值→0.3倍atk，2s→1.1倍atk
     return Math.max(1, Math.round(atk * ratio));
@@ -177,15 +176,15 @@ parry 300 > block 200 > interrupt 100 > hit 0 兜底)，`resolveExchange` 逐条
 
 ### 每件装备的时序参数
 
-蓄力阈值(`charge_threshold_ms`)与弹反窗口(`parry_window_ms`)不是全局常量,
-而是每件装备各自定义、按槽位顺序取第一个生效(`player.getChargeThresholdMs` /
-`getParryWindowBaseMs`),打进 profile 的 `earlyReleaseMs` / `parryWindowBaseMs`
-传给结算器——所以换武器/盾会真实改变蓄力与弹反手感,不只是数值大小。
+蓄力阈值由武器模板(`weaponTemplate`)映射为 `chargeThresholdMs`；弹反窗口
+则由盾牌的 `parry_window_ms` 和心眼共同决定。两者按槽位适配到 profile
+的 `chargeThresholdMs` / `parryWindowBaseMs` 后传给结算器，所以换武器/盾会真实
+改变蓄力与弹反手感，不只是数值大小。
 
 ### AP 恢复
 
-`apRecoveryMs(spd) = pvpConfig.apRecoveryMs(2000ms) * (10 / spd)`。
-spd 越高恢复越快;蓄力/举盾期间不恢复 AP。AP 上限默认 `pvpConfig.apMax`(5),
+`apRecoveryMs(focus) = pvpConfig.apRecoveryMs(2000ms) * (10 / focus)`。
+focus 越高恢复越快;蓄力/举盾期间不恢复 AP。AP 上限默认 `pvpConfig.apMax`(5),
 但可由装备(`ap_max_bonus` 效果)提升,存在 side-state 的 `apMax` 字段上,
 `_tickSide` 与 UI 星标都读它。
 
@@ -266,7 +265,7 @@ Host                                            Guest
   DataChannel 直连。
 - ICE 配置目前只给了 Google 的公共 STUN,没有配置 TURN。
 - **hello 握手**：数据通道一建立就互发,带上 `battleId`（当前没在打就是
-  `null`）和 `profile`（等级 + atk/def/spd/maxHp + 衍生倍率）。收到对方
+  `null`）和 `profile`（等级 + atk/def/focus/insight/maxHp + 衍生倍率）。收到对方
   hello 后比对 `battleId`：一致就什么都不做(说明还在同一场战斗里、只是网络
   抖动)；不一致(对方是刚刷新/重新进房的，battleId 对不上)就由 Host 直接
   发起一局全新的对局，不尝试同步战斗内部细节。
@@ -322,7 +321,7 @@ correctRemote(remote_t) = remote_t - clockOffset
 { msg:'pong', t0, t1 }
 
 // 连接刚建立时的握手，由 pvp_room.js 处理，不会冒泡给 pvp_logic
-{ msg:'hello', battleId, profile }   // profile: 等级 + atk/def/spd/maxHp
+{ msg:'hello', battleId, profile }   // profile: 等级 + atk/def/focus/insight/maxHp
                                      //   + 衍生字段(判定/格挡倍率、暴击率、
                                      //     荆棘、AP上限、蓄力阈值、弹反窗口)
 

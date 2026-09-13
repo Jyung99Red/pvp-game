@@ -83,7 +83,7 @@ test('guard, rear hit and parry work identically for host and guest; AP belongs 
   const t=setup({atk:100,maxHp:500,def:0});close(t);guard(t,defender);step(t,mode==='parry'?.17:.5);
   const b=t.d.sides[defender],a=t.d.sides[1-defender];if(mode==='rear')b.player.facing+=Math.PI;
   const ap=b.player.ap; light(t,1-defender);step(t,.12);
-  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(b.player.ap<ap);assert.equal(b.skillPoints,1);}
+  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(b.player.ap<ap);assert.equal(b.skillPoints,0);}
   else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.equal(b.player.ap,ap-1);}
   else {assert.equal(b.player.phase,'stunned');assert.equal(b.player.hp,470);assert.equal(b.action,null);}
  }
@@ -152,7 +152,7 @@ test('guest prediction cannot heal HP before the authoritative snapshot',()=>{
  assert.equal(b.player.hp,hp);
  b.skillPoints=3;light(t,1);t.D.predictInput(t.d,1,{type:'skill',kind:'heal'});
  for(let i=0;i<60;i++)t.D.predict(t.d,1,.01);
- assert.equal(b.player.hp,hp);assert.equal(b.skillPoints,1);
+ assert.equal(b.player.hp,hp);assert.equal(b.skillPoints,3);
 });
 
 function pair() {

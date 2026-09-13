@@ -81,7 +81,7 @@ const uiPvp = (() => {
             enemyKnownHp: knownEnemyHp ?? target.hp, enemyLastKnown, enemyLastSeenAt, enemyEverSeen },
             events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
         $('pvp-floor-label').textContent = !b.ready ? '等待双方准备' : b.countdown > 0 ? `准备 · ${Math.ceil(b.countdown)}` : '空间对战';
-        $('pvp-self-sp').textContent = `${local.skillPoints} / 3`;
+        $('pvp-self-sp').textContent = `${local.skillPoints} / 3${local.skillPoints < 3 && local.skillProgress > 0 ? ` · ${Math.floor(local.skillProgress * 100)}%` : ''}`;
         for (const [kind, skill] of Object.entries(local.config.skills || spatialData.skills)) {
             const cost = skill.cost;
             const node = $('pvp-s-skill-pad').querySelector(`[data-skill="${kind}"]`);

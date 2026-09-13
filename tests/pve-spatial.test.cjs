@@ -63,7 +63,7 @@ test('every configured enemy validates; profiles apply enhancement, defense, tim
  const before=t.pveProfiles.create('goblin',t.content.enemies.goblin);
  t.state.player.equip.left='iron_sword'; t.state.inventory.enhance.iron_sword=5;
  const after=t.pveProfiles.create('goblin',t.content.enemies.goblin);
- assert.ok(after.heavy.chargeBonus>before.heavy.chargeBonus); assert.equal(after.chargeThreshold,.7);
+  assert.ok(after.heavy.chargeBonus>before.heavy.chargeBonus); assert.equal(after.chargeThreshold,.35);
  assert.equal(after.player.def,t.player.getStats().def); assert.equal(after.critChance,t.player.getCritChance());
  assert.equal(after.apMax,t.player.getApMax()); assert.equal(after.blockMultiplier,.4*t.player.getGuardDamageMultiplier());
  after.actions[0].range=1; assert.notEqual(t.pveProfiles.create('goblin',t.content.enemies.goblin).actions[0].range,1);
@@ -184,6 +184,24 @@ test('boss enrage, explicit combo recovery and AP caps are active in the shared 
  const events=t.spatialEngine.drainEvents(b); assert.ok(events.some(e=>e.type==='enrage')); assert.ok(events.some(e=>e.type==='combo'));
  b.apRateMult=1000; b.enemy.phase='recover'; b.enemy.timer=100; b.player.ap=C.apMax-.1;
  t.spatialEngine.step(b,.01); assert.equal(b.player.ap,C.apMax); assert.ok(b.enemy.ap<=C.enemyApMax);
+});
+
+test('focus drives AP and slower time-based SP recovery without hit rewards',()=>{
+ const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle;
+ b.player.ap=0; seconds(t,2.9); assert.equal(b.skillPoints,0); assert.ok(b.player.ap>1.4 && b.player.ap<1.6);
+ seconds(t,.2); assert.equal(b.skillPoints,1); assert.ok(b.skillProgress<.1);
+ t.state.player.baseStats.focus=20; const faster=t.pveProfiles.create('goblin',t.content.enemies.goblin);
+ assert.equal(faster.apRegen,1); assert.equal(faster.spRegen,2/3);
+});
+
+test('wolf dash locks direction, travels a real path and hits at most once',()=>{
+ const t=setup(), C=t.pveProfiles.create('wolf',t.content.enemies.wolf), b=t.spatialEngine.create(C,()=>0), S=t.spatialEngine;
+ S.start(b); const e=b.enemy,p=b.player; e.x=p.x=180; e.y=180; p.y=270; p.facing=-Math.PI/2;
+ e.phase='windup'; e.timer=.01; e.attack=C.actions[1]; e.facing=Math.PI/2;
+ S.step(b,.01); assert.equal(e.phase,'dash'); const before=e.y;
+ for(let i=0;i<5;i++) S.step(b,.05); const events=S.drainEvents(b);
+ assert.ok(e.y>before); assert.ok(events.some(x=>x.type==='dash_started')); assert.equal(events.filter(x=>x.type==='hit' && x.side==='enemy').length,1); assert.ok(p.hp<p.maxHp);
+ const hp=p.hp; for(let i=0;i<5;i++) S.step(b,.05); assert.equal(p.hp,hp);
 });
 
 
