@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><base href="../"><meta name="viewport" content="width=device-width,initial-scale=1"><title>基地界面验证 · 不保存</title></head><body><p>加载基地验证页面…</p><script>
+// Disposable UI fixture: the production shell/assets with isolated game state.
+(async () => {
+    const read = async path => (await fetch(path, { cache: 'no-store' })).text();
+    const shell = new DOMParser().parseFromString(await read('index.html'), 'text/html');
+    shell.querySelectorAll('script').forEach(node => node.remove());
+    document.body.innerHTML = shell.body.innerHTML;
+    const assets = JSON.parse(await read('client-assets.json')).game;
+    for (const path of assets.styles) {
+        const style = document.createElement('style'); style.textContent = await read(path); document.head.append(style);
+    }
+    for (const id of assets.partials) document.getElementById(`mount-${id}`).outerHTML = await read(`partials/${id}.html`);
+    for (const path of assets.scripts.filter(path => !path.startsWith('https:'))) {
+        const script = document.createElement('script'); script.textContent = await read(path); document.body.append(script);
+    }
+    const setup = document.createElement('script');
+    setup.textContent = `
+        save.load = save.save = save.startAutosave = () => {};
+        save.resetToInitial = () => location.reload();
+        state.resources.gold = 1800; state.inventory.exp = 150;
+        state.inventory.items = { iron_sword: 1, swift_ring: 1 };
+        state.inventory.materials = { goblin_ear: 8, wolf_pelt: 4, orc_tooth: 3 };
+        ui.init();
+    `;
+    document.body.append(setup);
+})().catch(error => { console.error(error); document.body.textContent = error.message; });
+</script></body></html>

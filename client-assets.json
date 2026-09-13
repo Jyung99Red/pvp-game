@@ -2,6 +2,7 @@
   "game": {
     "styles": [
       "style.css",
+      "ui/base.css",
       "pve/spatial_pve.css",
       "pve/combat_controls.css"
     ],

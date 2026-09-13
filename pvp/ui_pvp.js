@@ -3,6 +3,15 @@ const uiPvp = (() => {
     const $ = id => document.getElementById(id);
     let view = null, input = null, settings = null, abort = null, version = 0, actionVersion = 0;
     let menu = false, remote = null, renderedAt = 0, knownEnemyHp = null, enemyLastKnown = null, enemyLastSeenAt = 0, enemyEverSeen = false;
+    let correction = { x: 0, y: 0, facing: 0 };
+    function reconcileLocal(previous) {
+        const b = state.pvpBattle;
+        if (!view || b?.role !== 'guest') return;
+        correction.x += previous.x - b.self.x;
+        correction.y += previous.y - b.self.y;
+        correction.facing = spatialCombat.angleDelta(correction.facing + previous.facing, b.self.facing);
+        if (b.duel.result || Math.hypot(correction.x, correction.y) > 60) correction = { x: 0, y: 0, facing: 0 };
+    }
     const toggle = (id, show) => $(id)?.classList.toggle('hidden', !show);
     function initFighters() {
         destroy(); hideResult(); hideRematchRequest(); hideDisconnectOverlay();
@@ -47,6 +56,14 @@ const uiPvp = (() => {
         if (local.actionInputVersion !== actionVersion) { actionVersion = local.actionInputVersion; input?.clear(true); }
         const at = performance.now(), dt = Math.min(.1, Math.max(0, (at - renderedAt) / 1000)); renderedAt = at;
         const target = b.opponent;
+        // Smooth only snapshot corrections. Ordinary local movement and action
+        // phases remain immediate, and this copy never enters the simulation.
+        const decay = Math.exp(-dt * 18);
+        correction.x *= decay; correction.y *= decay; correction.facing *= decay;
+        const shownPlayer = { ...local.player };
+        spatialCombat.move(shownPlayer, correction.x, correction.y, 1, local.config, null);
+        correction.x = shownPlayer.x - local.player.x; correction.y = shownPlayer.y - local.player.y;
+        shownPlayer.facing += correction.facing;
         if (!remote || spatialCombat.distance(remote, target) > 90 || b.duel.result) remote = { x: target.x, y: target.y, facing: target.facing };
         else {
             const weight = 1 - Math.exp(-dt * 22);
@@ -60,7 +77,7 @@ const uiPvp = (() => {
             knownEnemyHp = target.hp; enemyLastKnown = { x: target.x, y: target.y };
             enemyLastSeenAt = local.time; enemyEverSeen = true;
         }
-        view.render({ ...local, enemy: { ...target, ...remote }, enemyVisible,
+        view.render({ ...local, player: shownPlayer, visibilityOrigin: local.player, enemy: { ...target, ...remote }, enemyVisible,
             enemyKnownHp: knownEnemyHp ?? target.hp, enemyLastKnown, enemyLastSeenAt, enemyEverSeen },
             events.map(e => ({ ...e, side: e.actor === i ? 'player' : 'enemy' })), dt);
         $('pvp-floor-label').textContent = !b.ready ? '等待双方准备' : b.countdown > 0 ? `准备 · ${Math.ceil(b.countdown)}` : '空间对战';
@@ -77,6 +94,7 @@ const uiPvp = (() => {
     function destroy() {
         input?.destroy(); view?.destroy(); settings?.destroy(); abort?.abort();
         input = view = settings = abort = null; remote = null; menu = false; renderedAt = 0;
+        correction = { x: 0, y: 0, facing: 0 };
         knownEnemyHp = null; enemyLastKnown = null; enemyLastSeenAt = 0; enemyEverSeen = false;
     }
     function showSettings(show) {
@@ -90,7 +108,7 @@ const uiPvp = (() => {
     function hideResult() { toggle('pvp-result-overlay', false); toggle('pvp-rematch-waiting', false); toggle('pvp-btn-rematch', true); }
     function hideRematchRequest() { toggle('pvp-rematch-request', false); }
     function hideDisconnectOverlay() { toggle('pvp-disconnect-overlay', false); }
-    return { initFighters, updateFrame, refresh, destroy, showSettings, settingsOpen: () => menu,
+    return { initFighters, updateFrame, reconcileLocal, refresh, destroy, showSettings, settingsOpen: () => menu,
         clearInputs: () => input?.clear(), showResult, hideResult, hideRematchRequest, hideDisconnectOverlay,
         showRematchRequest: () => toggle('pvp-rematch-request', true),
         showRematchWaiting() { toggle('pvp-rematch-waiting', true); toggle('pvp-btn-rematch', false); toggle('pvp-rematch-request', false); },

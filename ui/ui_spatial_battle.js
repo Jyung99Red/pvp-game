@@ -65,7 +65,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function wallList() { return C.walls || []; }
     function visibilityPath() {
-        const polygon = S.visibilityPolygon(battle.player, C, wallList());
+        const polygon = S.visibilityPolygon(battle.visibilityOrigin || battle.player, C, wallList());
         if (polygon.length < 3) return false;
         ctx.beginPath(); polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
         ctx.closePath(); return true;

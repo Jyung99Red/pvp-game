@@ -1,69 +1,65 @@
-<!-- View: Base -->
-<div id="view-base" class="view-section">
-    <div class="panel">
-        <h2>🏰 基地物资</h2>
-        <div id="resource-display" style="font-size:13px;line-height:1.5;"></div>
-    </div>
-
-    <div class="panel" id="player-equip-panel">
-        <!-- 英雄与装备合并为左右分栏 -->
-        <div style="display: flex; margin-bottom: 4px;">
-
-            <!-- 左侧：英雄属性 -->
-            <div style="flex: 1; display: flex; flex-direction: column; padding-right: 8px;">
-                <!-- 标题栏：英雄 + 等级 + 升级按钮 -->
-                <div class="panel-header bordered">
-                    <div style="display: flex; align-items: baseline; gap: 4px;">
-                        <h3>🦸 英雄</h3>
-                        <span id="player-level-info" style="font-size:10px; color:var(--muted);"></span>
-                    </div>
-                    <button onclick="player.levelUp()" id="btn-lvl-up"
-                        class="btn-success btn-mini">⬆️ 升级</button>
-                </div>
-
-                <!-- HP 血条移到这里 -->
-                <div class="bar-wrap" id="base-player-hp-wrap" style="margin: 0 0 8px 0;">
-                    <div id="base-player-hp" class="bar-inner hp-bar"></div>
-                    <div id="base-player-hp-txt" class="bar-text">-</div>
-                </div>
-
-                <!-- 基础属性 -->
-                <div id="player-display-stats" style="font-size:11px; line-height:1.5; color:#ccc;"></div>
-            </div>
-
-            <!-- 右侧：装备栏 -->
-            <div
-                style="flex: 1.1; border-left: 1px solid var(--border); padding-left: 8px; display: flex; flex-direction: column;">
-                <div class="panel-header bordered">
-                    <h3>⚔️ 装备</h3>
-                    <button onclick="ui.openInventoryModal()" class="btn-warm btn-mini">🎒 背包</button>
-                </div>
-                <!-- 紧凑型装备槽 -->
-                <div class="equip-grid-compact" id="equip-slots"></div>
-            </div>
-        </div>
-
-        <!-- 临时测试按钮：调试用，正式发布前记得删掉 -->
-        <div class="btn-row" style="margin-top:6px;">
-            <button onclick="devCheat()" id="dev-cheat-btn" class="btn-dev">🛠️ +1级 & +50金币</button>
-            <button onclick="save.resetToInitial()" id="dev-reset-btn" class="btn-dev">🧪 重置存档</button>
-        </div>
-    </div>
-
-    <div class="panel" style="background:transparent; border:none; padding:0;">
-        <div class="btn-row">
-            <button onclick="ui.enterDungeon()" class="btn-lg btn-warm">🗡️ 下地下城</button>
-            <button onclick="ui.openBuildingModal()" class="btn-lg btn-success">🏗️ 建筑</button>
-        </div>
-        <button onclick="ui.enterTraining()" class="btn-info" style="margin-top:10px;">◎ 走位训练场 · 点击攻击</button>
-    </div>
+<!-- Base command panel -->
+<div id="view-base" class="view-section camp">
+    <header class="camp-heading"><div><span class="eyebrow">冒险者据点</span><h1>基地</h1></div><span class="status-chip"><i></i> 安全区域</span></header>
+    <div id="resource-display" class="camp-resources"></div>
+    <section class="camp-panel" id="player-equip-panel">
+        <div class="camp-section-head"><h2><span>01</span> 角色状态</h2><span id="player-level-info" class="level-chip"></span></div>
+        <div class="vital-line"><span>生命值</span><strong id="base-player-hp-txt">—</strong></div>
+        <div class="bar-wrap" id="base-player-hp-wrap"><div id="base-player-hp" class="bar-inner hp-bar"></div></div>
+        <div id="player-display-stats" class="camp-stats"></div>
+        <div class="level-row"><div class="exp-info"><span id="base-exp-text"></span><div class="exp-track"><i id="base-exp-fill"></i></div></div><button onclick="player.levelUp()" id="btn-lvl-up" class="camp-action">角色升级 ↑</button></div>
+    </section>
+    <section class="camp-panel">
+        <div class="camp-section-head"><h2><span>02</span> 当前装备</h2><button onclick="ui.openInventoryModal()" class="text-action">打开背包 ↗</button></div>
+        <div id="equip-slots" class="camp-equipment"></div>
+    </section>
+    <section class="camp-panel">
+        <div class="camp-section-head"><h2><span>03</span> 基地设施</h2><button onclick="ui.openBuildingModal()" class="text-action">建设管理 ↗</button></div>
+        <div id="base-building-list" class="camp-facilities"></div>
+    </section>
+    <section class="camp-deploy"><div><span class="eyebrow">下一次探索</span><h2>地下城 <span id="base-deploy-floor"></span></h2></div><button onclick="ui.enterDungeon()" class="camp-primary">出征 <span>→</span></button></section>
+    <button onclick="ui.enterTraining()" class="training-link"><span>◎ 走位训练场</span><small>练习操作与技能 ↗</small></button>
+    <details class="camp-tools"><summary>开发工具</summary><div class="btn-row"><button onclick="devCheat()" id="dev-cheat-btn" class="btn-dev">等级 +1 / 金币 +50</button><button onclick="save.resetToInitial()" id="dev-reset-btn" class="btn-dev">重置存档</button></div></details>
+</div>
+<div id="building-overlay" class="camp-overlay" aria-hidden="true">
+    <section class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="building-title" tabindex="-1">
+        <header class="camp-dialog-head"><div><span class="eyebrow">设施管理</span><h2 id="building-title">基地建设</h2></div><button class="dialog-close" onclick="ui.closeBuildingModal()" aria-label="关闭基地建设">×</button></header>
+        <div class="dialog-wallet">可用金币 <strong data-camp-gold>0</strong></div>
+        <div class="camp-dialog-body" id="building-list"></div>
+        <footer class="dialog-footnote">建设与升级立即生效。</footer>
+    </section>
 </div>
 
-<!-- Building modal -->
-<div id="building-overlay" class="modal-overlay-shared">
-    <div class="modal-box-shared">
-        <h3 style="margin:0 0 10px;">🏗️ 基地建设</h3>
-        <div id="building-list"></div>
-        <button onclick="ui.closeBuildingModal()" style="background:#333;margin-top:8px;">关闭</button>
-    </div>
-</div>
+        <div id="inventory-overlay" class="camp-overlay" aria-hidden="true">
+            <section id="inventory-box" class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="inventory-title" tabindex="-1">
+                <header class="camp-dialog-head"><div><span class="eyebrow">物品管理</span><h2 id="inventory-title">背包 <span id="inv-count"></span></h2></div><button class="dialog-close" onclick="ui.closeInventoryModal()" aria-label="关闭背包">×</button></header>
+                <div class="inventory-toolbar"><div class="inventory-filters" role="group" aria-label="物品分类">
+                    <button data-inv-filter="all" onclick="ui.filterInventory('all')" aria-pressed="true">全部</button><button data-inv-filter="equipment" onclick="ui.filterInventory('equipment')" aria-pressed="false">装备</button><button data-inv-filter="material" onclick="ui.filterInventory('material')" aria-pressed="false">材料</button>
+                </div><input id="inventory-search" type="search" placeholder="搜索物品名称" aria-label="搜索物品名称" oninput="ui.searchInventory(this.value)"></div>
+                <div class="camp-dialog-body"><div class="inv-grid" id="inventory-grid"></div></div>
+                <footer class="dialog-footnote">已装备物品置顶 · 点击物品查看详情</footer>
+            </section>
+        </div>
+        <div id="modal-overlay" class="camp-overlay" aria-hidden="true">
+            <section id="modal-box" class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+                <header class="camp-dialog-head"><div><span class="eyebrow">物品详情</span><h2 id="modal-title"></h2></div><button class="dialog-close" onclick="ui.closeModal()" aria-label="关闭物品详情">×</button></header>
+                <div class="camp-dialog-body"><div class="modal-stat" id="modal-stats"></div><div id="modal-effects"></div><div class="modal-desc" id="modal-desc"></div></div>
+                <footer class="modal-btns" id="modal-btns"></footer>
+            </section>
+        </div>
+        <div id="smithy-overlay" class="camp-overlay" aria-hidden="true">
+            <section id="smithy-box" class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="smithy-title" tabindex="-1">
+                <header class="camp-dialog-head"><div><span class="eyebrow">装备制造</span><h2 id="smithy-title">铁匠铺</h2></div><button class="dialog-close" onclick="ui.closeSmithyModal()" aria-label="关闭铁匠铺">×</button></header>
+                <p class="dialog-intro">选择装备，查看属性与所需材料。</p><div class="camp-dialog-body" id="smithy-recipe-list"></div>
+                <footer class="dialog-footnote">绿色标记表示材料齐全。</footer>
+            </section>
+        </div>
+        <div id="shop-overlay" class="camp-overlay" aria-hidden="true">
+            <section id="shop-box" class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="shop-title" tabindex="-1">
+                <header class="camp-dialog-head"><div><span class="eyebrow">物资补给</span><h2 id="shop-title">商店</h2></div><button class="dialog-close" onclick="ui.closeShopModal()" aria-label="关闭商店">×</button></header>
+                <div class="dialog-wallet">可用金币 <strong data-camp-gold>0</strong></div><div class="camp-dialog-body" id="shop-list"></div>
+                <footer class="dialog-footnote">购买的材料可在铁匠铺制作装备。</footer>
+            </section>
+        </div>
+
+        <div id="camp-toast" class="camp-toast" role="status" aria-live="polite"></div>

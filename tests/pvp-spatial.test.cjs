@@ -168,9 +168,69 @@ function pair() {
  const deliver=()=>{let guard=0;while(messages.length){assert.ok(guard++<1000);const {from,msg}=messages.shift();peers[1-from].logic.receiveMessage(msg);}};
  const frame=(ms=10,network=true)=>{clock+=ms;for(const t of peers){const callbacks=[...t.loops.values()];t.loops.clear();callbacks.forEach(fn=>fn(clock));}if(network)deliver();};
  peers[0].logic.startPVP('host',peers[1].spatialProfiles.local());deliver();for(let n=0;n<170;n++)frame();
- return {peers,messages,deliver,frame,rendered,results,get clock(){return clock;}};
+ return {peers,messages,deliver,frame,rendered,results,elapse(ms){clock+=ms;},get clock(){return clock;}};
 }
 function command(type,channel,values){return{type,channel,values,cancelled:false};}
+
+test('guest snapshot between display frames does not advance arrival time twice',()=>{
+ const p=pair(),[h,g]=p.peers;
+ g.logic.input(command('press','move',[0,0]));g.logic.input(command('drag','move',[0,-60,0,-60]));p.deliver();
+ p.frame(50,false);assert.ok(p.messages.some(m=>m.msg.msg==='duel_snapshot'));
+ p.elapse(7);p.deliver();
+ const before=g.state.pvpBattle.spatial.time, y=g.state.pvpBattle.self.y;
+ p.frame(3,false);
+ assert.ok(Math.abs(g.state.pvpBattle.spatial.time-before)<1e-9);
+ assert.equal(g.state.pvpBattle.self.y,y);
+ p.frame(7,false);
+ assert.ok(Math.abs(g.state.pvpBattle.spatial.time-before-.01)<1e-9);
+ assert.ok(g.state.pvpBattle.self.y<y);
+ assert.equal(g.state.pvpBattle.self.hp,h.state.pvpBattle.opponent.hp);
+});
+
+function presentationFixture() {
+ let clock=100,shown;
+ const node={hidden:false,textContent:'',classList:{toggle(){}},setAttribute(){},addEventListener(){},querySelector(){return node;}};
+ const t=context({performance:{now:()=>clock},document:{getElementById:()=>node,addEventListener(){}},
+  window:{addEventListener(){}},AbortController,
+  combatSettings:{attach:()=>({apply(){},destroy(){}})},combatInput:{attach:()=>({clear(){},destroy(){}})},
+  uiSpatialBattle:{create:()=>({render:b=>{shown=b;},destroy(){},refresh(){}})},
+  pvpLogic:{MODES:{fair:{label:'公平对决'}},input(){},cancelLocal(){},interrupt(){}}
+ });
+ const d=t.spatialDuel.create([t.spatialProfiles.fair(),t.spatialProfiles.fair()]);
+ const b=t.state.pvpBattle={role:'guest',mode:'fair',duel:d,spatial:d.sides[1],self:d.sides[1].player,
+  opponent:d.sides[0].player,visibility:[true,true],active:true,ready:true,countdown:0};
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../pvp/ui_pvp.js'),'utf8'),t.c);
+ const view=vm.runInContext('uiPvp',t.c);view.initFighters();
+ return {t,b,view,render(ms=0){clock+=ms;view.updateFrame();return shown;}};
+}
+
+test('guest smooths only reconciliation error in a display copy, preserving immediate movement and HP',()=>{
+ const {b,view,render}=presentationFixture(),old={...b.self};
+ b.self.y+=8;b.self.facing+=.2;b.self.hp-=10;
+ view.reconcileLocal(old);
+ let shown=render();
+ assert.equal(shown.player.y,old.y);assert.equal(shown.player.facing,old.facing);
+ assert.equal(shown.player.hp,b.self.hp);assert.equal(shown.visibilityOrigin,b.self);
+ assert.notEqual(shown.player,b.self);assert.equal(b.self.y,old.y+8);
+ b.self.y-=2;shown=render();assert.equal(shown.player.y,old.y-2);
+ const second={...b.self};b.self.y+=3;view.reconcileLocal(second);
+ assert.equal(render().player.y,old.y-2);
+ for(let n=0;n<50;n++)shown=render(16);
+ assert.ok(Math.abs(shown.player.y-b.self.y)<.001);
+ b.self.y+=100;view.reconcileLocal(second);assert.equal(render().player.y,b.self.y);
+});
+
+test('guest correction respects walls, resets on result/reinitialization, and never smooths host input',()=>{
+ const {t,b,view,render}=presentationFixture();
+ b.self.x=200;b.self.y=280;
+ view.reconcileLocal({...b.self,y:320});
+ const shown=render();assert.ok(shown.player.y<=294+1e-6);
+ assert.equal(t.spatialCombat.canOccupy(shown.player,shown.player.x,shown.player.y,b.spatial.config,b.spatial.config.walls),true);
+ assert.equal(b.self.y,280);
+ b.duel.result='guest';view.reconcileLocal({...b.self,y:290});assert.equal(render().player.y,280);
+ b.duel.result=null;view.reconcileLocal({...b.self,y:290});view.initFighters();assert.equal(render().player.y,280);
+ b.role='host';view.reconcileLocal({...b.self,y:290});assert.equal(render().player.y,280);
+});
 test('two clients handshake/count down; local movement predicts before delivery; host alone changes HP',()=>{
  const p=pair(),[h,g]=p.peers;assert.ok(h.state.pvpBattle.ready&&g.state.pvpBattle.ready);
  assert.equal(h.logic.getCurrentBattleId(),g.logic.getCurrentBattleId());

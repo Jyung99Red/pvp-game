@@ -17,62 +17,19 @@
 
         <div id="mount-pve-battle"></div>
 
-        <div id="inventory-overlay">
-            <div id="inventory-box">
-                <div class="modal-header">
-                    <h3>🎒 个人背包</h3>
-                    <span id="inv-count" class="modal-subtle">0/20</span>
-                </div>
-                <div class="inv-grid-wrap">
-                    <div class="inv-grid" id="inventory-grid"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Item info modal -->
-        <div id="modal-overlay">
-            <div id="modal-box">
-                <h3 id="modal-title"></h3>
-                <div class="modal-stat" id="modal-stats"></div>
-                <div id="modal-effects"></div>
-                <div class="modal-desc" id="modal-desc"></div>
-                <div class="modal-btns" id="modal-btns"></div>
-            </div>
-        </div>
-
-        <!-- Smithy modal -->
-        <div id="smithy-overlay">
-            <div id="smithy-box">
-                <h3 style="margin:0 0 10px;">🔨 铁匠铺</h3>
-                <div id="smithy-recipe-list"></div>
-                <button onclick="ui.closeSmithyModal()" style="background:#333;margin-top:4px;">关闭</button>
-            </div>
-        </div>
-
-        <!-- Shop modal -->
-        <div id="shop-overlay">
-            <div id="shop-box">
-                <h3 style="margin:0 0 10px;">🛒 商店</h3>
-                <div id="shop-list"></div>
-                <button onclick="ui.closeShopModal()" style="background:#333;margin-top:4px;">关闭</button>
-            </div>
-        </div>
-
         <div id="mount-pvp-room"></div>
 
         <div id="mount-pvp-battle"></div>
 
-        </div>
+    </div>
 
-        <div class="nav-bar">
-            <button class="nav-btn active" id="tab-base" onclick="ui.switchTab('base')">🏕️ 基地</button>
-            <button class="nav-btn" id="tab-battle" onclick="ui.switchTab('battle')">⚔️ 战斗</button>
-            <button class="nav-btn" id="tab-pvp-room" onclick="ui.switchTab('pvp-room')">⚔️ PVP</button>
-        </div>
+    <div class="nav-bar">
+        <button class="nav-btn active" id="tab-base" onclick="ui.switchTab('base')">基地</button>
+        <button class="nav-btn" id="tab-battle" onclick="ui.switchTab('battle')">地下城</button>
+        <button class="nav-btn" id="tab-pvp-room" onclick="ui.switchTab('pvp-room')">玩家对战</button>
+    </div>
 
-        <!-- 引入所有的 JS 文件 -->
-
-        <script src="core/client_boot.js?v=spatial-20260911-mobile3" data-entry="game"></script>
+    <script src="core/client_boot.js?v=spatial-20260911-mobile3" data-entry="game"></script>
 
 </body>
 

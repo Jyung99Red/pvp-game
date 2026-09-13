@@ -144,19 +144,33 @@ const pvpLogic = (() => {
         if (!Number.isSafeInteger(msg.serial) || msg.serial <= appliedSnapshot || !Number.isSafeInteger(msg.ack) || msg.ack < 0 || msg.ack > inputSeq ||
             !Number.isFinite(msg.countdown) || msg.countdown < 0 || msg.countdown > 1.5 || !Array.isArray(msg.events) || !D.validSnapshot(b.duel, msg.snapshot)) return;
         appliedSnapshot = msg.serial;
+        const at = now();
+        // Bring the old prediction to the same local instant as the replay, so
+        // presentation receives only reconciliation error, not normal movement.
+        advance((at - lastFrame) / 1000);
+        if (b.countdown <= 0 && accumulator > 0) D.predict(b.duel, 1, accumulator);
+        queuePresentation(collect());
+        const previous = { x: b.self.x, y: b.self.y, facing: b.self.facing };
         const acknowledged = pending.filter(p => p.seq <= msg.ack);
-        if (acknowledged.length) latency = Math.min(150, Math.max(0, (now() - acknowledged[acknowledged.length - 1].at) / 2));
-        const replayFrom = now() - latency;
+        if (acknowledged.length) {
+            const sample = Math.min(150, Math.max(0, (at - acknowledged[acknowledged.length - 1].at) / 2));
+            latency += (sample - latency) * .1;
+        }
+        const replayFrom = at - latency;
         pending = pending.filter(p => p.seq > msg.ack);
         D.restore(b.duel, msg.snapshot); b.countdown = msg.countdown; b.visibility = msg.snapshot.visibility.slice();
         // Reapply unacknowledged inputs in order, with bounded local time between them.
-        let cursor = Math.max(now() - 250, replayFrom);
+        let cursor = Math.max(at - 250, replayFrom);
         const predictTo = t => { let remain = Math.max(0, t - cursor) / 1000; while (remain > 1e-6) { const dt = Math.min(.01, remain); D.predict(b.duel, 1, dt); remain -= dt; } cursor = Math.max(cursor, t); };
         if (!b.duel.result && b.countdown <= 0) {
             for (const p of pending) { predictTo(p.at); D.predictInput(b.duel, 1, p.command); }
-            predictTo(now());
+            predictTo(at);
         }
+        // Replay already covers time through arrival. Do not simulate the
+        // interval since the previous display frame a second time next frame.
+        lastFrame = at; accumulator = 0;
         b.duel.events.length = 0; aliases();
+        uiPvp.reconcileLocal?.(previous);
         const events = (msg.events || []).filter(e => e.id > seenEvent);
         for (const e of events) seenEvent = Math.max(seenEvent, e.id);
         queuePresentation(events);
