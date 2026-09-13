@@ -20,7 +20,7 @@ test('shared view mounts on training Document and formal Element roots, and redr
             key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
         const nodes = new Map();
         function element() {
-            return { textContent: '', style: {}, classList: { toggle() {} }, addEventListener() {}, querySelectorAll: () => [],
+            return { textContent: '', style: { setProperty(key, value) { this[key] = value; } }, classList: { toggle() {} }, addEventListener() {}, querySelectorAll: () => [],
                 setAttribute() {}, appendChild(node) { return node; }, remove() {},
                 getBoundingClientRect: () => ({ width: 390, height: 844, top: 700, bottom: 90 }),
                 querySelector: () => ({ style: {} }) };

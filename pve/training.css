@@ -53,13 +53,15 @@ h1 { font-size: 26px; margin: 12px 0; font-weight: 650; }
 .pad.armed { border-color: var(--gold); box-shadow: 0 0 18px #efc18126; }
 .pad.cancel-ready { border-color: #ff6676; background: radial-gradient(circle, #943747e8, #341820ed); box-shadow: 0 0 22px #f34e6355; }
 .pad.cancel-ready .pad-icon, .pad.cancel-ready strong { color: #ffe1e5; }
-.cancel-zone { position: absolute; width: 36px; height: 36px; top: calc(50% - 18px); left: calc(50% - 18px); border: 1px dashed #ff7584; border-radius: 50%; pointer-events: none; display: none; }
+.cancel-zone { position: absolute; width: 48px; height: 48px; top: calc(50% - 24px); left: calc(50% - 24px); border: 2px dashed #ff9aa5; background: #ff53651c; border-radius: 50%; pointer-events: none; display: none; }
 .pad.armed .cancel-zone, .pad.cancel-ready .cancel-zone { display: block; }
 .pad-icon { font-size: 27px; line-height: 1; color: var(--cyan); pointer-events: none; }
 .guard-pad .pad-icon { color: #a5c4ee; }
 .pad strong { font-size: 12px; pointer-events: none; }
 .pad-arrow { position: absolute; top: 6px; font-size: 13px; opacity: .5; pointer-events: none; }
-.pad-knob { position: absolute; top: calc(50% - 18px); left: calc(50% - 18px); width: 36px; height: 36px; border: 1px solid #e5efed77; border-radius: 50%; background: #e5efed12; opacity: 0; pointer-events: none; }
+.move-pad::before { content: ''; position: absolute; width: 84px; height: 84px; top: calc(var(--gesture-y, 50%) - 42px); left: calc(var(--gesture-x, 50%) - 42px); border: 2px solid #bcece677; background: #bcece616; border-radius: 50%; opacity: 0; pointer-events: none; z-index: 1; }
+.move-pad.active::before { opacity: 1; }
+.pad-knob { position: absolute; top: calc(var(--gesture-y, 50%) - 18px); left: calc(var(--gesture-x, 50%) - 18px); width: 36px; height: 36px; border: 2px solid #f0fffcbb; border-radius: 50%; background: #81e6d966; box-shadow: 0 0 12px #81e6d966; opacity: 0; pointer-events: none; z-index: 2; }
 .pad.active .pad-knob { opacity: 1; }
 .control-group p { color: var(--muted); font-size: 9px; line-height: 1.8; margin: 8px -4px 0; }
 footer { font-size: 9px; color: #647e82; text-align: center; padding-top: 7px; }

@@ -382,7 +382,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             ctx.strokeStyle = locked ? '#f27365' : '#efc181'; ctx.lineWidth = 3; ctx.stroke();
         }
         if (enemyVisible && e.phase === 'dash' && e.attack?.dash) {
-            const d = e.attack.dash, end = { x: e.x + Math.cos(e.dashFacing) * d.distance, y: e.y + Math.sin(e.dashFacing) * d.distance };
+            const d = e.attack.dash, distance = Math.max(0, e.dashRemaining ?? d.distance);
+            const end = { x: e.x + Math.cos(e.dashFacing) * distance, y: e.y + Math.sin(e.dashFacing) * distance };
             shape({ kind: 'dash', start: e, end, width: d.width }, e, e.dashFacing, '#f27365', .55);
         }
         if (enemyVisible && ['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
@@ -433,6 +434,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         for (const [channel, pad] of Object.entries(pads)) {
             const g = channel === 'move' ? battle.move : channel === 'skill' ? battle.skill : battle.guard;
             const charge = channel === 'move' ? battle.action : null;
+            pad.style.setProperty('--cancel-radius', `${L.config.cancelRadius}px`);
             pad.classList.toggle('no-center-cancel', !battle.controls.cancelAtCenter);
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
             pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) : channel === 'skill' && !!L.selectedSkill(g));

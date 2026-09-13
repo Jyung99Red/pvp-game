@@ -111,7 +111,7 @@ test('all four skills retain costs; full charge awaits swipe, cancellation spend
  L.press(e,'move'); seconds(t,.75); assert.ok(b.player.charge>.5); const q=b.player.charge;
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
  L.release(e,'move'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
- L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2); assert.equal(e.stats.attacks,0);
+ L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2.3); assert.equal(e.stats.attacks,0);
  L.release(e,'move'); assert.equal(b.player.ap,e.config.apMax); assert.equal(b.buffs.instantCharge,false);
  b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
 });
@@ -161,7 +161,7 @@ test('wall contact does not push a stationary guard or overlap actors',()=>{
 test('crit changes actual damage and equipment threshold changes heavy yield without changing gestures',()=>{
  const t=setup(); const config=t.pveProfiles.create('goblin',t.content.enemies.goblin);
  function strike(crit, threshold) {
-  const C=JSON.parse(JSON.stringify(config)); C.critChance=crit; C.chargeThreshold=threshold;
+  const C=JSON.parse(JSON.stringify(config)); C.critChance=crit; C.chargeThreshold=threshold; C.fullCharge=threshold+2;
   const b=t.spatialEngine.create(C,()=>0); t.spatialEngine.start(b); b.enemy.y=b.player.y-70; b.enemy.phase='recover'; b.enemy.timer=100;
   t.spatialEngine.press(b,'move');
   for(let i=0;i<75;i++) t.spatialEngine.step(b,.01);
@@ -203,6 +203,35 @@ test('wolf dash locks direction, travels a real path and hits at most once',()=>
  for(let i=0;i<5;i++) S.step(b,.05); const events=S.drainEvents(b);
  assert.ok(e.y>before); assert.ok(events.some(x=>x.type==='dash_started')); assert.equal(events.filter(x=>x.type==='hit' && x.side==='enemy').length,1); assert.ok(p.hp<p.maxHp);
  const hp=p.hp; for(let i=0;i<5;i++) S.step(b,.05); assert.equal(p.hp,hp);
+});
+
+test('dash contact stops immediately for early/late blocks and parries, preserving stagger',()=>{
+ for (const x of [180,250]) for (const defense of ['block','parry','auto','stagger']) {
+  const t=setup(), C=t.pveProfiles.create('wolf',t.content.enemies.wolf), S=t.spatialEngine;
+  C.parryWindow=1;
+  const b=S.create(C,()=>.99); S.start(b); const e=b.enemy,p=b.player;
+  Object.assign(e,{x:100,y:250,facing:0,phase:'dash',attack:C.actions[1],dashFacing:0,dashRemaining:150,dashHit:false});
+  Object.assign(p,{x,y:250,facing:Math.PI,phase:defense==='auto'?'idle':'guard',guardReadyAt:defense==='block'?-100:0});
+  if(defense==='auto') b.buffs.autoParry=1;
+  if(defense==='stagger') e.stagger=C.stagger.threshold-C.stagger.parry;
+  for(let i=0;i<100 && !e.dashHit;i++) S.step(b,.01);
+  assert.equal(e.dashHit,true); assert.equal(e.phase,defense==='stagger'?'stagger':'recover');
+  const stopped=e.x; S.step(b,.05); assert.equal(e.x,stopped); assert.ok(e.x<p.x);
+  const events=S.drainEvents(b); assert.equal(events.filter(v=>v.type==='block'||v.type==='parry').length,1);
+ }
+});
+
+test('diagonal dash stops at wall and boundary contact without sliding',()=>{
+ for(const wall of [false,true]) {
+  const t=setup(), C=t.pveProfiles.create('wolf',t.content.enemies.wolf);
+  const b=t.spatialEngine.create(C,()=>.99), e=b.enemy,p=b.player;
+  if(wall) b.config.walls=[{x:200,y:150,width:10,height:250}];
+  Object.assign(e,{x:wall?150:450,y:250,facing:Math.PI/4,phase:'dash',attack:C.actions[1],dashFacing:Math.PI/4,dashRemaining:150,dashHit:false});
+  Object.assign(p,{x:50,y:50}); const start={x:e.x,y:e.y}; t.spatialEngine.start(b);
+  for(let i=0;i<100 && e.phase==='dash';i++) t.spatialEngine.step(b,.01);
+  assert.equal(e.phase,'recover'); assert.ok(Math.abs((e.x-start.x)-(e.y-start.y))<1e-5);
+  assert.ok(Math.abs(e.x-((wall?200:C.width)-e.radius))<1e-5);
+ }
 });
 
 

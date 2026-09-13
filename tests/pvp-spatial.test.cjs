@@ -18,6 +18,23 @@ function light(t,i) { input(t,i,'press','move',[0,0]);input(t,i,'release','move'
 function guard(t,i) { input(t,i,'press','guard',[0,0]); }
 function skill(t,i,kind) { return t.D.input(t.d,i,{type:'skill',kind}); }
 
+test('weapon thresholds keep two seconds of damage growth and independent PVP charge limits',()=>{
+ for(const threshold of [250,300,350]) {
+  const t=context(), profile=t.spatialProfiles.fair();
+  const d=t.spatialDuel.create([{...profile,chargeThresholdMs:threshold},{...profile,chargeThresholdMs:350}],()=>.99);
+  const b=d.sides[0], T=threshold/1000;
+  assert.equal(b.config.fullCharge,T+2); assert.equal(d.sides[1].config.fullCharge,2.35);
+  for(const progress of [0,1,2]) {
+   const actor=t.spatialEngine.create(b.config,()=>.99); t.spatialEngine.start(actor);
+   t.spatialEngine.press(actor,'move');
+   for(let i=0;i<5;i++) t.spatialEngine.advanceActor(actor,.05,()=>{});
+   actor.player.charge=T+progress;
+   t.spatialEngine.drag(actor,'move',50,0); t.spatialEngine.release(actor,'move');
+   assert.equal(actor.player.attack.damage,Math.round(profile.atk*(.3+.8*progress/2)));
+  }
+ }
+});
+
 test('fair profile uses the shared rules, closer camera and independent enlarged arena',()=>{
  const t=context(), fair=t.spatialProfiles.fair(), d=t.spatialDuel.create([fair,fair]);
  const [a,b]=d.sides;
@@ -64,7 +81,7 @@ test('symmetric players share spatial tuning, equipment profiles and independent
  const [a,b]=t.d.sides;
  assert.equal(a.player.radius,b.player.radius);assert.equal(a.player.hp,a.player.maxHp);
  assert.equal(a.config.heavy.windup,.45);assert.equal(b.config.heavy.recovery,.6);
- assert.equal(a.config.fullCharge,2);assert.equal(a.config.motion.move,1.2);
+ assert.equal(a.config.fullCharge,2.3);assert.equal(a.config.motion.move,1.2);
  a.buffs.autoParry=1; assert.equal(b.buffs.autoParry,0);
  assert.equal(a.enemy,b.player);assert.equal(b.enemy,a.player);
  assert.throws(()=>t.D.create([{...t.d.profiles[0],atk:Infinity},t.d.profiles[1]]));
@@ -117,9 +134,9 @@ test('haste and full charge retain latest tuning without auto-fire or cross-play
  const t=setup(),b=t.d.sides[0];b.skillPoints=3;assert.equal(skill(t,0,'haste'),true);assert.equal(b.skillPoints,1);
  assert.equal(b.buffs.chargeHasteUntil,10);assert.equal(t.d.sides[1].buffs.chargeHasteUntil,0);
  input(t,0,'press','move',[0,0]);step(t,1.25);assert.ok(Math.abs(b.player.charge-1.5)<1e-6);
- step(t,2);assert.equal(b.player.charge,2);assert.equal(b.player.phase,'charging');
+ step(t,2);assert.equal(b.player.charge,2.3);assert.equal(b.player.phase,'charging');
  input(t,0,'release','move');assert.equal(b.player.phase,'idle');
- b.skillPoints=3;assert.equal(skill(t,0,'full'),true);input(t,0,'press','move',[0,0]);step(t,.25);assert.equal(b.player.charge,2);
+ b.skillPoints=3;assert.equal(skill(t,0,'full'),true);input(t,0,'press','move',[0,0]);step(t,.25);assert.equal(b.player.charge,2.3);
  input(t,0,'release','move');assert.equal(b.buffs.instantCharge,false);assert.equal(b.skillPoints,1);
 });
 test('hit cancels only victims right input; held movement resumes and no tap leaks through stun',()=>{

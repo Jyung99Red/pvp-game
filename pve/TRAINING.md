@@ -10,7 +10,7 @@ no save writes and no connection to the original PVE/PVP battle state.
   Drag beyond 12 CSS pixels first to latch ordinary movement until release.
   Returning to the landing point never starts a charge during that gesture.
 - Hold at the landing point for .25s to enter charge, then drag to move and turn.
-  Charge time starts after this recognition delay. Release outside an 18px radius
+  Charge time starts after this recognition delay. Release outside a 24px radius
   of the landing point to heavy attack, or inside to cancel (configurable).
   Attack direction is actual facing at release, including queued releases.
 - Guard is upper-left, four-way skills upper-right. Guard can turn independently

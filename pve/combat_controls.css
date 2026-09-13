@@ -107,8 +107,15 @@
     border-color: #b99cd6; background: radial-gradient(circle, #584569e8, #242139ed);
 }
 :is(.training, #view-battle, #view-pvp-battle) .combined-controls .pad strong { font-size: 10px; max-width: 110px; }
-:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-pad :is(.pad-knob, .cancel-zone) {
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-pad .pad-knob {
     left: calc(var(--gesture-x, 50%) - 18px); top: calc(var(--gesture-y, 50%) - 18px);
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-pad .cancel-zone {
+    box-sizing: border-box;
+    width: calc(var(--cancel-radius, 24px) * 2); height: calc(var(--cancel-radius, 24px) * 2);
+    left: calc(var(--gesture-x, 50%) - var(--cancel-radius, 24px));
+    top: calc(var(--gesture-y, 50%) - var(--cancel-radius, 24px));
+    z-index: 3;
 }
 :is(.training, #view-battle, #view-pvp-battle) .combined-controls .pad:focus-visible { outline: 2px solid #efc181; outline-offset: 3px; }
 

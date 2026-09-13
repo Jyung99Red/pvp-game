@@ -15,7 +15,7 @@ const spatialEngine = (() => {
         if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
         if (C.formal && !C.pvp && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
-            !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.chargeThreshold >= C.fullCharge)) throw new Error('Invalid profile');
+            !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.fullCharge < C.chargeThreshold + 2 - 1e-9)) throw new Error('Invalid profile');
         if (!Object.values(C.ai).every(nonnegative)) throw new Error('Invalid AI timing');
         for (const a of [C.light, C.heavy, ...(C.actions || [C.sweep, C.stomp])]) {
             if (!a || !['sector', 'circle', 'dash'].includes(a.kind) || !positive(a.range) ||
@@ -370,13 +370,17 @@ const spatialEngine = (() => {
             const remaining = Math.max(0, e.dashRemaining);
             const dashDt = Math.min(dt, remaining / Math.max(speed, 1e-9));
             const start = { x: e.x, y: e.y };
-            const moved = dashDt > 0 && S.move(e, Math.cos(e.dashFacing) * speed, Math.sin(e.dashFacing) * speed, dashDt, C, p);
+            const moved = dashDt > 0 && S.move(e, Math.cos(e.dashFacing) * speed, Math.sin(e.dashFacing) * speed, dashDt, C, p, C.walls, false);
             const end = { x: e.x, y: e.y }, travelled = S.distance(start, end);
             e.dashRemaining = Math.max(0, remaining - travelled);
             if (!e.dashHit && S.segmentHitsBody(start, end, p, dash.width + e.radius)) {
                 e.dashHit = true; enemyHit(b, { start, end, facing: e.dashFacing });
             }
-            if (!moved || travelled <= 1e-7 || e.dashRemaining <= 1e-7) {
+            // A defended contact can stagger the attacker. Preserve that
+            // phase; otherwise the dash ends at the actual contact point.
+            if (e.phase !== 'dash') return;
+            if (e.dashHit || !moved || travelled < speed * dashDt - 1e-7 || e.dashRemaining <= 1e-7) {
+                e.dashRemaining = 0;
                 e.phase = 'recover'; e.timer = e.attack.recovery;
             }
             return;

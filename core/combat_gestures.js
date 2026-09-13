@@ -1,6 +1,6 @@
 // Pure gesture recognition. No combat state, DOM or wall clock.
 const combatGestures = (() => {
-    const config = Object.freeze({ deadZone: 12, holdSeconds: .25, cancelRadius: 18, skillDeadZone: 24 });
+    const config = Object.freeze({ deadZone: 12, holdSeconds: .25, cancelRadius: 24, skillDeadZone: 24 });
     function begin(time, cx = 0, cy = 0) { return { mode: 'pending', start: time, dx: 0, dy: 0, cx, cy }; }
     function hold(g, time) {
         if (g && !g.suppressTap && g.mode === 'pending' && time - g.start >= config.holdSeconds - 1e-9) {

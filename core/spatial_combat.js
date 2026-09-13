@@ -67,7 +67,7 @@ const spatialCombat = (() => {
             return segmentDistance(dx, dy, Math.cos(edge) * shape.range, Math.sin(edge) * shape.range) <= radius;
         });
     }
-    function move(body, vx, vy, dt, bounds, obstacle, wallList = bounds?.walls || []) {
+    function move(body, vx, vy, dt, bounds, obstacle, wallList = bounds?.walls || [], slide = true) {
         const previous = { x: body.x, y: body.y }, travel = Math.hypot(vx, vy) * dt;
         const stepLength = Math.max(1, body.radius * .5), steps = Math.max(1, Math.ceil(travel / stepLength));
         const dx = vx * dt / steps, dy = vy * dt / steps;
@@ -78,8 +78,20 @@ const spatialCombat = (() => {
         });
         const valid = point => canOccupy(body, point.x, point.y, bounds, walls, obstacle);
         for (let i = 0; i < steps; i++) {
-            const start = { x: body.x, y: body.y }, target = position(start.x + dx, start.y + dy);
+            const start = { x: body.x, y: body.y };
+            const target = slide ? position(start.x + dx, start.y + dy) : { x: start.x + dx, y: start.y + dy };
             if (valid(target)) { body.x = target.x; body.y = target.y; continue; }
+            if (!slide) {
+                // Stop a straight dash at contact instead of sliding along a wall/body.
+                let lo = 0, hi = 1;
+                for (let j = 0; j < 24; j++) {
+                    const mid = (lo + hi) / 2;
+                    if (valid({ x: start.x + dx * mid, y: start.y + dy * mid })) lo = mid;
+                    else hi = mid;
+                }
+                body.x = start.x + dx * lo; body.y = start.y + dy * lo;
+                break;
+            }
             const candidates = [position(start.x + dx, start.y), position(start.x, start.y + dy)];
             const usable = candidates.filter(valid);
             if (usable.length) {

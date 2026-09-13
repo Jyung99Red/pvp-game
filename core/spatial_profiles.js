@@ -57,7 +57,11 @@ const spatialProfiles = (() => {
         const focus = Math.max(.1, stats.focus);
         C.apRegen = 1000 / combatResolver.apRecoveryMs(focus);
         C.spRegen = 1000 / combatResolver.spRecoveryMs(focus);
-        C.fullCharge = 2; C.chargeThreshold = clamp(stats.chargeThresholdMs / 1000, 0, 1.9);
+        // Formal damage growth starts at the weapon threshold, then takes a
+        // fixed two seconds to reach full charge. Geometry still uses the
+        // complete charge duration, so weapon templates remain meaningful.
+        C.chargeThreshold = clamp(stats.chargeThresholdMs / 1000, 0, 1000000);
+        C.fullCharge = C.chargeThreshold + 2;
         C.parryWindow = clamp(stats.parryWindowBaseMs * stats.judgmentMultiplier / 1000, 0, 1);
         C.blockMultiplier = clamp(.4 * stats.guardDamageMultiplier, 0, 1);
         C.critChance = clamp(stats.critChance, 0, 1); C.guardThorns = Math.max(0, stats.guardThorns);

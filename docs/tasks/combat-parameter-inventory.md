@@ -25,7 +25,7 @@
 | 参数 | 值 | 单位/作用 |
 |---|---:|---|
 | 训练场 `width × height` | `360 × 400` | 世界单位；正式 PVE 覆盖为 `510 × 566`，PVP 覆盖为 `570 × 630` |
-| `fullCharge` | `1.6` | 秒；正式 profile 覆盖为 2 秒 |
+| `fullCharge` | `1.6` | 秒；正式 profile 按 `chargeThresholdMs/1000 + 2` 计算 |
 | `playerSpeed` | `115` | 世界单位/秒 |
 | `playerTurn` | `8` | 弧度/秒；普通自动转向/移动转向基础值 |
 | `chargeMoveMultiplier` | `.6` | 蓄力移动倍率（2026-09-13） |
@@ -60,7 +60,7 @@
 | 重击 | sector | range `60→103`，arc `0.28π→0.68π` | windup `.45s`，recovery `.60s` | 训练基础 `28` + `30×充能比例`；正式基础 `atk×.3` + `atk×.8×充能比例` |
 | 重击 `chargeBonus` 的充能比例 | — | — | — | 正式从 `chargeThreshold` 到 `fullCharge` 线性插值；阈值前比例为 0，因此仍为约 `0.3×atk`，不会成为 0 伤害（`pve/spatial_engine.js:L185-L190`） |
 
-正式 PVE/PVP profile 把 `fullCharge` 设为 `2s`，并将 `chargeThresholdMs` 转为 `chargeThreshold` 秒（`core/spatial_profiles.js:L50-L63`）。武器模板决定蓄力阈值，影响上述伤害成长起点，不决定当前手势能否出手，也不会改变重击的最小/最大几何范围。训练仍保留 `1.6s` 基础满蓄值。
+正式 PVE/PVP profile 将 `chargeThresholdMs` 转为 `chargeThreshold` 秒，并计算 `fullCharge = chargeThreshold + 2`。武器模板决定蓄力增伤起点；从起点后固定2秒达到满伤害。训练仍保留 `1.6s` 基础满蓄值。
 
 ### 2.3 输入、排队和帧边界
 
@@ -70,7 +70,7 @@
 | 单次补帧上限 | 引擎 `step/advanceActor` 将 `dt` 限制到 `0.05s`；PVE 外层每次最多累计 `.1s`，PVP 外层最多 `.25s` |
 | 输入状态 | `idle / charging / attack / recover / stunned / guard_start / guard`；`attack` 到时间点执行一次命中，再进入 recovery |
 | 锁定状态 | `attack/recover/stunned`；锁定期间只保留一个可替换的 queued command，不积累攻击 backlog（`pve/spatial_engine.js:L75-L93`） |
-| 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `18px` 内松手取消 |
+| 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `24px` 内松手取消 |
 | 蓄力移动/转向 | 移动倍率 `.6`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
 | 防御启动/持续 | `guardStartup=.16s` 后生效；移动 ×`.3`、转向 ×`.5`；正面判定为防御者朝向攻击来源 ±90° |
 | AP回复 | 玩家只在 `idle/recover/stunned` 回 AP（`pve/spatial_engine.js:L330`）；正式 PVE/PVP `apRegen = 1000 / apRecoveryMs(专注)`，基础为 2 秒/点 |
@@ -104,7 +104,7 @@
 | 玩家 AP上限 | `floor(stats.apMax)`，至少 1 |
 | 玩家 AP回复 | `1000 / combatResolver.apRecoveryMs(focus)`，即 `focus/20 AP/s` |
 | 玩家 SP回复 | `1000 / combatResolver.spRecoveryMs(focus)`，即专注 10 时 `1/3 SP/s`；基础单位时间比 AP 慢 1.5 倍 |
-| 满蓄/伤害阈值 | `fullCharge=2s`；`chargeThreshold=clamp(chargeThresholdMs/1000,0,1.9)` |
+| 满蓄/伤害阈值 | 正式 `chargeThreshold=chargeThresholdMs/1000`，`fullCharge=chargeThreshold+2s`；训练 `fullCharge=1.6s` |
 | 正面弹反窗口 | `clamp(parryWindowBaseMs×judgmentMultiplier/1000,0,1)s` |
 | 正式格挡承伤 | `blockMultiplier=clamp(.4×guardDamageMultiplier,0,1)` |
 | 弹反伤害 | `max(1,round(atk×.5))`，再按敌 DEF 防御减伤 |
