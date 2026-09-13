@@ -9,10 +9,10 @@ const spatialEngine = (() => {
         if (C.walls && (!Array.isArray(C.walls) || C.walls.some(w => !w || ![w.x, w.y, w.width, w.height].every(Number.isFinite) ||
             w.width <= 0 || w.height <= 0 || w.x < 0 || w.y < 0 || w.x + w.width > C.width || w.y + w.height > C.height))) throw new Error('Invalid arena walls');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
-        if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .7, C.chargeTurnMultiplier ?? .65, C.guardMoveMultiplier ?? .3, C.guardTurnMultiplier ?? .5, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
+        if (![C.playerTurn ?? 8, C.chargeMoveMultiplier ?? .6, C.chargeTurnMultiplier ?? .65, C.guardMoveMultiplier ?? .3, C.guardTurnMultiplier ?? .5, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         if ((C.heavy.minRange != null && (!positive(C.heavy.minRange) || C.heavy.minRange > C.heavy.range)) ||
             (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
-        if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.guardTurn, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
+        if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
         if (C.formal && !C.pvp && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.chargeThreshold >= C.fullCharge)) throw new Error('Invalid profile');
@@ -123,41 +123,46 @@ const spatialEngine = (() => {
         const C = b.config, p = b.player, len = Math.hypot(dx, dy);
         const deadZone = combatGestures.config.deadZone;
         if (len <= deadZone) return;
-        const slow = charging ? (C.chargeMoveMultiplier ?? .7) * motion(b, 'chargeMove') : ['guard_start', 'guard'].includes(p.phase) ? (C.guardMoveMultiplier ?? .3) : 1;
+        const slow = charging ? (C.chargeMoveMultiplier ?? .6) * motion(b, 'chargeMove') : ['guard_start', 'guard'].includes(p.phase) ? (C.guardMoveMultiplier ?? .3) : 1;
         const speed = C.playerSpeed * motion(b, 'move') * slow * Math.min(1, (len - deadZone) / C.moveRamp);
         S.move(p, dx / len * speed, dy / len * speed, dt, C, b.enemy);
     }
     const armed = combatGestures.armed;
+    function holdMove(b) {
+        if (!canAct(b) || b.action || b.guard || b.skill) return;
+        const command = combatGestures.hold(b.move, b.time);
+        if (!command) return;
+        // Separate serializable records: snapshots need no move/action alias repair.
+        b.action = { ...b.move, start: command.start, cancelAtCenter: b.controls.cancelAtCenter };
+        if (locked(b)) { b.action.queued = true; b.queuedCommand = { type: 'input', gesture: b.action }; }
+        else if (!dispatch(b, command)) {
+            b.action = null; b.move.mode = 'move'; b.move.suppressTap = true;
+            emit(b, 'ap_insufficient');
+        }
+    }
     function press(b, channel, cx = 0, cy = 0) {
-        if (!canAct(b) || !['move', 'action', 'guard', 'skill'].includes(channel)) return false;
+        if (!canAct(b) || !['move', 'guard', 'skill'].includes(channel)) return false;
+        holdMove(b);
         const p = b.player;
         if (channel === 'skill') {
             if (b.skill || b.action || b.guard) return false;
             b.skill = { cx, cy, kind: null, outside: false, hasDragged: false, cancelAtCenter: b.controls.cancelAtCenter };
+            if (b.move) b.move.suppressTap = true;
             return true;
         }
         if (channel !== 'move' && b.skill) return false;
         if (channel === 'move') {
             if (b.move) return false;
-            b.move = combatGestures.begin(b.time, cx, cy); return true;
+            b.move = combatGestures.begin(b.time, 0, 0);
+            b.move.suppressTap = !!(b.guard || b.skill); return true;
         }
-        if (channel === 'action') {
-            if (b.action || (b.guard && !b.guard.queued) || (p.phase !== 'idle' && !locked(b))) return false;
-            if (b.guard?.queued) b.guard = null;
-            b.action = combatGestures.begin(b.time, cx, cy);
-            b.action.cancelAtCenter = b.controls.cancelAtCenter;
-            b.action.mode = 'charge';
-            if (locked(b)) { b.action.queued = true; b.queuedCommand = { type: 'input', gesture: b.action }; }
-            else if (!dispatch(b, { type: 'charge' })) { b.action = null; emit(b, 'ap_insufficient'); return false; }
-        } else {
-            if (b.guard || (p.phase !== 'idle' && !locked(b)) || (!locked(b) && p.ap < 1)) return false;
-            // Right-hand controls are exclusive; the left movement pointer stays independent.
-            if (b.action) b.action.mode = 'blocked';
-            b.guard = { dx: 0, dy: 0, cx, cy };
-            if (locked(b)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
-            if (b.controls.autoFace && !b.config.pvp) p.facing = S.facing(p, b.enemy);
-            p.phase = 'guard_start'; p.timer = b.config.guardStartup;
-        }
+        if (b.guard || (p.phase !== 'idle' && !locked(b)) || (!locked(b) && p.ap < 1)) return false;
+        // Guard replaces a queued charge, but active charging must be released first.
+        if (b.action) b.action.mode = 'blocked';
+        if (b.move) b.move.suppressTap = true;
+        b.guard = { dx: 0, dy: 0, cx, cy };
+        if (locked(b)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
+        p.phase = 'guard_start'; p.timer = b.config.guardStartup;
         return true;
     }
     function drag(b, channel, dx, dy, cx = dx, cy = dy) {
@@ -169,11 +174,13 @@ const spatialEngine = (() => {
             if (g.hasDragged) combatGestures.selectSkill(g, cx, cy);
             return;
         }
-        if (channel === 'move' && b.move) { combatGestures.drag(b.move, dx, dy, cx, cy); return; }
-        if (channel === 'action' && b.action) {
-            const g = b.action;
-            combatGestures.drag(g, dx, dy, cx, cy);
-        } else if (channel === 'guard' && b.guard) {
+        if (channel === 'move' && b.move) {
+            holdMove(b);
+            combatGestures.drag(b.move, dx, dy, dx, dy);
+            if (b.action) combatGestures.drag(b.action, dx, dy, dx, dy);
+            return;
+        }
+        if (channel === 'guard' && b.guard) {
             b.guard.dx = dx; b.guard.dy = dy; b.guard.cx = cx; b.guard.cy = cy;
             // This only changes facing. It never restarts the parry clock.
         }
@@ -183,7 +190,6 @@ const spatialEngine = (() => {
         const p = b.player;
         if (p.ap < 1) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; return; }
         p.ap -= 1;
-        if (!heavy && b.controls.autoFace && !C.pvp) p.facing = S.facing(p, b.enemy);
         p.attack = {
             shape: heavy ? heavyShape(b) : { ...C.light },
             damage: heavy ? Math.round(C.heavy.damage + C.heavy.chargeBonus * (C.chargeThreshold != null ? S.clamp((p.charge - C.chargeThreshold) / (C.fullCharge - C.chargeThreshold), 0, 1) : p.charge / C.fullCharge)) : C.light.damage,
@@ -199,35 +205,38 @@ const spatialEngine = (() => {
             b.skill = null; return kind;
         }
         if (channel === 'move') {
+            if (!cancelled) holdMove(b);
+            releaseCharge(b, cancelled);
             if (b.move?.mode === 'pending' && !b.move.suppressTap && !cancelled && canAct(b) && !b.action && !b.guard && !b.skill) {
                 if (locked(b)) b.queuedCommand = { type: 'light' };
                 else dispatch(b, { type: 'light' });
             }
             b.move = null; return;
         }
-        if (channel === 'action') {
-            const g = b.action;
-            if (!g) return;
-            if (g.queued) {
-                if (b.queuedCommand?.gesture === g) {
-                    const command = cancelled ? null : combatGestures.release(g, false);
-                    b.queuedCommand = command?.type === 'light' ? { type: 'light' } : command?.type === 'heavy' ? {
-                        type: 'heavy', charge: Math.min(b.config.fullCharge, b.time - g.start), facing: Math.hypot(g.cy, g.cx) > combatGestures.config.cancelRadius ? Math.atan2(g.cy, g.cx) : b.player.facing
-                    } : null;
-                }
-            } else if (canAct(b) && !cancelled) dispatch(b, combatGestures.release(g, false));
-            if (b.player.phase === 'charging') { b.player.phase = 'idle'; b.player.charge = 0; }
-            b.action = null;
-        } else {
+        if (channel === 'guard') {
             if (b.queuedCommand?.gesture === b.guard) b.queuedCommand = null;
             if (['guard_start', 'guard'].includes(b.player.phase)) b.player.phase = 'idle';
             b.guard = null;
         }
     }
+    function releaseCharge(b, cancelled) {
+        const g = b.action;
+        if (!g) return;
+        if (g.queued) {
+            if (b.queuedCommand?.gesture === g) {
+                const command = cancelled ? null : combatGestures.release(g, false);
+                b.queuedCommand = command?.type === 'heavy' ? {
+                    type: 'heavy', charge: Math.min(b.config.fullCharge, b.time - g.start), facing: b.player.facing
+                } : null;
+            }
+        } else if (canAct(b) && !cancelled) dispatch(b, combatGestures.release(g, false));
+        if (b.player.phase === 'charging') { b.player.phase = 'idle'; b.player.charge = 0; }
+        b.action = null;
+    }
     function cancelInputs(b, preserveMove = false) {
         if (!preserveMove) release(b, 'move', true);
-        else if (b.move) b.move.suppressTap = true;
-        release(b, 'action', true); release(b, 'guard', true); release(b, 'skill', true);
+        else if (b.move) { b.move.suppressTap = true; b.move.mode = 'move'; }
+        releaseCharge(b, true); release(b, 'guard', true); release(b, 'skill', true);
         b.queuedCommand = null;
         if (preserveMove) b.actionInputVersion++;
         else b.inputVersion++;
@@ -313,17 +322,20 @@ const spatialEngine = (() => {
         const C = b.config;
         const p = b.player;
         flushQueue(b);
+        holdMove(b);
         const g = b.action;
-        if (b.move?.mode === 'move' && ['idle', 'charging', 'guard_start', 'guard'].includes(p.phase)) {
+        if (b.move?.mode === 'charge' && g?.mode !== 'charge') {
+            b.move.mode = 'move'; b.move.suppressTap = true;
+        }
+        if (['move', 'charge'].includes(b.move?.mode) && ['idle', 'charging', 'guard_start', 'guard'].includes(p.phase)) {
             movePlayer(b, b.move.dx, b.move.dy, dt, p.phase === 'charging');
         }
         if (p.phase === 'idle') {
-            if (b.controls.autoFace) p.facing = C.pvp ? S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? 8) * motion(b, 'turn')) : S.facing(p, b.enemy);
-            else if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
+            if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
                 p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? 8) * motion(b, 'turn'));
-            }
+            } else if (b.controls.autoFace) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? 8) * motion(b, 'turn'));
         } else if (p.phase === 'charging') {
-            if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.cancelRadius) {
+            if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.deadZone) {
                 p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? 8) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? .65) * motion(b, 'chargeTurn'));
             }
             p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) *
@@ -331,7 +343,7 @@ const spatialEngine = (() => {
             p.chargeUpdatedAt = b.time;
         } else if (['guard_start', 'guard'].includes(p.phase)) {
             if (b.guard && Math.hypot(b.guard.cx, b.guard.cy) > combatGestures.config.deadZone) {
-                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * C.guardTurn * motion(b, 'turn') * (C.guardTurnMultiplier ?? .5));
+                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * (C.playerTurn ?? 8) * motion(b, 'turn') * (C.guardTurnMultiplier ?? .5));
             }
         }
         if (['idle', 'recover', 'stunned'].includes(p.phase)) p.ap = Math.min(C.apMax, p.ap + dt * C.apRegen * b.apRateMult);

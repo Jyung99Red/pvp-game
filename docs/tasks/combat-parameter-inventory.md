@@ -28,7 +28,7 @@
 | `fullCharge` | `1.6` | 秒；正式 profile 覆盖为 2 秒 |
 | `playerSpeed` | `115` | 世界单位/秒 |
 | `playerTurn` | `8` | 弧度/秒；普通自动转向/移动转向基础值 |
-| `chargeMoveMultiplier` | `.7` | 蓄力移动倍率 |
+| `chargeMoveMultiplier` | `.6` | 蓄力移动倍率（2026-09-13） |
 | `chargeTurnMultiplier` | `.65` | 蓄力转向倍率 |
 | `guardMoveMultiplier` | `.3` | `guard_start`/`guard` 移动倍率 |
 | `guardTurnMultiplier` | `.5` | 防御转向倍率 |
@@ -41,12 +41,12 @@
 | `guardStartup` | `.16` | 秒；进入 `guard` 前的起步时间 |
 | `parryWindow` | `.18` | 秒；正式 profile 由 `parryWindowBaseMs × judgmentMultiplier` 重算并最多 1 秒 |
 | `parryCost` | `.5` | AP；自动弹反不扣 AP，普通防御窗口内弹反扣此值；这是与弹反技能 SP 费用不同的两个参数 |
-| `guardTurn` | `8` | 弧度/秒，再乘 `guardTurnMultiplier` |
+| 防御转向基础值 | 使用 `playerTurn=8` | 弧度/秒；实际再乘 `motion.turn` 与 `guardTurnMultiplier` |
 | `blockMultiplier` | `.25` | 训练基础承伤倍率；正式 profile 为 `.4 × guardDamageMultiplier` |
 | `parryDamage` | `10` | 训练弹反原始反击伤害；正式为 `round(atk×.5)` |
 | `hitStun` | `.35` | 秒；被敌人命中或 PVP 命中后的玩家硬直基础时长 |
 | `stagger.threshold/duration` | `3 / 1.5` | 怪物累计 stagger 点数 / 秒 |
-| `stagger.heavy/parry` | `2 / 1` | 玩家重击/弹反各增加的 stagger 点数 |
+| `stagger.heavy/parry` | `1 / 1` | 玩家重击/弹反各增加的 stagger 点数 |
 
 正式 PVE 中出生点在深复制模板上整体平移 `(75,83)`，保持原 encounter 距离（`pve/pve_profiles.js:L9-L12`）。正式 PVP 以场地中心 `(285,315)` 为基准，主机 `(285,405)`、客机 `(285,225)`，双方半径都为 `12`（`pvp/spatial_duel.js:L14-L20`）。
 
@@ -56,7 +56,7 @@
 
 | 动作 | 形状 | 几何 | 时间 | 伤害/蓄力 |
 |---|---|---|---|---|
-| 轻击 | sector | range `82`，arc `0.56π` | windup `.10s`，recovery `.28s` | 训练 `18`；正式 `round(atk×.3)` |
+| 轻击 | sector | range `69`，arc `0.52π` | windup `.10s`，recovery `.28s` | 训练 `18`；正式 `round(atk×.3)` |
 | 重击 | sector | range `60→103`，arc `0.28π→0.68π` | windup `.45s`，recovery `.60s` | 训练基础 `28` + `30×充能比例`；正式基础 `atk×.3` + `atk×.8×充能比例` |
 | 重击 `chargeBonus` 的充能比例 | — | — | — | 正式从 `chargeThreshold` 到 `fullCharge` 线性插值；阈值前比例为 0，因此仍为约 `0.3×atk`，不会成为 0 伤害（`pve/spatial_engine.js:L185-L190`） |
 
@@ -70,8 +70,8 @@
 | 单次补帧上限 | 引擎 `step/advanceActor` 将 `dt` 限制到 `0.05s`；PVE 外层每次最多累计 `.1s`，PVP 外层最多 `.25s` |
 | 输入状态 | `idle / charging / attack / recover / stunned / guard_start / guard`；`attack` 到时间点执行一次命中，再进入 recovery |
 | 锁定状态 | `attack/recover/stunned`；锁定期间只保留一个可替换的 queued command，不积累攻击 backlog（`pve/spatial_engine.js:L75-L93`） |
-| 轻重击触发 | 轻击：左移动通道在 pending 状态松开；重击：右 action 通道按下立即进入 charging，松开满足出手条件时攻击；启用中心取消时必须离开取消半径 |
-| 蓄力移动/转向 | 移动倍率 `.7`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
+| 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `18px` 内松手取消 |
+| 蓄力移动/转向 | 移动倍率 `.6`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
 | 防御启动/持续 | `guardStartup=.16s` 后生效；移动 ×`.3`、转向 ×`.5`；正面判定为防御者朝向攻击来源 ±90° |
 | AP回复 | 玩家只在 `idle/recover/stunned` 回 AP（`pve/spatial_engine.js:L330`）；正式 PVE/PVP `apRegen = 1000 / apRecoveryMs(专注)`，基础为 2 秒/点 |
 | SP回复 | 活跃战斗中按模拟时间累计小数进度，基础 3 秒/点、上限 3；暂停/局外/结束不增长，满点不继续累计 |
@@ -139,20 +139,20 @@
 
 ### 5.2 每个动作的几何与时序
 
-动作数组完整定义在 `pve/spatial_data.js:L42-L54`。所有敌人动作 `active=.16s`，但引擎在 active 起点只调用一次 `enemyHit()`，不是每个渲染帧重复命中（`pve/spatial_engine.js:L362-L370`）。`lock` 是前摇最后一段的固定朝向时间：当 windup 剩余时间大于 lock 时仍追踪玩家；剩余时间不大于 lock 后停止追踪。`range` 是扇区半径；`arc` 是弧度。
+动作数组完整定义在 `pve/spatial_data.js:L42-L56`。所有敌人动作 `active=.16s`，但引擎在 active 起点只调用一次 `enemyHit()`，不是每个渲染帧重复命中（`pve/spatial_engine.js:L362-L370`）。当前所有正式敌人动作在基础定义上统一增加 `windup +.10s`、`recovery +.15s`；`lock` 数值不变，因此锁定段相对变短。`lock` 是前摇最后一段的固定朝向时间：当 windup 剩余时间大于 lock 时仍追踪玩家；剩余时间不大于 lock 后停止追踪。`range` 是扇区半径；`arc` 是弧度。
 
 | ID | 动作1：kind / range / arc | windup / lock / active / recovery | 动作2：kind / range / arc | windup / lock / active / recovery |
 |---|---|---|---|---|
-| `test_combat` | sector / 90 / `.60π` | 1.20 / .40 / .16 / .80s | circle / 85 | 1.50 / .50 / .16 / 1.00s |
-| `goblin` | sector / 90 / `.65π` | 1.20 / .40 / .16 / .70s | sector / 120 / `.40π` | 1.50 / .50 / .16 / 1.00s |
-| `wolf` | sector / 85 / `.45π` | .95 / .30 / .16 / .60s | dash corridor / 150 / 宽 18 | 直线预警；蓄力 1.05 / 锁向 .35 / 距离 150 / 速度 280/s / 收招 1.20s |
-| `orc` | sector / 115 / `.65π` | 1.35 / .45 / .16 / .90s | circle / 105 | 1.65 / .55 / .16 / 1.20s |
-| `young_dragon` | sector / 110 / `.65π` | 1.15 / .40 / .16 / .80s | sector / 170 / `.40π` | 1.65 / .55 / .16 / 1.10s |
-| `skeleton_warrior` | sector / 100 / `.55π` | 1.10 / .40 / .16 / .80s | sector / 135 / `.70π` | 1.50 / .50 / .16 / 1.00s |
-| `shadow_assassin` | sector / 100 / `.35π` | .80 / .30 / .16 / .55s | dash corridor / 180 / 宽 12 | 直线预警；蓄力 .55 / 锁向 .25 / 距离 180 / 速度 450/s / 收招 .90s |
-| `stone_golem` | sector / 135 / `.65π` | 1.50 / .50 / .16 / 1.10s | circle / 120 | 1.80 / .65 / .16 / 1.40s |
-| `elder_dragon` | sector / 140 / `.65π` | 1.10 / .40 / .16 / .85s | sector / 185 / `.50π` | 1.65 / .55 / .16 / 1.20s |
-| `abyss_lord` | sector / 145 / `.60π` | 1.05 / .40 / .16 / .80s | circle / 130 | 1.60 / .55 / .16 / 1.20s |
+| `test_combat` | sector / 90 / `.60π` | 1.30 / .40 / .16 / .95s | circle / 85 | 1.60 / .50 / .16 / 1.15s |
+| `goblin` | sector / 90 / `.65π` | 1.30 / .40 / .16 / .85s | sector / 120 / `.40π` | 1.60 / .50 / .16 / 1.15s |
+| `wolf` | sector / 85 / `.45π` | 1.05 / .30 / .16 / .75s | dash corridor / 150 / 宽 18 | 直线预警；蓄力 1.15 / 锁向 .35 / 距离 150 / 速度 280/s / 收招 1.35s |
+| `orc` | sector / 115 / `.65π` | 1.45 / .45 / .16 / 1.05s | circle / 105 | 1.75 / .55 / .16 / 1.35s |
+| `young_dragon` | sector / 110 / `.65π` | 1.25 / .40 / .16 / .95s | sector / 170 / `.40π` | 1.75 / .55 / .16 / 1.25s |
+| `skeleton_warrior` | sector / 100 / `.55π` | 1.20 / .40 / .16 / .95s | sector / 135 / `.70π` | 1.60 / .50 / .16 / 1.15s |
+| `shadow_assassin` | sector / 100 / `.35π` | .90 / .30 / .16 / .70s | dash corridor / 180 / 宽 12 | 直线预警；蓄力 .65 / 锁向 .25 / 距离 180 / 速度 450/s / 收招 1.05s |
+| `stone_golem` | sector / 135 / `.65π` | 1.60 / .50 / .16 / 1.25s | circle / 120 | 1.90 / .65 / .16 / 1.55s |
+| `elder_dragon` | sector / 140 / `.65π` | 1.20 / .40 / .16 / 1.00s | sector / 185 / `.50π` | 1.75 / .55 / .16 / 1.35s |
+| `abyss_lord` | sector / 145 / `.60π` | 1.15 / .40 / .16 / .95s | circle / 130 | 1.70 / .55 / .16 / 1.35s |
 
 ### 5.3 共同 AI 节奏与逐怪物覆盖
 

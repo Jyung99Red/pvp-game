@@ -116,15 +116,15 @@ test('queued skill spends only on execution, and full HP at execution cancels he
 test('haste and full charge retain latest tuning without auto-fire or cross-player buffs',()=>{
  const t=setup(),b=t.d.sides[0];b.skillPoints=3;assert.equal(skill(t,0,'haste'),true);assert.equal(b.skillPoints,1);
  assert.equal(b.buffs.chargeHasteUntil,10);assert.equal(t.d.sides[1].buffs.chargeHasteUntil,0);
- input(t,0,'press','action',[0,0]);step(t,1);assert.ok(Math.abs(b.player.charge-1.5)<1e-6);
+ input(t,0,'press','move',[0,0]);step(t,1.25);assert.ok(Math.abs(b.player.charge-1.5)<1e-6);
  step(t,2);assert.equal(b.player.charge,2);assert.equal(b.player.phase,'charging');
- input(t,0,'release','action');assert.equal(b.player.phase,'idle');
- b.skillPoints=3;assert.equal(skill(t,0,'full'),true);input(t,0,'press','action',[0,0]);assert.equal(b.player.charge,2);
- input(t,0,'release','action');assert.equal(b.buffs.instantCharge,false);assert.equal(b.skillPoints,1);
+ input(t,0,'release','move');assert.equal(b.player.phase,'idle');
+ b.skillPoints=3;assert.equal(skill(t,0,'full'),true);input(t,0,'press','move',[0,0]);step(t,.25);assert.equal(b.player.charge,2);
+ input(t,0,'release','move');assert.equal(b.buffs.instantCharge,false);assert.equal(b.skillPoints,1);
 });
 test('hit cancels only victims right input; held movement resumes and no tap leaks through stun',()=>{
  const t=setup({atk:10,maxHp:500});close(t);const b=t.d.sides[1];
- input(t,1,'press','move',[0,0]);input(t,1,'drag','move',[60,0,60,0]);input(t,1,'press','action',[0,0]);
+ input(t,1,'press','move',[0,0]);input(t,1,'drag','move',[60,0,60,0]);
  light(t,0);step(t,.12);assert.equal(b.player.phase,'stunned');assert.equal(b.action,null);assert.equal(b.move.suppressTap,true);
  const x=b.player.x;step(t,.2);assert.equal(b.player.x,x);step(t,.3);assert.ok(b.player.x>x);
  input(t,1,'release','move');assert.equal(b.stats.attacks,0);
@@ -137,6 +137,25 @@ test('snapshot restoration relinks queued held gestures and never aliases actors
  assert.equal(d.sides[0].queuedCommand.gesture,d.sides[0].guard);assert.equal(d.sides[0].enemy,d.sides[1].player);
  t.D.input(d,0,{type:'release',channel:'guard',cancelled:false});assert.equal(d.sides[0].queuedCommand,null);
  assert.ok(t.d.sides[0].guard);assert.notEqual(d.sides[0].player,t.d.sides[0].player);
+});
+
+test('combined charge survives snapshot replay and both sides release along their real facing',()=>{
+ for(const side of [0,1]) {
+  const t=setup(), b=t.d.sides[side];
+  light(t,side);step(t,.12);b.player.timer=1;
+  input(t,side,'press','move',[0,0]);step(t,.3);
+  const snap=t.D.snapshot(t.d), restored=t.D.create(t.d.profiles);
+  t.D.restore(restored,snap);const r=restored.sides[side];
+  assert.equal(t.D.validSnapshot(restored,snap),true);
+  assert.equal(r.queuedCommand.gesture,r.action);assert.equal(r.move.mode,'charge');
+  t.D.input(restored,side,{type:'drag',channel:'move',values:[60,0,60,0]});
+  assert.equal(r.action.dx,60);assert.equal(r.move.dx,60);
+  const facing=r.player.facing;
+  t.D.input(restored,side,{type:'release',channel:'move',cancelled:false});
+  for(let i=0;i<71;i++)t.D.step(restored,.01);
+  assert.equal(r.player.attack.facing,facing);assert.equal(r.stats.attacks,2);
+  assert.equal(t.D.input(restored,side,{type:'press',channel:'action',values:[0,0]}),false);
+ }
 });
 test('SP caps, thorns double death, and bounded auto-face are symmetric',()=>{
  const t=setup({maxHp:20,atk:100,def:0,guardThorns:1});close(t);guard(t,1);step(t,.5);

@@ -5,8 +5,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const abort = new AbortController();
     const $ = id => root.querySelector(`[id="${prefix}${id}"]`);
     const canvas = $('arena'), ctx = canvas.getContext('2d');
-    const pads = { move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
-    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'action-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
+    const pads = { move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
+    const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
     const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
@@ -33,7 +33,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
         if (!(dt > 0)) return;
         dt = Math.min(dt, .1);
-        const moving = battle.running && battle.move?.mode === 'move' && !['attack', 'recover', 'stunned'].includes(p.phase);
+        const moving = battle.running && ['move', 'charge'].includes(battle.move?.mode) && !['attack', 'recover', 'stunned'].includes(p.phase);
         let leadX = moving ? (p.x - camera.px) / dt * settings.leadSeconds : 0;
         let leadY = moving ? (p.y - camera.py) / dt * settings.leadSeconds : 0;
         const factor = Math.min(1, settings.maxLead / Math.max(.001, Math.hypot(leadX, leadY)));
@@ -105,7 +105,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
-    let notice = '左手移动 / 轻击，右手重击 / 防御转向。', effects = [], lastTime = 0, logs = [];
+    let notice = '拖动移动 · 短按轻击 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
     const hitFlashes = { player: 0, enemy: 0 };
     function consume(events) {
         const dt = Math.max(0, battle.time - lastTime); lastTime = battle.time;
@@ -124,7 +124,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
                 attack_started: e.heavy ? '重击起手 · 范围亮起时命中' : '轻击起手',
                 charge_cancelled: '已取消蓄力 · 未消耗行动力',
                 stagger: '失衡！抓住空档打重击',
-                hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}${e.heavy ? ' · 失衡 +2' : ''}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
+                hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}${e.heavy ? ' · 失衡 +1' : ''}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
                 miss: e.side === 'player' ? (e.blocked ? '攻击被墙挡住' : '挥空 · 再靠近一点，留意朝向') : '走位避开！现在可以反击',
                 parry: `精准防御！反击 −${e.damage} · 失衡 +1`,
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
@@ -242,11 +242,6 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
             // the guest's fixed 180-degree view mapping is applied.
             const shieldSide = 1;
             const key = enemy ? 'enemy' : 'player', guarding = ['guard_start', 'guard'].includes(body.phase);
-            const targetPose = guarding ? 1 : 0;
-            if (presentationDt > 0) {
-                const speed = guarding ? 16 : 11;
-                shieldPose[key] += (targetPose - shieldPose[key]) * (1 - Math.exp(-speed * presentationDt));
-            }
             const pose = shieldPose[key];
             const showingGuardIcon = guarding || pose > .01;
             if (!showingGuardIcon) {
@@ -436,12 +431,12 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function controls() {
         for (const [channel, pad] of Object.entries(pads)) {
-            const g = channel === 'action' ? battle.action : channel === 'move' ? battle.move : channel === 'skill' ? battle.skill : battle.guard;
-            if (channel === 'move' && !g) pad.hidden = true;
+            const g = channel === 'move' ? battle.move : channel === 'skill' ? battle.skill : battle.guard;
+            const charge = channel === 'move' ? battle.action : null;
             pad.classList.toggle('no-center-cancel', !battle.controls.cancelAtCenter);
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
-            pad.classList.toggle('armed', channel === 'action' ? L.armed(g) : channel === 'skill' && !!L.selectedSkill(g));
-            pad.classList.toggle('cancel-ready', channel === 'action' ? g?.mode === 'charge' && !L.armed(g) : channel === 'skill' && !!g && !L.selectedSkill(g));
+            pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) : channel === 'skill' && !!L.selectedSkill(g));
+            pad.classList.toggle('cancel-ready', channel === 'move' ? charge?.mode === 'charge' && !L.armed(charge) : channel === 'skill' && !!g && !L.selectedSkill(g));
             const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
             const len = Math.hypot(dx, dy), factor = (len > 42 ? 42 / len : 1) * (C.reverseView && channel !== 'skill' ? -1 : 1);
             pad.querySelector('.pad-knob').style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
@@ -451,13 +446,19 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const skillNames = Object.fromEntries(Object.keys(spatialData.skills || {}).map(kind => [kind, skillDefinition(kind).name]));
         text('skill-label', selected ? `松手${skillNames[selected]}` : battle.skill ? (battle.skill.kind ? '取消释放' : '向外拖动') : '技能');
         const g = battle.action;
-        text('move-label', battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 轻击');
-        text('action-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '中心松手取消') : '重击');
+        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 攻击');
         text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = [], frameDt = 0) {
         battle = snapshot;
         presentationDt = Math.min(.1, Math.max(0, frameDt));
+        // Advance presentation once per frame, never on ResizeObserver redraws.
+        for (const key of ['player', 'enemy']) {
+            const body = battle[key], guarding = ['guard_start', 'guard'].includes(body.phase);
+            const config = key === 'enemy' ? (C.opponentConfig || C) : C;
+            if (guarding) shieldPose[key] = body.phase === 'guard' ? 1 : S.clamp(1 - body.timer / Math.max(.001, config.guardStartup), 0, 1);
+            else shieldPose[key] *= Math.exp(-11 * presentationDt);
+        }
         updateCamera(frameDt);
         consume(events);
         for (const node of Array.from(pads.skill.querySelectorAll('[data-skill]'))) {
@@ -474,7 +475,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = knownEnemyHp;
         apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
-        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 左移右转', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 左移右转', stunned: '受击硬直' };
+        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
         text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
@@ -482,7 +483,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
-        const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回到红色中心取消' : '中心松手取消 · 向外拖动转向';
+        const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回落指点取消' : '原位松手取消 · 拖动走位转向';
         const q = battle.queuedCommand;
         const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
         const selected = L.selectedSkill(battle.skill);

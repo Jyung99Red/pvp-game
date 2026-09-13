@@ -1,37 +1,8 @@
-/* Shared touch layout. Keep the right-hand cluster in a single 2x2 grid. */
+/* Shared HUD and controls for training, PVE and PVP. */
 .training { position: relative; --control-size: 76px; --control-gap: 12px; }
-.training .controls { position: relative; height: 192px; flex-basis: 192px; padding: 0; pointer-events: none; }
-.training .controls .move-group {
-    position: absolute; left: 22px; bottom: 0; width: min(42%, 260px); height: 176px;
-    pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
-    border: 1px dashed #9bc8c214; border-radius: 24px;
-}
-.training .move-group::before {
-    content: '此区域按下移动 / 轻点轻击'; position: absolute; inset: auto 4px 8px;
-    text-align: center; color: #adc1c177; font-size: 9px; pointer-events: none;
-}
-.training .controls .move-pad { width: 128px; height: 128px; position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
-.training .move-pad[hidden] { display: none; }
 .training .pad.no-center-cancel .cancel-zone,
 :is(#view-battle, #view-pvp-battle) .pad.no-center-cancel .cancel-zone { display: none; }
-.training .right-controls {
-    position: absolute; right: 8px; bottom: 0; display: grid;
-    grid-template-columns: repeat(2, var(--control-size)); grid-template-rows: repeat(2, var(--control-size));
-    gap: var(--control-gap); pointer-events: none;
-}
-.training .right-controls .control-group,
-.training .right-controls .skill-dock {
-    position: relative; inset: auto; width: var(--control-size); height: var(--control-size);
-    transform: none; margin: 0; pointer-events: none;
-}
-.training .right-controls .guard-group { grid-area: 1 / 1; }
-.training .right-controls .skill-dock { grid-area: 1 / 2; }
-.training .right-controls .action-group { grid-area: 2 / 1; }
-.training .right-controls .pad {
-    position: relative; inset: auto; width: var(--control-size); height: var(--control-size);
-    pointer-events: auto; touch-action: none; border-radius: 50%; padding: 5px;
-}
-.training .right-controls .skill-pad { border: 2px solid #b99cd6; background: radial-gradient(circle, #584569e8, #242139ed); }
+.training .skill-pad { border: 2px solid #b99cd6; background: radial-gradient(circle, #584569e8, #242139ed); }
 .training .skill-pad strong { font-size: 10px; }
 .training .skill-status { position: static; color: #adc1c1; font-size: 10px; text-align: left; margin: 3px 0; }
 .training .skill-pad .skill-direction {
@@ -59,12 +30,6 @@
 .training .combat-settings small { display: block; font-size: 10px; line-height: 1.6; color: #adc1c1; }
 .training > .overlay { position: absolute; inset: 0; z-index: 20; overflow-y: auto; }
 :is(#view-battle, #view-pvp-battle) .controls { position: absolute; left: 0; right: 0; bottom: max(32px, env(safe-area-inset-bottom)); height: 192px; }
-:is(#view-battle, #view-pvp-battle) .controls .move-group { left: max(20px, env(safe-area-inset-left)); bottom: 0; width: min(42%, 260px); height: 176px; }
-:is(#view-battle, #view-pvp-battle) .controls .move-pad { position: absolute; width: 128px; height: 128px; }
-:is(#view-battle, #view-pvp-battle) .right-controls { right: max(18px, env(safe-area-inset-right)); }
-:is(#view-battle, #view-pvp-battle) .right-controls .control-group,
-:is(#view-battle, #view-pvp-battle) .right-controls .skill-dock { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); transform: none; }
-:is(#view-battle, #view-pvp-battle) .right-controls .pad { position: relative; inset: auto; width: var(--control-size); height: var(--control-size); }
 :is(#view-battle, #view-pvp-battle) .feedback {
     position: absolute; top: calc(104px + env(safe-area-inset-top)); bottom: auto;
     left: 50%; right: auto; transform: translateX(-50%); width: calc(100% - 24px); max-width: 660px;
@@ -78,7 +43,6 @@
 :is(#view-battle, #view-pvp-battle) .overlay { overflow-y: auto; }
 @media (max-width: 359px) {
     .training { --control-size: 68px; --control-gap: 10px; }
-    :is(#view-battle, #view-pvp-battle) .controls .move-group { left: 18px; width: 40%; }
 }
 .training .vital { background: #0b1a2059; border-color: #87b4ad20; }
 :is(#view-battle, #view-pvp-battle) .vital { background: #0b1a2059; border-color: #87b4ad20; }
@@ -92,22 +56,88 @@
     :is(#view-battle, #view-pvp-battle) .vitals { top: 42px; left: 50%; right: auto; width: min(480px, calc(100% - 220px)); max-width: none; transform: translateX(-50%); flex-direction: row; gap: 10px; }
     :is(#view-battle, #view-pvp-battle) .vital { padding: 5px 8px; }
     :is(#view-battle, #view-pvp-battle) .controls { bottom: max(18px, env(safe-area-inset-bottom)); height: 154px; }
-    :is(#view-battle, #view-pvp-battle) .controls .move-group { width: 176px; height: 140px; }
     :is(#view-battle, #view-pvp-battle) .feedback { top: 84px; left: 12px; transform: none; width: 176px; padding: 4px; font-size: 9px; }
     :is(#view-battle, #view-pvp-battle) .feedback :is(#pve-s-notice, #pvp-s-notice) { font-size: 9px; min-height: 0; padding-top: 2px; line-height: 1.3; }
     :is(#view-battle, #view-pvp-battle) .buff-status { top: 76px; left: 20px; width: auto; transform: none; }
     :is(#view-battle, #view-pvp-battle) .overlay { justify-content: flex-start; }
     body > .training:not(.spatial-fullscreen) {
         min-height: 0; max-width: none; height: 100dvh; padding: 4px 12px 12px;
-        display: grid; grid-template-columns: 176px minmax(0, 1fr) 166px;
-        grid-template-rows: 36px minmax(0, 1fr); gap: 8px;
+        display: grid; grid-template-columns: 168px minmax(0, 1fr);
+        grid-template-rows: 36px minmax(0, 1fr) 150px; gap: 8px;
     }
-    body > .training > .topbar { grid-area: 1 / 1 / 2 / 4; height: 36px; }
-    body > .training > .arena { grid-area: 2 / 2; min-height: 0; }
+    body > .training > .topbar { grid-area: 1 / 1 / 2 / 3; height: 36px; }
+    body > .training > .arena { grid-area: 2 / 2 / 4 / 3; min-height: 0; }
     body > .training > .vitals { position: absolute; left: 12px; top: 48px; width: 168px; padding: 0; gap: 8px; flex-direction: column; }
     body > .training > .feedback { position: absolute; left: 12px; top: 130px; width: 168px; padding: 0; }
-    body > .training > .controls { position: static; grid-area: 2 / 3; height: auto; }
-    body > .training .controls .move-group { left: 20px; bottom: 18px; width: 160px; height: 112px; }
-    body > .training .right-controls { right: 20px; bottom: 18px; }
     body > .training > footer { display: none; }
+}
+
+/* One fixed central pad, with guard upper-left and skills upper-right.
+   The cancellation ring follows this gesture's landing point, not the artwork. */
+:is(.training, #view-battle, #view-pvp-battle) .controls.combined-controls {
+    --main-pad-size: 156px;
+    position: relative; inset: auto; width: min(100%, 400px); height: 194px;
+    flex: 0 0 194px; margin: 0 auto; padding: 0; pointer-events: none;
+}
+:is(#view-battle, #view-pvp-battle) .controls.combined-controls {
+    position: absolute; left: 50%; right: auto; bottom: max(20px, env(safe-area-inset-bottom));
+    transform: translateX(-50%); width: min(calc(100% - 24px), 400px);
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-group {
+    position: absolute; left: 50%; right: auto; bottom: 0; top: auto;
+    width: var(--main-pad-size); height: var(--main-pad-size); transform: translateX(-50%);
+    border: 0; pointer-events: none;
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-pad {
+    position: relative; inset: auto; transform: none; width: 100%; height: 100%;
+    border-radius: 50%; pointer-events: auto; touch-action: none;
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-group::before { content: none; }
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls :is(.guard-group, .skill-dock) {
+    position: absolute; top: 0; bottom: auto; width: 76px; height: 76px;
+    margin: 0; transform: none; pointer-events: none;
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .guard-group { left: 12px; right: auto; }
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .skill-dock { right: 12px; left: auto; }
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls :is(.guard-pad, .skill-pad) {
+    position: relative; inset: auto; width: 100%; height: 100%; padding: 5px;
+    border-radius: 24px; pointer-events: auto; touch-action: none;
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .skill-pad {
+    border-color: #b99cd6; background: radial-gradient(circle, #584569e8, #242139ed);
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .pad strong { font-size: 10px; max-width: 110px; }
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .move-pad :is(.pad-knob, .cancel-zone) {
+    left: calc(var(--gesture-x, 50%) - 18px); top: calc(var(--gesture-y, 50%) - 18px);
+}
+:is(.training, #view-battle, #view-pvp-battle) .combined-controls .pad:focus-visible { outline: 2px solid #efc181; outline-offset: 3px; }
+
+/* Reserve feedback rows: hits/misses must never resize the training canvas. */
+.training:not(.spatial-fullscreen) > .feedback { height: 142px; flex: 0 0 142px; }
+.training:not(.spatial-fullscreen) .feedback [role="status"],
+.training:not(.spatial-fullscreen) .feedback [role="status"]:empty { display: block; height: 30px; }
+.training:not(.spatial-fullscreen) .battle-log,
+.training:not(.spatial-fullscreen) .battle-log:empty { display: block; height: 30px; overflow: hidden; }
+.training:not(.spatial-fullscreen) #player-state { white-space: nowrap; }
+
+@media (orientation: portrait) and (max-height: 700px) {
+    .training:not(.spatial-fullscreen) > .arena { min-height: 0; }
+    .training:not(.spatial-fullscreen) > .controls.combined-controls {
+        --main-pad-size: 140px; height: 178px; flex-basis: 178px;
+    }
+}
+
+@media (max-width: 359px) {
+    :is(.training, #view-battle, #view-pvp-battle) .controls.combined-controls { --main-pad-size: 140px; }
+    :is(.training, #view-battle, #view-pvp-battle) .combined-controls :is(.guard-group, .skill-dock) { width: 66px; height: 66px; }
+    :is(.training, #view-battle, #view-pvp-battle) .combined-controls .guard-group { left: 2px; }
+    :is(.training, #view-battle, #view-pvp-battle) .combined-controls .skill-dock { right: 2px; }
+}
+@media (orientation: landscape) and (max-height: 540px) and (min-width: 600px) {
+    :is(.training, #view-battle, #view-pvp-battle) .controls.combined-controls {
+        --main-pad-size: 124px; height: 146px; flex-basis: 146px; width: 340px;
+    }
+    :is(#view-battle, #view-pvp-battle) .controls.combined-controls { bottom: max(12px, env(safe-area-inset-bottom)); }
+    body > .training > .controls.combined-controls { grid-area: 3 / 1 / 4 / 3; align-self: end; z-index: 2; }
+    :is(.training, #view-battle, #view-pvp-battle) .combined-controls :is(.guard-group, .skill-dock) { width: 66px; height: 66px; }
 }

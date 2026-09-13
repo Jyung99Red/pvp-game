@@ -1,6 +1,6 @@
 // Host-authoritative spatial PVP. Guest predicts local motion; never judges hits.
 const pvpLogic = (() => {
-    const VERSION = 7, RULE_VERSION = 3, ARENA_LAYOUT_ID = spatialData.pvpArena.layoutId, ARENA_VERSION = spatialData.pvpArena.version, D = spatialDuel;
+    const VERSION = 8, RULE_VERSION = 4, ARENA_LAYOUT_ID = spatialData.pvpArena.layoutId, ARENA_VERSION = spatialData.pvpArena.version, D = spatialDuel;
     let frame = null, lastFrame = 0, accumulator = 0, lastReceive = 0, lastSend = 0;
     let battleId = null, inputSeq = 0, receivedSeq = 0, snapshotSeq = 0, appliedSnapshot = -1;
     let pending = [], eventId = 0, seenEvent = 0, history = [], presentation = [], predictedPresentation = new Map();

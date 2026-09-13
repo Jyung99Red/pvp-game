@@ -1,10 +1,10 @@
 // Training-page composition: fixed preset, lifecycle and result overlay.
 (() => {
     const L = spatialEngine, $ = id => document.getElementById(id);
-    let battle = L.create(), previous = performance.now(), frameId, inputVersion = 0, actionVersion = 0;
+    let battle = L.create(), previous = performance.now(), frameId, inputVersion = 0, actionVersion = 0, accumulator = 0;
     const settings = combatSettings.attach(document, () => battle); settings.apply(battle);
     let view = uiSpatialBattle.create(document);
-    const input = combatInput.attach({ move: $('move-pad'), action: $('action-pad'), guard: $('guard-pad'), skill: $('skill-pad') }, {
+    const input = combatInput.attach({ move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') }, {
         cancel: () => L.cancelInputs(battle),
         press: (channel, cx, cy) => L.press(battle, channel, cx, cy),
         drag: (channel, dx, dy, cx, cy) => L.drag(battle, channel, dx, dy, cx, cy),
@@ -24,7 +24,7 @@
             $('start').textContent = '重新练习';
         } else {
             $('overlay-title').textContent = '已暂停';
-            $('overlay-copy').textContent = '左手拖动走位、轻点轻击。右手按住重击或防御，拖动只转向；取消与自动朝向可在下方设置。';
+            $('overlay-copy').textContent = '中央拖动走位、短按轻击；原位长按后拖动蓄力走位，圈外松手重击，回落指点取消。两侧操作防御与技能。';
             $('summary').textContent = '切换窗口会自动暂停 · 触摸已安全释放';
             $('start').textContent = '继续练习';
         }
@@ -32,11 +32,11 @@
     $('start').addEventListener('click', () => {
         input.clear(); L.cancelInputs(battle);
         if (battle.result) { battle = L.create(); settings.apply(battle); view.destroy(); view = uiSpatialBattle.create(document); }
-        L.start(battle); previous = performance.now(); $('overlay').hidden = true;
+        L.start(battle); accumulator = 0; previous = performance.now(); $('overlay').hidden = true;
     });
     function pause() {
         if (!battle.running) return;
-        L.pause(battle); showOverlay('pause');
+        L.pause(battle); accumulator = 0; showOverlay('pause');
     }
     $('pause').addEventListener('click', pause);
     window.addEventListener('blur', pause);
@@ -52,13 +52,20 @@
         if (frameId == null) frameId = requestAnimationFrame(frame);
     }
     function frame(now) {
-        L.step(battle, (now - previous) / 1000); previous = now;
+        const dt = Math.min(.1, Math.max(0, (now - previous) / 1000)); previous = now;
+        // Match the formal engine's fixed substeps; render and shield pose advance once.
+        accumulator += battle.running ? dt : 0;
+        const events = [];
+        while (accumulator >= .01 - 1e-9) {
+            L.step(battle, .01); accumulator -= .01;
+            const stepEvents = L.drainEvents(battle);
+            for (const e of stepEvents) if (e.type === 'skill_ready') L.useSkill(battle, e.kind);
+            events.push(...stepEvents, ...L.drainEvents(battle));
+        }
         if (inputVersion !== battle.inputVersion) { input.clear(); inputVersion = battle.inputVersion; }
         if (actionVersion !== battle.actionInputVersion) { input.clear(true); actionVersion = battle.actionInputVersion; }
-        const events = L.drainEvents(battle);
-        for (const e of events) if (e.type === 'skill_ready') L.useSkill(battle, e.kind);
         events.push(...L.drainEvents(battle));
-        view.render(battle, events);
+        view.render(battle, events, dt);
         if (battle.result && $('overlay').hidden) showOverlay('result');
         frameId = requestAnimationFrame(frame);
     }

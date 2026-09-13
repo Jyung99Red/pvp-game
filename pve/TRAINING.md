@@ -1,21 +1,26 @@
 # Spatial combat training (M1)
 
 Open `training.html` over HTTP, or use the base screen's 走位训练场 button.
-This is an isolated portrait PVE experiment with fixed stats, no progression,
+This is an isolated PVE experiment with fixed stats, no progression,
 no save writes and no connection to the original PVE/PVP battle state.
 
 ## Controls
 
-- Left bottom pad: tap to light attack, drag beyond 12 CSS pixels to move.
-  Holding this pad never charges. Movement is independent of right-hand input.
-- Right heavy pad: press to charge immediately; drag to turn only. Release
-  outside the 18 CSS pixel center radius to attack, or in the red center to cancel.
-- Right guard pad sits above/right of heavy (X/circle-style staggered layout).
-  Hold to guard and drag to turn; left-hand movement remains available.
-- At most two pointers: one on movement and one on heavy or guard. Heavy and
-  guard remain exclusive. Charge movement/turn speed is 70% by default.
+- Central fixed pad: short tap releases a light attack along actual facing.
+  Drag beyond 12 CSS pixels first to latch ordinary movement until release.
+  Returning to the landing point never starts a charge during that gesture.
+- Hold at the landing point for .25s to enter charge, then drag to move and turn.
+  Charge time starts after this recognition delay. Release outside an 18px radius
+  of the landing point to heavy attack, or inside to cancel (configurable).
+  Attack direction is actual facing at release, including queued releases.
+- Guard is upper-left, four-way skills upper-right. Guard can turn independently
+  while the central pad moves. Charging excludes guard/skill pointer presses.
+- At most two pointers, one per pad. Charge movement is 60%, turn 65%; a rapid
+  reversal does not snap the attack to the drag target. Auto-face is idle-only
+  and turn-rate-limited; attack/guard startup never snaps to the enemy.
 - Movement pauses during attack/recovery/stun and resumes if still held;
-  the next combat command is replaceable. Pause/cancel/hits clear input.
+  the next combat command is replaceable. Hits cancel charge and secondary input,
+  but retain held movement with no tap/charge rearming; pause/cancel clears all.
 - Weapon geometry stays fixed size; its swing angle follows the attack sector.
   The sector still grows with charge and is snapshotted for hit resolution.
 
@@ -28,7 +33,7 @@ active edge. Attack damage, windup and recovery are independent values.
 
 The enemy alternates two frontal sweeps and a circular stomp. It tracks during
 early windup, locks facing before release and leaves a recovery opening.
-Light hits do not interrupt it. Heavy hits add two stagger points; parries add
+Light hits do not interrupt it. Heavy hits add one stagger point; parries add
 one. Three points interrupt into a 1.5s opening. No rolls, obstacles or pathfinding.
 
 Both player attacks cost one AP. Normal blocks cost one AP and take 25% damage;
@@ -50,9 +55,10 @@ On a same-step lethal player hit, victory is settled before updating the enemy.
   and transient effects; destroy disconnects its resize observer and removes AP dots.
 - `pve/training.js`: page composition, pause/resume, retry, result overlay and one
   animation loop. Input invalidation releases browser capture in the same frame.
-- `pve/training.css`: isolated responsive portrait layout (unchanged).
+- `pve/training.css` and `pve/combat_controls.css`: responsive layout and fixed
+  feedback rows so attack logs never resize the canvas.
 
-Script order: geometry → gestures → data → engine → input → view → training.
+Script order: geometry → gestures → data → engine → settings → input → view → training.
 The main `index.html` now loads these same components for the formal dungeon,
 using `pveProfiles` and prefixed DOM IDs; this page keeps the fixed training preset.
 
@@ -66,12 +72,16 @@ view. The queue contains attack_started, strike (world geometry), hit, miss,
 block, parry, stagger, hp_changed, charge_cancelled, ap_insufficient and finished.
 Each event carries simulation time; finished is emitted once. Presentation
 must not write the instance. `inputVersion` changes when all input is invalidated,
-so the page can clear pointer capture after a hit, pause or finish.
+so the page can clear pointer capture after pause or finish. Hits increment
+`actionInputVersion` to clear only secondary pointers.
 
 The preset is frozen recursively. Profile/config validation is implemented; `create(config, random)` supports formal
 profiles, with events and actor state isolated per instance.
-The engine still clamps each step to 50ms and settles player damage before AI,
-as in the original training implementation. It performs no offline catch-up.
+The adapter advances fixed 10ms steps, processing skill-ready events at each step,
+and renders once per display frame with explicit frameDt. Shield raising follows
+guard startup progress; lowering follows frameDt. Resize redraws never advance
+the pose. The engine still clamps each step to 50ms and settles player damage
+before AI, with no offline catch-up.
 
 Run `node --test tests/training.test.cjs` for gesture, geometry, guard and
 resolution regressions. Browser QA should also cover actual two-finger input
@@ -85,10 +95,9 @@ independent instances, two channels/third pointer, capture loss and disposal.
 Browser smoke checks cover start/light hit, defeat/retry, pause/resume and portrait
 layout. Actual phone multi-touch, long-hold/swipe and screen-lock QA remain manual.
 Formal PVE now uses the same engine, including progression profiles and skills.
-PVP keeps its original path. See `SPATIAL_MIGRATION.md` for implemented M2–M4 rules.
+PVP now shares human actor actions through spatialDuel. See `SPATIAL_MIGRATION.md`.
 ## Controls update / 2026-09-11
 
 See `COMBAT_CONTROLS.md` for motion hooks, command buffering and animation timing.
-This revision was not tested at the user’s request. Earlier passing counts refer
-only to the preceding revision; old immobile/directional-charge test expectations
-need updating with the next testing pass.
+The 2026-09-11 no-tests note is historical. The 2026-09-13 combined controls update
+includes current gesture, turn-limit, cancellation, snapshot and shield-pose regressions.

@@ -16,7 +16,7 @@
  local:(role,send)=>{Object.defineProperty(pvpNet,'role',{get:()=>role});pvpNet.send=send;},
  start:profile=>pvpLogic.startPVP('host',profile),input:c=>pvpLogic.input(c),surrender:()=>pvpLogic.surrender(),rematch:()=>pvpLogic.requestRematch(),
  closeActors:()=>{const d=state.pvpBattle.duel;d.sides[0].player.y=230;d.sides[1].player.y=170;},
- report:()=>state.pvpBattle?{active:state.pvpBattle.active,ready:state.pvpBattle.ready,countdown:state.pvpBattle.countdown,result:state.pvpBattle.duel.result,side:state.pvpBattle.role,hp:state.pvpBattle.duel.sides.map(s=>s.player.hp),sp:state.pvpBattle.duel.sides.map(s=>s.skillPoints),x:state.pvpBattle.duel.sides.map(s=>s.player.x),phase:state.pvpBattle.duel.sides.map(s=>s.player.phase),id:pvpLogic.getCurrentBattleId()}:null
+ report:()=>state.pvpBattle?{active:state.pvpBattle.active,ready:state.pvpBattle.ready,countdown:state.pvpBattle.countdown,result:state.pvpBattle.duel.result,side:state.pvpBattle.role,hp:state.pvpBattle.duel.sides.map(s=>s.player.hp),sp:state.pvpBattle.duel.sides.map(s=>s.skillPoints),x:state.pvpBattle.duel.sides.map(s=>s.player.x),y:state.pvpBattle.duel.sides.map(s=>s.player.y),facing:state.pvpBattle.duel.sides.map(s=>s.player.facing),charge:state.pvpBattle.duel.sides.map(s=>s.player.charge),attackFacing:state.pvpBattle.duel.sides.map(s=>s.player.attack?.facing),phase:state.pvpBattle.duel.sides.map(s=>s.player.phase),id:pvpLogic.getCurrentBattleId()}:null
 };ui.switchTab('pvp-room');`;
  document.body.append(hooks);parent.postMessage({qaReady:true},location.origin);
 })().catch(e=>parent.postMessage({qaError:e.stack},location.origin));

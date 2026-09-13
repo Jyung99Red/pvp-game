@@ -23,27 +23,29 @@ const spatialData = (() => {
     const training = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,
-        playerTurn: 8, chargeMoveMultiplier: .7, chargeTurnMultiplier: .65,
+        playerTurn: 8, chargeMoveMultiplier: .6, chargeTurnMultiplier: .65,
         guardMoveMultiplier: .3, guardTurnMultiplier: .5,
         motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 },
         player: { x: 180, y: 275, radius: 12, facing: -Math.PI / 2, hp: 120, maxHp: 120 },
         enemy: { x: 180, y: 160, radius: 23, facing: Math.PI / 2, hp: 360, maxHp: 360 },
         ai: { initialDelay: .8, delay: .45, speed: 47, stopDistance: 88, attackDistance: 150, turn: 3, trackingTurn: 1.6 },
-        stagger: { threshold: 3, duration: 1.5, heavy: 2, parry: 1 },
-        apRegen: .7, guardTurn: 8, moveRamp: 32, hitStun: .35,
+        stagger: { threshold: 3, duration: 1.5, heavy: 1, parry: 1 },
+        apRegen: .7, moveRamp: 32, hitStun: .35,
         blockMultiplier: .25, parryDamage: 10, parryCost: .5,
         guardStartup: .16, parryWindow: .18, apMax: 5,
         skillPointMax: 3, spRegen: 1 / 3,
-        light: { kind: 'sector', range: 82, arc: Math.PI * .56, damage: 18, windup: .10, recovery: .28 },
+        light: { kind: 'sector', range: 69, arc: Math.PI * .52, damage: 18, windup: .10, recovery: .28 },
         heavy: { kind: 'sector', minRange: 60, range: 103, minArc: Math.PI * .28, arc: Math.PI * .68, damage: 28, chargeBonus: 30, windup: .45, recovery: .6 },
-        sweep: { kind: 'sector', range: 145, arc: Math.PI * .64, windup: 1.25, lock: .45, active: .16, recovery: 1.15, damage: 25 },
-        stomp: { kind: 'circle', range: 110, windup: 1.4, lock: .55, active: .16, recovery: 1.3, damage: 30 }
+        sweep: { kind: 'sector', range: 145, arc: Math.PI * .64, windup: 1.35, lock: .45, active: .16, recovery: 1.3, damage: 25 },
+        stomp: { kind: 'circle', range: 110, windup: 1.5, lock: .55, active: .16, recovery: 1.45, damage: 30 }
     };
     // Every enemy has explicit geometry/timing. Old dmgMult never sets timing.
-    const sector = (range, arc, windup, lock, recovery, multiplier) => ({ kind: 'sector', range, arc: Math.PI * arc, windup, lock, active: .16, recovery, multiplier, damage: 0 });
-    const circle = (range, windup, lock, recovery, multiplier) => ({ kind: 'circle', range, windup, lock, active: .16, recovery, multiplier, damage: 0 });
+    const enemyWindupBonus = .1, enemyRecoveryBonus = .15;
+    const enemyTiming = (windup, recovery) => ({ windup: windup + enemyWindupBonus, recovery: recovery + enemyRecoveryBonus });
+    const sector = (range, arc, windup, lock, recovery, multiplier) => ({ kind: 'sector', range, arc: Math.PI * arc, ...enemyTiming(windup, recovery), lock, active: .16, multiplier, damage: 0 });
+    const circle = (range, windup, lock, recovery, multiplier) => ({ kind: 'circle', range, ...enemyTiming(windup, recovery), lock, active: .16, multiplier, damage: 0 });
     const dash = (windup, lock, recovery, multiplier, distance, speed, width) => ({
-        kind: 'dash', range: distance, width, windup, lock, active: 0, recovery, multiplier, damage: 0,
+        kind: 'dash', range: distance, width, ...enemyTiming(windup, recovery), lock, active: 0, multiplier, damage: 0,
         dash: { distance, speed, width }
     });
     const moves = {

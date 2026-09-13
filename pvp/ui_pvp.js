@@ -31,7 +31,7 @@ const uiPvp = (() => {
         version = local.inputVersion; actionVersion = local.actionInputVersion;
         // Guest sees the world rotated 180 degrees. Skill selection stays screen-relative.
         const worldValues = (channel, values) => i === 1 && channel !== 'skill' ? values.map(v => -v) : values;
-        input = combatInput.attach({ move: $('pvp-s-move-pad'), action: $('pvp-s-action-pad'), guard: $('pvp-s-guard-pad'), skill: $('pvp-s-skill-pad') }, {
+        input = combatInput.attach({ move: $('pvp-s-move-pad'), guard: $('pvp-s-guard-pad'), skill: $('pvp-s-skill-pad') }, {
             cancel: () => pvpLogic.cancelLocal(),
             press: (channel, ...values) => pvpLogic.input({ type: 'press', channel, values: worldValues(channel, values) }),
             drag: (channel, ...values) => pvpLogic.input({ type: 'drag', channel, values: worldValues(channel, values) }),

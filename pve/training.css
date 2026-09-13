@@ -64,13 +64,3 @@ h1 { font-size: 26px; margin: 12px 0; font-weight: 650; }
 .control-group p { color: var(--muted); font-size: 9px; line-height: 1.8; margin: 8px -4px 0; }
 footer { font-size: 9px; color: #647e82; text-align: center; padding-top: 7px; }
 @media (max-height: 650px) { .topbar { height: 46px; } .vitals { padding-bottom: 8px; } .feedback { padding-top: 8px; } .control-group p { margin-top: 5px; } h1 { font-size: 22px; margin: 8px 0; } }
-/* Three independent pads, matching the formal two-finger control layout. */
-.controls { position: relative; flex: 0 0 172px; display: block; padding: 0; }
-.controls .control-group { position: absolute; bottom: 0; }
-.controls .move-group { left: 0; }
-.controls .action-group { right: 54px; }
-.controls .guard-group { right: 0; bottom: 78px; }
-.controls .pad { width: 82px; height: 82px; border-radius: 50%; gap: 5px; }
-.controls .move-pad { width: 102px; height: 102px; }
-.controls .guard-pad { width: 70px; height: 70px; }
-.controls .pad strong { font-size: 10px; }

@@ -40,7 +40,7 @@ test('latest queued command replaces earlier input; cancelled move and pause do 
  L.release(b,'guard'); assert.equal(b.queuedCommand,null);
  L.press(b,'move'); L.drag(b,'move',60,0); L.release(b,'move',true);
  seconds(t,.5); assert.equal(b.player.x,x); assert.equal(b.stats.attacks,1);
- L.press(b,'action'); L.drag(b,'action',60,0); t.pveLogic.pause(); t.pveLogic.resume();
+ L.press(b,'move'); L.drag(b,'move',60,0); t.pveLogic.pause(); t.pveLogic.resume();
  seconds(t,.5); assert.equal(b.stats.attacks,1); assert.equal(b.player.x,x);
 });
 
@@ -48,7 +48,7 @@ test('heavy has .45 windup and .60 recovery before held movement resumes',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine;
  b.enemy.y=b.player.y-70; const hp=b.enemy.hp,x=b.player.x;
- L.press(b,'action'); seconds(t,.3); L.drag(b,'action',0,-60); L.release(b,'action');
+ L.press(b,'move'); seconds(t,.3); L.drag(b,'move',0,-60); L.release(b,'move');
  assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.45);
  L.press(b,'move'); L.drag(b,'move',60,0);
  seconds(t,.2); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
@@ -108,11 +108,11 @@ test('all four skills retain costs; full charge awaits swipe, cancellation spend
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
  b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,1);
  b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,1);
- L.press(e,'action'); seconds(t,.5); assert.ok(b.player.charge>.5); const q=b.player.charge;
+ L.press(e,'move'); seconds(t,.75); assert.ok(b.player.charge>.5); const q=b.player.charge;
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
- L.release(e,'action'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
- L.press(e,'action'); seconds(t,.3); assert.equal(b.player.charge,2); assert.equal(e.stats.attacks,0);
- L.release(e,'action'); assert.equal(b.player.ap,e.config.apMax); assert.equal(b.buffs.instantCharge,false);
+ L.release(e,'move'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
+ L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2); assert.equal(e.stats.attacks,0);
+ L.release(e,'move'); assert.equal(b.player.ap,e.config.apMax); assert.equal(b.buffs.instantCharge,false);
  b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
 });
 
@@ -163,10 +163,10 @@ test('crit changes actual damage and equipment threshold changes heavy yield wit
  function strike(crit, threshold) {
   const C=JSON.parse(JSON.stringify(config)); C.critChance=crit; C.chargeThreshold=threshold;
   const b=t.spatialEngine.create(C,()=>0); t.spatialEngine.start(b); b.enemy.y=b.player.y-70; b.enemy.phase='recover'; b.enemy.timer=100;
-  t.spatialEngine.press(b,'action');
-  for(let i=0;i<50;i++) t.spatialEngine.step(b,.01);
+  t.spatialEngine.press(b,'move');
+  for(let i=0;i<75;i++) t.spatialEngine.step(b,.01);
   assert.equal(b.action.mode,'charge');
-  t.spatialEngine.drag(b,'action',0,-50); t.spatialEngine.release(b,'action');
+  t.spatialEngine.drag(b,'move',0,-50); t.spatialEngine.release(b,'move');
   for(let i=0;i<50;i++) t.spatialEngine.step(b,.01);
   return t.spatialEngine.drainEvents(b).find(e=>e.type==='hit');
  }
@@ -196,7 +196,7 @@ test('focus drives AP and slower time-based SP recovery without hit rewards',()=
 
 test('wolf dash locks direction, travels a real path and hits at most once',()=>{
  const t=setup(), C=t.pveProfiles.create('wolf',t.content.enemies.wolf), b=t.spatialEngine.create(C,()=>0), S=t.spatialEngine;
- assert.equal(C.actions[1].kind,'dash'); assert.equal(C.actions[1].windup,1.05); assert.equal(C.actions[1].recovery,1.2); assert.equal(C.actions[1].dash.speed,280);
+ assert.equal(C.actions[1].kind,'dash'); assert.ok(Math.abs(C.actions[1].windup-1.15)<1e-8); assert.ok(Math.abs(C.actions[1].recovery-1.35)<1e-8); assert.equal(C.actions[1].dash.speed,280);
  S.start(b); const e=b.enemy,p=b.player; e.x=p.x=180; e.y=180; p.y=270; p.facing=-Math.PI/2;
  e.phase='windup'; e.timer=.01; e.attack=C.actions[1]; e.facing=Math.PI/2;
  S.step(b,.01); assert.equal(e.phase,'dash'); const before=e.y;

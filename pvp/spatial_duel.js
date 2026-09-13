@@ -46,7 +46,7 @@ const spatialDuel = (() => {
             E.cancelInputs(b); Object.assign(b.controls, { cancelAtCenter: command.cancelAtCenter, autoFace: command.autoFace });
         } else if (type === 'skill') ok = skill(d, i, command.kind);
         else {
-            if (!['move', 'action', 'guard', 'skill'].includes(channel)) return false;
+            if (!['move', 'guard', 'skill'].includes(channel)) return false;
             const values = command.values;
             if (type === 'press' || type === 'drag') {
                 if (!Array.isArray(values) || values.length !== (type === 'press' ? 2 : 4) || !values.every(v => Number.isFinite(v) && Math.abs(v) <= 4096)) return false;

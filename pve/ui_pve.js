@@ -13,7 +13,7 @@ const uiPve = (() => {
             settings = combatSettings.attach($('view-battle'), () => engine); settings.apply(engine);
             view = uiSpatialBattle.create($('view-battle'), engine.config, 'pve-s-');
             version = engine.inputVersion; actionVersion = engine.actionInputVersion;
-            input = combatInput.attach({ move: $('pve-s-move-pad'), action: $('pve-s-action-pad'), guard: $('pve-s-guard-pad'), skill: $('pve-s-skill-pad') }, {
+            input = combatInput.attach({ move: $('pve-s-move-pad'), guard: $('pve-s-guard-pad'), skill: $('pve-s-skill-pad') }, {
                 cancel: () => spatialEngine.cancelInputs(engine),
                 press: (channel, cx, cy) => spatialEngine.press(engine, channel, cx, cy),
                 drag: (channel, dx, dy, cx, cy) => spatialEngine.drag(engine, channel, dx, dy, cx, cy),

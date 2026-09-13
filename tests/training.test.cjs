@@ -14,7 +14,9 @@ const S = vm.runInContext('spatialCombat', context);
 test('shared view mounts on training Document and formal Element roots, and redraws after resize', () => {
     for (const formal of [false, true]) {
         let resized, draws = 0, disconnected = false;
+        const rotations = [];
         const canvasContext = new Proxy({}, { get: (_, key) => key === 'clearRect' ? () => draws++ :
+            key === 'rotate' ? angle => rotations.push(angle) :
             key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
         const nodes = new Map();
         function element() {
@@ -40,6 +42,16 @@ test('shared view mounts on training Document and formal Element roots, and redr
         view.render(battle);
         assert.equal(draws, 1); resized(); assert.equal(draws, 2);
         assert.equal(root.querySelector('[id="player-hp"]').textContent, '120 / 120');
+        battle.player.phase = 'guard_start'; battle.player.timer = battle.config.guardStartup / 2;
+        const saved = JSON.stringify(battle);
+        view.render(battle, [], .016);
+        assert.ok(Math.abs(rotations.at(-1) - Math.PI * .36) < 1e-8);
+        resized(); assert.ok(Math.abs(rotations.at(-1) - Math.PI * .36) < 1e-8);
+        assert.equal(JSON.stringify(battle), saved);
+        battle.player.phase = 'guard'; view.render(battle, [], .016);
+        assert.equal(rotations.at(-1), 0);
+        battle.player.phase = 'idle'; view.render(battle, [], .1);
+        assert.ok(rotations.at(-1) > 0 && rotations.at(-1) < Math.PI * .72);
         view.destroy(); assert.equal(disconnected, true);
     }
 });
@@ -71,29 +83,29 @@ test('upward movement starts immediately and release never attacks, even after a
     const y = b.player.y; advance(b, .2); assert.equal(b.player.y, y);
 });
 test('charged hold is immobile, never auto-fires, and release in place cancels without AP cost', () => {
-    const b = setup(); L.press(b, 'action'); advance(b, 2);
+    const b = setup(); L.press(b, 'move'); advance(b, 2);
     assert.equal(b.player.phase, 'charging'); assert.equal(b.player.charge, L.config.fullCharge);
     assert.equal(b.stats.attacks, 0);
     assert.equal(b.player.x, 180); assert.equal(b.player.y, 275);
-    L.release(b, 'action');
+    L.release(b, 'move');
     assert.equal(b.stats.attacks, 0); assert.equal(b.stats.cancels, 1);
     assert.equal(b.player.ap, 5); assert.equal(b.player.phase, 'idle');
 });
-test('upward release commits heavy attack without movement; returning to origin cancels', () => {
-    const b = setup(); L.press(b, 'action'); advance(b, 1.7);
-    L.drag(b, 'action', 0, -50); advance(b, .1); L.release(b, 'action');
+test('charged drag moves at 60 percent; release attacks and returning to origin cancels', () => {
+    const b = setup(); L.press(b, 'move'); advance(b, 2);
+    L.drag(b, 'move', 0, -50); advance(b, .1); L.release(b, 'move');
     assert.equal(b.player.attack.heavy, true); assert.equal(b.player.attack.damage, 58);
-    assert.equal(b.player.y, 275); assert.equal(b.stats.attacks, 1);
-    const c = setup(); L.press(c, 'action'); advance(c, .5);
-    L.drag(c, 'action', 0, -50); L.drag(c, 'action', 2, 3); L.release(c, 'action');
+    assert.ok(Math.abs(b.player.y - (275 - 115 * .6 * .1)) < 1e-8); assert.equal(b.stats.attacks, 1);
+    const c = setup(); L.press(c, 'move'); advance(c, .5);
+    L.drag(c, 'move', 0, -50); L.drag(c, 'move', 2, 3); L.release(c, 'move');
     assert.equal(c.stats.attacks, 0); assert.equal(c.stats.cancels, 1);
 });
 test('pointer cancellation and pause cannot release an armed attack', () => {
-    for (const cancel of [b => L.release(b, 'action', true), b => L.pause(b)]) {
-        const b = setup(); L.press(b, 'action'); advance(b, .6); L.drag(b, 'action', 0, -50);
+    for (const cancel of [b => L.release(b, 'move', true), b => L.pause(b)]) {
+        const b = setup(); L.press(b, 'move'); advance(b, .6); L.drag(b, 'move', 0, -50);
         cancel(b); assert.equal(b.stats.attacks, 0); assert.equal(b.player.phase, 'idle');
     }
-    const b = setup(); L.press(b, 'action'); L.drag(b, 'action', 60, 0); L.pause(b);
+    const b = setup(); L.press(b, 'move'); L.drag(b, 'move', 60, 0); L.pause(b);
     const time = b.time, x = b.player.x; advance(b, 5);
     assert.equal(b.time, time); assert.equal(b.player.x, x);
 });
@@ -151,7 +163,8 @@ test('a lethal player hit ends the fight before a pending enemy hit can execute'
 test('semantic commands cannot bypass charge, AP, pause or finished state', () => {
     const b = setup();
     assert.equal(L.dispatch(b, { type: 'heavy' }), false);
-    b.player.ap = 0; assert.equal(L.press(b, 'action'), false);
+    assert.equal(L.press(b, 'action'), false);
+    b.player.ap = 0; assert.equal(L.press(b, 'move'), true); advance(b, .25);
     assert.equal(b.action, null); assert.equal(b.player.phase, 'idle');
     L.pause(b); assert.equal(L.dispatch(b, { type: 'light' }), false);
     assert.equal(b.stats.attacks, 0);
@@ -165,15 +178,15 @@ test('events describe damage and finish once, draining cannot change combat', ()
     assert.ok(events.some(e => e.type === 'hp_changed' && e.side === 'enemy' && e.hp === 0));
     assert.ok(events.some(e => e.type === 'hit'));
     assert.equal(L.drainEvents(b).length, 0);
-    advance(b, 1); assert.equal(L.press(b, 'action'), false);
+    advance(b, 1); assert.equal(L.press(b, 'move'), false);
     assert.equal(L.drainEvents(b).length, 0);
 });
 
 test('hit invalidates right input and instances do not share mutable fighter state', () => {
     const b = setup(), other = setup(); incoming(b, .1);
-    L.press(b, 'action'); const version = b.actionInputVersion; advance(b, .2);
+    L.press(b, 'move'); const version = b.actionInputVersion; advance(b, .2);
     assert.ok(b.actionInputVersion > version); assert.equal(b.action, null); assert.equal(b.guard, null);
-    L.release(b, 'action'); assert.equal(b.stats.attacks, 0);
+    L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
     assert.equal(other.player.hp, 120); assert.equal(other.events.length, 0);
     assert.equal(Object.isFrozen(L.config.heavy), true);
 });
@@ -191,34 +204,41 @@ test('pointer adapter owns each channel, cancels lost capture and removes listen
             setPointerCapture: id => held.add(id), hasPointerCapture: id => held.has(id),
             releasePointerCapture(id) { held.delete(id); this.fire('lostpointercapture', id); },
             fire(type, id, x = 0, y = 0) { listeners.get(type)?.({ pointerId: id, button: 0, clientX: x, clientY: y, preventDefault() {} }); },
-            dataset: {}, style: {}, classList: { remove() {} }, querySelectorAll: () => [], querySelector: () => ({ style: {} }),
+            dataset: {}, style: { setProperty(k, v) { this[k] = v; }, removeProperty(k) { delete this[k]; } }, classList: { remove() {} }, querySelectorAll: () => [], querySelector: () => ({ style: {} }),
             getBoundingClientRect: () => ({left: -40, top: -40, width: 80, height: 80}),
             listeners, held
         };
     }
-    const action = pad(), guard = pad(), move = pad(), b = setup();
-    const input = Input.attach({ action, guard, move }, {
+    const guard = pad(), move = pad(), skill = pad(), b = setup();
+    move.dataset.originAtPress = '';
+    const input = Input.attach({ guard, move, skill }, {
         press: channel => L.press(b, channel),
         drag: (channel, dx, dy) => L.drag(b, channel, dx, dy),
         release: (channel, cancelled) => L.release(b, channel, cancelled)
     });
-    action.fire('pointerdown', 1); action.fire('pointermove', 1, 60);
-    guard.fire('pointerdown', 2); move.fire('pointerdown', 2); action.fire('pointerdown', 3);
-    assert.equal(action.held.size, 1); assert.equal(guard.held.size, 0); assert.equal(move.held.size, 1);
-    action.fire('pointercancel', 1); move.fire('pointercancel', 2);
+    move.fire('pointerdown', 1, 10, 15); advance(b, .3); move.fire('pointermove', 1, 70, 15);
+    assert.equal(move.style['--gesture-x'], '50px'); assert.equal(move.style['--gesture-y'], '55px');
+    assert.equal(b.action.cx, 60); assert.equal(b.action.cy, 0);
+    guard.fire('pointerdown', 2); move.fire('pointerdown', 3);
+    assert.equal(move.held.size, 1); assert.equal(guard.held.size, 0);
+    move.fire('pointercancel', 1);
+    assert.equal(move.style['--gesture-x'], undefined);
     assert.equal(b.stats.attacks, 0);
-    action.fire('pointerdown', 4); advance(b, .5); action.fire('pointermove', 4, 0, -50);
-    action.releasePointerCapture(4);
+    move.fire('pointerdown', 4); advance(b, .5); move.fire('pointermove', 4, 0, -50);
+    move.releasePointerCapture(4);
     assert.equal(b.stats.attacks, 0); assert.equal(b.action, null);
+    move.fire('pointerdown', 5); move.fire('pointermove', 5, 60);
+    guard.fire('pointerdown', 6); skill.fire('pointerdown', 7);
+    assert.equal(move.held.size, 1); assert.equal(guard.held.size, 1); assert.equal(skill.held.size, 0);
     L.pause(b); input.destroy();
-    assert.equal(action.listeners.size, 0); assert.equal(guard.listeners.size, 0);
-    assert.equal(action.held.size, 0); assert.equal(guard.held.size, 0);
+    assert.equal(move.listeners.size, 0); assert.equal(guard.listeners.size, 0);
+    assert.equal(move.held.size, 0); assert.equal(guard.held.size, 0);
 });
 
 test('hit preserves held left movement through stun; release during stun stops it', () => {
     for (const releaseDuringStun of [false, true]) {
         const b=setup(); incoming(b,.01);
-        L.press(b,'move'); L.drag(b,'move',60,0); L.press(b,'action');
+        L.press(b,'move'); L.drag(b,'move',60,0);
         advance(b,.02); assert.equal(b.player.phase,'stunned');
         assert.ok(b.move); assert.equal(b.action,null);
         const x=b.player.x;
@@ -248,17 +268,89 @@ test('skill directions require dead zone exit; center cancellation is optional',
 test('haste applies move and non-charge turn bonuses; charge remains 65 percent', () => {
     for (const stance of ['idle','charging','guard']) {
         const b=setup(); b.enemy.x=40; b.enemy.y=40;
-        if (stance==='charging') L.press(b,'action');
+        if (stance==='charging') { L.press(b,'move'); advance(b,.25); }
         if (stance==='guard') { L.press(b,'guard'); advance(b,.2); }
         L.useSkill(b,'haste');
         L.press(b,'move'); L.drag(b,'move',60,0);
-        if (stance==='charging') L.drag(b,'action',60,0);
+        if (stance==='charging') L.drag(b,'move',60,0);
         if (stance==='guard') L.drag(b,'guard',60,0);
         const x=b.player.x, facing=b.player.facing;
         advance(b,.01);
-        const moveMult=stance==='charging' ? .7 : stance==='guard' ? .3 : 1;
+        const moveMult=stance==='charging' ? .6 : stance==='guard' ? .3 : 1;
         const turn=stance==='charging' ? 5.2 : stance==='guard' ? 4.2 : 8.4;
         assert.ok(Math.abs(b.player.x-x-115*1.1*moveMult*.01)<1e-8);
         assert.ok(Math.abs(b.player.facing-facing-turn*.01)<1e-8);
     }
+});
+
+test('move gesture latches until release; a fresh stationary press crosses the hold threshold', () => {
+    const b = setup(); b.enemy.x = 40; b.enemy.y = 40;
+    L.press(b, 'move'); L.drag(b, 'move', 50, 0); advance(b, .1);
+    L.drag(b, 'move', 0, 0); advance(b, .8);
+    assert.equal(b.move.mode, 'move'); assert.equal(b.player.phase, 'idle');
+    L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
+    L.press(b, 'move'); advance(b, .24);
+    assert.equal(b.player.phase, 'idle'); advance(b, .01);
+    assert.equal(b.player.phase, 'charging'); assert.ok(Math.abs(b.player.charge) < 1e-8);
+    advance(b, .5); assert.ok(Math.abs(b.player.charge - .5) < 1e-8);
+});
+
+test('instant reversal releases along actual facing, including queued heavy and auto-face enabled', () => {
+    for (const queued of [false, true]) {
+        const b = setup(); b.controls.autoFace = true;
+        if (queued) { b.player.phase = 'recover'; b.player.timer = 1; }
+        L.press(b, 'move'); advance(b, .3);
+        L.drag(b, 'move', 0, -60); advance(b, .05);
+        const facing = b.player.facing;
+        L.drag(b, 'move', 0, 60); L.release(b, 'move');
+        if (queued) { assert.equal(b.queuedCommand.facing, facing); advance(b, .66); }
+        assert.equal(b.player.attack.facing, facing);
+        assert.ok(Math.abs(S.angleDelta(b.player.attack.facing, Math.PI / 2)) > 2);
+    }
+    const b = setup(); b.controls.autoFace = true; b.player.facing = 0;
+    L.press(b, 'move'); L.release(b, 'move'); assert.equal(b.player.attack.facing, 0);
+});
+
+test('charging turn stays bounded and a hit keeps movement without resuming the charge', () => {
+    const b = setup(); L.press(b, 'move'); advance(b, .3);
+    L.drag(b, 'move', 60, 0); const facing = b.player.facing;
+    advance(b, .01); assert.ok(Math.abs(b.player.facing - facing - .052) < 1e-8);
+    incoming(b, .01); advance(b, .02);
+    assert.equal(b.player.phase, 'stunned'); assert.equal(b.action, null);
+    assert.equal(b.move.mode, 'move'); assert.equal(b.move.suppressTap, true);
+    const x = b.player.x; advance(b, .4); assert.ok(b.player.x > x);
+    assert.equal(b.player.phase, 'idle'); L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
+});
+
+test('guard and skill gestures suppress pending taps and never arm a latent charge', () => {
+    for (const channel of ['guard', 'skill']) for (const secondaryFirst of [false, true]) {
+        const b = setup();
+        if (secondaryFirst) L.press(b, channel);
+        L.press(b, 'move');
+        if (!secondaryFirst) L.press(b, channel);
+        advance(b, .3); L.release(b, channel); advance(b, .5);
+        assert.equal(b.player.phase, 'idle'); assert.equal(b.action, null);
+        L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
+    }
+});
+
+test('combined release cancellation, AP failure and optional center release have no ghost attacks', () => {
+    for (const cancel of [b => L.release(b, 'move', true), b => L.pause(b)]) {
+        const b = setup(); L.press(b, 'move'); advance(b, .3); L.drag(b, 'move', 60, 0);
+        cancel(b); assert.equal(b.action, null); assert.equal(b.move, null); assert.equal(b.stats.attacks, 0);
+    }
+    const b = setup(); b.player.ap = 0; L.press(b, 'move'); advance(b, .3);
+    assert.equal(b.action, null); advance(b, 2); L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
+    const c = setup(); c.controls.cancelAtCenter = false;
+    L.press(c, 'move'); advance(c, .3); L.release(c, 'move');
+    assert.equal(c.player.attack.heavy, true); assert.equal(c.stats.attacks, 1);
+});
+
+test('replacing a queued charge restores ordinary movement and turning without another attack', () => {
+    const b = setup(); b.player.phase = 'recover'; b.player.timer = 1;
+    L.press(b, 'move'); advance(b, .3); assert.equal(b.queuedCommand.type, 'input');
+    L.drag(b, 'move', 60, 0); assert.equal(L.queueSkill(b, 'haste'), true);
+    advance(b, .72);
+    assert.equal(b.move.mode, 'move'); assert.ok(b.player.facing > -Math.PI / 2);
+    L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
 });
