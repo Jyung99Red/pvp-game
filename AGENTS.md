@@ -42,8 +42,8 @@ are unaffected by which subfolder a `.js` file lives in.
   `state.progress.checkpointFloor` is
   permanent dungeon progress (saved); `state.world` is transient in-run position
   (not saved), including `world.runGold` — gold earned this run, at risk until
-  banked (see run-gold below).
-- **`core/combat_rules.js`** — shared weapon thresholds, default AP/parry window and focus-based AP/SP recovery. Spatial engines own damage and exchange judgment.
+  banked into `state.resources` only on making it back to base alive (owned by `pve/pve_logic.js`).
+- **`core/combat_rules.js`** — shared weapon thresholds, default AP/parry window and focus-based AP/SP recovery. Spatial engines own damage and simultaneous-attack judgment.
 - **`core/arena_effects.js`** — battlefield-effect registry + per-battle
   runner, pure logic. Effects change the environment over time rather than
   either side: built-ins are `ap_surge` (past `atMs` both sides' AP recharges
@@ -52,7 +52,7 @@ are unaffected by which subfolder a `.js` file lives in.
   `content.enemies[key].arena = ['key' | {key, ...opts}]` (currently the two
   bosses), instantiated per-fight via `arenaEffects.create()`, driven by
   `arenaEffects.tick()` in `pve_logic._loop`, which applies the returned
-  log/damage events itself (same death priority as exchanges).
+  log/damage events itself (same death priority as attacks).
 - **`pve/pve_logic.js`** — formal spatial dungeon lifecycle: floor pools, boss
   checkpoints, rewards, runGold and skill points. `state.pveBattle.spatial` owns
   combat HP and time; `player`/`enemy` reference its actors. Fixed 10ms substeps
@@ -66,7 +66,7 @@ are unaffected by which subfolder a `.js` file lives in.
 - **`ui/combat_input.js` / `ui/ui_spatial_battle.js`** — shared input capture and
   read-only view. Formal DOM IDs use `pve-s-`; training uses unprefixed IDs.
 - Formal PVE has one implementation; the legacy fallback and its URL selector were
-  removed after user acceptance. PVP protocol remains unchanged.
+  removed after user acceptance.
 - **`pvp/pvp_logic.js`** — WebRTC PVP on the same core. Host is the sole judgment
   authority; Guest predicts local input and reconciles authoritative snapshots.
   `spatial_duel` resolves simultaneous spatial attacks using simulation time;
@@ -114,174 +114,63 @@ are unaffected by which subfolder a `.js` file lives in.
   caches JS/partials — after editing files, verify the browser actually loaded
   the new version (fetch with `cache:'no-store'` and compare) before debugging
   "bugs" that are just stale scripts.
+- `node --test <files>` spawns child processes; where a sandbox blocks that
+  (`spawn EPERM`), run each file directly (`node tests/pve-spatial.test.cjs`) —
+  same tests, same counts.
 
 
-## Spatial training extraction (M1, 2026-09-09)
+## Current state
 
-`training.html` is an isolated entry, sharing no saves or battle state with the
-formal PVE/PVP. It loads `core/spatial_combat.js` → `core/combat_gestures.js` →
-`pve/spatial_data.js` → `pve/spatial_engine.js` → `ui/combat_input.js` →
-`ui/ui_spatial_battle.js` → `pve/training.js`. The engine owns combat, the gesture
-recognizer emits semantic commands, the input adapter owns pointer capture, and
-the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/spatial-engine.test.cjs` for focused regression checks.
-Formal PVE and PVP reuse this engine with profiles. `combat_rules` supplies shared
-resource recovery and weapon defaults; `spatial_duel` owns simultaneous PVP judgment.
+- PVE spatial migration is closed and PVP runs on the same shared engine
+  (`pve/spatial_engine.js` + `core/spatial_profiles.js`); no legacy exchange
+  implementation, side-state or rule registry remains in the tree.
+- PVP carries a protocol version and a rule version, and the arena layout is
+  versioned too (`pvp/pvp_logic.js`, `gameConfig.pvpArena`). Any balance change
+  that alters what both clients must agree on needs a version bump.
+- Training is an isolated entry (`training.html`) with its own arena and baseline;
+  it shares neither saves nor battle state with the formal modes.
+- **Tunable numbers live in `game_config.js` only.** This file describes structure,
+  ownership and intent on purpose: it does not repeat values, because duplicated
+  numbers drift. Read the config or the owning module before quoting a value.
 
-## Spatial controls update (2026-09-11)
+## Settled decisions (do not re-litigate)
 
-Formal PVE and training use independent left movement/light and right heavy/guard
-pads (heavy below-left of guard). Left drag moves; right drag only turns. Heavy
-press charges immediately at 70% move/turn speed; outside-center release attacks,
-center release cancels. Left movement works while charging or guarding. Weapon
-geometry stays fixed size; only its swing angle and the range preview change.
-`spatialEngine.heavyShape` is shared by preview and hit snapshots.
-Equipment feeds `player.getSpatialMotion()` into profiles; temporary modifiers
-use `spatialEngine.setMotionBuff`. One latest command is buffered during
-attack/recovery/stun; queued skills spend SP only when executed.
-See `pve/COMBAT_CONTROLS.md` for configuration and cancellation semantics.
-The user requested no tests for this revision; previous passing test counts
-are historical, and old gesture expectations need updating on the next test pass.
+Confirmed by the user directly — change them only when asked to:
 
-## Operation preferences and four-way skills (2026-09-11)
+- Four skills are fixed: heal (up), haste (right), full charge (down), parry (left).
+  Costs, durations and multipliers live in `gameConfig.skills` + `skillOverrides`.
+- Manual parry spends AP; the parry *skill* spends SP. The two are independent.
+- The user settled the player attack timings and the guard/charge movement
+  multipliers; treat `gameConfig.training` as their current values, not as a
+  baseline to re-tune on your own.
+- Defaults are `controls.cancelAtCenter = true` and `controls.autoFace = false`:
+  idle keeps facing, movement turns toward its own vector, and light/guard startup
+  never snap toward the enemy.
+- A held movement pointer must never be converted into a tap. A direct hit clears
+  only right-hand input and the queued command; stun stops movement without
+  dropping the held move gesture, which resumes when stun ends.
+- The camera follows by translation only and never changes world inputs, damage or
+  snapshots. The PVP guest's fixed 180-degree view is presentation only, so guest
+  input vectors are rotated back before prediction/networking while skill
+  directions stay screen-relative.
+- PVP never writes progression, passive healing or dungeon rewards, and fair mode
+  reads no equipment effects at all.
+- Every enemy action template owns its own timing (`pve/spatial_data.js`); never
+  reintroduce a legacy damage-multiplier timing path.
+- Weapon charge timing is data-driven: one `chargeOffsetMs` per weapon in
+  `game_config.js`, resolved by `combatRules.weaponChargeThresholdMs()`.
 
-Movement uses a dynamic left touch area: locate the hidden pad at each pointerdown,
-reset/hide on release, cancellation and resize. Four-way skill pad: up heal, right
-haste, down full, left parry. Require >24 CSS px drag and outside the 24px center
-before selection; about 7-degree direction hysteresis. Center cancellation defaults
-on (heavy + skills); off retains the current gesture's last selected skill, never
-casts an unselected tap. The engine returns the selected skill from release; the
-page adapter retains SP/queue ownership. Training allows free skill practice.
-`core/combat_settings.js` binds pause/settings and persists cancelAtCenter/autoFace
-outside progression saves. Default autoFace=false: movement turns toward its vector,
-idle retains facing, light and guard startup do not snap to the enemy. The renderer
-remains read-only. Guard startup/guard use 30% move and 50% turn speed. Charge turn
-remains 70% (5.6 rad/s baseline), heavy windup/recovery remain .18/.48 seconds.
-Monster HP loss adds impact sparks, ring and floating damage using simulation time.
-`pve/combat_controls.css` supplies shared controls after the page-specific stylesheet.
-This revision only received syntax/diff checks; regression and device QA remain pending.
+## Open work
 
-## Mobile lifecycle and layout follow-up (2026-09-11)
-
-A direct hit now clears only right-hand input and the queued command. The engine
-keeps the held move gesture with suppressTap=true; actionInputVersion clears only
-right-hand pointer capture in adapters. Stun still stops physical movement; holding
-resumes after stun, releasing during stun stops it. Pause/blur/cancel/resize/end
-continue to clear all pointers. Do not convert a held movement pointer into a tap.
-
-Foreground, BFCache and Canvas context restoration refresh the view and present
-pause for an unfinished fight without recreating battle state or rewards. Zero-size
-canvas observations are ignored. Training retains its listeners across pagehide
-and restarts its frame loop on pageshow instead of forcing location.reload().
-
-Both entry shells use core/client_boot.js and client-assets.json. The loader fetches
-local styles, ordered scripts and formal partials with cache:no-store before opening
-the game, preventing a cached shell from combining stale combat assets with a fresh
-partial. Update the manifest when adding/removing a script, stylesheet or formal view.
-Local scripts are still global classic script tags; there are no modules or bundler.
-
-The right-hand controls share a 2x2 grid: guard upper-left, skill upper-right, attack
-lower-left, lower-right reserved. Move touch area is lower. Formal AP/SP, recent
-battle log and enemy readout overlay below HP; the full-width world starts at HP level.
-User manually confirmed previous operation feel. Latest follow-up only has static
-checks; exact mobile background/rotation/base-to-battle reproduction remains pending.
-
-## Latest tuning (2026-09-11, third mobile feedback)
-
-Supersedes prior 70% charge-turn and .18/.48 heavy timings: chargeTurnMultiplier=.65
-(5.2 rad/s baseline), heavy windup=.22 and recovery=.60. Charge move remains .7.
-Heal costs 2 SP and rejects full HP both before queueing and at execution, with no
-SP charge or queue replacement. Haste costs 2 SP, lasts 10 simulation seconds and
-retains 1.5x charge progress; motion() additionally applies 1.10 move in all stances
-and 1.05 turn only outside charging. Refresh does not stack. Guard multipliers unchanged.
-Combat events go only to recent logs, not duplicated into operation notice. Monster
-impact ring/sparks last .18s while damage numbers remain .55s; player stun has orange
-phase-bound tint/ring/marks. Shared controls have 128px move pad, larger touch area,
-compact right grid, translucent HP, and a compact landscape layout (<=540px high).
-Static checks only; current gesture regressions and real-device QA remain pending.
-
-Latest user authorization: parry costs 3 SP. Commit and push current work first,
-then run tests; this supersedes the earlier no-tests restriction.
-
-Latest validation: focused training/PVE suite updated to current gestures and tuning;
-38 tests passed, 0 failed. Includes held movement through stun, four-way skill cancel,
-haste motion, heal safeguards, parry 3 SP and foreground lifecycle/reward protection.
-Real-device layout/background/context-loss QA remains pending.
-
-## Handoff status (2026-09-11)
-
-User confirmed preliminary playtesting complete. PVE spatial migration is closed
-as this phase; 38 focused tests pass. The PVP migration that followed is described
-in the sections below.
-Older no-tests/pending-playtest statements above are historical, not current blockers.
-
-
-## PVP spatial migration, stage one (2026-09-12)
-
-Supersedes the earlier statements that PVP uses the old exchange engine/protocol.
-User authorized current four skills unchanged; spatial clash is explicitly deferred
-and required in stage two. See `pvp/SPATIAL_MIGRATION.md` for current PVP rules.
-`core/spatial_profiles.js` now shares player stat mapping with PVE. `spatialEngine.advanceActor`
-reuses human actions/input for both players; `pvp/spatial_duel.js` collects simultaneous
-strikes before resolving either, owns per-side SP/buffs and draws on double KO.
-`pvp/pvp_logic.js` owns protocol v2, host 10ms simulation, 50ms snapshots, guest local
-prediction/reconciliation, event deduplication, readiness and rematch. Guest HP is
-only authoritative snapshot data. Shared combatRules supplies AP/SP recovery and weapon defaults. Shared view/styles support both human fighters and both formal shells.
-PVP starts full HP/AP, 0 SP; no progression writes, passive healing or dungeon rewards.
-Settings do not pause; hidden/pagehide/context-loss/disconnect/timeouts abort the match.
-Run all three suites including `tests/pvp-spatial.test.cjs`; browser QA fixture is
-`tests/pvp-browser.html` (isolated progression; its hidden-tab workaround is test-only).
-
-Latest stage-one validation: all 53 tests pass (38 PVE/training + 15 PVP).
-Two browser contexts completed real WebRTC room-code connection, guest hit/HP sync,
-surrender and rematch. The isolated fixture also passed 60ms one-way simulated
-latency, real pointer tap, HP/SP convergence and portrait/landscape resize checks.
-Two-device mobile/network playtesting remains pending. Spatial clash is stage two.
-
-
-## PVP follow camera and outline fix (2026-09-12)
-
-PVP arena is now 510x566 (about twice the old area), with symmetric spawns
-(255,373)/(255,193). Protocol v3 supersedes v2 because clients must agree on bounds.
-Collision separation uses configured bounds. PVP config.camera selects a 396x440
-view, local-player follow smoothing and velocity lookahead (.16s, capped at 24).
-The shared renderer owns camera state; PVP supplies presentation dt, independent of
-snapshot time corrections. Camera never changes world inputs, damage, or snapshots.
-PVE/training retain their full-world view. Guard arcs and swing trails isolate Canvas
-state; fighters explicitly set outline width so opponent guard cannot thicken self.
-User explicitly requested no tests for this revision. Prior 53 passing tests and
-browser QA are historical, not validation of these camera/arena/rendering changes.
-
-
-## PVE camera / PVP perspective / heavy timing (2026-09-12)
-
-Latest user correction sets player heavy windup to exactly .45 seconds (recovery .60),
-shared by PVE, PVP and training. PVP protocol is now v4 to exclude older timing rules.
-Formal PVE now uses the same 510x566 arena and 396x440 follow camera as PVP;
-its original spawn positions are translated by (75,83), preserving encounter distance.
-Training arena stays 360x400. PVE supplies presentation dt to the shared camera.
-PVP guest view rotates the world 180 degrees so each side starts below its opponent.
-Guest move/action/guard input vectors are rotated back before prediction/networking;
-skill directions stay screen-relative. Pad knobs convert world gestures back to screen
-coordinates; actor labels and floating damage remain upright. World rules and snapshots
-remain in canonical coordinates. Perspective is fixed per side, not changed when circling.
-User requested direct push; no tests or browser QA were run for this revision.
-
-## Presentation work and remaining stages (2026-09-12)
-
-The planning docs for this work were removed with the other task docs; treat the
-code as the source of truth. What shipped from that plan — fair/progression PVP
-entries, the follow camera, and the L-wall PVP arena — is described in the sections
-above. The rest of that list (closer zoom, per-mode arenas, skill parameter
-separation for future PVE upgrades, simulation/render scheduling, guard-tapping
-stutter, side-held weapon/shield animation, offscreen hints) is no longer tracked
-anywhere. Required spatial clash remains separate stage C.
-
-## Startup and rendering maintenance (2026-09-13)
-
-`core/combat_rules.js` replaces the removed exchange resolver; no legacy side-state, charge-damage or rule registry remains. Unused player.takeDamage and action-speed effect definitions are removed.
-
-The boot shell remains hidden until local CSS markers/CSSOM and initialization pass. Local fetches use no-store, 12s timeout and one retry. Foreground/pageshow checks restore missing styles without reinitializing. PeerJS is lazy through `core/client_dependencies.js` at room creation/join, with 10s timeout, retry and cancellation protection. Update both shell loader query versions whenever boot code changes.
-
-PVP visibility clipping and shadow use one per-frame polygon from visibilityOrigin (the simulation position), independent of display correction. Dash warning deliberately remains a narrow path hint: collision half-width is dash.width + enemy.radius, with player.radius used for body contact.
-
-Validation: 79 tests pass across client boot, shared spatial engine, PVE and PVP suites, including exact four-digit room generation/input. Browser checks confirmed styled base/training startup, return from training to base, and real room creation with PeerJS loaded only on demand. The rare device-specific CSS loss was not reproduced; mobile foreground recovery still needs real-device confirmation.
+- **Spatial clash (stage C)** — explicitly deferred and still required: PVP
+  resolves simultaneous attacks, but clashing weapons are not resolved yet.
+- **Real-device QA** — mobile foreground recovery, rotation and the rare
+  device-specific CSS loss were never reproduced, and two-device mobile/network
+  PVP playtesting is outstanding. Do not report these as verified.
+- **Presentation leftovers** (no task doc anymore — track them in code): closer
+  camera zoom, per-mode arenas, skill parameter separation for future PVE
+  upgrades, simulation/render scheduling, guard-tapping stutter, side-held
+  weapon/shield animation, offscreen hints.
+- **Silver sword** — the charge-offset mechanism is ready, but the weapon is not
+  in `content.items` because its attack value, effects and recipe were never
+  chosen.
