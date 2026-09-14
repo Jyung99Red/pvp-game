@@ -58,6 +58,6 @@ partials/   启动时挂载的页面片段
 tests/      启动、共享引擎、PVE 与 PVP 回归测试
 ```
 
-详细的现行职责和数据流见 [战斗架构](structure.md)。迁移边界与模式差异记录在 [PVE 空间战斗](pve/SPATIAL_MIGRATION.md)、[PVP 空间战斗](pvp/SPATIAL_MIGRATION.md) 和 [训练场说明](pve/TRAINING.md)。
+详细的现行职责和数据流见 [战斗架构](structure.md)。PVP 的空间战斗规则与迁移边界见 [PVP 空间战斗](pvp/SPATIAL_MIGRATION.md)。
 
 新增或删除脚本、样式及正式页面 partial 时，需要同步更新 `client-assets.json`。所有脚本按清单顺序作为全局经典脚本执行。

@@ -125,7 +125,7 @@ formal PVE/PVP. It loads `core/spatial_combat.js` → `core/combat_gestures.js` 
 recognizer emits semantic commands, the input adapter owns pointer capture, and
 the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/spatial-engine.test.cjs` for focused regression checks.
 Formal PVE and PVP reuse this engine with profiles. `combat_rules` supplies shared
-resource recovery and weapon defaults; `spatial_duel` owns simultaneous PVP judgment. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
+resource recovery and weapon defaults; `spatial_duel` owns simultaneous PVP judgment.
 
 ## Spatial controls update (2026-09-11)
 
@@ -210,9 +210,8 @@ Real-device layout/background/context-loss QA remains pending.
 ## Handoff status (2026-09-11)
 
 User confirmed preliminary playtesting complete. PVE spatial migration is closed
-as this phase; 38 focused tests pass. Next conversation will migrate spatial combat
-to PVP (not implemented yet). Read docs/tasks/spatial-combat-migration.md for the
-consolidated current rules, delivered changes, residual QA limits and PVP handoff.
+as this phase; 38 focused tests pass. The PVP migration that followed is described
+in the sections below.
 Older no-tests/pending-playtest statements above are historical, not current blockers.
 
 
@@ -267,17 +266,15 @@ coordinates; actor labels and floating damage remain upright. World rules and sn
 remain in canonical coordinates. Perspective is fixed per side, not changed when circling.
 User requested direct push; no tests or browser QA were run for this revision.
 
-## Next task handoff (2026-09-12)
+## Presentation work and remaining stages (2026-09-12)
 
-Read `docs/tasks/combat-presentation-arena-next.md` for the next Luna task:
-shared camera with slightly closer zoom, independent arenas, skill parameter separation
-for possible future PVE upgrades, simulation/render scheduling, guard-tapping stutter,
-side-held weapons/shield animation, larger PVP arena with L walls, and offscreen hints.
-This is a planning document only; new behavior has not been implemented. Stage A adds
-fair/progression PVP entries and presentation improvements. Camera follows by translation
-only; the existing fixed guest-side coordinate flip is not dynamic camera rotation.
-Stage B covers full walls/visibility in `docs/tasks/pvp-walls-visibility.md`; read it only
-when implementing that stage. Required spatial clash remains separate stage C.
+The planning docs for this work were removed with the other task docs; treat the
+code as the source of truth. What shipped from that plan — fair/progression PVP
+entries, the follow camera, and the L-wall PVP arena — is described in the sections
+above. The rest of that list (closer zoom, per-mode arenas, skill parameter
+separation for future PVE upgrades, simulation/render scheduling, guard-tapping
+stutter, side-held weapon/shield animation, offscreen hints) is no longer tracked
+anywhere. Required spatial clash remains separate stage C.
 
 ## Startup and rendering maintenance (2026-09-13)
 

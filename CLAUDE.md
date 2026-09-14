@@ -133,7 +133,7 @@ formal PVE/PVP. It loads `core/spatial_combat.js` → `core/combat_gestures.js` 
 recognizer emits semantic commands, the input adapter owns pointer capture, and
 the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/spatial-engine.test.cjs` for focused regression checks.
 Formal PVE uses this engine with profiles. PVP retains `combat_resolver` exchange
-judgments; formal profiles reuse only its AP recovery helper. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
+judgments; formal profiles reuse only its AP recovery helper.
 
 ## Spatial controls update (2026-09-11)
 
