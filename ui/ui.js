@@ -364,9 +364,10 @@ const ui = {
         const stats = Object.entries({ atk: '攻击', def: '防御', insight: '心眼', focus: '专注', luck: '幸运' })
             .filter(([key]) => item.stats[key] > 0)
             .map(([key, label]) => `${label} +${['atk', 'def'].includes(key) ? Math.round(item.stats[key] * mult) : item.stats[key]}`);
-        if (item.weaponTemplate) {
-            const label = { basic: '标准', heavy: '重型', light: '轻型' }[item.weaponTemplate] || item.weaponTemplate;
-            stats.push(`蓄力模板 ${label}`);
+        if (item.type === 'weapon') {
+            const offset = Number.isFinite(item.chargeOffsetMs) ? item.chargeOffsetMs : 0;
+            const ms = combatRules.weaponChargeThresholdMs(offset);
+            stats.push(`蓄力起点 ${ms}ms${offset ? `（${offset > 0 ? '+' : ''}${offset}）` : ''}`);
         }
         return stats.join(' · ') || '无基础属性加成';
     },

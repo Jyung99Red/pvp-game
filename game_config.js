@@ -30,8 +30,13 @@ const gameConfig = (() => {
             focusBaseline: 10, minFocus: 0.1,
             apMax: 5, apRecoveryMs: 2000, spRecoveryMs: 3000,
             attackApCost: 1, guardRequiredAp: 1, blockApCost: 1,
+            // Charge-damage start (ms) = chargeThresholdMs + the equipped
+            // weapon's own chargeOffsetMs, clamped to the range below. A weapon
+            // without chargeOffsetMs behaves as offset 0. Positive = the damage
+            // ramp starts later ("heavier"); the +N is the only timing axis a
+            // weapon owns -- enhancement and other stats never change it.
             chargeThresholdMs: 300,
-            weaponChargeThresholdMs: { basic: 300, heavy: 350, light: 280 },
+            chargeThresholdRangeMs: { min: 200, max: 450 },
             parryWindowMs: 200,
         },
         damage: {
@@ -175,7 +180,7 @@ const gameConfig = (() => {
             items: {
                 wooden_sword: {
                     id: 'wooden_sword', name: "木剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
-                    weaponTemplate: 'basic',
+                    chargeOffsetMs: 0, // 300ms baseline: the standard charge-damage start.
                     slots: ['left', 'right'],
                     stats: { atk: 8, def: 0 },
                     effects: [],
@@ -183,7 +188,7 @@ const gameConfig = (() => {
                 },
                 iron_sword: {
                     id: 'iron_sword', name: "铁剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
-                    weaponTemplate: 'heavy',
+                    chargeOffsetMs: 50, // 300 + 50 = 350ms: the damage ramp starts later.
                     slots: ['left', 'right'],
                     stats: { atk: 22, def: 0 },
                     effects: [],
@@ -233,7 +238,7 @@ const gameConfig = (() => {
                 },
                 assassin_dagger: {
                     id: 'assassin_dagger', name: "刺客短刃", type: "weapon", icon: "🔪", iconKey: 'weapon-atk',
-                    weaponTemplate: 'light',
+                    chargeOffsetMs: -20, // 300 - 20 = 280ms: the damage ramp starts earlier.
                     slots: ['left', 'right'],
                     stats: { atk: 14, def: 0 },
                     effects: [{ type: 'crit_chance', value: 0.20 }],
@@ -287,7 +292,7 @@ const gameConfig = (() => {
                     drops: []
                 },
                 goblin: {
-                    name: "哥布林", hp: 55, atk: 12, def: 4, exp: 20,
+                    name: "哥布林", hp: 35, atk: 12, def: 3, exp: 20,
                     iconKey: 'goblin',
                     acts: {
                         act1: { name: "乱挥" },
@@ -296,7 +301,7 @@ const gameConfig = (() => {
                     drops: [{ id: 'goblin_ear', chance: 0.85, amount: [1, 2] }]
                 },
                 wolf: {
-                    name: "野狼", hp: 50, atk: 18, def: 3, exp: 15,
+                    name: "野狼", hp: 30, atk: 18, def: 2, exp: 15,
                     acts: {
                         act1: { name: "撕咬" },
                         act2: { name: "扑击" }
@@ -304,7 +309,7 @@ const gameConfig = (() => {
                     drops: [{ id: 'wolf_pelt', chance: 0.90, amount: [1, 2] }]
                 },
                 orc: {
-                    name: "兽人苦工", hp: 80, atk: 25, def: 8, exp: 50,
+                    name: "兽人苦工", hp: 50, atk: 25, def: 5, exp: 50,
                     acts: {
                         act1: { name: "挥锤" },
                         act2: { name: "砸地" }
@@ -312,7 +317,7 @@ const gameConfig = (() => {
                     drops: [{ id: 'orc_tooth', chance: 0.75, amount: [1, 1] }]
                 },
                 young_dragon: {
-                    name: "幼龙", hp: 200, atk: 30, def: 8, exp: 120,
+                    name: "幼龙", hp: 120, atk: 30, def: 6, exp: 120,
                     acts: {
                         act1: { name: "爪击" },
                         act2: { name: "火焰吐息" }
@@ -321,7 +326,7 @@ const gameConfig = (() => {
                 },
                 // ── Deep floors (10+) ──
                 skeleton_warrior: {
-                    name: "骷髅武士", hp: 130, atk: 34, def: 10, exp: 80,
+                    name: "骷髅武士", hp: 100, atk: 34, def: 9, exp: 80,
                     acts: {
                         act1: { name: "骨刃斩" },
                         act2: { name: "碎骨击" }
@@ -332,7 +337,7 @@ const gameConfig = (() => {
                     ]
                 },
                 shadow_assassin: {
-                    name: "暗影刺客", hp: 95, atk: 42, def: 6, exp: 100,
+                    name: "暗影刺客", hp: 85, atk: 42, def: 7, exp: 100,
                     acts: {
                         act1: { name: "影袭" },
                         act2: { name: "致命突刺" }
@@ -341,7 +346,7 @@ const gameConfig = (() => {
                     drops: [{ id: 'shadow_crystal', chance: 0.60, amount: [1, 2] }]
                 },
                 stone_golem: {
-                    name: "岩石傀儡", hp: 320, atk: 30, def: 24, exp: 120,
+                    name: "岩石傀儡", hp: 250, atk: 30, def: 22, exp: 120,
                     acts: {
                         act1: { name: "岩拳" },
                         act2: { name: "地裂" }

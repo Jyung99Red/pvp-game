@@ -254,15 +254,15 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 | 装备 | 基础 stats | 效果 | 当前消费位置 |
 |---|---|---|---|
-| 木剑 | atk +8 | 无 | `game_config.js` → `content.items.wooden_sword` |
-| 铁剑 | atk +22 | `weaponTemplate=heavy` | 蓄力阈值 350ms（basic 300ms + 50ms） |
+| 木剑 | atk +8 | `chargeOffsetMs=0` | 蓄力阈值 300ms（基准值） |
+| 铁剑 | atk +22 | `chargeOffsetMs=+50` | 蓄力阈值 350ms（基准 300 + 50） |
 | 木盾 | def +6 | `guard_damage_reduce=.25` | 正式格挡倍率乘 `.75` |
 | 铁盾 | def +24 | `guard_damage_reduce=.40`、`parry_window_ms=150` | 正式格挡倍率乘 `.60`；第一件窗口效果覆盖基础 |
 | 疾速戒指 | focus +3 | 无 | 专注提高，AP 与 SP 都回复更快 |
 | 布甲 | def +3 | 无 | `game_config.js` → `content.items.wooden_armor` |
 | 铁甲 | def +20 | 无 | `game_config.js` → `content.items.iron_armor` |
 | 智慧之环 | insight +10 | 无 | 提高心眼；窗口倍率由 `gameConfig.progression.insight` 控制 |
-| 刺客短刃 | atk +14 | `weaponTemplate=light`、`crit_chance=.20` | 蓄力阈值 280ms；暴击率另行累加 |
+| 刺客短刃 | atk +14 | `chargeOffsetMs=-20`、`crit_chance=.20` | 蓄力阈值 280ms；暴击率另行累加 |
 | 荆棘甲 | def +10 | `guard_thorns=.5` | 格挡成功时反射 raw 的 50%，再过攻击者 DEF |
 | 战意戒指 | 无 | `ap_max_bonus=1` | AP 上限基础 5→6 |
 
@@ -287,7 +287,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | 专注 | 使用 `focus` 属性；通过 `getFocus()` 同时影响 AP 和 SP 回复。基础 AP 为 2000ms/点，SP 为 3000ms/点，因此 SP 默认慢 1.5 倍 |
 | SP | 战斗模拟时间按小数进度回复，上限 3；暂停、局外和结束不增长；移除命中/弹反整点奖励；PVE 连层保留小数，PVP 客机不自行生成可消费 SP |
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
-| 武器蓄力模板 | basic/default `300ms`；heavy/铁剑 `350ms`（+50ms）；light/刺客短刃 `280ms`（-20ms）。蓄力阈值只由武器模板产生，profile 统一使用 `chargeThresholdMs` |
+| 武器蓄力起点 | 基准 `resources.chargeThresholdMs=300ms` 加武器自己的 `chargeOffsetMs`，再按 `chargeThresholdRangeMs={min:200,max:450}` 夹紧（`core/combat_rules.js` 的 `weaponChargeThresholdMs()`）：木剑 `0`→300ms、铁剑 `+50`→350ms、刺客短刃 `-20`→280ms。离散的 light/heavy/basic 模板已移除，新增武器只需一个数字；强化只作用于 atk/def，不会改变该阈值，profile 仍统一使用 `chargeThresholdMs`，三把武器数值未变所以协议/规则版本不需要升级 |
 | 怪物冲刺 | 狼 `扑击`：直线预警、蓄力 `1.05s`、锁向 `.35s`、距离 `150`、速度 `280/s`、轨迹宽 `18`、收招 `1.20s`；暗影刺客 `致命突刺`：直线预警、`.55s/.25s/180/450/s/12/.90s`。冲刺沿实际路径检测一次命中，撞身体、墙或边界停止，不穿身 |
 | PVP 协议 | 当前 `VERSION=10`、`RULE_VERSION=6`，双方必须匹配；本次因防御公式变化升级 |
 

@@ -73,8 +73,10 @@ are unaffected by which subfolder a `.js` file lives in.
   spatial clash remains deferred.
 - **`core/player.js`** — stat aggregation from equipment via `STAT_REGISTRY` /
   `EFFECT_REGISTRY` (defined in `effects.js`), equip/craft/buy actions, and
-  derived combat getters that feed the profiles: `getChargeThresholdMs` /
-  (weapon template) / `getParryWindowBaseMs` (first equipped shield wins), `getCritChance`
+  derived combat getters that feed the profiles: `getChargeThresholdMs`
+  (`gameConfig.resources.chargeThresholdMs` + the equipped weapon's own
+  `chargeOffsetMs`, clamped; no discrete light/heavy template) /
+  `getParryWindowBaseMs` (first equipped shield wins), `getCritChance`
   (luck 1%/pt + `crit_chance` effects), `getGuardThorns`, `getApMax`. **Weapon
   enhancement**: `enhanceItem(itemId)` spends gold for +1..+5 on weapons/shields
   (+10% atk/def per level); levels live in `state.inventory.enhance[itemId]`

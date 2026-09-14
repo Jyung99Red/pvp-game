@@ -34,16 +34,18 @@ const player = {
         }
         return fallback;
     },
-    getWeaponTemplate() {
+    getWeapon() {
         const slotOrder = ['left', 'right'];
         for (const slot of slotOrder) {
-            const id = state.player.equip[slot], item = id && content.items[id];
-            if (item?.type === 'weapon') return item.weaponTemplate || 'basic';
+            const item = content.items[state.player.equip[slot]];
+            if (item?.type === 'weapon') return item;
         }
-        return 'basic';
+        return null;
     },
+    // Baseline plus the equipped weapon's own chargeOffsetMs. Weapon
+    // enhancement only scales atk/def, so it never moves this threshold.
     getChargeThresholdMs() {
-        return combatRules.weaponChargeThresholdMs[this.getWeaponTemplate()] ?? combatRules.chargeThresholdMs;
+        return combatRules.weaponChargeThresholdMs(this.getWeapon()?.chargeOffsetMs);
     },
     getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', combatRules.parryWindowMs); },
 
