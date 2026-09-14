@@ -17,7 +17,7 @@ won't work): `python -m http.server 8422`.
 ### Directory layout
 
 Files are grouped by domain, not by layer — `core/` (shared state, stat/effect
-registries, save, tick, the shared combat resolver), `ui/` (shared non-battle
+registries, save, tick, shared combat rules), `ui/` (shared non-battle
 UI: base view, fx, icons), `pve/` (PVE engine + its battle UI), `pvp/` (PVP
 engine, network, room flow, its battle UI). `index.html`, `style.css`,
 `partials/`, and `icons/` stay at the repo root — `fetch()` calls for partials
@@ -27,10 +27,10 @@ are unaffected by which subfolder a `.js` file lives in.
 ### Script load order (client-assets.json)
 
 `core/data.js` → `core/effects.js` → `core/save.js` → `core/player.js` →
-`core/tick.js` → `ui/fx.js` → `core/combat_resolver.js` →
+`core/tick.js` → `ui/fx.js` → `core/combat_rules.js` →
 `core/arena_effects.js` → `ui/icons.js` → `ui/ui.js` → `core/spatial_combat.js` → `core/combat_gestures.js` →
-`pve/spatial_data.js` → `pve/spatial_engine.js` → `pve/pve_profiles.js` →
-`core/combat_settings.js` → `ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_pve.js` → `pve/pve_logic.js` → peerjs (CDN) → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
+`pve/spatial_data.js` → `pve/spatial_engine.js` → `core/spatial_profiles.js` → `pve/pve_profiles.js` →
+`core/combat_settings.js` → `ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_pve.js` → `pve/pve_logic.js` → `core/client_dependencies.js` (lazy PeerJS) → `pvp/spatial_duel.js` → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
 `pvp/pvp_room.js` → `pvp/ui_pvp.js`
 
 ### Core systems
@@ -41,20 +41,7 @@ are unaffected by which subfolder a `.js` file lives in.
   permanent dungeon progress (saved); `state.world` is transient in-run position
   (not saved), including `world.runGold` — gold earned this run, at risk until
   banked (see run-gold below).
-- **`core/combat_resolver.js`** — pure exchange core for PVP; formal PVE profiles reuse its AP recovery helper:
-  `pvpConfig` timing constants, side-state factory (`_makeSideState(maxHp, apMax)`),
-  charge-damage lerp (threshold→2000ms, 0.3x→1.1x atk), defense reduction, parry
-  window, and the exchange judgment. The five built-in judgments (clash /
-  parry / block / interrupt / hit) are **registered rules** — `resolveExchange`
-  walks a priority-ordered rule list (clash 400 > parry 300 > block 200 >
-  interrupt 100 > hit 0, the always-true fallback) and applies the first match;
-  a new mechanic is one `registerExchangeRule({name, priority, when, resolve})`
-  call, and its result travels over the PVP `result` message unchanged. Per-side
-  profiles carry `chargeThresholdMs` / `parryWindowBaseMs` (weapon-template
-  charge threshold / shield parry window), plus `critChance` (rolled on clean hits/
-  interrupts → `critMult` damage), `guardThorns` (reflect a share of blocked
-  damage), and `apMax` (action-point cap). `resolveExchange` is pure and returns
-  a `crit` flag; the caller applies HP/stun/log.
+- **`core/combat_rules.js`** — shared weapon thresholds, default AP/parry window and focus-based AP/SP recovery. Spatial engines own damage and exchange judgment.
 - **`core/arena_effects.js`** — battlefield-effect registry + per-battle
   runner, pure logic. Effects change the environment over time rather than
   either side: built-ins are `ap_surge` (past `atMs` both sides' AP recharges
@@ -79,8 +66,9 @@ are unaffected by which subfolder a `.js` file lives in.
 - Formal PVE has one implementation; the legacy fallback and its URL selector were
   removed after user acceptance. PVP protocol remains unchanged.
 - **`pvp/pvp_logic.js`** — WebRTC PVP on the same core. Host is the sole judgment
-  authority; Guest mirrors state from broadcast `result` messages. Clash/parry
-  windows deliberately use local wall-clock, not network-corrected time.
+  authority; Guest predicts local input and reconciles authoritative snapshots.
+  `spatial_duel` resolves simultaneous spatial attacks using simulation time;
+  spatial clash remains deferred.
 - **`core/player.js`** — stat aggregation from equipment via `STAT_REGISTRY` /
   `EFFECT_REGISTRY` (defined in `effects.js`), equip/craft/buy actions, and
   derived combat getters that feed the profiles: `getChargeThresholdMs` /
@@ -111,7 +99,7 @@ are unaffected by which subfolder a `.js` file lives in.
 
 ### Testing notes
 
-- Run `node --test tests/training.test.cjs tests/pve-spatial.test.cjs` for focused
+- Run `node --test tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs` for focused
   training and formal PVE regressions. Browser and real-device QA complement them.
 - Background/hidden tabs pause `requestAnimationFrame`, freezing battle loops
   in automated preview environments. Workaround: monkey-patch rAF to
@@ -131,9 +119,9 @@ formal PVE/PVP. It loads `core/spatial_combat.js` → `core/combat_gestures.js` 
 `pve/spatial_data.js` → `pve/spatial_engine.js` → `ui/combat_input.js` →
 `ui/ui_spatial_battle.js` → `pve/training.js`. The engine owns combat, the gesture
 recognizer emits semantic commands, the input adapter owns pointer capture, and
-the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/training.test.cjs` for focused regression checks.
-Formal PVE uses this engine with profiles. PVP retains `combat_resolver` exchange
-judgments; formal profiles reuse only its AP recovery helper. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
+the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/spatial-engine.test.cjs` for focused regression checks.
+Formal PVE and PVP reuse this engine with profiles. `combat_rules` supplies shared
+resource recovery and weapon defaults; `spatial_duel` owns simultaneous PVP judgment. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
 
 ## Spatial controls update (2026-09-11)
 
@@ -234,8 +222,7 @@ reuses human actions/input for both players; `pvp/spatial_duel.js` collects simu
 strikes before resolving either, owns per-side SP/buffs and draws on double KO.
 `pvp/pvp_logic.js` owns protocol v2, host 10ms simulation, 50ms snapshots, guest local
 prediction/reconciliation, event deduplication, readiness and rematch. Guest HP is
-only authoritative snapshot data. Old combatResolver remains for AP recovery, not
-PVP exchanges. Shared view/styles support both human fighters and both formal shells.
+only authoritative snapshot data. Shared combatRules supplies AP/SP recovery and weapon defaults. Shared view/styles support both human fighters and both formal shells.
 PVP starts full HP/AP, 0 SP; no progression writes, passive healing or dungeon rewards.
 Settings do not pause; hidden/pagehide/context-loss/disconnect/timeouts abort the match.
 Run all three suites including `tests/pvp-spatial.test.cjs`; browser QA fixture is
@@ -287,3 +274,13 @@ fair/progression PVP entries and presentation improvements. Camera follows by tr
 only; the existing fixed guest-side coordinate flip is not dynamic camera rotation.
 Stage B covers full walls/visibility in `docs/tasks/pvp-walls-visibility.md`; read it only
 when implementing that stage. Required spatial clash remains separate stage C.
+
+## Startup and rendering maintenance (2026-09-13)
+
+`core/combat_rules.js` replaces the removed exchange resolver; no legacy side-state, charge-damage or rule registry remains. Unused player.takeDamage and action-speed effect definitions are removed.
+
+The boot shell remains hidden until local CSS markers/CSSOM and initialization pass. Local fetches use no-store, 12s timeout and one retry. Foreground/pageshow checks restore missing styles without reinitializing. PeerJS is lazy through `core/client_dependencies.js` at room creation/join, with 10s timeout, retry and cancellation protection. Update both shell loader query versions whenever boot code changes.
+
+PVP visibility clipping and shadow use one per-frame polygon from visibilityOrigin (the simulation position), independent of display correction. Dash warning deliberately remains a narrow path hint: collision half-width is dash.width + enemy.radius, with player.radius used for body contact.
+
+Validation: 79 tests pass across client boot, shared spatial engine, PVE and PVP suites, including exact four-digit room generation/input. Browser checks confirmed styled base/training startup, return from training to base, and real room creation with PeerJS loaded only on demand. The rare device-specific CSS loss was not reproduced; mobile foreground recovery still needs real-device confirmation.

@@ -111,7 +111,7 @@ are unaffected by which subfolder a `.js` file lives in.
 
 ### Testing notes
 
-- Run `node --test tests/training.test.cjs tests/pve-spatial.test.cjs` for focused
+- Run `node --test tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs` for focused
   training and formal PVE regressions. Browser and real-device QA complement them.
 - Background/hidden tabs pause `requestAnimationFrame`, freezing battle loops
   in automated preview environments. Workaround: monkey-patch rAF to
@@ -131,7 +131,7 @@ formal PVE/PVP. It loads `core/spatial_combat.js` → `core/combat_gestures.js` 
 `pve/spatial_data.js` → `pve/spatial_engine.js` → `ui/combat_input.js` →
 `ui/ui_spatial_battle.js` → `pve/training.js`. The engine owns combat, the gesture
 recognizer emits semantic commands, the input adapter owns pointer capture, and
-the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/training.test.cjs` for focused regression checks.
+the view owns text and effects. The unused `trainingLogic` alias has been removed. Run `node --test tests/spatial-engine.test.cjs` for focused regression checks.
 Formal PVE uses this engine with profiles. PVP retains `combat_resolver` exchange
 judgments; formal profiles reuse only its AP recovery helper. See `pve/SPATIAL_MIGRATION.md` for current rules. See `pve/TRAINING.md` for interfaces and QA limits.
 

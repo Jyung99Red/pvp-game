@@ -6,7 +6,7 @@
 // prone and a poor fit for a "scan and connect" experience. Now: both sides connect to PeerJS's
 // public signaling server (0.peerjs.com, free, used only for NAT traversal matchmaking, never
 // relays game data), agree on a "room code", Host registers under the room code, Guest connects
-// directly to it. The whole flow only needs exchanging one room code (4-6 digit/char), shareable
+// directly to it. The whole flow only needs exchanging one four-digit room code, shareable
 // via QR code or typing it in -- no more pasting an answer code back and forth.
 
 const pvpNet = (() => {
@@ -29,6 +29,7 @@ const pvpNet = (() => {
     let _peer = null;
     let _conn = null;
     let _role = null;       // 'host' | 'guest'
+    let _attempt = 0;
     let _clockOffset = 0;   // Applied to every remote timestamp as: corrected = remote_t - offset
                              // (see the longer explanation on correctRemote() below for why it's
                              // a subtraction, not addition)
@@ -261,7 +262,10 @@ const pvpNet = (() => {
         // ── Host: register under the room code on the signaling server, wait for Guest ──
         // Returns the room code actually in effect (normally the same as the passed-in roomCode)
         async hostRoom(roomCode) {
+            const attempt = ++_attempt;
             _role = 'host';
+            await clientDependencies.loadPeer();
+            if (attempt !== _attempt) throw new Error('连接已取消');
             _peer = _makePeer(roomCode);
 
             _peer.on('connection', (conn) => {
@@ -275,10 +279,14 @@ const pvpNet = (() => {
 
         // ── Guest: connect directly to Host using the room code ──────────
         async joinRoom(roomCode) {
+            const attempt = ++_attempt;
             _role = 'guest';
+            await clientDependencies.loadPeer();
+            if (attempt !== _attempt) throw new Error('连接已取消');
             _peer = _makePeer();
 
             await _waitForPeerOpen(_peer);
+            if (attempt !== _attempt) throw new Error('连接已取消');
 
             return new Promise((resolve, reject) => {
                 const conn = _peer.connect(roomCode, { reliable: true, serialization: 'json' });
@@ -312,6 +320,7 @@ const pvpNet = (() => {
 
         // ── Fully tear down the connection (call before returning to lobby / leaving the page; truly destroys the peer) ──
         close() {
+            _attempt++;
             if (_conn) { try { _conn.close();   } catch (_) {} }
             if (_peer) { try { _peer.destroy(); } catch (_) {} }
             _conn         = null;

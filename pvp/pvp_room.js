@@ -3,10 +3,11 @@
 
 const pvpRoom = (() => {
     // ── Room code ────────────────────────────────────────────────────────
-    // 6 digits, enough to avoid short-term collisions, and easy to scan/type
+    // Four digits keep room sharing quick; PeerJS reports collisions and the
+    // host flow transparently retries with a fresh code.
 
     function genRoomCode() {
-        return String(Math.floor(100000 + Math.random() * 900000));
+        return String(Math.floor(1000 + Math.random() * 9000));
     }
 
     // ── Room code local memory (localStorage, auto-fills it back after a refresh / accidental close) ──
@@ -53,6 +54,7 @@ const pvpRoom = (() => {
     }
 
     let _opponentProfile = null, _networkReady = false, _compatible = false, _mode = 'fair';
+    let _operation = 0;
     const _modeInfo = mode => pvpLogic.MODES[mode] || pvpLogic.MODES.fair;
     function _modeFromUI() {
         return document.querySelector('input[name="pvp-mode"]:checked')?.value || _mode;
@@ -138,6 +140,7 @@ const pvpRoom = (() => {
         // Player clicked "create room"
         async hostRoom(_retriesLeft = 3) {
             if (!_selectMode(_modeFromUI())) return;
+            const operation = ++_operation;
             setStep('pvp-step-hosting');
             setStatus('正在创建房间...');
             _attachNetCallbacks();
@@ -146,6 +149,7 @@ const pvpRoom = (() => {
 
             try {
                 await pvpNet.hostRoom(code);
+                if (operation !== _operation) return;
 
                 // Display the room code
                 const codeEl = document.getElementById('pvp-host-code');
@@ -156,12 +160,14 @@ const pvpRoom = (() => {
                 setStatus('等待对方输入房间号...');
                 setStep('pvp-step-host-waiting');
             } catch (e) {
+                if (operation !== _operation) return;
+                pvpNet.on.close = null; pvpNet.close();
                 // Occasional room code collisions (very rare) auto-retry with a new code, transparently to the user
                 if (e.type === 'unavailable-id' && _retriesLeft > 0) {
-                    pvpNet.close();
                     return this.hostRoom(_retriesLeft - 1);
                 }
                 setStatus(`创建失败: ${e.message}`);
+                setStep('pvp-step-entry');
             }
         },
 
@@ -174,7 +180,7 @@ const pvpRoom = (() => {
             // from having to remember/dig up the number themselves
             const last = _loadLastRoom();
             const input = document.getElementById('pvp-room-code-input');
-            if (input && last && last.role === 'guest' && !input.value) {
+            if (input && last && last.role === 'guest' && /^\d{4}$/.test(last.code) && !input.value) {
                 input.value = last.code;
                 _mode = last.mode || 'progression'; pvpLogic.setMode(_mode); _renderMode();
                 setStatus('已自动填入上次的房间号，确认无误后点击连接');
@@ -191,21 +197,25 @@ const pvpRoom = (() => {
             const input = document.getElementById('pvp-room-code-input');
             const roomCode = (roomCodeOverride || (input && input.value) || '').trim();
 
-            if (!/^\d{4,8}$/.test(roomCode)) {
-                setStatus('房间号无效，请重新输入或扫码');
+            if (!/^\d{4}$/.test(roomCode)) {
+                setStatus('请输入 4 位房间号');
                 return;
             }
 
+            const operation = ++_operation;
             setStatus('正在连接房间...');
             _attachNetCallbacks();
             setStep('pvp-step-joining-wait');
 
             try {
                 await pvpNet.joinRoom(roomCode);
+                if (operation !== _operation) return;
                 // Once connected, wait for Host's clock sync to finish and fight_start to be sent
                 _saveLastRoom('guest', roomCode, _mode);
                 setStatus(`已连接主机，等待${_modeInfo(_mode).label}开始...`);
             } catch (e) {
+                if (operation !== _operation) return;
+                pvpNet.on.close = null; pvpNet.close();
                 setStatus(`加入失败: ${e.message}`);
                 setStep('pvp-step-joining');
             }
@@ -214,6 +224,7 @@ const pvpRoom = (() => {
         // Clicking "return to lobby" on the disconnect overlay -- ends the
         // current battle for good, the only exit / restart entry point
         giveUpToLobby() {
+            _operation++;
             pvpLogic.abortToLobby();
             // Must null out the close callback before calling pvpNet.close():
             // peer.destroy() asynchronously fires its own 'close' event, and
@@ -232,6 +243,7 @@ const pvpRoom = (() => {
 
         // Reset room state, return to the entry screen
         reset() {
+            _operation++;
             pvpLogic.abortToLobby();
             pvpNet.on.close = null;
             pvpNet.close();

@@ -65,7 +65,7 @@
 - `index.html`：只加载空间 PVE 引擎、UI 和 partial；旧 PVE 回退入口已移除。
 - 用户于 2026-09-10 试玩确认后授权清理：旧 PVE 引擎、UI、partial、训练别名及废弃 AI 参数已删除。
 
-PVP脚本、协议和`core/combat_resolver.js`保持原样；正式档案仍复用其AP恢复公式。新空间模式不调用旧交锋判定。
+现行共享默认值与 AP/SP 回复位于 `core/combat_rules.js`；PVE 空间判定由 `spatial_engine` 处理，PVP 同步判定由 `spatial_duel` 处理。
 存档key/格式保持v1；没有读取、清空或更改用户原origin的存档。
 
 ## 验证记录
@@ -74,7 +74,7 @@ PVP脚本、协议和`core/combat_resolver.js`保持原样；正式档案仍复�
 修复共享视图读取训练页 Document.classList 导致的初始化错误；浏览器验证训练开局/轻击与正式地下城进入/撤退，无控制台错误。
 旧 PVE 回退文件与入口已删除，下面涉及回退的验证仅记录迁移期间历史。
 
-集中测试命令：`node --test tests/training.test.cjs tests/pve-spatial.test.cjs`。
+集中测试命令：`node --test tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs`。
 覆盖原训练场15项及正式流程、配置、装备、技能、HP归属、终局、Boss、帧率、旧存档等回归。
 旧存档使用迁移前记录的合成v1样例 `tests/fixtures/save-v1.json`，不读取私人存档。
 

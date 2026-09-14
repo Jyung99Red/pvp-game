@@ -1,5 +1,5 @@
 // Read-only battle view. Presentation effects belong to this instance, never the engine.
-const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
+const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix = '') {
     const L = combatGestures, S = spatialCombat;
     let battle, contextLost = false;
     const abort = new AbortController();
@@ -14,6 +14,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     const viewHeight = Math.min(C.height, C.camera?.height || C.height);
     let camera = null;
     let hintVisible = false, presentationDt = 0;
+    let visiblePolygon = [];
     const shieldPose = { player: 0, enemy: 0 };
     function worldText(value, x, y, offset, stroke = false) {
         ctx.save(); ctx.translate(x, y);
@@ -65,7 +66,7 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
     }
     function wallList() { return C.walls || []; }
     function visibilityPath() {
-        const polygon = S.visibilityPolygon(battle.visibilityOrigin || battle.player, C, wallList());
+        const polygon = visiblePolygon;
         if (polygon.length < 3) return false;
         ctx.beginPath(); polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
         ctx.closePath(); return true;
@@ -84,8 +85,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         }
     }
     function shadeHiddenArea() {
-        if (!wallList().length || !visibilityPath()) return;
-        const polygon = S.visibilityPolygon(battle.player, C, wallList());
+        if (visiblePolygon.length < 3) return;
+        const polygon = visiblePolygon;
         ctx.save(); ctx.beginPath(); ctx.rect(0, 0, C.width, C.height);
         polygon.forEach((point, i) => i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
         ctx.closePath(); ctx.fillStyle = 'rgba(0, 0, 0, .58)'; ctx.fill('evenodd'); ctx.restore();
@@ -373,7 +374,8 @@ const uiSpatialBattle = { create(root, C = spatialData.training, prefix = '') {
         circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
         // Clip telegraphs at the arena boundary; actors are clamped by logic.
         ctx.beginPath(); ctx.rect(0, 0, C.width, C.height); ctx.clip();
-        ctx.save(); const visibilityClipped = clipVisibleArea();
+        visiblePolygon = wallList().length ? S.visibilityPolygon(battle.visibilityOrigin || battle.player, C, wallList()) : [];
+        ctx.save(); clipVisibleArea();
         if (enemyVisible && e.phase === 'windup') {
             const locked = e.timer <= e.attack.lock;
             shape(e.attack, e, e.facing, locked ? '#f27365' : '#efc181');

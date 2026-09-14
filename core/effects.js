@@ -27,16 +27,6 @@ const EFFECT_REGISTRY = {
         apply(mult, value) { return mult * Math.max(0, 1 + value); },
         label(value) { return `<span class="effect-tag effect-buff">蓄力转速 ${value >= 0 ? '+' : ''}${Math.round(value * 100)}%</span>`; }
     },
-    action_speed_penalty: {
-        appliesTo: 'actionSpeed',
-        apply(mult, value) { return mult * (1 + value); },
-        label(value) { return `<span class="effect-tag effect-penalty">⏱ 行动慢 ${value*100}%</span>`; }
-    },
-    passive_speed_boost: {
-        appliesTo: 'actionSpeed',
-        apply(mult, value) { return mult * (1 - value); },
-        label(value) { return `<span class="effect-tag effect-passive">⚡ 速度 +${value*100}%（永久）</span>`; }
-    },
     guard_damage_reduce: {
         appliesTo: 'guardDamage',
         apply(mult, value) { return mult * (1 - value); },

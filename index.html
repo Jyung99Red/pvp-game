@@ -1,14 +1,20 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh" data-client-state="loading">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>放置地牢</title>
     <!-- 引入独立出来的 CSS 样式 -->
+    <style data-boot-shell>
+        html[data-client-state="loading"] { background: #101b20; }
+        html[data-client-state="loading"] body > :not(#client-loading) { visibility: hidden; }
+        #client-loading { position: fixed; inset: 0; z-index: 9999; background: #101b20; color: #e5efed; display: grid; place-content: center; gap: 16px; text-align: center; font: 14px system-ui; }
+    </style>
 </head>
 
 <body>
+<div id="client-loading" role="status">正在加载游戏…<button type="button" onclick="location.reload()">重新加载</button></div>
 
     <div class="header" id="time-display">加载中...</div>
 
@@ -29,7 +35,7 @@
         <button class="nav-btn" id="tab-pvp-room" onclick="ui.switchTab('pvp-room')">玩家对战</button>
     </div>
 
-    <script src="core/client_boot.js?v=spatial-20260911-mobile3" data-entry="game"></script>
+    <script src="core/client_boot.js?v=boot-20260913-2" data-entry="game" onerror="document.getElementById('client-loading').firstChild.textContent='启动文件加载失败，请重新加载。'"></script>
 
 </body>
 

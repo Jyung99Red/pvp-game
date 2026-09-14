@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
-const files = ['core/data.js','core/effects.js','core/player.js','core/combat_resolver.js','core/spatial_combat.js','core/combat_gestures.js','pve/spatial_data.js','pve/spatial_engine.js','core/spatial_profiles.js','pvp/spatial_duel.js'];
+const files = ['core/data.js','core/effects.js','core/player.js','core/combat_rules.js','core/spatial_combat.js','core/combat_gestures.js','pve/spatial_data.js','pve/spatial_engine.js','core/spatial_profiles.js','pvp/spatial_duel.js'];
 function context(extra = {}) {
  const c = vm.createContext({console, ...extra});
  for(const file of files) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),c);

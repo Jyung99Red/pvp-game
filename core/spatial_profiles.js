@@ -55,8 +55,8 @@ const spatialProfiles = (() => {
         C.apMax = Math.max(1, Math.floor(stats.apMax));
         // Both AP and SP use focus, while SP keeps a fixed 1.5x slower base.
         const focus = Math.max(.1, stats.focus);
-        C.apRegen = 1000 / combatResolver.apRecoveryMs(focus);
-        C.spRegen = 1000 / combatResolver.spRecoveryMs(focus);
+        C.apRegen = 1000 / combatRules.apRecoveryMs(focus);
+        C.spRegen = 1000 / combatRules.spRecoveryMs(focus);
         // Formal damage growth starts at the weapon threshold, then takes a
         // fixed two seconds to reach full charge. Geometry still uses the
         // complete charge duration, so weapon templates remain meaningful.

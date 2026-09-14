@@ -20,7 +20,7 @@
 
 ### 2.1 训练基础模板
 
-以下是 `spatialData.training` 的固定基础值（`pve/spatial_data.js:L23-L39`）；正式 PVE 会从这里深复制，PVP 也从这里深复制后套用 profile。
+以下是 `spatialData.baseCombatPreset` 的固定基础值（`pve/spatial_data.js:L23-L39`）；训练场直接采用，正式 PVE 会从这里深复制，PVP 也从这里深复制后套用 profile。
 
 | 参数 | 值 | 单位/作用 |
 |---|---:|---|
@@ -102,8 +102,8 @@
 |---|---|
 | 玩家 maxHP/HP/DEF | `maxHp=stats.maxHp`；`hp=clamp(currentHp,0,maxHp)`；`def=stats.def` |
 | 玩家 AP上限 | `floor(stats.apMax)`，至少 1 |
-| 玩家 AP回复 | `1000 / combatResolver.apRecoveryMs(focus)`，即 `focus/20 AP/s` |
-| 玩家 SP回复 | `1000 / combatResolver.spRecoveryMs(focus)`，即专注 10 时 `1/3 SP/s`；基础单位时间比 AP 慢 1.5 倍 |
+| 玩家 AP回复 | `1000 / combatRules.apRecoveryMs(focus)`，即 `focus/20 AP/s` |
+| 玩家 SP回复 | `1000 / combatRules.spRecoveryMs(focus)`，即专注 10 时 `1/3 SP/s`；基础单位时间比 AP 慢 1.5 倍 |
 | 满蓄/伤害阈值 | 正式 `chargeThreshold=chargeThresholdMs/1000`，`fullCharge=chargeThreshold+2s`；训练 `fullCharge=1.6s` |
 | 正面弹反窗口 | `clamp(parryWindowBaseMs×judgmentMultiplier/1000,0,1)s` |
 | 正式格挡承伤 | `blockMultiplier=clamp(.4×guardDamageMultiplier,0,1)` |
@@ -230,14 +230,14 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | hit | 其余几何命中 | 承伤 `defended(raw,def)`；防守者硬直 `hitStun=.35s` |
 | crit | 非 guard 的普通 hit；由攻击者 `critChance` 随机判定 | raw ×1.5 后再过防御公式；公平模式 critChance=0 |
 
-PVP 使用空间动作快照的伤害，不使用旧 `combatResolver.resolveExchange` 的 time-only clash/parry/block/interrupt 链。profile 仍调用该文件的 AP 回复帮助函数；`player.js` 也仍从 `pvpConfig` 读取默认 AP上限、300ms蓄力阈值和200ms弹反基础窗。因此应按实际调用区分仍在用的默认值与旧交换规则的残留，不能将该文件整体认定为失效。
+现行共享默认值与 AP/SP 回复位于 `core/combat_rules.js`；PVE 空间判定由 `spatial_engine` 处理，PVP 同步判定由 `spatial_duel` 处理。
 
 ### 6.4 网络和版本固定值
 
 | 参数 | 当前值/规则 | 路径 |
 |---|---|---|
-| protocol `VERSION` | `6` | `pvp/pvp_logic.js:L3` |
-| `RULE_VERSION` | `2` | `pvp/pvp_logic.js:L3` |
+| protocol `VERSION` | `9` | `pvp/pvp_logic.js:L3` |
+| `RULE_VERSION` | `5` | `pvp/pvp_logic.js:L3` |
 | 场地校验 | 每个 start/rematch/snapshot 校验 `pvp-l-v1` + version 1 | `pvp/pvp_logic.js:L14-L16,L179-L183` |
 | 开局倒计时 | `1.5s` | `pvp/pvp_logic.js:L73-L81` |
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
@@ -264,20 +264,16 @@ PVP 使用空间动作快照的伤害，不使用旧 `combatResolver.resolveExch
 | 荆棘甲 | def +10 | `guard_thorns=.5` | 格挡成功时反射 raw 的 50%，再过攻击者 DEF；`core/data.js:L101-L106` |
 | 战意戒指 | 无 | `ap_max_bonus=1` | AP 上限基础 5→6；`core/data.js:L108-L113` |
 
-效果注册表还定义了 `spatial_move_speed`、`spatial_turn_speed`、`charge_move_speed`、`charge_turn_speed` 四种运动效果（`core/effects.js:L13-L28`），但当前 `content.items` 没有装备实例使用它们；它们只有在以后加入 item effect 后才会进入 `player.getSpatialMotion()`（`core/player.js:L62-L68`）。同样，`action_speed_penalty` 和 `passive_speed_boost` 只在注册表存在、标记 `appliesTo:'actionSpeed'`，当前没有消费路径，不应列为现行战斗属性（`core/effects.js:L30-L38`）。
+效果注册表还定义了 `spatial_move_speed`、`spatial_turn_speed`、`charge_move_speed`、`charge_turn_speed` 四种运动效果（`core/effects.js:L13-L28`），但当前 `content.items` 没有装备实例使用它们；它们只有在以后加入 item effect 后才会进入 `player.getSpatialMotion()`（`core/player.js:L62-L68`）。
 
 装备的 per-item timing 效果不是相加：按 `left → right → armor → accessory`，第一件带该 type 的装备胜出；crit/thorns/AP 上限等效果则分别累加（`core/player.js:L22-L57`）。PVP 公平模式完全不读取这些养成效果；养成模式才将其映射到本地 profile。
 
-## 8. 已发现的过时描述/设计边界
+## 8. 设计边界
 
-以下是仓库说明与当前代码不一致的地方，重设计时以当前代码和本文件为准：
-
-1. `AGENTS.md` 的早期 PVP 段落仍写 spatial migration stage one、协议 v2/v4、PVP `510×566`、无内部墙；当前 `pvp/pvp_logic.js:L3` 已是 `VERSION=7/RULE_VERSION=3`，场地为 `570×630`，L 墙为 `pvp-l-v1`（`pve/spatial_data.js:L14-L21`）。
-2. `AGENTS.md` 的历史 tuning 段落写玩家重击 `.22s` windup；当前共享模板是精确 `.45s` windup、`.60s` recovery（`pve/spatial_data.js:L37`）。
-3. `AGENTS.md` 的历史段落把 PVP 描述为旧 exchange resolver；当前空间 PVP 由 `pvp/spatial_duel.js` 同时收集 strike 并直接做几何/guard 判定，Clash 明确延后（`pvp/spatial_duel.js:L71-L125`）。旧 `combat_resolver.js` 的 clashWindow、strike recovery 等常量不是当前空间 PVP 的规则。
-4. `docs/tasks/combat-presentation-arena-next.md` 中“阶段 A 提案”部分曾写 PVP 无内部 L 墙、协议 v5/rule v1、相机 `396×440` 或提议中的 `374×416`；该文后半段已记录阶段 B 完成和当前共享相机 `350×390`，但前后段不能混读。当前相机源是 `pve/spatial_data.js:L13`，PVE/PVP 都复制该值（`pve/pve_profiles.js:L9-L10`、`pvp/spatial_duel.js:L17`）。
-5. `comboDelayMs` 的第二个数组值目前没有随机读取；正式 profile 只取 `[0]`，缺省为 `200ms`（`pve/pve_profiles.js:L18-L22`）。`ai.focus` 也只改变 AP 回复，不能作为怪物行动/移动速度的统称。
-6. `parry` 的 `cost:3` 是技能 SP 费用；普通 guard 触发弹反的 `parryCost=.5` 是 AP 费用。两者来自不同字段，后续改属性时必须分开。
+- PVP 当前协议 v9 / rule v5，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
+- `comboDelayMs` 只读取首项；`ai.focus` 只改变 AP 回复。
+- 技能弹反消耗 3 SP，普通操作弹反消耗 .5 AP，两者独立。
+- 冲刺预警为窄路径提示，实际扫掠半宽为 dash.width + enemy.radius，接触判定再计入 player.radius。
 
 ## 9. 2026-09-13 实施覆盖（以本节覆盖前文冲突描述）
 
@@ -291,6 +287,6 @@ PVP 使用空间动作快照的伤害，不使用旧 `combatResolver.resolveExch
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
 | 武器蓄力模板 | basic/default `300ms`；heavy/铁剑 `350ms`（+50ms）；light/刺客短刃 `280ms`（-20ms）。蓄力阈值只由武器模板产生，profile 统一使用 `chargeThresholdMs` |
 | 怪物冲刺 | 狼 `扑击`：直线预警、蓄力 `1.05s`、锁向 `.35s`、距离 `150`、速度 `280/s`、轨迹宽 `18`、收招 `1.20s`；暗影刺客 `致命突刺`：直线预警、`.55s/.25s/180/450/s/12/.90s`。冲刺沿实际路径检测一次命中，撞身体、墙或边界停止，不穿身 |
-| PVP 协议 | 因 profile 字段和 SP 快照规则变化，协议升级为 `VERSION=7`、`RULE_VERSION=3` |
+| PVP 协议 | 当前 `VERSION=9`、`RULE_VERSION=5`，双方必须匹配 |
 
 本节之后，前文关于 PVP v6/rule v2、命中/弹反增加 SP、铁剑 700ms、短刃 400ms、狼/刺客原地扇形攻击的描述均视为历史基线。技能效果与费用本轮暂不调整。

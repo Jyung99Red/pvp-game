@@ -1,7 +1,7 @@
 // Deterministic spatial battle. No DOM, saves, timers, or presentation state.
 // Call step(seconds), and feed pointer offsets in CSS pixels to the input API.
 const spatialEngine = (() => {
-    const C = spatialData.training;
+    const C = spatialData.baseCombatPreset;
     const S = spatialCombat;
     function validate(C) {
         const positive = v => Number.isFinite(v) && v > 0;

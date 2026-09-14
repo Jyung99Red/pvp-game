@@ -6,6 +6,7 @@
     <!-- Step: entry (choose host or join) -->
     <div class="pvp-step" id="pvp-step-entry">
         <div class="panel">
+            <div class="pvp-status-text" role="status" style="color:#aaa;font-size:12px;margin:8px 0;"></div>
             <h2>⚔️ PVP 对战</h2>
             <p style="color:#aaa;font-size:13px;margin-bottom:12px;">
                 双方需联网（不必同一 Wi-Fi），扫码或输房间号即可连接
@@ -33,6 +34,7 @@
         <div class="panel" style="text-align:center;">
             <h3>🏠 创建中...</h3>
             <div class="pvp-status-text" style="color:#aaa;font-size:12px;margin:8px 0;"></div>
+            <button type="button" onclick="pvpRoom.reset()">取消</button>
         </div>
     </div>
 
@@ -68,7 +70,8 @@
             <p style="font-size:12px;color:#aaa;margin-bottom:6px;">
                 输入对方屏幕上显示的房间号：
             </p>
-            <input id="pvp-room-code-input" type="tel" inputmode="numeric" placeholder="6位房间号" autofocus
+            <input id="pvp-room-code-input" type="tel" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+                autocomplete="off" placeholder="4位房间号" autofocus
                 style="width:100%;font-size:20px;text-align:center;letter-spacing:4px;
                        background:#0d0d1a;color:#fff;border:1px solid var(--border);
                        border-radius:4px;padding:8px;">

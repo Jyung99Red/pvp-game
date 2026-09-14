@@ -43,9 +43,9 @@ const player = {
         return 'basic';
     },
     getChargeThresholdMs() {
-        return pvpConfig.weaponChargeThresholdMs?.[this.getWeaponTemplate()] ?? pvpConfig.chargeThresholdMs;
+        return combatRules.weaponChargeThresholdMs[this.getWeaponTemplate()] ?? combatRules.chargeThresholdMs;
     },
-    getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', pvpConfig.parryWindowMs); },
+    getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', combatRules.parryWindowMs); },
 
     getInsight() { return this.getStats().insight ?? 10; },
     getFocus() { return this.getStats().focus ?? 10; },
@@ -67,7 +67,7 @@ const player = {
     },
 
     getApMax() {
-        let m = pvpConfig.apMax;
+        let m = combatRules.apMax;
         this.getEquippedEffects('ap_max_bonus').forEach(e => { m += e.value; });
         return m;
     },
@@ -130,15 +130,6 @@ const player = {
         ui.updateEquip();
     },
 	
-
-    takeDamage(amount) {
-        const def = this.getStats().def;
-        // Dynamic armor-ratio damage formula
-        const actual = Math.max(1, Math.floor((amount * amount) / (amount + def * 0.5)));
-        
-        state.player.currentHp = Math.max(0, state.player.currentHp - actual);
-        return actual;
-    },
 
     heal(amount) {
         const max = this.getStats().maxHp;

@@ -1,4 +1,5 @@
-// Fixed training preset. Combat times are seconds; gestures use CSS pixels.
+// Shared base combat preset and formal action data. Combat times are seconds;
+// gestures use CSS pixels.
 const spatialData = (() => {
     // One definition feeds the pads, availability checks and both formal
     // execution paths.  Mode-specific overrides are deliberately data-only so
@@ -20,7 +21,7 @@ const spatialData = (() => {
             { id: 'right-horizontal', x: 325, y: 300, width: 110, height: 24 }
         ]
     };
-    const training = {
+    const baseCombatPreset = {
         width: 360, height: 400,
         fullCharge: 1.6, playerSpeed: 115,
         playerTurn: 8, chargeMoveMultiplier: .6, chargeTurnMultiplier: .65,
@@ -72,5 +73,5 @@ const spatialData = (() => {
         }
         return rules;
     }
-    return { training: freeze(training), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera, pvpArena: freeze(pvpArena), skillRules };
+    return { baseCombatPreset: freeze(baseCombatPreset), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera, pvpArena: freeze(pvpArena), skillRules };
 })();

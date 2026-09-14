@@ -46,7 +46,7 @@ On a same-step lethal player hit, victory is settled before updating the enemy.
 - `core/spatial_combat.js`: pure geometry, turning and bounded movement.
 - `core/combat_gestures.js`: pure gesture recognition, fixed CSS input thresholds;
   emits charge/light/heavy/cancel commands, without deciding AP or damage.
-- `pve/spatial_data.js`: immutable fixed preset, actor spawns, action damage and
+- `pve/spatial_data.js`: immutable `baseCombatPreset`, actor spawns, action damage and
   timings, AI and stagger parameters. No equipment/save reads.
 - `pve/spatial_engine.js`: sole combat implementation, validates commands,
   advances the simulation and emits semantic events. No text, colors or effects.
@@ -60,11 +60,12 @@ On a same-step lethal player hit, victory is settled before updating the enemy.
 
 Script order: geometry → gestures → data → engine → settings → input → view → training.
 The main `index.html` now loads these same components for the formal dungeon,
-using `pveProfiles` and prefixed DOM IDs; this page keeps the fixed training preset.
+using `pveProfiles` and prefixed DOM IDs; this page uses `baseCombatPreset` directly.
 
 ## Engine contract
 
-`spatialEngine.create()` returns an independent training instance. `start`,
+`spatialEngine.create()` returns an independent combat instance using
+`baseCombatPreset` by default. `start`,
 `pause`, `cancelInputs`, `press/drag/release`, `dispatch` and `step(b, seconds)`
 are the only mutation entry points used by the page. Read the instance for
 rendering; call `drainEvents` once after advancing and pass those events to the
@@ -83,7 +84,7 @@ guard startup progress; lowering follows frameDt. Resize redraws never advance
 the pose. The engine still clamps each step to 50ms and settles player damage
 before AI, with no offline catch-up.
 
-Run `node --test tests/training.test.cjs` for gesture, geometry, guard and
+Run `node --test tests/spatial-engine.test.cjs` for shared gesture, geometry, guard and
 resolution regressions. Browser QA should also cover actual two-finger input
 on a phone, leaving a pad while captured, screen locking and resuming.
 

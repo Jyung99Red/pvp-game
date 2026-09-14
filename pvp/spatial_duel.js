@@ -9,7 +9,7 @@ const spatialDuel = (() => {
     function create(profiles, random = Math.random) {
         const normalized = profiles.map(spatialProfiles.normalize);
         const sides = normalized.map((profile, i) => {
-            const C = spatialProfiles.apply(clone(spatialData.training), profile);
+            const C = spatialProfiles.apply(clone(spatialData.baseCombatPreset), profile);
             C.formal = true; C.pvp = true; C.skillMode = 'fair'; C.skillOverrides = {};
             C.width = spatialData.pvpArena.width; C.height = spatialData.pvpArena.height;
             C.wallLayoutId = spatialData.pvpArena.layoutId; C.wallVersion = spatialData.pvpArena.version;

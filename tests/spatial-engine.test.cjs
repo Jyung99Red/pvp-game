@@ -1,4 +1,4 @@
-// Run: node --test tests/training.test.cjs
+// Run: node --test tests/spatial-engine.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -52,6 +52,18 @@ test('shared view mounts on training Document and formal Element roots, and redr
         assert.equal(rotations.at(-1), 0);
         battle.player.phase = 'idle'; view.render(battle, [], .1);
         assert.ok(rotations.at(-1) > 0 && rotations.at(-1) < Math.PI * .72);
+        const visibility = vm.runInContext(`(() => {
+            const config = JSON.parse(JSON.stringify(spatialData.baseCombatPreset));
+            config.walls = [{ x: 30, y: 100, width: 20, height: 50 }];
+            const calls = [], original = spatialCombat.visibilityPolygon;
+            spatialCombat.visibilityPolygon = (origin, ...args) => { calls.push({x:origin.x,y:origin.y}); return original(origin,...args); };
+            const battle = spatialEngine.create(config), view = uiSpatialBattle.create(root,config);
+            battle.visibilityOrigin = {x:battle.player.x+10,y:battle.player.y};
+            view.render(battle); view.destroy();
+            spatialCombat.visibilityPolygon = original;
+            return calls;
+        })()`,c);
+        assert.deepEqual(Array.from(visibility, point=>[point.x,point.y]),[[190,275]]);
         view.destroy(); assert.equal(disconnected, true);
     }
 });

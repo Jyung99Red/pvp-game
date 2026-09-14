@@ -5,6 +5,7 @@
     const shell = new DOMParser().parseFromString(await read('index.html'), 'text/html');
     shell.querySelectorAll('script').forEach(node => node.remove());
     document.body.innerHTML = shell.body.innerHTML;
+    document.getElementById('client-loading')?.remove();
     const assets = JSON.parse(await read('client-assets.json')).game;
     for (const path of assets.styles) {
         const style = document.createElement('style'); style.textContent = await read(path); document.head.append(style);

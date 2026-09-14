@@ -50,7 +50,7 @@
 - `ui/ui_spatial_battle.js`：共用只读画布；PVP把双方都画成人类角色并显示盾牌、武器、范围和硬直。
 - `pvp/ui_pvp.js`：本机输入、设置、视角映射、远端显示平滑、结果/断线界面。
 - 现有PVE全屏和控件样式扩展到两个正式入口；新增脚本已登记 `client-assets.json`。
-- `core/combat_resolver.js` 保留：共享档案仍依赖 AP 恢复辅助函数。旧 `resolveExchange` 不再驱动PVP。
+现行共享默认值与 AP/SP 回复位于 `core/combat_rules.js`；PVE 空间判定由 `spatial_engine` 处理，PVP 同步判定由 `spatial_duel` 处理。
 
 ## 协议 v6（墙体规则）
 
@@ -83,7 +83,7 @@
 
 2026-09-12阶段B墙体与视野实现：三套空间测试及PVP浏览器夹具已重新验证。
 
-运行：`node --test tests/training.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs`。
+运行：`node --test tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs`。
 PVE/训练38项，加PVP18项，共56项，全部通过。
 
 `tests/pvp-browser.html` 是独立双客户端验证页：不调用 `ui.init()`、不加载养成存档、不运行养成tick。
