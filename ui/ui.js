@@ -143,7 +143,8 @@ const ui = {
 
     _buildingUpgradeCost(key) {
         const lv = state.base.buildings[key] || 0;
-        return { res: 'gold', amt: 50 * Math.pow(lv + 1, 2), icon: '💰', resName: '金币' };
+        const rule = gameConfig.progression.buildingUpgrade;
+        return { res: 'gold', amt: rule.baseGold * Math.pow(lv + 1, rule.levelExponent), icon: '💰', resName: '金币' };
     },
 
     updateBuildingList() {
@@ -156,7 +157,7 @@ const ui = {
         for (const [key, def] of Object.entries(defs)) {
             const lv = state.base.buildings[key] || 0, cost = this._buildingUpgradeCost(key).amt;
             const unlocked = key !== 'hotSpring' && lv > 0;
-            cards += `<button class="facility ${lv ? 'is-built' : ''}" onclick="ui.${lv ? def.open : 'openBuildingModal'}()"><span class="facility-mark">${def.mark}</span><strong>${def.label}</strong><small>${lv ? `Lv.${lv} · ${def.detail(lv)}` : '未建造 · 50 金币'}</small></button>`;
+            cards += `<button class="facility ${lv ? 'is-built' : ''}" onclick="ui.${lv ? def.open : 'openBuildingModal'}()"><span class="facility-mark">${def.mark}</span><strong>${def.label}</strong><small>${lv ? `Lv.${lv} · ${def.detail(lv)}` : `未建造 · ${cost} 金币`}</small></button>`;
             rows += `<article class="facility-row"><span class="facility-mark">${def.mark}</span><div><h3>${def.label} <small>Lv.${lv}</small></h3><p>${def.desc}</p><small>${unlocked ? '设施已开放' : `${lv ? `当前 ${def.detail(lv)} · 升级` : '建造'}需要 ${cost} 金币`}</small></div><button class="${unlocked ? 'camp-primary' : 'camp-action'}" onclick="ui.${unlocked ? `${def.open}()` : `upgradeBuilding('${key}')`}" ${!unlocked && state.resources.gold < cost ? 'disabled' : ''}>${unlocked ? '进入 →' : lv ? '升级' : '建造'}</button></article>`;
         }
         this._setHtml('base-building-list', cards);
@@ -433,7 +434,7 @@ const ui = {
     },
 
     updateBase() {
-        const t = state.time, h = state.player, stats = player.getStats(), cost = h.level * 100;
+        const t = state.time, h = state.player, stats = player.getStats(), cost = h.level * gameConfig.progression.levelExpPerLevel;
         const period = { day: '白昼', dusk: '黄昏', night: '深夜' }[t.period] || '深夜';
         document.getElementById('time-display').textContent = `第 ${t.days} 天 / ${String(t.hours).padStart(2, '0')}:${String(t.minutes).padStart(2, '0')} / ${period}`;
         this._setHtml('resource-display', `<div><span>可用金币</span><strong class="gold-number">${state.resources.gold.toLocaleString()}</strong></div><div><span>持有经验</span><strong>${state.inventory.exp.toLocaleString()}</strong></div><div><span>探索起点</span><strong>${state.progress.checkpointFloor}<small> 层</small></strong></div>`);

@@ -7,6 +7,7 @@
       "pve/combat_controls.css"
     ],
     "scripts": [
+      "game_config.js",
       "core/data.js",
       "core/effects.js",
       "core/save.js",
@@ -48,6 +49,7 @@
       "pve/combat_controls.css"
     ],
     "scripts": [
+      "game_config.js",
       "core/spatial_combat.js",
       "core/combat_gestures.js",
       "pve/spatial_data.js",

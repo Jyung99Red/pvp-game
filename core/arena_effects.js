@@ -61,8 +61,7 @@ const arenaEffects = (() => {
     // transition frame.
     register('ap_surge', {
         defaults: {
-            atMs: 30000,
-            apRateMult: 2,
+            ...gameConfig.arenaEffects.ap_surge,
             logText: '🌀 战场涌动！双方行动力恢复加速'
         },
         tick(inst, arena, ctx, dt, emit) {
@@ -81,9 +80,7 @@ const arenaEffects = (() => {
     // announce frame, so the initial burn lands startMs + intervalMs in.
     register('burning_ground', {
         defaults: {
-            startMs: 20000,
-            intervalMs: 3000,
-            pct: 0.03,
+            ...gameConfig.arenaEffects.burning_ground,
             logText: '🔥 地面燃起烈焰！双方持续受到灼烧'
         },
         tick(inst, arena, ctx, dt, emit) {

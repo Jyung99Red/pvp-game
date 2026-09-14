@@ -424,7 +424,7 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         if (enemyVisible) {
             ctx.fillStyle = '#a7bdba'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
             worldText(C.enemyName || '岩角兽', e.x, e.y, -44);
-            if (!C.pvp) for (let i = 0; i < 3; i++) circle(e.x + (i - 1) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
+            if (!C.pvp) for (let i = 0; i < C.stagger.threshold; i++) circle(e.x + (i - (C.stagger.threshold - 1) / 2) * 9, e.y - 34, 2.5, e.stagger > i ? '#efc181' : '#3d4d4c');
         }
         ctx.fillStyle = '#a8e1db'; worldText('你', p.x, p.y, 37);
         ctx.restore();

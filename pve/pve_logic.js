@@ -20,7 +20,7 @@ const pveLogic = (() => {
 
     function _scaledEnemyData(baseId, floor) {
         const base  = content.enemies[baseId];
-        const scale = 1 + (floor - 1) * 0.08;
+        const scale = 1 + (floor - 1) * gameConfig.dungeon.statGrowthPerFloor;
         return {
             ...base,
             hp:  Math.round(base.hp  * scale),
@@ -59,7 +59,7 @@ const pveLogic = (() => {
         // paid out immediately -- it's banked into resources only on making
         // it back to base alive, and lost entirely on death. This is what
         // makes "继续深入 vs 携宝回城" an actual decision.
-        const goldReward = Math.round(eData.exp * 0.6);
+        const goldReward = Math.round(eData.exp * gameConfig.dungeon.goldPerExp);
         state.world.runGold += goldReward;
         const drops = _rollDrops(b.enemyId);
         fx.log.victory(eData.name, eData.exp);
@@ -156,9 +156,11 @@ const pveLogic = (() => {
             spatialEngine.settle(engine);
             if (engine.running) {
                 b.regenElapsed += .01;
+                const recovery = gameConfig.progression.recovery;
                 if (b.regenElapsed >= 1 - 1e-9) {
                     b.regenElapsed -= 1; b.regenTicks++;
-                    spatialEngine.heal(engine, (b.regenTicks % 2 === 0 ? 1 : 0) + Math.max(0, (state.base.buildings.hotSpring || 0) - 1));
+                    spatialEngine.heal(engine, (b.regenTicks % recovery.passiveEveryTicks === 0 ? recovery.passiveHp : 0) +
+                        Math.max(0, (state.base.buildings.hotSpring || 0) - recovery.hotSpringCombatPenalty));
                 }
             }
             _sync(); _processEvents();
@@ -253,7 +255,7 @@ const pveLogic = (() => {
                 else fx.log.goldLost(carried);
             }
             state.world.runGold = 0;
-            if (state.player.currentHp <= 0) state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * .1));
+            if (state.player.currentHp <= 0) state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * gameConfig.progression.recovery.reviveHpRatio));
             state.world.status = 'base'; state.world.currentFloor = 0;
             uiPve.hideOverlays(); ui.switchTab('base'); ui.updateBase();
         },

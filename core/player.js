@@ -47,15 +47,16 @@ const player = {
     },
     getParryWindowBaseMs() { return this.getFirstEquippedEffectValue('parry_window_ms', combatRules.parryWindowMs); },
 
-    getInsight() { return this.getStats().insight ?? 10; },
-    getFocus() { return this.getStats().focus ?? 10; },
+    getInsight() { return this.getStats().insight ?? gameConfig.progression.insight.baseline; },
+    getFocus() { return this.getStats().focus ?? gameConfig.resources.focusBaseline; },
     getParryWindowMultiplier() {
-        return Math.max(0.5, 1 + (this.getInsight() - 10) * 0.03);
+        const rule = gameConfig.progression.insight;
+        return Math.max(rule.minMultiplier, 1 + (this.getInsight() - rule.baseline) * rule.windowPerPoint);
     },
 
-    // Crit chance: 1% per luck point + flat crit_chance item effects
+    // Luck contribution plus flat crit_chance item effects.
     getCritChance() {
-        let c = (this.getStats().luck || 0) * 0.01;
+        let c = (this.getStats().luck || 0) * gameConfig.progression.critChancePerLuck;
         this.getEquippedEffects('crit_chance').forEach(e => { c += e.value; });
         return c;
     },
@@ -90,11 +91,11 @@ const player = {
             if (!id) return;
             const item = content.items[id];
             if (item) {
-                const enhMult = 1 + 0.1 * this.getEnhanceLevel(id);
+                const enhMult = 1 + gameConfig.progression.enhancement.statBonusPerLevel * this.getEnhanceLevel(id);
                 Object.keys(STAT_REGISTRY).forEach(statKey => {
                     let add = item.stats[statKey];
                     if (!add) return;
-                    // Enhancement (+10%/level) applies to atk/def only --
+                    // Enhancement applies to atk/def only --
                     // utility stats (focus/insight) stay at their designed values
                     if (statKey === 'atk' || statKey === 'def') add = Math.round(add * enhMult);
                     stats[statKey] = (stats[statKey] || 0) + add;
@@ -104,16 +105,16 @@ const player = {
         return stats;
     },
 
-    // ── Enhancement (weapons/shields only, +10% atk/def per level) ──
+    // Enhancement applies to weapons/shields using the configured level bonus.
 
-    ENHANCE_MAX: 5,
+    ENHANCE_MAX: gameConfig.progression.enhancement.maxLevel,
 
     getEnhanceLevel(itemId) {
         return state.inventory.enhance[itemId] || 0;
     },
 
     getEnhanceCost(itemId) {
-        return 100 * (this.getEnhanceLevel(itemId) + 1);
+        return gameConfig.progression.enhancement.goldPerLevel * (this.getEnhanceLevel(itemId) + 1);
     },
 
     enhanceItem(itemId) {
@@ -143,11 +144,9 @@ const player = {
 
     _applyLevelStats() {
         state.player.level++;
-        state.player.baseStats.maxHp += 20;
-        state.player.baseStats.atk += 3;
-		state.player.baseStats.def += 2;
-        state.player.baseStats.focus += 0.2;
-        state.player.baseStats.insight += 1;
+        for (const [stat, gain] of Object.entries(gameConfig.progression.levelStats)) {
+            state.player.baseStats[stat] += gain;
+        }
         
         // Full heal on level up
         state.player.currentHp = this.getStats().maxHp;
@@ -155,7 +154,7 @@ const player = {
 
     // Standard level-up flow (check exp -> deduct exp -> apply stats -> refresh UI)
     levelUp() {
-        const cost = state.player.level * 100;
+        const cost = state.player.level * gameConfig.progression.levelExpPerLevel;
         if (state.inventory.exp >= cost) {
             state.inventory.exp -= cost;
             

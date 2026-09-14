@@ -26,7 +26,7 @@ are unaffected by which subfolder a `.js` file lives in.
 
 ### Script load order (client-assets.json)
 
-`core/data.js` → `core/effects.js` → `core/save.js` → `core/player.js` →
+`game_config.js` → `core/data.js` → `core/effects.js` → `core/save.js` → `core/player.js` →
 `core/tick.js` → `ui/fx.js` → `core/combat_rules.js` →
 `core/arena_effects.js` → `ui/icons.js` → `ui/ui.js` → `core/spatial_combat.js` → `core/combat_gestures.js` →
 `pve/spatial_data.js` → `pve/spatial_engine.js` → `core/spatial_profiles.js` → `pve/pve_profiles.js` →
@@ -35,9 +35,11 @@ are unaffected by which subfolder a `.js` file lives in.
 
 ### Core systems
 
-- **`core/data.js`** — all state + static config. `state` (live game state) and
-  `content` (items / materials / recipes / enemies / floorPools / bossRotation /
-  buildings / shopPrices / slotMeta). `state.progress.checkpointFloor` is
+- **`game_config.js`** — the single editable source for gameplay/balance values,
+  including growth, combat resources/damage, input, skills, arenas, enemy moves,
+  equipment and content tables. Comments are English and document units/overrides.
+- **`core/data.js`** — live state plus a mutable runtime copy of configured content.
+  `state.progress.checkpointFloor` is
   permanent dungeon progress (saved); `state.world` is transient in-run position
   (not saved), including `world.runGold` — gold earned this run, at risk until
   banked (see run-gold below).

@@ -4,12 +4,7 @@ const spatialProfiles = (() => {
         fair: Object.freeze({ id: 'fair', label: '公平对决', description: '双方使用统一属性' }),
         progression: Object.freeze({ id: 'progression', label: '养成对战', description: '使用当前装备与等级属性' })
     });
-    const FAIR_PROFILE = Object.freeze({
-        level: 1, maxHp: 120, atk: 30, def: 8, focus: 10, insight: 10, apMax: 5,
-        critChance: 0, guardThorns: 0, chargeThresholdMs: 300, parryWindowBaseMs: 180,
-        judgmentMultiplier: 1, guardDamageMultiplier: 1,
-        motion: Object.freeze({ move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 })
-    });
+    const FAIR_PROFILE = gameConfig.fairProfile;
     function local() {
         return { ...player.getStats(), level: state.player.level, focus: player.getFocus(), insight: player.getInsight(),
             judgmentMultiplier: player.getJudgmentMultiplier(), guardDamageMultiplier: player.getGuardDamageMultiplier(),
@@ -53,21 +48,20 @@ const spatialProfiles = (() => {
         C.motion = { ...stats.motion };
         Object.assign(C.player, { maxHp: stats.maxHp, hp: clamp(hp, 0, stats.maxHp), def: stats.def });
         C.apMax = Math.max(1, Math.floor(stats.apMax));
-        // Both AP and SP use focus, while SP keeps a fixed 1.5x slower base.
-        const focus = Math.max(.1, stats.focus);
+        // Focus scales both resources using their separately configured base times.
+        const focus = Math.max(gameConfig.resources.minFocus, stats.focus);
         C.apRegen = 1000 / combatRules.apRecoveryMs(focus);
         C.spRegen = 1000 / combatRules.spRecoveryMs(focus);
-        // Formal damage growth starts at the weapon threshold, then takes a
-        // fixed two seconds to reach full charge. Geometry still uses the
-        // complete charge duration, so weapon templates remain meaningful.
+        // Damage grows after the weapon threshold for the configured duration.
+        // Geometry still uses the complete charge duration.
         C.chargeThreshold = clamp(stats.chargeThresholdMs / 1000, 0, 1000000);
-        C.fullCharge = C.chargeThreshold + 2;
-        C.parryWindow = clamp(stats.parryWindowBaseMs * stats.judgmentMultiplier / 1000, 0, 1);
-        C.blockMultiplier = clamp(.4 * stats.guardDamageMultiplier, 0, 1);
+        C.fullCharge = C.chargeThreshold + gameConfig.damage.fullChargeAfterThreshold;
+        C.parryWindow = clamp(stats.parryWindowBaseMs * stats.judgmentMultiplier / 1000, 0, gameConfig.damage.maxParryWindow);
+        C.blockMultiplier = clamp(gameConfig.damage.blockMultiplier * stats.guardDamageMultiplier, 0, 1);
         C.critChance = clamp(stats.critChance, 0, 1); C.guardThorns = Math.max(0, stats.guardThorns);
-        C.parryDamage = Math.max(1, Math.round(stats.atk * .5));
-        C.light.damage = Math.max(1, Math.round(stats.atk * .3));
-        C.heavy.damage = stats.atk * .3; C.heavy.chargeBonus = stats.atk * .8;
+        C.parryDamage = Math.max(1, Math.round(stats.atk * gameConfig.damage.parryAtkRatio));
+        C.light.damage = Math.max(1, Math.round(stats.atk * gameConfig.damage.lightAtkRatio));
+        C.heavy.damage = stats.atk * gameConfig.damage.heavyAtkRatio; C.heavy.chargeBonus = stats.atk * gameConfig.damage.heavyChargeAtkRatio;
         return C;
     }
     return { MODES, FAIR_PROFILE, local, fair, isFair, forMode, normalize, apply };

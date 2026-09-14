@@ -15,8 +15,8 @@ const spatialDuel = (() => {
             C.wallLayoutId = spatialData.pvpArena.layoutId; C.wallVersion = spatialData.pvpArena.version;
             C.walls = clone(spatialData.pvpArena.walls);
             C.camera = { ...spatialData.camera };
-            Object.assign(C.player, { x: C.width / 2, y: C.height / 2 + (i ? -90 : 90), facing: i ? Math.PI / 2 : -Math.PI / 2 });
-            Object.assign(C.enemy, { x: C.width / 2, y: C.height / 2 + (i ? 90 : -90), radius: 12 });
+            Object.assign(C.player, { x: C.width / 2, y: C.height / 2 + (i ? -gameConfig.pvpSpawnOffset : gameConfig.pvpSpawnOffset), facing: i ? Math.PI / 2 : -Math.PI / 2 });
+            Object.assign(C.enemy, { x: C.width / 2, y: C.height / 2 + (i ? gameConfig.pvpSpawnOffset : -gameConfig.pvpSpawnOffset), radius: C.player.radius });
             const b = E.create(C, random); b.skillPoints = 0; E.start(b); return b;
         });
         sides.forEach((b, i) => { b.enemy = sides[1 - i].player; });
@@ -76,13 +76,13 @@ const spatialDuel = (() => {
         if (!S.contains(a.shape, a.origin, a.facing, def.player)) return result;
         if (S.segmentBlocked(a.origin, def.player, atk.config.walls)) return { ...result, blocked: true };
         const front = Math.abs(S.angleDelta(S.facing(def.player, a.origin), def.player.facing)) <= Math.PI / 2;
-        const guard = def.player.phase === 'guard' && front && def.player.ap >= 1;
+        const guard = def.player.phase === 'guard' && front && def.player.ap >= gameConfig.resources.guardRequiredAp;
         const auto = def.buffs.autoParry > 0 && !guard;
         const parry = auto || (guard && d.time - def.player.guardReadyAt <= def.config.parryWindow);
         result.auto = auto;
         if (parry) return { ...result, type: 'parry', amount: E.defended(def.config.parryDamage, atk.config.player.def) };
         const crit = !guard && d.random() < atk.config.critChance;
-        const raw = a.damage * (crit ? 1.5 : 1), incoming = E.defended(raw, def.config.player.def);
+        const raw = a.damage * (crit ? gameConfig.damage.critMultiplier : 1), incoming = E.defended(raw, def.config.player.def);
         return { ...result, type: guard ? 'block' : 'hit', crit, rear: !front,
             amount: guard ? Math.round(incoming * def.config.blockMultiplier) : incoming,
             thorns: guard && def.config.guardThorns > 0 ? E.defended(raw * def.config.guardThorns, atk.config.player.def) : 0 };
@@ -97,7 +97,7 @@ const spatialDuel = (() => {
             hurt(d, i, r.amount); stun(d, i);
             emit(d, j, 'parry', { damage: r.amount });
         } else if (r.type === 'block') {
-            def.player.ap = Math.max(0, def.player.ap - 1); hurt(d, j, r.amount);
+            def.player.ap = Math.max(0, def.player.ap - gameConfig.resources.blockApCost); hurt(d, j, r.amount);
             emit(d, j, 'block', { damage: r.amount });
             if (r.thorns) { hurt(d, i, r.thorns); emit(d, j, 'thorns', { damage: r.thorns }); }
         } else {

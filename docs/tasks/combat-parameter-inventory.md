@@ -1,18 +1,20 @@
 # 战斗参数盘点（按当前代码）
 
-盘点日期：2026-09-13。本文只记录当前实现，服务于后续属性重设计；数值单位以代码语义为准。
+盘点日期：2026-09-14。本文只记录当前实现，服务于后续属性重设计；数值单位以代码语义为准。
+
+当前所有面向玩法和平衡调整的数值以根目录 `game_config.js` 为唯一来源。该文件按成长、资源与伤害、输入、技能、训练模板、场地、地牢、怪物动作和内容表分区，并使用英文注释标明单位和覆盖关系。模拟步长、网络超时、协议校验及纯表现常量继续由各自模块管理。
 
 ## 1. 读表规则与参数来源
 
 | 来源 | 职责 | 关键事实 |
 |---|---|---|
-| `pve/spatial_data.js:L6-L68` | 共享基础模板、技能定义、相机、PVP场地、所有怪物动作模板 | `training` 是训练和正式 PVE 的起点；正式 PVE/PVP 在 profile 中覆盖尺寸、属性和动作 |
-| `pve/pve_profiles.js:L3-L27` | 把 `content.enemies` 与玩家成长属性合成为正式 PVE preset | 复制训练模板，应用玩家属性，替换怪物 HP/DEF/动作伤害/AI覆盖 |
-| `pve/spatial_engine.js:L6-L46,L179-L438` | 纯模拟、时序、输入、碰撞调用、伤害、AI、技能 | `step` 和 `advanceActor` 的时间单位是秒；每次最多推进 50ms |
-| `core/spatial_profiles.js:L3-L65` | 公平/养成 PVP 档案与玩家属性映射 | `fair()` 是固定档案；`local()` 读取当前玩家装备/等级属性 |
-| `core/data.js:L138-L277` | 怪物基础属性、动作名称、掉落、楼层池、Boss轮换 | 动作几何和时序不在这里，而在 `spatial_data.js` |
-| `pvp/spatial_duel.js:L9-L187` | 两名人类的同步空间对局、同时命中收集、PVP判定、快照 | 双方都用 `spatialEngine` 人类动作；当前没有空间对刀/Clash规则 |
-| `core/arena_effects.js:L29-L99` | PVE 战场环境效果 | 环境效果只发事件，由 `pve/pve_logic.js` 应用；当前 PVP 不创建 arena |
+| `game_config.js` | 所有面向玩法和平衡调整的数值与内容表 | 唯一调参入口；修改后刷新页面并开始新战斗生效 |
+| `pve/spatial_data.js` | 把集中配置转换成空间引擎现有接口 | 不再定义独立数值；负责角度、敌人动作和技能覆盖的适配 |
+| `pve/pve_profiles.js` | 把敌人与玩家成长属性合成为正式 PVE preset | 复制训练模板，应用玩家属性，替换怪物 HP/DEF/动作伤害/AI 覆盖 |
+| `pve/spatial_engine.js` | 纯模拟、时序、输入、碰撞调用、伤害、AI、技能 | 消费配置和派生后的 preset，不保存平衡参数副本 |
+| `core/spatial_profiles.js` | 公平/养成 PVP 档案与玩家属性映射 | 公平档案和伤害系数均读取集中配置 |
+| `core/data.js` | 运行时 state 与 content 副本 | 初始状态读取配置；content 从冻结配置深复制，供运行时安全使用 |
+| `pvp/spatial_duel.js` | 两名人类的同步空间对局、同时命中收集、PVP 判定、快照 | 双方共用新防御公式；当前没有空间对刀/Clash 规则 |
 
 世界坐标、半径、范围、移动速度都使用同一套无量纲世界单位；速度是世界单位/秒，角度是弧度。动作的 `windup`、`lock`、`active`、`recovery` 是秒；技能疾速持续时间也是秒。arena 的 `atMs/startMs/intervalMs` 是毫秒，PVE 在 `pve/pve_logic.js:L135-L142` 以 10ms 调用边界转换。手势死区和取消半径是 CSS 像素（`core/combat_gestures.js:L3-L24`）。
 
@@ -20,7 +22,7 @@
 
 ### 2.1 训练基础模板
 
-以下是 `spatialData.baseCombatPreset` 的固定基础值（`pve/spatial_data.js:L23-L39`）；训练场直接采用，正式 PVE 会从这里深复制，PVP 也从这里深复制后套用 profile。
+以下是 `gameConfig.training` 的固定基础值；训练场直接采用，正式 PVE/PVP 从这里深复制后套用 profile。
 
 | 参数 | 值 | 单位/作用 |
 |---|---:|---|
@@ -52,7 +54,7 @@
 
 ### 2.2 玩家动作几何与时间
 
-`light` 和 `heavy` 是玩家动作快照；重击的范围和扇形角在蓄力期间由 `heavyShape` 线性插值（`pve/spatial_data.js:L36-L39`、`pve/spatial_engine.js:L95-L98`）。`arc` 已经是弧度（数据通过 `Math.PI * 比例` 生成）。
+`light` 和 `heavy` 在 `gameConfig.training` 中定义；重击的范围和扇形角在蓄力期间由 `heavyShape` 线性插值。玩家动作的 `arc` 直接使用弧度；敌人动作表的 `arc` 使用 π 倍数，并由 `pve/spatial_data.js` 转成弧度。
 
 | 动作 | 形状 | 几何 | 时间 | 伤害/蓄力 |
 |---|---|---|---|---|
@@ -83,7 +85,7 @@
 
 ## 3. 技能参数与资源流
 
-共享技能定义在 `pve/spatial_data.js:L6-L12`，实际 mode 覆盖由 `skillRules()` 合成（`L57-L68`）。当前 PVE/PVP 都使用相同基础参数；两种 PVP 的 `skillMode` 均为 `'fair'`，在此只选择共同的基础技能规则，不代表养成对战也使用公平属性档案。角色属性另由房间模式决定。
+共享技能定义在 `gameConfig.skills`，模式覆盖放在 `gameConfig.skillOverrides`，由 `pve/spatial_data.js` 的 `skillRules()` 合成。当前 PVE/PVP 都使用相同基础参数；两种 PVP 的 `skillMode` 均为 `'fair'`，在此只选择共同的基础技能规则，不代表养成对战也使用公平属性档案。角色属性另由房间模式决定。
 
 | 技能 | 方向 | SP费用 | 成功效果 | 约束/覆盖 |
 |---|---|---:|---|---|
@@ -111,7 +113,7 @@
 | 轻击 | `max(1,round(atk×.3))` |
 | 重击 | 基础 `atk×.3`，充能奖励 `atk×.8` |
 | 正式暴击 | `critChance` 命中判定；暴击伤害 ×`1.5`（`pve/spatial_engine.js:L258-L268`） |
-| 防御减伤 | `max(1, round(raw - min(raw×.2, def×.15)))`；DEF 对原始伤害最多减 20%（`pve/spatial_engine.js:L393`） |
+| 防御减伤 | `max(1, round(raw × (1 - def/(def + 17.5))))`，等价于 `max(1, round(raw × 17.5/(def+17.5)))`；DEF=17.5 时承受约 50% 原始伤害 |
 | 荆棘 | 格挡时 `defended(raw×guardThorns, 攻击者DEF)` 反射 |
 
 正式 PVE 敌人 AP 上限为 `max(1, ai.apMax||5)`；`ai.focus` 只通过 AP 回复公式生效，未参与移动速度、前摇、后摇或攻击范围（`pve/pve_profiles.js:L15-L17`、`pve/spatial_engine.js:L340-L377`）。
@@ -120,7 +122,7 @@
 
 ### 5.1 基础属性、动作伤害倍率和基础伤害
 
-`content.enemies` 中的 HP/ATK/DEF/EXP 是 1 层基础值（`core/data.js:L138-L260`）。动作名称只用于显示；每个动作的几何/时序来自 `spatialData.enemyMoves`，正式伤害为 `round(enemy.atk × multiplier)` 且至少 1（`pve/pve_profiles.js:L17`）。下表“基础伤害”是未做楼层缩放时的当前值。
+`gameConfig.content.enemies` 中的 HP/ATK/DEF/EXP 是 1 层基础值。动作名称只用于显示；每个动作的几何/时序来自 `gameConfig.enemyMoves`，正式伤害为 `round(enemy.atk × multiplier)` 且至少 1。下表“基础伤害”是未做楼层缩放时的当前值。
 
 | ID（名称） | HP | ATK | DEF | EXP | AI focus | 动作1：名称 / multiplier → 伤害 | 动作2：名称 / multiplier → 伤害 |
 |---|---:|---:|---:|---:|---:|---|---|
@@ -139,7 +141,7 @@
 
 ### 5.2 每个动作的几何与时序
 
-动作数组完整定义在 `pve/spatial_data.js:L42-L56`。所有敌人动作 `active=.16s`，但引擎在 active 起点只调用一次 `enemyHit()`，不是每个渲染帧重复命中（`pve/spatial_engine.js:L362-L370`）。当前所有正式敌人动作在基础定义上统一增加 `windup +.10s`、`recovery +.15s`；`lock` 数值不变，因此锁定段相对变短。`lock` 是前摇最后一段的固定朝向时间：当 windup 剩余时间大于 lock 时仍追踪玩家；剩余时间不大于 lock 后停止追踪。`range` 是扇区半径；`arc` 是弧度。
+动作数组完整定义在 `gameConfig.enemyMoves`。所有敌人动作 `active=.16s`，但引擎在 active 起点只调用一次 `enemyHit()`，不是每个渲染帧重复命中。当前所有正式敌人动作在基础定义上统一增加 `windup +.10s`、`recovery +.15s`；`lock` 数值不变，因此锁定段相对变短。`lock` 是前摇最后一段的固定朝向时间：当 windup 剩余时间大于 lock 时仍追踪玩家；剩余时间不大于 lock 后停止追踪。`range` 是扇区半径；配置表中的 `arc` 是 π 倍数。
 
 | ID | 动作1：kind / range / arc | windup / lock / active / recovery | 动作2：kind / range / arc | windup / lock / active / recovery |
 |---|---|---|---|---|
@@ -156,7 +158,7 @@
 
 ### 5.3 共同 AI 节奏与逐怪物覆盖
 
-训练基础 AI（`pve/spatial_data.js:L31-L31`）对正式 PVE 仍是默认值：
+训练基础 AI（`gameConfig.training.ai`）对正式 PVE 仍是默认值：
 
 | 参数 | 默认值 | 作用 |
 |---|---:|---|
@@ -174,7 +176,7 @@
 | `enrageAtkMult` | `1.3` | 缺省 enrage 攻击倍率；Boss 有覆盖 |
 | `enrageSpdMult` | `1.2` | 缺省 enrage timer/AP回复倍率；Boss 有覆盖 |
 
-当前逐怪物 AI 覆盖只有：`shadow_assassin.ai.focus=12`、`stone_golem.ai.focus=8`；两名 Boss 另有 combo/enrage（`core/data.js:L193-L259`）。
+当前逐怪物 AI 覆盖只有：`shadow_assassin.ai.focus=12`、`stone_golem.ai.focus=8`；两名 Boss 另有 combo/enrage，均在 `gameConfig.content.enemies` 中定义。
 
 | 怪物 | comboChance / comboMax | `comboDelayMs` 实际读取 | enrageThreshold | enrageAtkMult / enrageSpdMult |
 |---|---:|---:|---:|---:|
@@ -190,11 +192,11 @@ Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每
 | 古龙 `burning_ground` | `startMs=20000`、`intervalMs=3000`、`pct=.03` | 20s 后播报；首个伤害落在约 23s；之后每 3s 双方各受自身 maxHP 的 3%（至少 1），`core/arena_effects.js:L70-L99` |
 | 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后双方 AP 回复 ×2，过渡帧播报一次，`core/arena_effects.js:L53-L69` |
 | PVE arena 结算 | — | 只在 `pve_logic` 驱动；环境伤害与同一 10ms 步中的攻击一起结算，双方同时死亡判玩家败北（`pve/pve_logic.js:L135-L154`）；当前 PVP 不使用 arena |
-| floor pools | `≤3: goblin/wolf`; `≤6: goblin/wolf/orc`; `≤8: orc/young_dragon`; `≤12: orc/young_dragon/skeleton_warrior`; `≤17: skeleton_warrior/shadow_assassin/stone_golem` | 超过 17 层继续使用最后一池；绝对楼层数继续参与 8% 缩放，`core/data.js:L263-L277` |
+| floor pools | `≤3: goblin/wolf`; `≤6: goblin/wolf/orc`; `≤8: orc/young_dragon`; `≤12: orc/young_dragon/skeleton_warrior`; `≤17: skeleton_warrior/shadow_assassin/stone_golem` | 超过 17 层继续使用最后一池；绝对楼层数继续参与 8% 缩放；配置位于 `gameConfig.content.floorPools` |
 | Boss轮换 | `bossFloorInterval=9`；`bossRotation=[elder_dragon,abyss_lord]` | 9/18/27… 层依次轮换；击杀 Boss 才推进 checkpoint，`pve/pve_logic.js:L7-L18,L67-L74` |
 | 金币 | `goldReward=round(exp×.6)` | 每场胜利加入本次 runGold；活着回城才入资源，死亡清零，`pve/pve_logic.js:L52-L64,L229-L242` |
 
-## 6. PVP 固定规则（当前 v7 / rule v3）
+## 6. PVP 固定规则（当前 v10 / rule v6）
 
 ### 6.1 档案与开局
 
@@ -204,7 +206,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 ### 6.2 场地、墙体、可见性与同时命中
 
-当前 PVP 场地在 `pve/spatial_data.js:L14-L21`：`570×630`，布局 ID `pvp-l-v1`，version `1`。
+当前 PVP 场地在 `gameConfig.pvpArena`：`570×630`，布局 ID `pvp-l-v1`，version `1`。
 
 | 墙 | 矩形（x,y,width,height）世界单位 |
 |---|---|
@@ -236,8 +238,8 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 | 参数 | 当前值/规则 | 路径 |
 |---|---|---|
-| protocol `VERSION` | `9` | `pvp/pvp_logic.js:L3` |
-| `RULE_VERSION` | `5` | `pvp/pvp_logic.js:L3` |
+| protocol `VERSION` | `10` | `pvp/pvp_logic.js`；因防御公式变化升级 |
+| `RULE_VERSION` | `6` | `pvp/pvp_logic.js`；因防御公式变化升级 |
 | 场地校验 | 每个 start/rematch/snapshot 校验 `pvp-l-v1` + version 1 | `pvp/pvp_logic.js:L14-L16,L179-L183` |
 | 开局倒计时 | `1.5s` | `pvp/pvp_logic.js:L73-L81` |
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
@@ -248,21 +250,21 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 ## 7. 装备与强化对战输入（当前已消费的效果）
 
-基础玩家 state 在 `core/data.js:L14-L18`：`baseStats={maxHp:100, atk:10, def:3, focus:10, insight:10, luck:5}`；默认装备木剑+木盾。装备 stat 聚合和强化在 `core/player.js:L71-L88,L91-L115`；只有 `atk/def` 受每级 +10% 强化，强化等级上限 5、费用为 `100×(当前等级+1)` 金币，且同 itemId 的所有堆叠共享等级。
+基础玩家、装备和强化数值定义在 `game_config.js`；运行时由 `core/data.js` 和 `core/player.js` 消费。初始属性仍为 `baseStats={maxHp:100, atk:10, def:3, focus:10, insight:10, luck:5}`，默认装备木剑+木盾。只有 `atk/def` 受每级 +10% 强化，强化等级上限 5、费用为 `100×(当前等级+1)` 金币，且同 itemId 的所有堆叠共享等级。
 
 | 装备 | 基础 stats | 效果 | 当前消费位置 |
 |---|---|---|---|
-| 木剑 | atk +8 | 无 | `core/data.js:L38-L44` |
-| 铁剑 | atk +22 | `weaponTemplate=heavy` | 蓄力阈值 350ms（basic 300ms + 50ms）；`core/data.js:L45-L51`、`core/player.js:L22-L50` |
-| 木盾 | def +8 | `guard_damage_reduce=.25` | 正式格挡倍率乘 `.75`；`core/data.js:L52-L57` |
-| 铁盾 | def +18 | `guard_damage_reduce=.40`、`parry_window_ms=150` | 正式格挡倍率乘 `.60`；第一件窗口效果覆盖基础；`core/data.js:L59-L64` |
-| 疾速戒指 | focus +3 | 无 | 专注提高，AP 与 SP 都回复更快；`core/data.js:L66-L71` |
-| 布甲 | def +5 | 无 | `core/data.js:L73-L78` |
-| 铁甲 | def +14 | 无 | `core/data.js:L80-L85` |
-| 智慧之环 | insight +10 | 无 | 提高心眼；`getParryWindowMultiplier()` 当前为 `max(.5,1+.03×(心眼-10))`；`core/data.js:L87-L92`、`core/player.js:L55-L60` |
-| 刺客短刃 | atk +14 | `weaponTemplate=light`、`crit_chance=.20` | 蓄力阈值 280ms（basic 300ms - 20ms）；暴击率另行累加；`core/data.js:L94-L101`、`core/player.js:L40-L50` |
-| 荆棘甲 | def +10 | `guard_thorns=.5` | 格挡成功时反射 raw 的 50%，再过攻击者 DEF；`core/data.js:L101-L106` |
-| 战意戒指 | 无 | `ap_max_bonus=1` | AP 上限基础 5→6；`core/data.js:L108-L113` |
+| 木剑 | atk +8 | 无 | `game_config.js` → `content.items.wooden_sword` |
+| 铁剑 | atk +22 | `weaponTemplate=heavy` | 蓄力阈值 350ms（basic 300ms + 50ms） |
+| 木盾 | def +6 | `guard_damage_reduce=.25` | 正式格挡倍率乘 `.75` |
+| 铁盾 | def +24 | `guard_damage_reduce=.40`、`parry_window_ms=150` | 正式格挡倍率乘 `.60`；第一件窗口效果覆盖基础 |
+| 疾速戒指 | focus +3 | 无 | 专注提高，AP 与 SP 都回复更快 |
+| 布甲 | def +3 | 无 | `game_config.js` → `content.items.wooden_armor` |
+| 铁甲 | def +20 | 无 | `game_config.js` → `content.items.iron_armor` |
+| 智慧之环 | insight +10 | 无 | 提高心眼；窗口倍率由 `gameConfig.progression.insight` 控制 |
+| 刺客短刃 | atk +14 | `weaponTemplate=light`、`crit_chance=.20` | 蓄力阈值 280ms；暴击率另行累加 |
+| 荆棘甲 | def +10 | `guard_thorns=.5` | 格挡成功时反射 raw 的 50%，再过攻击者 DEF |
+| 战意戒指 | 无 | `ap_max_bonus=1` | AP 上限基础 5→6 |
 
 效果注册表还定义了 `spatial_move_speed`、`spatial_turn_speed`、`charge_move_speed`、`charge_turn_speed` 四种运动效果（`core/effects.js:L13-L28`），但当前 `content.items` 没有装备实例使用它们；它们只有在以后加入 item effect 后才会进入 `player.getSpatialMotion()`（`core/player.js:L62-L68`）。
 
@@ -270,7 +272,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 ## 8. 设计边界
 
-- PVP 当前协议 v9 / rule v5，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
+- PVP 当前协议 v10 / rule v6，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
 - `comboDelayMs` 只读取首项；`ai.focus` 只改变 AP 回复。
 - 技能弹反消耗 3 SP，普通操作弹反消耗 .5 AP，两者独立。
 - 冲刺预警为窄路径提示，实际扫掠半宽为 dash.width + enemy.radius，接触判定再计入 player.radius。
@@ -287,6 +289,6 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
 | 武器蓄力模板 | basic/default `300ms`；heavy/铁剑 `350ms`（+50ms）；light/刺客短刃 `280ms`（-20ms）。蓄力阈值只由武器模板产生，profile 统一使用 `chargeThresholdMs` |
 | 怪物冲刺 | 狼 `扑击`：直线预警、蓄力 `1.05s`、锁向 `.35s`、距离 `150`、速度 `280/s`、轨迹宽 `18`、收招 `1.20s`；暗影刺客 `致命突刺`：直线预警、`.55s/.25s/180/450/s/12/.90s`。冲刺沿实际路径检测一次命中，撞身体、墙或边界停止，不穿身 |
-| PVP 协议 | 当前 `VERSION=9`、`RULE_VERSION=5`，双方必须匹配 |
+| PVP 协议 | 当前 `VERSION=10`、`RULE_VERSION=6`，双方必须匹配；本次因防御公式变化升级 |
 
 本节之后，前文关于 PVP v6/rule v2、命中/弹反增加 SP、铁剑 700ms、短刃 400ms、狼/刺客原地扇形攻击的描述均视为历史基线。技能效果与费用本轮暂不调整。

@@ -1,6 +1,6 @@
 // Operation preferences are shared by training and PVE, separate from progression saves.
 const combatSettings = (() => {
-    const defaults = { cancelAtCenter: true, autoFace: false };
+    const defaults = gameConfig.controls;
     const key = 'pvp-game-combat-controls-v1';
     function read() {
         const values = { ...defaults };

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const context = vm.createContext({});
-for (const file of ['core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js']) {
+for (const file of ['game_config.js', 'core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
 }
 const L = vm.runInContext('spatialEngine', context);
@@ -35,7 +35,7 @@ test('shared view mounts on training Document and formal Element roots, and redr
         canvas.getBoundingClientRect = () => ({ width: 390, height: 844, top: 0 });
         const c = vm.createContext({ root, AbortController, document: { createElement: element }, window: { devicePixelRatio: 1, addEventListener() {} },
             ResizeObserver: class { constructor(callback) { resized = callback; } observe() {} disconnect() { disconnected = true; } } });
-        for (const file of ['core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js', 'ui/ui_spatial_battle.js']) {
+        for (const file of ['game_config.js', 'core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js', 'ui/ui_spatial_battle.js']) {
             vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), c);
         }
         const { view, battle } = vm.runInContext('({view: uiSpatialBattle.create(root), battle: spatialEngine.create()})', c);
