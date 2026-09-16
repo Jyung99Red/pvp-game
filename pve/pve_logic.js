@@ -2,13 +2,20 @@
 // all live combat HP/input/time.
 const pveLogic = (() => {
     let _rAF = null, _lastTime = 0, _accumulator = 0, _nextId = 0;
-    let _displayEvents = [], _pendingOutcome = null;
+    let _displayEvents = [], _pendingDefeat = false;
+    // Whether the pause overlay is up. Only `pause`/`resume` own it; it exists
+    // so a caller that froze the session for its own reason (a camp modal) can
+    // tell whether releasing that freeze would stomp a deliberate pause.
+    let _paused = false;
     let _random = Math.random;
     const SKILL_COSTS = Object.freeze({ ...spatialData.skillCosts });
     const _region = id => content.regions[id] || null;
     const _currentRegion = () => _region(state.progress.currentRegionId);
     const _bossDefeated = enemyId => !!state.progress.defeatedBosses[enemyId];
     const _exitOpen = exit => !exit.requiresBoss || _bossDefeated(exit.requiresBoss);
+    // Region a IS the base. The status is what grants full hot-spring regen,
+    // what lets `startEncounter` fire, and what gates the training page.
+    const _statusFor = id => id === 'a' ? 'base' : 'exploring';
     // adventure_world is absent from the scene-less dev/test harness, where the
     // legacy arena stands in and there is no region to hand back to.
     const _hasField = () => typeof adventureWorld !== 'undefined' && adventureWorld.isActive();
@@ -41,7 +48,7 @@ const pveLogic = (() => {
         const goldReward = Math.round(eData.exp * gameConfig.adventure.goldPerExp);
         state.resources.gold += goldReward;
         const drops = _rollDrops(b.enemyId);
-        fx.log.victory(eData.name, eData.exp);
+        fx.log.victory(eData.name, eData.exp);   // stays in the log; the toast mirrors it
 
         if (b.isBoss) {
             state.progress.defeatedBosses[b.enemyId] = true;
@@ -49,12 +56,18 @@ const pveLogic = (() => {
             fx.log.bossDefeated?.(eData.name);
             save.save(); // A boss clear changes permanent world topology immediately.
         }
-        if (typeof adventureWorld !== 'undefined') adventureWorld.completeEncounter(b.mapEntityId);
-
-        b.waitingChoice = true;
-        _stopLoop();
-        uiAdventure.clearInputs();
-        _pendingOutcome = { type: 'victory', drops, exp: eData.exp, gold: goldReward, isBoss: b.isBoss };
+        if (typeof adventureWorld !== 'undefined') {
+            adventureWorld.completeEncounter(b.mapEntityId);
+            // Rewards are banked on the spot and the region is handed straight
+            // back, so there is no result screen to dismiss -- the summary goes
+            // into the region's own log line instead, where the fight just was.
+            const loot = drops.map(d => `${content.materials[d.id].name}×${d.amt}`).join(' · ');
+            adventureWorld.notice([
+                `击败 ${eData.name} · EXP +${eData.exp} · 金币 +${goldReward}`, loot,
+                b.isBoss ? '首领已击败，新的区域入口已开启。' : ''
+            ].filter(Boolean).join(' · '), 6);
+        }
+        _returnToRegion();
     }
 
     function _onDefeat() {
@@ -65,7 +78,7 @@ const pveLogic = (() => {
         b.active = false;
         _stopLoop();
         uiAdventure.clearInputs();
-        _pendingOutcome = { type: 'defeat' };
+        _pendingDefeat = true;
     }
     // Running out of leash is its own outcome: nobody won, no rewards, no
     // overlay -- the region simply resumes where it left off. One-shot guarded
@@ -73,13 +86,13 @@ const pveLogic = (() => {
     function _onDisengage() {
         const b = state.pveBattle;
         if (b.settled || b.ended) return;
-        b.settled = true; b.ended = true; b.active = false; b.waitingChoice = false;
+        b.settled = true; b.ended = true; b.active = false;
         spatialEngine.pause(b.spatial); _stopLoop();
         if (typeof adventureWorld !== 'undefined') {
             adventureWorld.endCombat(b.mapEntityId, { disengaged: true, player: b.spatial.player, enemy: b.spatial.enemy });
         }
         // Without this the encounter guard blocks every later fight in the region.
-        state.world.status = 'exploring';
+        state.world.status = _statusFor(b.region.id);
         fx.log.disengaged(b.enemyData.name);
         uiAdventure.hideOverlays();
         _returnToField();
@@ -89,6 +102,24 @@ const pveLogic = (() => {
     // shared view's config back and resumes the region loop.
     function _returnToField() {
         if (_hasField()) uiAdventure.endFight();
+    }
+    // Retire the fight and put the walk back on screen. A closure rather than
+    // only a method because `_onVictory` runs from inside `advance`.
+    function _returnToRegion() {
+        const b = state.pveBattle;
+        if (!b || b.ended) return false;
+        b.ended = true; b.active = false;
+        spatialEngine.pause(b.spatial); _stopLoop();
+        // The fight moved the player inside its own engine, so the region's own
+        // body has to be told where they actually ended up -- without this the
+        // walk resumes wherever the encounter started, which reads as the
+        // character being yanked back a few steps.
+        if (typeof adventureWorld !== 'undefined') {
+            adventureWorld.returnFromCombat(b.mapEntityId, b.spatial.result === 'victory', b.spatial.player);
+        }
+        state.world.status = _statusFor(b.region.id);
+        uiAdventure.hideOverlays(); _returnToField();
+        return true;
     }
     // Mirrors adventure_world's own leash rule so territory feels identical on
     // both sides of the encounter boundary. The engine's AI has no home
@@ -145,15 +176,13 @@ const pveLogic = (() => {
         if (!b?.spatial || b.ended) return;
         const events = _displayEvents.splice(0);
         uiAdventure.updateFrame(events);
-        if (_pendingOutcome) {
-            const outcome = _pendingOutcome; _pendingOutcome = null;
-            if (outcome.type === 'victory') uiAdventure.showWinChoice(outcome.drops, outcome.exp, outcome.gold, outcome.isBoss);
-            else uiAdventure.showDefeat();
-        }
+        // Only a defeat still has an outcome to raise: a victory banks its
+        // rewards and hands the region straight back in `_onVictory`.
+        if (_pendingDefeat) { _pendingDefeat = false; uiAdventure.showDefeat(); }
     }
     function advance(seconds) {
         const b = state.pveBattle;
-        if (!b?.active || b.waitingChoice || !b.spatial.running || !Number.isFinite(seconds)) return;
+        if (!b?.active || !b.spatial.running || !Number.isFinite(seconds)) return;
         // Fixed 10ms steps, bounded catch-up; visibility loss pauses explicitly.
         _accumulator += Math.max(0, Math.min(seconds, .1));
         while (_accumulator >= .01 - 1e-9 && b.spatial.running && !b.settled) {
@@ -193,12 +222,12 @@ const pveLogic = (() => {
     function _loop(now) {
         _rAF = null;
         const b = state.pveBattle;
-        if (!b?.spatial?.running || b.waitingChoice) return;
+        if (!b?.spatial?.running) return;
         advance((now - _lastTime) / 1000); _lastTime = now;
-        if (b.spatial.running && !b.waitingChoice) _rAF = requestAnimationFrame(_loop);
+        if (b.spatial.running) _rAF = requestAnimationFrame(_loop);
     }
     function _beginFight(enemyId, region, isBoss, mapEntityId = null) {
-        _stopLoop(); _displayEvents = []; _pendingOutcome = null;
+        _stopLoop(); _displayEvents = []; _pendingDefeat = false;
         const skillPoints = 0, skillProgress = 0;
         const eData = { ...content.enemies[enemyId] };
         // A live region scene fights in region space at the monster's own
@@ -208,7 +237,7 @@ const pveLogic = (() => {
         const engine = spatialEngine.create(enlisted ? enlisted.config : pveProfiles.create(enemyId, eData), _random);
         engine.skillPoints = skillPoints; engine.skillProgress = skillProgress;
         state.pveBattle = {
-            battleId: ++_nextId, spatial: engine, active: true, waitingChoice: false, settled: false, ended: false,
+            battleId: ++_nextId, spatial: engine, active: true, settled: false, ended: false,
             player: engine.player, enemy: engine.enemy, buffs: engine.buffs,
             enemyId, enemyData: eData, regionId: region.id, region, isBoss, mapEntityId, skillPoints, skillProgress,
             arena: arenaEffects.create(eData.arena), log: [], regenElapsed: 0, regenTicks: state.time.tick,
@@ -234,26 +263,27 @@ const pveLogic = (() => {
     function pause() {
         const b = state.pveBattle;
         if (b?.active) {
-            if (b.waitingChoice) return;                 // an outcome overlay is up
             if (b.spatial.running) { spatialEngine.pause(b.spatial); _sync(); }
         } else if (_hasField()) {
             adventureWorld.pauseField();
         } else {
             return;
         }
+        _paused = true;
         _stopLoop(); uiAdventure.clearInputs(); uiAdventure.setPaused(true); uiAdventure.showPause(true);
     }
     // Foreground/BFCache return must restore presentation without recreating a fight.
     function restore() {
         const b = state.pveBattle;
         if (b?.ended || document.hidden) return;
-        if (b?.active && !b.waitingChoice && !b.spatial.result) pause();
+        if (b?.active && !b.spatial.result) pause();
         uiAdventure.refresh();
     }
     function resume() {
         const b = state.pveBattle;
+        _paused = false;
         uiAdventure.showPause(false);
-        if (b?.active && !b.waitingChoice && !b.spatial.result) {
+        if (b?.active && !b.spatial.result) {
             if (!b.spatial.running) {
                 _stopLoop(); uiAdventure.refresh();
                 spatialEngine.start(b.spatial); _lastTime = performance.now();
@@ -267,20 +297,13 @@ const pveLogic = (() => {
     }
     return {
         SKILL_COSTS, advance, pause, resume, restore,
+        isPaused: () => _paused,
         setRandom(random) { _random = random; },
         isRegionUnlocked(id) {
             return !!_region(id) && !!state.progress.unlockedRegions[id];
         },
         isBossDefeated(enemyId) {
             return _bossDefeated(enemyId);
-        },
-        openAdventure() {
-            if (state.pveBattle?.active) return false;
-            const region = _currentRegion();
-            if (!region) return false;
-            if (region.id !== 'a') state.world.status = 'exploring';
-            ui.switchTab('adventure'); ui.updateAdventure?.();
-            return true;
         },
         travel(toId) {
             if (state.pveBattle?.active) return false;
@@ -294,11 +317,46 @@ const pveLogic = (() => {
             state.progress.unlockedRegions[toId] = true;
             state.world.arrivalFrom = region.id;
             state.progress.currentRegionId = toId;
-            state.world.status = toId === 'a' ? 'base' : 'exploring';
+            state.world.status = _statusFor(toId);
             save.save();
             if (toId === 'a') { ui.switchTab('base'); ui.updateBase(); }
             else { ui.switchTab('adventure'); ui.updateAdventure?.(); }
             return true;
+        },
+        // The interact key: what the move pad's tap does while a structure is in
+        // reach (the adapter is the only caller -- nothing in the simulation may
+        // open a panel on its own). `kind` is dispatched explicitly here rather
+        // than looked up from the data, so the set of reachable UI calls stays
+        // readable from this one place.
+        interact() {
+            if (state.pveBattle?.active) return false;
+            if (typeof adventureWorld === 'undefined' || !adventureWorld.isActive()) return false;
+            const target = adventureWorld.scene()?.interaction;
+            if (!target) return false;
+            switch (target.kind) {
+                case 'hotSpring': {
+                    // The walking engine carries its own copy of the body, so it
+                    // has to be healed too or the next fight starts from the old HP.
+                    const field = adventureWorld.scene()?.field;
+                    state.player.currentHp = player.getStats().maxHp;
+                    if (field) field.player.hp = field.player.maxHp;
+                    ui.log(`♨️ ${target.label}：体力已完全恢复`);
+                    return true;
+                }
+                // Neither facility exists before it is built. The build panel is
+                // then the only way forward -- and with the old base page gone,
+                // this is its only door as well.
+                case 'smithy':
+                case 'shop': {
+                    if ((state.base.buildings[target.kind] || 0) === 0) { ui.openBuildingModal(); return true; }
+                    if (target.kind === 'smithy') ui.openSmithyModal(); else ui.openShopModal();
+                    return true;
+                }
+                case 'storage': ui.openInventoryModal(); return true;
+                case 'build': ui.openBuildingModal(); return true;
+                case 'training': ui.enterTraining(); return true;
+                default: return false;
+            }
         },
         startEncounter(enemyId, mapEntityId = null) {
             if (state.world.status !== 'exploring' || state.pveBattle?.active) return false;
@@ -315,20 +373,7 @@ const pveLogic = (() => {
             if (!pool.length) return false;
             return this.startEncounter(pool[Math.floor(_random() * pool.length)]);
         },
-        returnToRegion() {
-            const b = state.pveBattle;
-            if (!b || b.ended) return false;
-            b.ended = true; b.active = false; b.waitingChoice = false;
-            spatialEngine.pause(b.spatial); _stopLoop();
-            if (typeof adventureWorld !== 'undefined') adventureWorld.returnFromCombat(b.mapEntityId, b.spatial.result === 'victory');
-            state.world.status = 'exploring';
-            uiAdventure.hideOverlays(); _returnToField();
-            return true;
-        },
-        safeRetreat() {
-            if (!state.pveBattle?.waitingChoice) return;
-            fx.log.retreat(); this.returnToRegion();
-        },
+        returnToRegion() { return _returnToRegion(); },
         flee() {
             if (!state.pveBattle?.active) return;
             fx.log.flee(); this.returnToRegion();
@@ -336,7 +381,7 @@ const pveLogic = (() => {
         endFight() {
             const b = state.pveBattle;
             if (!b || b.ended) return;
-            b.ended = true; b.active = false; b.waitingChoice = false;
+            b.ended = true; b.active = false;
             spatialEngine.pause(b.spatial); _stopLoop();
             if (state.player.currentHp <= 0) state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * gameConfig.progression.recovery.reviveHpRatio));
             state.progress.currentRegionId = 'a'; state.world.status = 'base';
@@ -353,7 +398,7 @@ const pveLogic = (() => {
         },
         useSkill(kind) {
             const b = state.pveBattle, cost = b?.spatial?.config.skills?.[kind]?.cost;
-            if (!b?.active || b.waitingChoice || !b.spatial.running || !cost || b.skillPoints < cost) return;
+            if (!b?.active || !b.spatial.running || !cost || b.skillPoints < cost) return;
             // Keep direct legacy/UI writes compatible while the engine owns
             // fractional time-based SP during simulation.
             b.spatial.skillPoints = b.skillPoints;

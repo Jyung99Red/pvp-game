@@ -42,10 +42,10 @@ python -m http.server 8422
 运行完整的战斗与启动回归：
 
 ```powershell
-node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs
+node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs tests/adventure-world.test.cjs tests/region-combat.test.cjs
 ```
 
-自动测试覆盖资源启动、共享空间引擎、PVE 生命周期和 PVP 同步。触屏手感、锁屏恢复、设备旋转和双设备网络体验仍应在真实设备上检查。
+自动测试覆盖资源启动、共享空间引擎、PVE 生命周期、区域行走/传送门/建筑交互和 PVP 同步。触屏手感、锁屏恢复、设备旋转和双设备网络体验仍应在真实设备上检查。
 
 ## 项目结构
 

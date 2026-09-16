@@ -24,8 +24,6 @@
     </section>
     <section class="arena" aria-label="俯视战场">
         <canvas id="arena" aria-label="蓝色剑盾角色对战岩角兽，橙色范围是起手，红色范围是锁定攻击"></canvas>
-
-        <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
     </section>
     <section class="feedback" aria-label="操作反馈">
         <div class="ap-row"><span>行动力</span><div id="ap" aria-label="行动力 5 / 5"></div><span id="player-state">准备就绪</span></div>
@@ -34,6 +32,8 @@
         <div class="skill-status">技能 <span id="training-sp">练习不限次数</span></div>
         <div id="battle-log" class="battle-log" aria-label="最近战斗记录"></div>
         <div class="arena-top"><span id="enemy-state">观察起手 → 走位或接招</span><span id="clock">0:00</span></div>
+        <div class="legend"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
+        <footer>先长按再拖动蓄力走位 · 移速60% / 转速65%</footer>
     </section>
     <section class="controls combined-controls" aria-label="中央移动轻重击，左侧防御，右侧技能">
         <div class="control-group move-group" aria-label="中央操作区：拖动移动，短按轻击，原位长按蓄力">
@@ -58,7 +58,6 @@
     </section>
     </section>
 
-    <footer>先长按再拖动蓄力走位 · 移速60% / 转速65%</footer>
         <div id="overlay" class="overlay">
             <div class="overlay-card">
                 <span class="eyebrow">POSITION / TIMING</span>

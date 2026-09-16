@@ -78,7 +78,11 @@ test('area travel bypasses encounters and normal rewards bank immediately',()=>{
  assert.equal(t.pveLogic.startEncounter('goblin'),true); quiet(t); victory(t);
  const exp=t.state.inventory.exp, gold=t.state.resources.gold; assert.ok(exp>0); assert.ok(gold>0);
  t.pveLogic.advance(.1); assert.equal(t.state.inventory.exp,exp); assert.equal(t.state.resources.gold,gold);
- assert.equal(t.pveLogic.returnToRegion(),true); assert.equal(t.state.world.status,'exploring');
+ // A victory retires the fight on the spot -- there is no result screen to sit
+ // on, so the region is already handed back by the time `advance` returns.
+ assert.equal(t.state.pveBattle.ended,true); assert.equal(t.state.pveBattle.active,false);
+ assert.equal(t.pveLogic.returnToRegion(),false, 'nothing left to return from');
+ assert.equal(t.state.world.status,'exploring');
  assert.equal(t.loops.size,0);
 });
 
@@ -91,14 +95,20 @@ test('C boss unlocks D once and never becomes a valid encounter again',()=>{
  assert.equal(t.pveLogic.travel('d'),true); assert.equal(t.state.progress.currentRegionId,'d');
 });
 
-test('simulation owns regen; paused battle has no HP or time drift; choice regen remains',()=>{
+test('simulation owns regen; paused battle has no HP or time drift; a retired fight gives it back',()=>{
  const t=setup(); t.state.base.buildings.hotSpring=2; t.state.player.currentHp=50; t.pveLogic.enterDungeon(); quiet(t);
  t.tick.loop(); t.tick.loop(); assert.equal(t.state.player.currentHp,50);
  seconds(t,2); assert.equal(t.state.player.currentHp,53);
  t.pveLogic.pause(); const time=t.state.pveBattle.spatial.time;
  t.tick.loop(); seconds(t,2); assert.equal(t.state.player.currentHp,53); assert.equal(t.state.pveBattle.spatial.time,time);
- t.pveLogic.resume(); quiet(t); victory(t); t.tick.loop(); assert.equal(t.state.player.currentHp,55);
- t.c.document.hidden=true; t.tick.loop(); t.tick.loop(); assert.equal(t.state.player.currentHp,55);
+ // A victory retires the fight by itself, so the tick owns regen again -- and
+ // the hot spring is a BASE facility: out in the field it heals nothing, which
+ // is exactly the status this leaves behind.
+ t.pveLogic.resume(); quiet(t); victory(t);
+ assert.equal(t.state.pveBattle.active,false); assert.equal(t.state.world.status,'exploring');
+ const walk=t.state.player.currentHp;
+ t.tick.loop(); t.tick.loop();
+ assert.ok(t.state.player.currentHp - walk <= 1, 'the spring must not reach past the base');
 });
 
 test('all four skills retain costs; full charge awaits swipe, cancellation spends no AP',()=>{

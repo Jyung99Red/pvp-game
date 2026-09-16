@@ -36,10 +36,11 @@ PeerJS 不参与首屏加载。`core/client_dependencies.js` 在创建/加入房
 - 冲刺预警是路径提示。实际扫掠半宽为路径半宽加怪物碰撞半径，接触判定再计入玩家半径；保持窄线预警供玩家结合模型体积预判。当前位置到锁定终点的预警随剩余距离缩短，碰撞/命中结束冲刺，失衡不被普通收招覆盖。
 - PVP 主机以 10ms 步长判定，约 50ms 发送快照。客机预测操作、平滑位置校正，HP/结果来自主机；双方攻击先收集再结算。空间拼刀仍未实现。
 - PVP v9 / rule v5；公平与养成分房匹配，公平模式不读取成长。570×630 的 L 墙场地；PVE 510×566，训练 360×400。正式镜头 350×390，客机固定翻转 180 度，技能方向保持屏幕坐标。
+- 区域战斗没有结算界面（除阵亡）：胜利当场入账、立刻交还走路，战报作为一行会过期的 log 写在地图浮层上；撤退/脱战走同一条交还路径，并把人物交回战斗真正结束的位置，而不是开战点。只有阵亡才回据点。
 - PVE 暂停后保留本场状态，恢复时提示继续；PVP 设置不停战，隐藏、断线或超时结束对局。PVP 不写成长收益。
 
 ## 验证
 
-`node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs`
+`node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs tests/adventure-world.test.cjs tests/region-combat.test.cjs`
 
-启动测试覆盖资源重试、CSS 应用门槛、样式恢复、联机依赖超时/重试与取消。战斗测试覆盖输入、伤害、技能、生命周期和网络同步；真实手机的渲染与网络体验仍需实机验证。浏览器测试使用隔离存档的 `tests/base-browser.html` 和 `tests/pvp-browser.html`，训练本身不读成长存档。
+启动测试覆盖资源重试、CSS 应用门槛、样式恢复、联机依赖超时/重试与取消。战斗测试覆盖输入、伤害、技能、生命周期和网络同步；`adventure-world` 覆盖行走、传送门朝向/落点与建筑接近判定，`region-combat` 覆盖区域内的开战/脱战、怪物重生与交互分派。真实手机的渲染与网络体验仍需实机验证。浏览器测试使用隔离存档的 `tests/base-browser.html` 和 `tests/pvp-browser.html`，训练本身不读成长存档。

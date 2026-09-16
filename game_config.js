@@ -129,7 +129,14 @@ const gameConfig = (() => {
         // floats over it; the PVE/PVP/training views keep their own insets.
         adventure: {
             goldPerExp: 0.60,
-            camera: { zoom: 1, top: 0, bottom: 0, inset: 0, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 }
+            camera: { zoom: 1, top: 0, bottom: 0, inset: 0, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 },
+            // How close the walker has to stand for a structure to become the
+            // interact target, and how much further out it may drift before the
+            // prompt drops it again (the gap is the anti-flicker hysteresis).
+            structureRange: 56, structureRelease: 68,
+            // A defeated region monster comes back this long after it fell.
+            // Bosses never do: `progress.defeatedBosses` is what keeps them down.
+            monsterRespawnSeconds: 60
         },
         enemyDefaults: { apMax: 5, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
             enrageThreshold: 0, enrageAtkMult: 1.3, enrageSpdMult: 1.2 },
@@ -433,8 +440,35 @@ const gameConfig = (() => {
                 a: {
                     id: 'a', name: '曙光据点', kind: 'safe',
                     desc: '安全的主基地，可整备并前往晨雾原野。',
-                    map: { width: 1200, height: 900, playerSpawn: { x: 260, y: 610 } },
-                    exits: [{ to: 'b', label: '北门 · 晨雾原野', portal: { x: 1120, y: 450, angle: 0 } }],
+                    // The base IS this region: no monsters, and every facility is a
+                    // structure the walker stands next to and interacts with.
+                    // `kind` is what pveLogic.interact dispatches on; `radius`
+                    // defaults to adventure.structureRange. Keep every structure
+                    // clear of a portal -- a gate chevron is found by its drawn
+                    // geometry in tests, and an overlapping marker confuses it.
+                    map: {
+                        width: 1200, height: 900, playerSpawn: { x: 260, y: 610 },
+                        structures: [
+                            { id: 'a-hotspring', kind: 'hotSpring', label: '温泉',       x: 300,  y: 300 },
+                            { id: 'a-smithy',    kind: 'smithy',    label: '铁匠铺',     x: 640,  y: 210 },
+                            { id: 'a-shop',      kind: 'shop',      label: '商店',       x: 640,  y: 520 },
+                            { id: 'a-storage',   kind: 'storage',   label: '仓库',       x: 300,  y: 780 },
+                            { id: 'a-training',  kind: 'training',  label: '走位训练场', x: 920,  y: 720 },
+                            { id: 'a-build',     kind: 'build',     label: '建设管理',   x: 1000, y: 240 }
+                        ]
+                    },
+                    exits: [
+                        { to: 'b', label: '北门 · 晨雾原野', portal: { x: 1120, y: 450, angle: 0 } },
+                        // Fast travel out of the base, unlocked by the dragon. Each
+                        // of these needs a matching return gate in its target (a
+                        // one-way pair is rejected by the region tests), and the
+                        // return landing at the far side of the gate must clear the
+                        // 52px exit trigger -- hence the two portals being spaced
+                        // apart on the south edge. Region a's own back-gates sit far
+                        // from both, so an arrival cannot bounce straight back out.
+                        { to: 'c', label: '南侧山道 · 熔岩巢穴', requiresBoss: 'elder_dragon', portal: { x: 1080, y: 800, angle: Math.PI / 2 } },
+                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 880, y: 810, angle: Math.PI / 2 } }
+                    ],
                     encounters: []
                 },
                 b: {
@@ -466,7 +500,11 @@ const gameConfig = (() => {
                     },
                     exits: [
                         { to: 'b', label: '西侧山道 · 晨雾原野', portal: { x: 120, y: 530, angle: Math.PI } },
-                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 1960, y: 470, angle: 0 } }
+                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 1960, y: 470, angle: 0 } },
+                        // Straight home. Placed against the south edge, far from
+                        // both the drake and the boss, so arriving back here is
+                        // never inside an aggro ring.
+                        { to: 'a', label: '回城传送门 · 曙光据点', portal: { x: 200, y: 1250, angle: Math.PI / 2 } }
                     ],
                     encounters: ['young_dragon'],
                     boss: { enemyId: 'elder_dragon', unlocks: ['d'] }
@@ -482,7 +520,10 @@ const gameConfig = (() => {
                             { id: 'd-golem-1', enemyId: 'stone_golem', x: 1860, y: 450, patrolRadius: 45, alertRange: 135, encounterRange: 70, speed: 38, leash: 250 }
                         ]
                     },
-                    exits: [{ to: 'c', label: '裂隙回程 · 熔岩巢穴', portal: { x: 120, y: 470, angle: Math.PI } }],
+                    exits: [
+                        { to: 'c', label: '裂隙回程 · 熔岩巢穴', portal: { x: 120, y: 470, angle: Math.PI } },
+                        { to: 'a', label: '回城传送门 · 曙光据点', portal: { x: 190, y: 1380, angle: Math.PI / 2 } }
+                    ],
                     encounters: ['skeleton_warrior', 'shadow_assassin', 'stone_golem']
                 }
             },

@@ -8,10 +8,14 @@
 const uiAdventure = (() => {
     let view = null, input = null, settings = null, abort = null;
     let version = 0, actionVersion = 0, renderedAt = 0, lastAt = 0;
-    let raf = null, mounted = false, paused = false, hint = null;
+    let raf = null, mounted = false, paused = false, hint = null, interactLabel = null;
     const $ = id => document.getElementById(id);
     const root = () => $('view-adventure');
     const _setClass = (id, name, enabled) => $(id)?.classList.toggle(name, enabled);
+    const _setText = (id, text) => { const node = $(id); if (node) node.textContent = text; };
+    const _setLabel = (id, value) => { const node = $(id); if (node) node.setAttribute('aria-label', value); };
+    const WALK_PAD_HINT = '拖动移动键行走；走近建筑后点击中央键与之交互';
+    const FIGHT_PAD_HINT = '拖动移动；短按轻击；原位长按蓄力后拖动移动转向，圈外松手重击，回落指点松手取消';
     // Walking reads the solo preset; fighting reads the fight's own. Every shared
     // surface -- input dispatch, combat settings, the rendered snapshot -- points
     // at whichever of the two is live, so neither mode needs its own plumbing.
@@ -25,10 +29,18 @@ const uiAdventure = (() => {
     // set here rather than left to the markup.
     function setFightHud(fighting) {
         root()?.classList.toggle('walking', !fighting);
-        if (fighting) return;
+        if (fighting) {
+            // The pad is a weapon again, so put back the wording walk mode
+            // replaced (screen readers only -- the visible label is the view's).
+            _setLabel('adv-s-move-pad', FIGHT_PAD_HINT);
+            return;
+        }
         const region = content.regions[state.progress.currentRegionId];
-        $('adv-floor-label').textContent = region ? region.name : '区域地图';
-        $('adv-enemy-name').textContent = '探索中';
+        // Unmount can run on a page that never mounted the region partial (the
+        // PVP browser fixture loads every script but only the PVP markup), so
+        // these two are looked up rather than assumed.
+        _setText('adv-floor-label', region ? region.name : '区域地图');
+        _setText('adv-enemy-name', '探索中');
     }
     // Region hints are written here rather than in adventure_world, which owns no
     // DOM. A notice (a blocked gate) outranks the region's resting line.
@@ -48,6 +60,33 @@ const uiAdventure = (() => {
         $('adv-enemy-name').textContent = eData.name;
         $('adv-enemy-vital').textContent = eData.name;
     }
+    // The move pad is the only movement control, and while a building is in
+    // reach it is also the interact key: a tap opens the building, a drag still
+    // walks. Walking's own resting label ("移动") comes from the shared view --
+    // only the interact prompt and the screen-reader wording are managed here.
+    // While a gesture is live the view owns the label ("移动中", "松手 · 重击")
+    // and this runs after it every frame, so writing then would fight it; the
+    // cache key is what keeps the DOM untouched between changes.
+    function syncInteractPad(engine) {
+        const pad = $('adv-s-move-pad'), label = $('adv-s-move-label');
+        if (!pad || !label) return;
+        const target = isFighting() ? null : adventureWorld.scene()?.interaction;
+        if (engine.move || engine.action || isFighting()) {
+            pad.classList.remove('interact-ready'); interactLabel = null; return;
+        }
+        pad.classList.toggle('interact-ready', !!target);
+        const key = target ? `interact:${target.id}` : 'walk';
+        if (key === interactLabel) return;
+        interactLabel = key;
+        if (!target) { pad.setAttribute('aria-label', WALK_PAD_HINT); return; }
+        label.textContent = `交互 · ${target.label}`;
+        pad.setAttribute('aria-label', `点击与${target.label}交互；拖动仍然是移动`);
+        // The resting notice would otherwise advertise an attack the tap is not
+        // going to make. It is only overridden while a target is held: the view
+        // restores its own line (charge %, queued command, a sealed gate) as
+        // soon as the target is gone.
+        $('adv-s-notice').textContent = `点击中央键与${target.label}交互 · 拖动仍是移动`;
+    }
     function syncSkillPad(engine) {
         const b = state.pveBattle, pad = $('adv-s-skill-pad');
         if (!pad) return;
@@ -56,7 +95,7 @@ const uiAdventure = (() => {
             if (!node) continue;
             // A solo engine never banks SP, so walking leaves every skill
             // unavailable without needing a special case here.
-            const unavailable = !engine.running || !b?.active || b.waitingChoice ||
+            const unavailable = !engine.running || !b?.active ||
                 b.skillPoints < skill.cost || (kind === 'heal' && b.player.hp >= b.player.maxHp);
             node.classList.toggle('unavailable', unavailable);
             node.setAttribute('aria-disabled', String(unavailable));
@@ -82,10 +121,11 @@ const uiAdventure = (() => {
             $('adv-s-log').textContent = '';
         }
         syncSkillPad(engine);
+        syncInteractPad(engine);
         syncHint();
     }
     function hideOverlays() {
-        _setClass('adv-win-overlay', 'hidden', true); _setClass('adv-defeat-overlay', 'hidden', true);
+        _setClass('adv-defeat-overlay', 'hidden', true);
         if ($('adv-s-overlay')) $('adv-s-overlay').hidden = true;
     }
     function _frame(now) {
@@ -126,8 +166,17 @@ const uiAdventure = (() => {
             release: (channel, cancelled) => {
                 const e = active();
                 if (!e) return;
+                // Standing in reach of a building, a tap on the move pad is the
+                // interact key rather than a swing at empty air. `suppressTap` is
+                // the engine's own "this gesture is not a tap" flag, so the engine
+                // needs no new surface for this; setting it BEFORE the release is
+                // what stops the light attack from being dispatched.
+                const interacting = channel === 'move' && !cancelled && !isFighting() &&
+                    !!adventureWorld.scene()?.interaction && e.move?.mode === 'pending';
+                if (interacting) e.move.suppressTap = true;
                 const kind = spatialEngine.release(e, channel, cancelled);
                 if (channel === 'skill' && kind) pveLogic.useSkill(kind);
+                else if (interacting) pveLogic.interact();
             }
         });
         window.addEventListener('blur', () => pveLogic.pause(), { signal });
@@ -158,7 +207,7 @@ const uiAdventure = (() => {
                 startLoop(); updateFrame();
                 return true;
             }
-            mounted = true; renderedAt = 0; hint = null;
+            mounted = true; renderedAt = 0; hint = null; interactLabel = null;
             view = uiSpatialBattle.create(rootEl, engine.config, 'adv-s-', {
                 canvasId: 'adventure-world', layer: { world: (ctx, offer) => adventureWorld.worldLayer(ctx, offer) }
             });
@@ -224,22 +273,9 @@ const uiAdventure = (() => {
             if (value) { stopLoop(); paused = true; } else startLoop();
         },
         showPause(show) { if ($('adv-s-overlay')) $('adv-s-overlay').hidden = !show; updateFrame(); },
-        showWinChoice(drops, exp, gold, isBoss) {
-            const lootEl = document.getElementById('adv-win-loot');
-            if (lootEl) {
-                let html = `🧪 EXP +${exp} &nbsp; 💰 +${gold}`;
-                html += `<br><span style="color:#e9c46a;">奖励已立即入账</span>`;
-                if (isBoss) html += `<br><span style="color:#b9d69d;">首领已击败，新的区域入口已开启。</span>`;
-                if (drops && drops.length) {
-                    html += '<br>' + drops.map(d => {
-                        const m = content.materials[d.id];
-                        return `${m.icon} ${m.name} ×${d.amt}`;
-                    }).join('　');
-                }
-                lootEl.innerHTML = html;
-            }
-            _setClass('adv-win-overlay', 'hidden', false);
-        },
+        // Victory has no screen of its own: `pveLogic._onVictory` banks the
+        // rewards and hands the region straight back, and the summary is written
+        // into the region's own log line.
         showDefeat() { _setClass('adv-defeat-overlay', 'hidden', false); },
         hideOverlays
     };

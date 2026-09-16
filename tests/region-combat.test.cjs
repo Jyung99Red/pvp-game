@@ -147,3 +147,95 @@ test('a walking monster still aggros into a fight on contact', () => {
     assert.ok(t.state.pveBattle?.active, 'contact must start a fight');
     assert.equal(t.state.world.status, 'fighting');
 });
+
+test('a victory banks its rewards and puts the walk straight back, with no screen', () => {
+    const t = setup();
+    const scene = t.adventureWorld.scene(), monster = t.monster('b-goblin-1');
+    t.pveLogic.startEncounter('goblin', monster.id);
+    const b = t.state.pveBattle, exp = t.state.inventory.exp, gold = t.state.resources.gold;
+    // What the fight left behind: the player somewhere else, the enemy dead.
+    b.spatial.player.x = scene.player.x + 40; b.spatial.player.y = scene.player.y + 25;
+    b.enemy.hp = 0;
+    t.pveLogic.advance(.01);
+
+    assert.ok(t.state.inventory.exp > exp && t.state.resources.gold > gold, 'rewards bank on the spot');
+    assert.equal(monster.alive, false);
+    assert.equal(b.ended, true);
+    assert.equal(b.active, false, 'nothing is left waiting for the player');
+    assert.equal(t.state.world.status, 'exploring');
+    // The region body is told where the fight actually ended, or the resume would
+    // snap the walker back to where the encounter started.
+    assert.deepEqual([scene.player.x, scene.player.y], [b.spatial.player.x, b.spatial.player.y]);
+    // What replaced the result screen: a line in the region's own log, which
+    // expires rather than becoming the region's permanent description.
+    assert.match(scene.notice, /击败/);
+    t.frames(7 * 60);
+    assert.equal(scene.notice, '');
+});
+
+test('a defeated region monster comes back on the region clock', () => {
+    const t = setup();
+    const goblin = t.monster('b-goblin-1');
+    // What a victory does to the map body (pveLogic._onVictory).
+    t.adventureWorld.completeEncounter(goblin.id);
+    assert.equal(goblin.alive, false);
+
+    const delay = vm.runInContext('gameConfig.adventure.monsterRespawnSeconds', t.c);
+    t.frames(Math.ceil((delay - 5) * 60));
+    assert.equal(goblin.alive, false, 'still down before its timer elapses');
+
+    // Just past the timer: alive, and standing on its post rather than wherever
+    // it fell. (It walks off on patrol a moment later, hence the one-frame read.)
+    t.frames(5 * 60 + 2);
+    assert.equal(goblin.alive, true, 'back on the region clock');
+    assert.equal(goblin.phase, 'idle');
+    assert.ok(Math.hypot(goblin.x - goblin.home.x, goblin.y - goblin.home.y) < 1, 'revived at its post');
+});
+
+test('a defeated boss stays down: respawning is for the region, not for progress', () => {
+    const t = setup({ region: 'c' });
+    const boss = t.monster('c-elder-dragon');
+    assert.ok(boss?.boss, 'region c authors a boss body');
+    t.adventureWorld.completeEncounter(boss.id);
+    t.state.progress.defeatedBosses[boss.enemyId] = true;
+    t.frames(180 * 60);
+    assert.equal(boss.alive, false);
+});
+
+test('the hot spring restores the walker and the body the region carries', () => {
+    const t = setup({ region: 'a' });
+    const scene = t.adventureWorld.scene();
+    const spring = scene.structures.find(item => item.kind === 'hotSpring');
+    assert.ok(spring, 'the safe region authors a hot spring');
+
+    t.state.player.currentHp = 12;
+    scene.field.player.hp = 12;
+    scene.player.x = spring.x; scene.player.y = spring.y + 20;
+    t.frames(1);
+    assert.equal(scene.interaction?.kind, 'hotSpring', 'standing in reach is what arms the interact key');
+
+    assert.equal(t.pveLogic.interact(), true);
+    assert.equal(t.state.player.currentHp, vm.runInContext('player.getStats().maxHp', t.c));
+    // The walking engine holds its own copy of the body: leaving it at 12 would
+    // start the next fight from the old HP.
+    assert.equal(scene.field.player.hp, scene.field.player.maxHp);
+});
+
+test('an unbuilt facility opens the build panel instead of its own', () => {
+    const t = setup({ region: 'a' });
+    const scene = t.adventureWorld.scene();
+    const smithy = scene.structures.find(item => item.kind === 'smithy');
+    // The stub `ui` carries only what pveLogic already called; the panel openers
+    // are added here so the dispatch can be observed.
+    vm.runInContext('var OPENED = []; ui.openBuildingModal = () => OPENED.push("build"); ui.openSmithyModal = () => OPENED.push("smithy");', t.c);
+
+    t.state.base.buildings.smithy = 0;
+    scene.player.x = smithy.x; scene.player.y = smithy.y + 20;
+    t.frames(1);
+    assert.equal(t.pveLogic.interact(), true);
+    assert.deepEqual([...vm.runInContext('OPENED', t.c)], ['build'], 'nothing to walk into yet: the build panel is the only door');
+
+    t.state.base.buildings.smithy = 1;
+    t.pveLogic.interact();
+    assert.deepEqual([...vm.runInContext('OPENED', t.c)], ['build', 'smithy']);
+});

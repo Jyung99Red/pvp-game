@@ -5,9 +5,19 @@ window.devCheat = function() {
     ui.updateBase();
 };
 
+// Which element each tab shows. The safe region IS the base, so the two tabs
+// resolve to the one region view; everything else follows the id convention.
+const VIEW_OF_TAB = Object.freeze({ base: 'view-adventure', adventure: 'view-adventure' });
+
 const ui = {
     init() {
         save.load();   // Read the local save back into state first, then render the UI
+
+        // `save` keeps the region but not the status, so a reload while out in
+        // the world would otherwise come back labelled 'base' -- which grants
+        // base-rate regen in a danger region, lets the training page be entered
+        // from anywhere, and silently blocks every region encounter.
+        state.world.status = state.progress.currentRegionId === 'a' ? 'base' : 'exploring';
 
         // Build building list
         this.updateBuildingList();
@@ -19,7 +29,10 @@ const ui = {
 
         this.updateBase();
         this.updateEquip();
-        this.switchTab('base');
+        // Land where the save left the player: the safe region of the base, or
+        // the region they were exploring. Both show the same view; the tab only
+        // decides what the toast is allowed to mirror.
+        this.switchTab(state.world.status === 'base' ? 'base' : 'adventure');
         tick.start();
         save.startAutosave();
         this.log("系统已加载。");
@@ -66,7 +79,19 @@ const ui = {
         });
         document.body.classList.toggle('camp-modal-open', !!top);
         document.querySelectorAll('.view-section, .nav-bar').forEach(node => { node.inert = !!top; });
+        // `inert` does not release a held pointer, and it does not stop the
+        // region simulation: with a modal open, a thumb still resting on the
+        // move pad would keep walking -- through a gate, or into a monster --
+        // behind the dialog. Freeze the whole session for as long as the first
+        // modal is up (the pause overlay has its own resume path).
+        const region = typeof uiAdventure !== 'undefined' ? uiAdventure : null;
+        if (top && !this._modalFrozen) { this._modalFrozen = true; region?.clearInputs(); region?.setPaused(true); }
+        else if (!top && this._modalFrozen) {
+            this._modalFrozen = false;
+            if (!(typeof pveLogic !== 'undefined' && pveLogic.isPaused())) region?.setPaused(false);
+        }
     },
+    _modalFrozen: false,
     openPanel(id) {
         if (!this._panels.some(p => p.id === id)) this._panels.push({ id, trigger: document.activeElement });
         this._syncPanels();
@@ -84,10 +109,6 @@ const ui = {
     closeInventoryModal() { this.closePanel('inventory-overlay'); },
     openBuildingModal() { this.updateBuildingList(); this.openPanel('building-overlay'); },
     closeBuildingModal() { this.closePanel('building-overlay'); },
-
-    openAdventure() {
-        pveLogic.openAdventure();
-    },
 
     enterTraining() {
         if (state.world.status !== 'base' || (state.pvpBattle && state.pvpBattle.active) || pvpNet.role) return;
@@ -112,13 +133,23 @@ const ui = {
             return;
         }
 
-        if (tabId !== 'adventure' && typeof uiAdventure !== 'undefined') uiAdventure.unmount();
+        // The safe region and the base are the same place, so both tabs show the
+        // one region view. The region view is the only place the world is drawn,
+        // fighting included, so there is no separate battle tab to fill either.
+        const viewId = VIEW_OF_TAB[tabId] || `view-${tabId}`;
+        const region = viewId === 'view-adventure';
+        if (!region && typeof uiAdventure !== 'undefined') uiAdventure.unmount();
         state.world.currentTab = tabId;
+        // Read by the stylesheets that need to know the region view is up (the
+        // toast sits above the control cluster there).
+        document.body.classList.toggle('region-view', region);
         if (tabId !== 'base') document.getElementById('camp-toast')?.replaceChildren();
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
-        document.getElementById(`view-${tabId}`).classList.remove('hidden');
+        // Unhide before mounting: the view measures its canvas on create, and a
+        // `display: none` root measures 0x0.
+        document.getElementById(viewId).classList.remove('hidden');
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-        
+
         // Safely check and activate the corresponding tab element if it exists
         const tabEl = document.getElementById(`tab-${tabId}`);
         if (tabEl) {
@@ -126,9 +157,7 @@ const ui = {
         }
 
         if (tabId === 'base') this.updateEquip();
-        // The region view is the only place the world is drawn, fighting included,
-        // so there is no empty battle tab to fill.
-        if (tabId === 'adventure') { this.updateAdventure(); uiAdventure.mount(); }
+        if (region) { this.updateAdventure(); uiAdventure.mount(); }
 
         // Mapping hooks for PVP view transitions
         if (tabId === 'pvp-room') {
@@ -151,14 +180,12 @@ const ui = {
             smithy: { mark: '锻', label: '铁匠铺', desc: '使用战利品材料制作装备', detail: () => '装备制作', open: 'openSmithyModal' },
             shop: { mark: '商', label: '商店', desc: '使用金币购买制作材料', detail: () => '材料补给', open: 'openShopModal' }
         };
-        let rows = '', cards = '';
+        let rows = '';
         for (const [key, def] of Object.entries(defs)) {
             const lv = state.base.buildings[key] || 0, cost = this._buildingUpgradeCost(key).amt;
             const unlocked = key !== 'hotSpring' && lv > 0;
-            cards += `<button class="facility ${lv ? 'is-built' : ''}" onclick="ui.${lv ? def.open : 'openBuildingModal'}()"><span class="facility-mark">${def.mark}</span><strong>${def.label}</strong><small>${lv ? `Lv.${lv} · ${def.detail(lv)}` : `未建造 · ${cost} 金币`}</small></button>`;
             rows += `<article class="facility-row"><span class="facility-mark">${def.mark}</span><div><h3>${def.label} <small>Lv.${lv}</small></h3><p>${def.desc}</p><small>${unlocked ? '设施已开放' : `${lv ? `当前 ${def.detail(lv)} · 升级` : '建造'}需要 ${cost} 金币`}</small></div><button class="${unlocked ? 'camp-primary' : 'camp-action'}" onclick="ui.${unlocked ? `${def.open}()` : `upgradeBuilding('${key}')`}" ${!unlocked && state.resources.gold < cost ? 'disabled' : ''}>${unlocked ? '进入 →' : lv ? '升级' : '建造'}</button></article>`;
         }
-        this._setHtml('base-building-list', cards);
         this._setHtml('building-list', rows);
     },
 
@@ -302,12 +329,16 @@ const ui = {
 
     log(msg) {
         const logDiv = document.getElementById('log');
+        if (!logDiv) return;
         const d = new Date();
         const t = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
         logDiv.insertAdjacentHTML('beforeend', `<div class="log-entry">[${t}] ${msg}</div>`);
         logDiv.scrollTop = logDiv.scrollHeight;
         const toast = document.getElementById('camp-toast');
-        if (toast && state.world.currentTab === 'base') {
+        // `#log` itself only ever shows on the base panel page, which no longer
+        // exists -- the toast is the visible log now, so it follows the player
+        // into the region view too.
+        if (toast && ['base', 'adventure'].includes(state.world.currentTab)) {
             toast.textContent = logDiv.lastElementChild.textContent.replace(/^\[.*?\] /, '');
             clearTimeout(this._toastTimer);
             this._toastTimer = setTimeout(() => { toast.textContent = ''; }, 2400);
@@ -387,7 +418,8 @@ const ui = {
             return `<button class="inv-cell has-item ${c.kind === 'equipped' ? 'equipped' : c.kind === 'material' ? 'is-material' : ''}" onclick="ui.${action}"><span class="cell-badge">${c.kind === 'equipped' ? `已装备 · ${content.slotMeta[c.slot].label}` : c.kind === 'material' ? '材料' : '装备'}</span><span class="cell-icon">${c.item.icon}</span><span class="cell-name">${c.item.name}${enh ? ` +${enh}` : ''}</span><span class="cell-qty">×${c.qty}</span></button>`;
         }).join('');
         this._setHtml('inventory-grid', html || '<div class="inventory-empty"><strong>暂无物品</strong><span>试试其他分类或搜索词；探索可获取材料。</span></div>');
-        document.getElementById('inv-count').textContent = `${filtered.length} 项`;
+        const count = document.getElementById('inv-count');
+        if (count) count.textContent = `${filtered.length} 项`;
     },
     openMaterialModal(id) {
         const m = content.materials[id];
@@ -432,24 +464,38 @@ const ui = {
         this.openPanel('modal-overlay');
     },
 
+    // The character sheet lives in a modal now, so every write here is against
+    // a node that may simply not be in the page (the modal is loaded with the
+    // rest of the partials, but the pvp-only browser fixture loads neither).
+    // `core/tick.js` calls this once a second, and `player.js` calls it in the
+    // middle of crafting/equipping/levelling -- an unguarded lookup would break
+    // those flows, not just the clock.
     updateBase() {
+        const $ = id => document.getElementById(id);
         const t = state.time, h = state.player, stats = player.getStats(), cost = h.level * gameConfig.progression.levelExpPerLevel;
         const period = { day: '白昼', dusk: '黄昏', night: '深夜' }[t.period] || '深夜';
-        document.getElementById('time-display').textContent = `第 ${t.days} 天 / ${String(t.hours).padStart(2, '0')}:${String(t.minutes).padStart(2, '0')} / ${period}`;
-        const currentRegion = content.regions[state.progress.currentRegionId] || content.regions.a;
-        this._setHtml('resource-display', `<div><span>可用金币</span><strong class="gold-number">${state.resources.gold.toLocaleString()}</strong></div><div><span>持有经验</span><strong>${state.inventory.exp.toLocaleString()}</strong></div><div><span>当前位置</span><strong>${currentRegion.name}</strong></div>`);
-        document.getElementById('player-level-info').textContent = `Lv.${h.level}`;
-        this._setHtml('player-display-stats', [['攻击', stats.atk], ['防御', stats.def], ['心眼', stats.insight], ['专注', Number(stats.focus).toFixed(1)], ['暴击', `${Math.round(player.getCritChance() * 100)}%`]].map(([label,value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join(''));
-        const btn = document.getElementById('btn-lvl-up');
-        btn.disabled = state.inventory.exp < cost; btn.textContent = '角色升级 ↑';
-        document.getElementById('base-exp-text').textContent = `升级经验 ${state.inventory.exp} / ${cost}`;
-        document.getElementById('base-exp-fill').style.width = `${Math.min(100, state.inventory.exp / cost * 100)}%`;
-        document.getElementById('base-player-hp').style.width = `${Math.max(0, Math.min(100, h.currentHp / stats.maxHp * 100))}%`;
-        document.getElementById('base-player-hp-txt').textContent = `${Math.floor(h.currentHp)} / ${stats.maxHp}`;
-        document.getElementById('base-deploy-region').textContent = currentRegion.id === 'a' ? '从北门前往晨雾原野' : `继续：${currentRegion.name}`;
+        const clock = $('time-display');
+        if (clock) clock.textContent = `第 ${t.days} 天 / ${String(t.hours).padStart(2, '0')}:${String(t.minutes).padStart(2, '0')} / ${period}`;
+        const level = $('char-level');
+        if (level) level.textContent = `Lv.${h.level}`;
+        this._setHtml('char-stats', [['攻击', stats.atk], ['防御', stats.def], ['心眼', stats.insight], ['专注', Number(stats.focus).toFixed(1)], ['暴击', `${Math.round(player.getCritChance() * 100)}%`]].map(([label,value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join(''));
+        const btn = $('btn-lvl-up');
+        if (btn) { btn.disabled = state.inventory.exp < cost; btn.textContent = '角色升级 ↑'; }
+        const expText = $('char-exp-text');
+        if (expText) expText.textContent = `升级经验 ${state.inventory.exp} / ${cost}`;
+        const expFill = $('char-exp-fill');
+        if (expFill) expFill.style.width = `${Math.min(100, state.inventory.exp / cost * 100)}%`;
+        const hpFill = $('char-hp-fill');
+        if (hpFill) hpFill.style.width = `${Math.max(0, Math.min(100, h.currentHp / stats.maxHp * 100))}%`;
+        const hpText = $('char-hp-text');
+        if (hpText) hpText.textContent = `${Math.floor(h.currentHp)} / ${stats.maxHp}`;
+        const gold = $('char-gold');
+        if (gold) gold.textContent = state.resources.gold.toLocaleString();
         document.querySelectorAll('[data-camp-gold]').forEach(n => { n.textContent = state.resources.gold.toLocaleString(); });
         this.updateBuildingList();
     },
+    openCharacterModal() { this.updateBase(); this.updateEquip(); this.openPanel('character-overlay'); },
+    closeCharacterModal() { this.closePanel('character-overlay'); },
     updateAdventure() {
         const region = content.regions[state.progress.currentRegionId];
         if (!region) return;

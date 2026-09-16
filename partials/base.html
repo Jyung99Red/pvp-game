@@ -1,25 +1,20 @@
-<!-- Base command panel -->
-<div id="view-base" class="view-section camp">
-    <header class="camp-heading"><div><span class="eyebrow">冒险者据点</span><h1>基地</h1></div><span class="status-chip"><i></i> 安全区域</span></header>
-    <div id="resource-display" class="camp-resources"></div>
-    <section class="camp-panel" id="player-equip-panel">
-        <div class="camp-section-head"><h2><span>01</span> 角色状态</h2><span id="player-level-info" class="level-chip"></span></div>
-        <div class="vital-line"><span>生命值</span><strong id="base-player-hp-txt">—</strong></div>
-        <div class="bar-wrap" id="base-player-hp-wrap"><div id="base-player-hp" class="bar-inner hp-bar"></div></div>
-        <div id="player-display-stats" class="camp-stats"></div>
-        <div class="level-row"><div class="exp-info"><span id="base-exp-text"></span><div class="exp-track"><i id="base-exp-fill"></i></div></div><button onclick="player.levelUp()" id="btn-lvl-up" class="camp-action">角色升级 ↑</button></div>
+<!-- The base no longer has a panel page of its own: it IS the safe region, drawn
+     by the region view, where every facility is a building you walk up to. This
+     partial is now just the dialogs those buildings open, plus the toast. -->
+<div id="character-overlay" class="camp-overlay camp" aria-hidden="true">
+    <section id="character-box" class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="character-title" tabindex="-1">
+        <header class="camp-dialog-head"><div><span class="eyebrow">冒险者</span><h2 id="character-title">角色状态 <span id="char-level" class="level-chip"></span></h2></div><button class="dialog-close" onclick="ui.closeCharacterModal()" aria-label="关闭角色状态">×</button></header>
+        <div class="dialog-wallet">可用金币 <strong id="char-gold">0</strong></div>
+        <div class="camp-dialog-body">
+            <div class="vital-line"><span>生命值</span><strong id="char-hp-text">—</strong></div>
+            <div class="bar-wrap" id="char-hp-wrap"><div id="char-hp-fill" class="bar-inner hp-bar"></div></div>
+            <div id="char-stats" class="camp-stats"></div>
+            <div class="level-row"><div class="exp-info"><span id="char-exp-text"></span><div class="exp-track"><i id="char-exp-fill"></i></div></div><button onclick="player.levelUp()" id="btn-lvl-up" class="camp-action">角色升级 ↑</button></div>
+            <div class="camp-section-head equip-head"><h2>当前装备</h2><button onclick="ui.openInventoryModal()" class="text-action">打开背包 ↗</button></div>
+            <div id="equip-slots" class="camp-equipment"></div>
+        </div>
+        <details class="camp-tools"><summary>开发工具</summary><div class="btn-row"><button onclick="devCheat()" id="dev-cheat-btn" class="btn-dev">等级 +1 / 金币 +50</button><button onclick="save.resetToInitial()" id="dev-reset-btn" class="btn-dev">重置存档</button></div></details>
     </section>
-    <section class="camp-panel">
-        <div class="camp-section-head"><h2><span>02</span> 当前装备</h2><button onclick="ui.openInventoryModal()" class="text-action">打开背包 ↗</button></div>
-        <div id="equip-slots" class="camp-equipment"></div>
-    </section>
-    <section class="camp-panel">
-        <div class="camp-section-head"><h2><span>03</span> 基地设施</h2><button onclick="ui.openBuildingModal()" class="text-action">建设管理 ↗</button></div>
-        <div id="base-building-list" class="camp-facilities"></div>
-    </section>
-    <section class="camp-deploy"><div><span class="eyebrow">下一次探索</span><h2>区域地图 <span id="base-deploy-region"></span></h2></div><button onclick="ui.openAdventure()" class="camp-primary">出发 <span>→</span></button></section>
-    <button onclick="ui.enterTraining()" class="training-link"><span>◎ 走位训练场</span><small>练习操作与技能 ↗</small></button>
-    <details class="camp-tools"><summary>开发工具</summary><div class="btn-row"><button onclick="devCheat()" id="dev-cheat-btn" class="btn-dev">等级 +1 / 金币 +50</button><button onclick="save.resetToInitial()" id="dev-reset-btn" class="btn-dev">重置存档</button></div></details>
 </div>
 <div id="building-overlay" class="camp-overlay" aria-hidden="true">
     <section class="camp-dialog" role="dialog" aria-modal="true" aria-labelledby="building-title" tabindex="-1">

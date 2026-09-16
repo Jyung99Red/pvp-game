@@ -204,6 +204,69 @@ test('the move pad walks the player and a release stops them', () => {
     assert.ok(Math.abs(worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点').x - stopped) < .5, 'releasing the pad must stop the walk');
 });
 
+test('a standing tap swings and recovers instead of locking the walker up', () => {
+    const map = mapSize('b');
+    const t = setup({ width: map.width, height: map.height }, { region: 'b' });
+    t.activate(); t.step(1 / 60);
+    t.clear();
+
+    // A tap on the move pad is a light attack -- the same gesture a fight reads.
+    // Walking has no target, but the swing still has to end: a player left in
+    // `attack` is `locked`, which stops movement, attacks and guard alike until
+    // the page is reloaded.
+    t.pad.press();
+    t.pad.release();
+    t.step(1 / 60);
+    assert.equal(t.field().player.phase, 'attack');
+    t.step(.2);
+    assert.equal(t.field().player.phase, 'recover');
+    t.step(.5);
+    assert.equal(t.field().player.phase, 'idle', 'the walker must come out of the swing');
+
+    // And the region still answers: the same pad walks again straight after.
+    const start = t.drawn().x;
+    t.pad.press(); t.pad.drag(80, 0);
+    t.step(1);
+    assert.ok(t.drawn().x > start + 50, `moved ${(t.drawn().x - start).toFixed(0)}px after the swing`);
+    t.pad.release();
+});
+
+test('a building becomes the interact target by proximity, and lets go late', () => {
+    const map = mapSize('a');
+    const t = setup({ width: map.width, height: map.height }, { region: 'a' });
+    t.activate();
+    const scene = t.world.scene();
+    const storage = scene.structures.find(item => item.kind === 'storage');
+    assert.ok(storage, 'the safe region authors a storage building');
+    const range = vm.runInContext('gameConfig.adventure.structureRange', t.context);
+
+    t.step(1 / 60);
+    assert.equal(scene.interaction, null, 'nothing is in reach at the default spawn');
+
+    // Just outside the acquire radius.
+    scene.player.x = storage.x; scene.player.y = storage.y - (range + 14);
+    t.step(1 / 60);
+    assert.equal(scene.interaction, null);
+
+    // Inside it.
+    scene.player.y = storage.y - 40;
+    t.step(1 / 60);
+    assert.equal(scene.interaction?.id, storage.id);
+    assert.equal(scene.interaction?.kind, 'storage');
+    assert.equal(scene.interaction?.label, storage.label);
+
+    // Between acquire and release: the prompt holds, so standing on the boundary
+    // cannot make it flicker.
+    scene.player.y = storage.y - (range + 6);
+    t.step(1 / 60);
+    assert.equal(scene.interaction?.id, storage.id, 'hysteresis keeps the held target');
+
+    // Past the release radius it drops.
+    scene.player.y = storage.y - (range + 20);
+    t.step(1 / 60);
+    assert.equal(scene.interaction, null);
+});
+
 // The player's facing is the first moveTo drawn after the player's own arc --
 // the aiming notch runs from the centre out along the heading.
 function playerFacing(t) {

@@ -17,10 +17,19 @@
 #view-pvp-battle.spatial-fullscreen {
     position: fixed; inset: 0; z-index: 100; width: 100%; height: 100dvh;
 }
-/* The walking half of the region HUD. Vitals, legend, enemy state and clock only
-   mean anything once a fight is live, so one root class hides the whole group and
-   nothing has to be shown or hidden node by node. */
+/* The two halves of the region HUD. Vitals, legend, enemy state and clock only
+   mean anything once a fight is live; the name plate and the quick-access
+   buttons only make sense while walking. One root class switches the whole set,
+   so nothing has to be shown or hidden node by node -- and the two never
+   overlap, which is why the plate can sit exactly where the vitals do. */
 #view-adventure.walking .fight-only { display: none; }
+#view-adventure:not(.walking) .walk-only { display: none; }
+/* While walking the plate carries the region's identity, so the topbar centre
+   (which names the enemy in a fight) would only repeat it. `space-between` alone
+   would then drag 暂停 across to the left, onto the quick-access buttons -- so
+   the pause button is pinned to its edge here instead. */
+#view-adventure.walking .topbar > div { display: none; }
+#view-adventure.walking .topbar > button:last-child { margin-left: auto; }
 :is(#view-adventure, #view-pvp-battle) * { box-sizing: border-box; }
 :is(#view-adventure, #view-pvp-battle) .arena { position: absolute; inset: 0; overflow: hidden; }
 :is(#view-adventure, #view-pvp-battle) canvas { display: block; width: 100%; height: 100%; }
@@ -79,6 +88,15 @@
 :is(#view-adventure, #view-pvp-battle) .guard-pad { width: var(--guard-size); height: var(--guard-size); border-color: #99b3d088; background: radial-gradient(circle at 40% 35%, #3a4e6ad9, #1a2c41d9 75%); gap: 5px; }
 :is(#view-adventure, #view-pvp-battle) .pad.active { border-color: var(--cyan); box-shadow: 0 0 24px #81e6d926, inset 0 0 0 7px #81e6d918; }
 :is(#view-adventure, #view-pvp-battle) .pad.armed { border-color: var(--gold); box-shadow: 0 0 24px #efc18155; }
+/* The move pad doubling as the interact key: in reach of a building it turns
+   gold and its label names that building. Dragging still walks -- only a tap
+   interacts. */
+:is(#view-adventure, #view-pvp-battle) .pad.interact-ready {
+    border-color: var(--gold); background: radial-gradient(circle at 40% 35%, #4b4326d9, #2a2418d9 75%);
+    box-shadow: 0 0 24px #efc18133, inset 0 0 0 7px #efc18112;
+}
+:is(#view-adventure, #view-pvp-battle) .pad.interact-ready .pad-icon,
+:is(#view-adventure, #view-pvp-battle) .pad.interact-ready strong { color: #ffe6b8; }
 :is(#view-adventure, #view-pvp-battle) .pad.cancel-ready { border-color: #ff6676; background: radial-gradient(circle, #943747e8, #341820ed); box-shadow: 0 0 22px #f34e6355; }
 :is(#view-adventure, #view-pvp-battle) .pad.cancel-ready .pad-icon, :is(#view-adventure, #view-pvp-battle) .pad.cancel-ready strong { color: #ffe1e5; }
 :is(#view-adventure, #view-pvp-battle) .cancel-zone { position: absolute; width: 48px; height: 48px; top: calc(50% - 24px); left: calc(50% - 24px); border: 2px dashed #ff9aa5; background: #ff53651c; border-radius: 50%; pointer-events: none; display: none; }

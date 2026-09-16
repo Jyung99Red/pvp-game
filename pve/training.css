@@ -3,14 +3,23 @@
 body { margin: 0; background: #080e11; color: #e5efed; font: 13px system-ui, sans-serif; overscroll-behavior: none; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; font: inherit; cursor: pointer; }
-.training { max-width: 480px; height: 100dvh; min-height: 560px; margin: auto; padding: env(safe-area-inset-top) 14px max(8px, env(safe-area-inset-bottom)); background: var(--bg); display: flex; flex-direction: column; }
-.topbar { display: flex; align-items: center; justify-content: space-between; height: 60px; flex-shrink: 0; }
+/* 训练页 = 一整块铺满的战斗画面 + 浮在它上面的 HUD。
+   只有顶部栏占布局高度，血条 / 反馈 / log / 操作按钮全是半透明浮层，
+   所以战场拿到的是整页高度，而不是 HUD 剩下的那一条。
+   （区域视图也带 .training 类，但本文件只有训练页加载，所以选择器不必再加作用域。） */
+.training { --train-topbar: 48px; --train-controls: 194px; max-width: 480px; height: 100dvh; min-height: 0; margin: auto; padding: env(safe-area-inset-top) 0 max(6px, env(safe-area-inset-bottom)); background: var(--bg); display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; justify-content: space-between; height: var(--train-topbar); flex: 0 0 auto; padding: 0 14px; }
 .topbar a { color: var(--muted); text-decoration: none; padding: 10px 0; }
 .topbar div { text-align: center; }
 .topbar strong { font-size: 16px; letter-spacing: 2px; }
 .topbar span { display: block; font-size: 9px; letter-spacing: 2px; color: var(--muted); margin-top: 3px; }
 .topbar button { background: transparent; border: 1px solid var(--line); padding: 6px 12px; border-radius: 6px; }
-.vitals { display: flex; gap: 18px; padding: 6px 2px 12px; }
+/* 血条：浮在战场顶部的半透明条，不占布局高度（top 贴着顶部栏下沿）。 */
+.training > .vitals {
+    position: absolute; z-index: 2; top: calc(var(--train-topbar) + 8px); left: 14px; right: 14px;
+    display: flex; gap: 18px; padding: 7px 10px; border-radius: 10px;
+    background: linear-gradient(#0b1a20a6, #0b1a2033); pointer-events: none;
+}
 .vital { flex: 1; min-width: 0; }
 .vital > div { display: flex; justify-content: space-between; font-size: 11px; }
 .vital b { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -20,11 +29,12 @@ meter::-webkit-meter-optimum-value { background: var(--cyan); }
 .enemy meter::-webkit-meter-optimum-value { background: #dc9e79; }
 meter::-moz-meter-bar { background: var(--cyan); }
 .enemy meter::-moz-meter-bar { background: #dc9e79; }
-.arena { flex: 1; min-height: 220px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #142226; }
+/* 战场铺满：从顶部栏下沿一直到底，没有边框圆角，HUD 直接浮在上面。 */
+.training > .arena { position: absolute; inset: var(--train-topbar) 0 0; min-height: 0; overflow: hidden; background: #0d1518; }
 canvas { display: block; width: 100%; height: 100%; }
-.arena-top { position: absolute; top: 12px; left: 14px; right: 14px; display: flex; justify-content: space-between; gap: 8px; pointer-events: none; font-size: 11px; color: #c6d6d3; }
+.arena-top { display: flex; justify-content: space-between; gap: 8px; pointer-events: none; font-size: 11px; color: #c6d6d3; }
 #clock { font-variant-numeric: tabular-nums; color: var(--muted); }
-.legend { position: absolute; bottom: 10px; width: 100%; text-align: center; font-size: 9px; color: var(--muted); pointer-events: none; }
+.legend { margin-top: 6px; font-size: 9px; color: var(--muted); pointer-events: none; }
 .legend i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin: 0 4px 1px 12px; background: var(--gold); }
 .legend i:nth-child(2) { background: #f27365; }
 .legend i:nth-child(3) { background: var(--cyan); }
@@ -36,7 +46,20 @@ h1 { font-size: 26px; margin: 12px 0; font-weight: 650; }
 .overlay p { line-height: 1.9; color: #b4c7c7; margin: 8px 0; font-size: 12px; }
 .overlay .summary { font-size: 10px; color: var(--muted); }
 #start { background: var(--cyan); color: #0d302e; border: 0; border-radius: 7px; padding: 12px; width: 100%; font-weight: 700; margin-top: 14px; }
-.feedback { padding: 12px 2px 8px; flex-shrink: 0; }
+/* 反馈/操作信息：浮在操作按钮上方。--train-controls 必须跟 combat_controls.css
+   里 .controls.combined-controls 的 height 一致（竖屏 194 / 矮屏 178 / 横屏 146），
+   否则这个浮层会压到按钮上或与按钮之间空一条。 */
+.training > .feedback {
+    position: absolute; z-index: 2; left: 14px; right: 14px; bottom: calc(var(--train-controls) + 8px);
+    padding: 7px 10px; border-radius: 10px; background: linear-gradient(#0b1a2026, #0b1a20b3);
+    pointer-events: none;
+}
+/* 操作按钮本身也浮在画面下沿（区域视图同款处理）。position 由本页负责设置：
+   combat_controls.css 里那条共用规则只给尺寸，不再替任何页面决定定位。 */
+.training > .controls.combined-controls {
+    position: absolute; z-index: 3; left: 0; right: 0;
+    bottom: max(6px, env(safe-area-inset-bottom));
+}
 .ap-row { display: flex; align-items: center; gap: 9px; font-size: 10px; color: var(--muted); }
 #ap { display: flex; gap: 4px; }
 #ap i { width: 16px; height: 5px; border-radius: 2px; background: #304045; }
@@ -64,5 +87,15 @@ h1 { font-size: 26px; margin: 12px 0; font-weight: 650; }
 .pad-knob { position: absolute; top: calc(var(--gesture-y, 50%) - 18px); left: calc(var(--gesture-x, 50%) - 18px); width: 36px; height: 36px; border: 2px solid #f0fffcbb; border-radius: 50%; background: #81e6d966; box-shadow: 0 0 12px #81e6d966; opacity: 0; pointer-events: none; z-index: 2; }
 .pad.active .pad-knob { opacity: 1; }
 .control-group p { color: var(--muted); font-size: 9px; line-height: 1.8; margin: 8px -4px 0; }
-footer { font-size: 9px; color: #647e82; text-align: center; padding-top: 7px; }
-@media (max-height: 650px) { .topbar { height: 46px; } .vitals { padding-bottom: 8px; } .feedback { padding-top: 8px; } .control-group p { margin-top: 5px; } h1 { font-size: 22px; margin: 8px 0; } }
+footer { font-size: 9px; color: #647e82; padding-top: 7px; }
+/* 矮屏：顶部栏收一点，浮层跟着走。--train-controls 与 combat_controls.css
+   里按钮列的 height 保持一一对应。 */
+@media (max-height: 650px) { .training { --train-topbar: 44px; } .control-group p { margin-top: 5px; } h1 { font-size: 22px; margin: 8px 0; } }
+@media (orientation: portrait) and (max-height: 700px) { .training { --train-controls: 178px; } }
+/* 横屏：画面铺满整屏，血条/反馈缩成左侧一列，操作按钮留在底部中间。 */
+@media (orientation: landscape) and (max-height: 540px) and (min-width: 600px) {
+    .training { --train-topbar: 36px; max-width: none; padding: 4px 12px 12px; }
+    .training > .vitals { left: 12px; right: auto; width: 176px; flex-direction: column; gap: 8px; padding: 6px 8px; }
+    .training > .feedback { left: 12px; right: auto; width: 176px; top: calc(var(--train-topbar) + 104px); bottom: auto; padding: 6px 8px; }
+    .training .feedback :is(.legend, footer) { display: none; }
+}

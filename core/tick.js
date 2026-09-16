@@ -33,7 +33,7 @@ const tick = {
             }
         }
 		
-		const spatialOwnsHp = state.pveBattle?.spatial && state.pveBattle.active && !state.pveBattle.waitingChoice;
+		const spatialOwnsHp = state.pveBattle?.spatial && state.pveBattle.active;
         const allowRegen = !spatialOwnsHp && !(state.pveBattle?.spatial && state.world.status === 'fighting' && document.hidden);
         // 3. Passive recovery shares its cadence with the formal PVE loop.
         const recovery = gameConfig.progression.recovery;

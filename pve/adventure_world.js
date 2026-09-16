@@ -74,8 +74,12 @@ const adventureWorld = (() => {
     function _makeScene(def) {
         const map = def.map;
         const monsters = (map.monsters || []).filter(item => !item.boss || !bossDefeated(item.enemyId)).map(item => ({
-            ...item, home: { x: item.x, y: item.y }, phase: 'idle', alive: true, patrolAt: Math.random() * Math.PI * 2
+            ...item, home: { x: item.x, y: item.y }, phase: 'idle', alive: true, patrolAt: Math.random() * Math.PI * 2,
+            respawnAt: 0
         }));
+        // Buildings. `radius` is the reach at which one becomes the interact
+        // target; authoring it per structure is allowed but rarely wanted.
+        const structures = (map.structures || []).map(item => ({ ...item, radius: item.radius ?? gameConfig.adventure.structureRange }));
         // Resolved before the field exists: `_spawnPoint` consumes the arrival
         // hint, and the hint has to be read before anything clears it.
         const spawn = _spawnPoint(def);
@@ -83,16 +87,32 @@ const adventureWorld = (() => {
         const boss = def.boss;
         state.world.arrivalFrom = null;   // consumed: only the first build honours it
         return {
-            regionId: def.id, def, map, field, player: field.player, monsters,
-            notice: '', exitCooldown: .7, accumulator: 0,
-            // Written into the hint line by the adapter, which owns the DOM.
-            hint: boss && bossDefeated(boss.enemyId)
-                ? '首领已被击败，不会重生。其余怪物会在再次进入区域时重新出现。'
-                : '拖动移动键行走。保持距离即可绕过怪物；接触后才会进入战斗。'
+            regionId: def.id, def, map, field, player: field.player, monsters, structures,
+            notice: '', noticeUntil: 0, exitCooldown: .7, accumulator: 0,
+            // Region clock in seconds, driven by `stepWorld`. Monsters respawn
+            // against it; it restarts whenever the scene is rebuilt.
+            clock: 0,
+            // The structure the walker is standing in reach of, or null. Read by
+            // the adapter (pad label) and by `pveLogic.interact`.
+            interaction: null,
+            // Written into the hint line by the adapter, which owns the DOM. A
+            // region with buildings says so once, which is how the interact key
+            // gets taught without a tutorial.
+            hint: [
+                structures.length ? '走近建筑后，点击中央键与之交互。' : '',
+                boss && bossDefeated(boss.enemyId)
+                    ? '首领已被击败，不会重生。其余怪物会重新出现（离开区域或等待一段时间）。'
+                    : '拖动移动键行走。保持距离即可绕过怪物；接触后才会进入战斗。'
+            ].filter(Boolean).join(' ')
         };
     }
-    function _notice(text) {
-        if (scene) scene.notice = text;
+    // A notice outranks the region's resting hint line. With a duration it also
+    // expires, which is what keeps a one-off line ("a fight just ended", "that
+    // gate is sealed") from becoming the region's permanent description.
+    function _notice(text, seconds = 0) {
+        if (!scene) return;
+        scene.notice = text;
+        scene.noticeUntil = seconds > 0 ? scene.clock + seconds : Infinity;
     }
     function _moveToward(actor, target, speed, dt) {
         const dx = target.x - actor.x, dy = target.y - actor.y, d = Math.hypot(dx, dy);
@@ -130,13 +150,47 @@ const adventureWorld = (() => {
             }
         }
     }
+    // A fallen region monster comes back where it was posted, `monsterRespawnSeconds`
+    // after it fell. Bosses never do -- their defeat is permanent progression,
+    // held in `progress.defeatedBosses`, and a boss is filtered out of a scene
+    // entirely once defeated.
+    function _updateRespawns() {
+        const now = scene.clock;
+        for (const monster of scene.monsters) {
+            if (monster.alive || monster.boss || !monster.respawnAt || now < monster.respawnAt) continue;
+            // Never drop one on top of the player: that would be an instant
+            // encounter with no time to react. Try again a moment later.
+            if (distance(scene.player, monster.home) < scene.player.radius + MONSTER_RADIUS + 8) {
+                monster.respawnAt = now + 1; continue;
+            }
+            monster.x = monster.home.x; monster.y = monster.home.y;
+            monster.phase = 'idle'; monster.alive = true; monster.respawnAt = 0;
+        }
+    }
+    // The nearest structure in reach becomes the interact target. The release
+    // radius is deliberately larger than the acquire one, so a prompt does not
+    // flicker on and off while the player stands on the boundary. Scanned for
+    // the whole scene rather than per substep -- this is a prompt, not physics.
+    // During a fight there is no interaction at all: the move pad is a weapon.
+    function _updateStructures() {
+        if (state.pveBattle?.active) { scene.interaction = null; return; }
+        const release = Math.max(gameConfig.adventure.structureRelease, gameConfig.adventure.structureRange);
+        const held = scene.interaction && scene.structures.find(item => item.id === scene.interaction.id);
+        let best = null, nearest = Infinity;
+        for (const structure of scene.structures) {
+            const gap = distance(scene.player, structure);
+            if (gap > (structure === held ? Math.max(release, structure.radius) : structure.radius)) continue;
+            if (gap < nearest) { best = structure; nearest = gap; }
+        }
+        scene.interaction = best ? { id: best.id, kind: best.kind, label: best.label } : null;
+    }
     function _updateExits(dt) {
         scene.exitCooldown = Math.max(0, scene.exitCooldown - dt);
         if (scene.exitCooldown) return;
         for (const exit of scene.def.exits || []) {
             if (distance(scene.player, exit.portal) > EXIT_RADIUS) continue;
             if (exit.requiresBoss && !bossDefeated(exit.requiresBoss)) {
-                scene.exitCooldown = .8; _notice('深渊裂隙被巨龙的力量封锁。'); return;
+                scene.exitCooldown = .8; _notice('深渊裂隙被巨龙的力量封锁。', 4); return;
             }
             pveLogic.travel(exit.to); return;
         }
@@ -192,6 +246,28 @@ const adventureWorld = (() => {
             ctx.fillStyle = monster.boss ? '#b35340' : chasing ? '#d08050' : '#9b6a4c'; ctx.fill();
             _drawLabel(ctx, monster.boss ? `首领 · ${enemy.name}` : enemy.name, monster.x, monster.y - (monster.boss ? 34 : 25), chasing ? '#ffd2b4' : '#e9b58a');
         }
+        // Buildings are drawn AFTER the gates on purpose: a gate chevron is
+        // located in tests by the first point drawn 28px out from the portal, so
+        // nothing else may put a point near a portal first. Every structure is
+        // kept well clear of the gates in the region data, and the whole marker
+        // stays rectangular -- a 12px arc is how the tests find the player body.
+        for (const structure of scene.structures) {
+            const active = scene.interaction?.id === structure.id;
+            ctx.fillStyle = active ? '#7d6338' : '#46554e';
+            ctx.fillRect(structure.x - 22, structure.y - 18, 44, 36);
+            if (active) {   // the reach ring, drawn under the outline
+                ctx.strokeStyle = '#efc18155'; ctx.lineWidth = 6;
+                ctx.beginPath(); ctx.rect(structure.x - 27, structure.y - 23, 54, 46); ctx.stroke();
+            }
+            ctx.strokeStyle = active ? '#efc181' : '#7f948b'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.rect(structure.x - 22, structure.y - 18, 44, 36); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(structure.x - 26, structure.y - 18);
+            ctx.lineTo(structure.x, structure.y - 34);
+            ctx.lineTo(structure.x + 26, structure.y - 18);
+            ctx.stroke();
+            _drawLabel(ctx, structure.label, structure.x, structure.y + 32, active ? '#ffe6b8' : '#cfd8d2');
+        }
         // The player body itself is drawn by the shared view, from the same solo
         // snapshot the fight renders -- that is what makes the two continuous.
     }
@@ -214,6 +290,9 @@ const adventureWorld = (() => {
         isActive() { return !!scene; },
         // Read-only view of the live scene, for the adapter and for tests.
         scene() { return scene; },
+        // Put a line in the region's hint log. `seconds` > 0 makes it expire;
+        // omitted, it stays until the scene is rebuilt.
+        notice(text, seconds = 0) { _notice(text, seconds); },
         // The world drawer the shared view calls instead of its default arena.
         worldLayer(ctx, offer) { _drawWorldLayer(ctx, offer); },
         // One fixed-step pass of the region. The engine clamps a single actor step
@@ -228,7 +307,9 @@ const adventureWorld = (() => {
         stepWorld(seconds) {
             if (!scene || !Number.isFinite(seconds)) return;
             const current = scene, fighting = !!state.pveBattle?.active;
-            current.accumulator += Math.max(0, Math.min(seconds, MAX_CATCH_UP));
+            const elapsed = Math.max(0, Math.min(seconds, MAX_CATCH_UP));
+            current.accumulator += elapsed;
+            current.clock += elapsed;
             while (current.accumulator >= STEP - 1e-9) {
                 current.accumulator = Math.max(0, current.accumulator - STEP);
                 spatialEngine.advanceActor(current.field, STEP);
@@ -238,6 +319,11 @@ const adventureWorld = (() => {
                 // frame belongs to the new region, not this loop.
                 if (scene !== current) return;
             }
+            // Once per frame, not per 10ms substep: respawns, the interact prompt
+            // and the notice expiry are frame-grain concerns.
+            if (current.noticeUntil && current.clock >= current.noticeUntil) { current.notice = ''; current.noticeUntil = 0; }
+            _updateRespawns();
+            _updateStructures();
         },
         pauseField() { if (scene) spatialEngine.pause(scene.field); },
         // Hand the walk back after a fight, on a clean engine at wherever the fight
@@ -283,9 +369,27 @@ const adventureWorld = (() => {
             }
             return monster || null;
         },
-        completeEncounter(entityId) { const monster = scene?.monsters.find(item => item.id === entityId); if (monster) monster.alive = false; },
-        returnFromCombat(entityId, won) {
+        completeEncounter(entityId) {
             const monster = scene?.monsters.find(item => item.id === entityId);
+            if (!monster) return;
+            monster.alive = false;
+            // The region clock is what the respawn is measured against, so a
+            // monster killed just before the player leaves still comes back at
+            // the right moment if the scene survives the trip.
+            monster.respawnAt = scene.clock + Math.max(0, gameConfig.adventure.monsterRespawnSeconds);
+        },
+        // Hand the region back after a fight that did NOT disengage (victory or
+        // flee). `player` is where the fight left the walker: the region's own
+        // body has been standing still for the whole fight, so without it the
+        // walk would resume at the spot the encounter started from.
+        returnFromCombat(entityId, won, player = null) {
+            if (!scene) return;
+            if (player) {
+                scene.player.x = clamp(player.x, PLAYER_RADIUS, scene.map.width - PLAYER_RADIUS);
+                scene.player.y = clamp(player.y, PLAYER_RADIUS, scene.map.height - PLAYER_RADIUS);
+                scene.player.facing = player.facing;
+            }
+            const monster = scene.monsters.find(item => item.id === entityId);
             if (monster && !won) { monster.phase = 'return'; monster.x = monster.home.x; monster.y = monster.home.y; }
         }
     };

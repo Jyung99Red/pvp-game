@@ -61,17 +61,44 @@ body { max-width: 600px; background: #101215; }
 .camp .camp-primary, .camp-overlay .camp-primary { background: #e9b06a; color: #1b1915; width: auto; padding: 10px 18px; border: 1px solid #e9b06a; }
 .camp-primary > span { margin-left: 14px; }
 .adventure { color: var(--camp-text, #e8ebef); }
-/* The region is a non-scrolling page, NOT a fixed overlay like PVP: the map takes
-   whatever the compact header and hint line leave, so the nav bar and the base
-   tab stay one tap away while the region is on screen. */
-#view-adventure { position: relative; height: 100%; display: flex; flex-direction: column; }
-#view-adventure .camp-heading { align-items: flex-start; margin: 0 0 8px; }
-#view-adventure .camp-heading h1 { font-size: 21px; }
-.adventure-map { position: relative; flex: 1; min-height: 0; margin-bottom: 8px; overflow: hidden; border: 1px solid #3c4752; background: linear-gradient(135deg, #172127, #20251f); }
+/* The region is a non-scrolling page, NOT a fixed overlay like PVP: the nav bar
+   stays one tap away while the region is on screen. Inside it the map fills
+   everything and the HUD floats on top -- no in-flow heading or hint bar, which
+   is where the extra picture height comes from. */
+#view-adventure { position: relative; height: 100%; }
+/* The map is the whole view, so the content area's gutter would only be a black
+   frame around it. The HUD elements carry their own 12px insets. */
+body.region-view .content-area { padding: 0; }
+.adventure-map { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(135deg, #172127, #20251f); }
 .adventure-map canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.adventure-panel { padding: 0; overflow: hidden; margin-bottom: 0; }
-.adventure-desc { color: #b9c2ca; font-size: 11px; line-height: 1.6; margin: 3px 0 0; }
-.adventure-hint { color: #9faeba; font-size: 11px; line-height: 1.7; margin: 0; padding: 8px 12px; background: #171c21; }
+.adventure-desc { color: #b9c2ca; font-size: 10px; line-height: 1.6; margin: 0; }
+/* Region name plate: the description sits beside the name, and the whole plate
+   is a translucent strip over the map rather than a heading that eats height. */
+#view-adventure .region-plate {
+    position: absolute; z-index: 2; top: calc(54px + env(safe-area-inset-top));
+    left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+    max-width: 660px; margin: 0 auto; padding: 6px 10px; border-radius: 8px;
+    display: flex; align-items: baseline; gap: 4px 10px;
+    background: linear-gradient(#0b1a20a6, #0b1a2026); text-shadow: 0 1px 5px #000;
+    pointer-events: none;
+}
+#view-adventure .region-plate h1 { font-size: 15px; letter-spacing: 2px; margin: 0; white-space: nowrap; }
+#view-adventure .region-plate .adventure-desc { flex: 1; min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#view-adventure .region-plate .status-chip { flex-shrink: 0; }
+/* Quick-access buttons, in the topbar's left slot -- the one 撤退 vacates while
+   walking. */
+#view-adventure .hud-buttons { position: absolute; z-index: 3; top: max(8px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); display: flex; gap: 8px; }
+#view-adventure .hud-buttons button { width: 38px; height: 38px; border-radius: 50%; padding: 0; font-size: 16px; line-height: 1; display: grid; place-items: center; }
+/* The hint is a log line over the map now, sitting just above the control
+   cluster (174px tall + its own bottom inset). */
+#view-adventure .adventure-hint {
+    position: absolute; z-index: 2; left: 50%; transform: translateX(-50%);
+    bottom: calc(var(--bottom, 22px) + 182px); width: min(340px, calc(100% - 24px));
+    margin: 0; padding: 6px 10px; border-radius: 8px; background: #0b1a20a6;
+    color: #cfe0da; font-size: 10px; line-height: 1.5; text-align: center;
+    pointer-events: none; overflow-wrap: anywhere;
+}
+#view-adventure .adventure-hint:empty { display: none; }
 .camp .training-link { display: flex; justify-content: space-between; align-items: center; padding: 13px 2px; background: none; font-size: 12px; }
 .training-link small { font-size: 10px; font-weight: 400; color: #959fab; }
 .camp-tools { border-top: 1px solid #30353d; margin-top: 4px; }
@@ -135,6 +162,13 @@ body { max-width: 600px; background: #101215; }
 .modal-btns .btn-success, .modal-btns .btn-gold { background: #d9ab71; color: #201c17; border-color: #d9ab71; }
 .modal-btns .btn-unequip { background: #352b2b; color: #dfb2aa; border-color: #73514c; }
 .camp-toast { position: fixed; bottom: calc(75px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 200; background: #323a44; border: 1px solid #808f9e; border-left: 3px solid #e9b06a; color: #eef1f4; padding: 12px 16px; max-width: min(90vw, 440px); font-size: 12px; box-shadow: 0 4px 20px #0006; pointer-events: none; }
+/* The toast is the visible log now that the base panel page is the region view.
+   Standing in the region, its default spot sits on the move pad, so it moves up
+   above the control cluster instead. */
+body.region-view .camp-toast { bottom: calc(250px + env(safe-area-inset-bottom)); }
+/* Character sheet: the equip list is the second block in the dialog body. */
+.camp-dialog .equip-head { margin-top: 18px; }
+.camp-dialog .camp-tools { padding: 0 18px; border-top: 1px solid var(--camp-border); }
 .camp-toast:empty { display: none; }
 @keyframes camp-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @media (hover: hover) { .camp button:hover:not(:disabled), .camp-overlay button:hover:not(:disabled) { filter: brightness(1.17); border-color: #a1adbc; } }

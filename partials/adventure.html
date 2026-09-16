@@ -5,10 +5,10 @@
      styling from combat_controls.css. The view must NOT carry
      `spatial-fullscreen` -- that class is what makes PVP a full-screen takeover. -->
 <div id="view-adventure" class="view-section hidden adventure training">
-    <header class="camp-heading">
-        <div><span class="eyebrow">区域地图</span><h1 id="adventure-region-name">—</h1><p id="adventure-region-desc" class="adventure-desc"></p></div>
-        <span id="adventure-region-kind" class="status-chip"><i></i> 探索中</span>
-    </header>
+    <!-- The map fills the view and everything else floats over it: the region
+         name plate, the quick-access buttons and the hint line are all overlays,
+         which is what leaves the picture the whole area instead of the strips a
+         heading and a hint bar would take. -->
     <section class="adventure-map" aria-label="可探索的大地图">
         <canvas id="adventure-world" aria-label="拖动移动键行走，接触怪物后直接进入战斗"></canvas>
 
@@ -17,6 +17,25 @@
             <div><strong id="adv-floor-label">区域地图</strong><span id="adv-enemy-name">探索中</span></div>
             <button id="adv-s-pause" type="button" onclick="pveLogic.pause()">暂停 / 设置</button>
         </header>
+
+        <!-- Quick access while walking. In a fight they are either locked
+             (equipment) or in the way, so walking is the only time they show. -->
+        <div class="hud-buttons walk-only" role="group" aria-label="快捷面板">
+            <button type="button" onclick="ui.filterInventory('all');ui.openInventoryModal()" aria-label="背包">🎒</button>
+            <button type="button" onclick="ui.openCharacterModal()" aria-label="角色状态">👤</button>
+            <button type="button" onclick="ui.filterInventory('equipment');ui.openInventoryModal()" aria-label="装备">🛡</button>
+        </div>
+
+        <!-- Region name plate, walking only: the topbar centre carries the enemy
+             name during a fight, so the two never show at the same time. -->
+        <div class="region-plate walk-only">
+            <h1 id="adventure-region-name">—</h1>
+            <p id="adventure-region-desc" class="adventure-desc"></p>
+            <span id="adventure-region-kind" class="status-chip"><i></i> 探索中</span>
+        </div>
+
+        <!-- The walking hint, as a translucent log line over the map. -->
+        <p id="adventure-hint" class="adventure-hint" role="status"></p>
         <section class="vitals fight-only" aria-label="双方状态">
             <div class="vital"><div><span>你 · 剑盾</span><b id="adv-s-player-hp">120 / 120</b></div><meter id="adv-s-player-meter" min="0" max="120" value="120">120</meter></div>
             <div class="vital enemy"><div><span id="adv-enemy-vital">敌人</span><b id="adv-s-enemy-hp">360 / 360</b></div><meter id="adv-s-enemy-meter" min="0" max="360" value="360">360</meter></div>
@@ -46,8 +65,8 @@
 
         <section class="controls combined-controls" aria-label="中央移动，左侧防御，右侧技能">
             <div class="control-group move-group" aria-label="中央操作区：拖动移动，短按轻击，原位长按蓄力">
-                <button id="adv-s-move-pad" class="pad move-pad" data-origin-at-press type="button" aria-label="拖动移动；短按轻击；原位长按蓄力后拖动移动转向，圈外松手重击，回落指点松手取消">
-                    <span class="pad-icon">✥</span><strong id="adv-s-move-label">移动 / 攻击</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
+                <button id="adv-s-move-pad" class="pad move-pad" data-origin-at-press type="button" aria-label="拖动移动键行走；走近建筑后点击中央键与之交互">
+                    <span class="pad-icon">✥</span><strong id="adv-s-move-label">移动</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
                 </button>
             </div>
             <div class="control-group guard-group">
@@ -68,16 +87,12 @@
 
         <div id="adv-buff-display" class="buff-status"></div>
 
-        <div id="adv-win-overlay" class="result-overlay hidden">
-            <h2>战斗胜利</h2><div id="adv-win-loot"></div>
-            <div class="btn-row"><button onclick="pveLogic.returnToRegion()">返回区域</button></div>
-        </div>
+        <!-- No victory screen: a won fight banks its rewards and puts the walk
+             straight back on screen, with the summary in the log line above. -->
         <div id="adv-defeat-overlay" class="result-overlay hidden">
             <h2>英雄倒下</h2><p>你被救回了曙光据点。</p><button onclick="pveLogic.endFight()">回到基地</button>
         </div>
     </section>
-    <section class="camp-panel adventure-panel">
-        <p id="adventure-hint" class="adventure-hint">拖动移动键行走。保持距离即可绕过怪物；接触后才会进入战斗。</p>
-    </section>
+    <!-- Kept as the log sink: `ui.log` appends here and the toast mirrors it. -->
     <div id="log"></div>
 </div>

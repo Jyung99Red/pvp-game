@@ -130,7 +130,6 @@ const fx = {
         // Player actions
         skill(hp)                    { ui.log(`[技能] 恢复 ${hp} HP`); },
         flee()                       { ui.log(`[撤退] 脱离战斗`); },
-        retreat()                    { ui.log(`[撤离] 见好就收，脱离战斗`); },
         // Running out of leash range is its own outcome: nobody won, the region
         // simply resumes where it left off.
         disengaged(enemyName)        { ui.log(`[脱战] 距离拉开，${enemyName} 放弃了追击`); },

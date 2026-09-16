@@ -281,6 +281,18 @@ const spatialEngine = (() => {
         body.hp = Math.max(0, body.hp - amount);
         emit(b, 'hp_changed', { side, previous, hp: body.hp, x: body.x, y: body.y });
     }
+    // Ending the swing in recovery is what returns the player to `idle`; only
+    // the hit resolution differs. A solo walker has no opponent to test
+    // against, so its swing resolves to the recovery alone -- without this the
+    // player stays locked in `attack` for good and the region stops answering.
+    function soloStrike(b) {
+        const p = b.player, a = p.attack;
+        emit(b, 'strike', { side: 'player', shape: a.shape, origin: { ...a.origin }, facing: a.facing });
+        p.phase = 'recover'; p.timer = a.heavy ? b.config.heavy.recovery : b.config.light.recovery;
+    }
+    // What a completed swing does when the caller supplies no resolution of its
+    // own. PVP does: it collects both sides' strikes before settling either.
+    function resolveStrike(b) { (b.config.solo ? soloStrike : playerHit)(b); }
     function playerHit(b) {
         const C = b.config;
         const p = b.player, e = b.enemy, a = p.attack;
@@ -334,7 +346,7 @@ const spatialEngine = (() => {
             emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.ap >= gameConfig.resources.guardRequiredAp });
         }
     }
-    function tickPlayer(b, dt, onStrike = playerHit) {
+    function tickPlayer(b, dt, onStrike = resolveStrike) {
         const C = b.config;
         const p = b.player;
         flushQueue(b);
@@ -510,9 +522,7 @@ const spatialEngine = (() => {
         dt = Math.min(dt, .05);
         b.time += dt; b.elapsed += dt;
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
-        // A solo actor has no opponent, so a stray swing while walking must not
-        // reach the hit resolution -- it would dereference a null enemy.
-        tickPlayer(b, dt, b.config.solo ? () => {} : (onStrike || playerHit));
+        tickPlayer(b, dt, onStrike);
     }
     return { advanceActor, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();

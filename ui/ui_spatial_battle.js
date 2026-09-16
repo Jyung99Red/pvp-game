@@ -142,13 +142,22 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     }
     function skillDefinition(kind) { return C.skills?.[kind] || spatialData.skills?.[kind] || { name: kind }; }
     function text(id, value) { if (nodes[id].textContent !== value) nodes[id].textContent = value; }
+    // The backing store last written, so a resize that changes nothing is not
+    // re-assigned: writing canvas.width clears the bitmap, and a config swap
+    // whose window is unchanged (walking <-> fighting in one region session)
+    // would flash an empty frame for it.
+    let backing = { width: 0, height: 0, dpr: 0 };
     function resize() {
         const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
         if (rect.width < 1 || rect.height < 1 || contextLost) return;
         width = rect.width; height = rect.height;
         syncInsets(rect);
-        canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight || backing.dpr !== dpr) {
+            canvas.width = pixelWidth; canvas.height = pixelHeight;
+            backing = { width: pixelWidth, height: pixelHeight, dpr };
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
         syncWindow();
         if (battle) draw();
     }
@@ -500,7 +509,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         const skillNames = Object.fromEntries(Object.keys(spatialData.skills || {}).map(kind => [kind, skillDefinition(kind).name]));
         text('skill-label', selected ? `松手${skillNames[selected]}` : battle.skill ? (battle.skill.kind ? '取消释放' : '向外拖动') : '技能');
         const g = battle.action;
-        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : '移动 / 攻击');
+        // Resting wording differs by mode: a solo walker has nothing to attack,
+        // so advertising one would be a lie. The region adapter rewrites this
+        // into the interact prompt when a building is in reach.
+        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
         text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = [], frameDt = 0) {

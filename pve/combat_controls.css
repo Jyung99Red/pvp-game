@@ -60,29 +60,27 @@
     :is(#view-adventure, #view-pvp-battle) .feedback :is(#adv-s-notice, #pvp-s-notice) { font-size: 9px; min-height: 0; padding-top: 2px; line-height: 1.3; }
     :is(#view-adventure, #view-pvp-battle) .buff-status { top: 76px; left: 20px; width: auto; transform: none; }
     :is(#view-adventure, #view-pvp-battle) .overlay { justify-content: flex-start; }
-    body > .training:not(.spatial-fullscreen) {
-        min-height: 0; max-width: none; height: 100dvh; padding: 4px 12px 12px;
-        display: grid; grid-template-columns: 168px minmax(0, 1fr);
-        grid-template-rows: 36px minmax(0, 1fr) 150px; gap: 8px;
-    }
-    body > .training > .topbar { grid-area: 1 / 1 / 2 / 3; height: 36px; }
-    body > .training > .arena { grid-area: 2 / 2 / 4 / 3; min-height: 0; }
-    body > .training > .vitals { position: absolute; left: 12px; top: 48px; width: 168px; padding: 0; gap: 8px; flex-direction: column; }
-    body > .training > .feedback { position: absolute; left: 12px; top: 130px; width: 168px; padding: 0; }
-    body > .training > footer { display: none; }
 }
 
 /* One fixed central pad, with guard upper-left and skills upper-right.
    The cancellation ring follows this gesture's landing point, not the artwork. */
 :is(.training, #view-adventure, #view-pvp-battle) .controls.combined-controls {
     --main-pad-size: 156px;
-    position: relative; inset: auto; width: min(100%, 400px); height: 194px;
+    /* Size only: where the pad cluster sits is each page's own business -- the
+       region and PVP views float it (rule below), training anchors it to the
+       page bottom (pve/training.css). */
+    width: min(100%, 400px); height: 194px;
     flex: 0 0 194px; margin: 0 auto; padding: 0; pointer-events: none;
 }
 :is(#view-adventure, #view-pvp-battle) .controls.combined-controls {
     position: absolute; left: 50%; right: auto; bottom: max(20px, env(safe-area-inset-bottom));
     transform: translateX(-50%); width: min(calc(100% - 24px), 400px);
 }
+/* 主世界的整组操作键比战斗页小一号（约 10%）：大世界要看的画面比训练场多。
+   盒子高度一起缩，否则键位之间的间距会显得被拉开。窄屏/横屏的媒体查询在后面，
+   它们各自的更小尺寸仍然生效。 */
+#view-adventure .controls.combined-controls { --main-pad-size: 140px; height: 174px; flex-basis: 174px; }
+#view-adventure .combined-controls :is(.guard-group, .skill-dock) { width: 68px; height: 68px; }
 :is(.training, #view-adventure, #view-pvp-battle) .combined-controls .move-group {
     position: absolute; left: 50%; right: auto; bottom: 0; top: auto;
     width: var(--main-pad-size); height: var(--main-pad-size); transform: translateX(-50%);
@@ -119,11 +117,10 @@
 }
 :is(.training, #view-adventure, #view-pvp-battle) .combined-controls .pad:focus-visible { outline: 2px solid #efc181; outline-offset: 3px; }
 
-/* Reserve feedback rows: hits/misses must never resize the training canvas.
-   `body >` is what keeps these training-page-only: the region view also carries
-   .training (its pad styling) and also lacks .spatial-fullscreen, so without it
-   the region view would inherit training's fixed feedback height and pad sizes. */
-body > .training:not(.spatial-fullscreen) > .feedback { height: 142px; flex: 0 0 142px; }
+/* Reserve the notice and log rows: hits/misses must never reflow the feedback
+   block. `body >` is what keeps these training-page-only: the region view also
+   carries .training (its pad styling) and also lacks .spatial-fullscreen, so
+   without it the region view would inherit training's fixed row heights. */
 body > .training:not(.spatial-fullscreen) .feedback [role="status"],
 body > .training:not(.spatial-fullscreen) .feedback [role="status"]:empty { display: block; height: 30px; }
 body > .training:not(.spatial-fullscreen) .battle-log,
@@ -148,6 +145,5 @@ body > .training:not(.spatial-fullscreen) #player-state { white-space: nowrap; }
         --main-pad-size: 124px; height: 146px; flex-basis: 146px; width: 340px;
     }
     :is(#view-adventure, #view-pvp-battle) .controls.combined-controls { bottom: max(12px, env(safe-area-inset-bottom)); }
-    body > .training > .controls.combined-controls { grid-area: 3 / 1 / 4 / 3; align-self: end; z-index: 2; }
     :is(.training, #view-adventure, #view-pvp-battle) .combined-controls :is(.guard-group, .skill-dock) { width: 66px; height: 66px; }
 }
