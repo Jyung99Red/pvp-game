@@ -85,11 +85,8 @@ const ui = {
     openBuildingModal() { this.updateBuildingList(); this.openPanel('building-overlay'); },
     closeBuildingModal() { this.closePanel('building-overlay'); },
 
-    // Enter the dungeon: always resumes from the saved checkpoint floor
-    // (see state.progress.checkpointFloor / pve_logic.js's enterDungeon)
-    enterDungeon() {
-        if (state.world.status !== 'base') return;
-        pveLogic.enterDungeon();
+    openAdventure() {
+        pveLogic.openAdventure();
     },
 
     enterTraining() {
@@ -113,6 +110,7 @@ const ui = {
             return;
         }
 
+        if (tabId !== 'adventure' && typeof adventureWorld !== 'undefined') adventureWorld.deactivate();
         state.world.currentTab = tabId;
         if (tabId !== 'base') document.getElementById('camp-toast')?.replaceChildren();
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
@@ -126,6 +124,7 @@ const ui = {
         }
 
         if (tabId === 'base') this.updateEquip();
+        if (tabId === 'adventure') { this.updateAdventure(); adventureWorld.activate(); }
         if (tabId === 'battle' && !(state.pveBattle && state.pveBattle.active)) {
             document.getElementById('pve-enemy-name').innerText = "当前无战斗";
             uiPve.hideOverlays();
@@ -438,7 +437,8 @@ const ui = {
         const t = state.time, h = state.player, stats = player.getStats(), cost = h.level * gameConfig.progression.levelExpPerLevel;
         const period = { day: '白昼', dusk: '黄昏', night: '深夜' }[t.period] || '深夜';
         document.getElementById('time-display').textContent = `第 ${t.days} 天 / ${String(t.hours).padStart(2, '0')}:${String(t.minutes).padStart(2, '0')} / ${period}`;
-        this._setHtml('resource-display', `<div><span>可用金币</span><strong class="gold-number">${state.resources.gold.toLocaleString()}</strong></div><div><span>持有经验</span><strong>${state.inventory.exp.toLocaleString()}</strong></div><div><span>探索起点</span><strong>${state.progress.checkpointFloor}<small> 层</small></strong></div>`);
+        const currentRegion = content.regions[state.progress.currentRegionId] || content.regions.a;
+        this._setHtml('resource-display', `<div><span>可用金币</span><strong class="gold-number">${state.resources.gold.toLocaleString()}</strong></div><div><span>持有经验</span><strong>${state.inventory.exp.toLocaleString()}</strong></div><div><span>当前位置</span><strong>${currentRegion.name}</strong></div>`);
         document.getElementById('player-level-info').textContent = `Lv.${h.level}`;
         this._setHtml('player-display-stats', [['攻击', stats.atk], ['防御', stats.def], ['心眼', stats.insight], ['专注', Number(stats.focus).toFixed(1)], ['暴击', `${Math.round(player.getCritChance() * 100)}%`]].map(([label,value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join(''));
         const btn = document.getElementById('btn-lvl-up');
@@ -447,8 +447,20 @@ const ui = {
         document.getElementById('base-exp-fill').style.width = `${Math.min(100, state.inventory.exp / cost * 100)}%`;
         document.getElementById('base-player-hp').style.width = `${Math.max(0, Math.min(100, h.currentHp / stats.maxHp * 100))}%`;
         document.getElementById('base-player-hp-txt').textContent = `${Math.floor(h.currentHp)} / ${stats.maxHp}`;
-        document.getElementById('base-deploy-floor').textContent = `第 ${state.progress.checkpointFloor} 层`;
+        document.getElementById('base-deploy-region').textContent = currentRegion.id === 'a' ? '从北门前往晨雾原野' : `继续：${currentRegion.name}`;
         document.querySelectorAll('[data-camp-gold]').forEach(n => { n.textContent = state.resources.gold.toLocaleString(); });
         this.updateBuildingList();
+    },
+    updateAdventure() {
+        const region = content.regions[state.progress.currentRegionId];
+        if (!region) return;
+        const $ = id => document.getElementById(id);
+        $('adventure-region-name').textContent = region.name;
+        $('adventure-region-desc').textContent = region.desc;
+        $('adventure-region-kind').innerHTML = `<i></i> ${region.kind === 'safe' ? '安全区域' : '探索区域'}`;
+        const boss = region.boss;
+        $('adventure-hint').textContent = boss && pveLogic.isBossDefeated(boss.enemyId)
+            ? '首领已被击败，不会重生。其余怪物会在再次进入区域时重新出现。'
+            : '拖动地图或使用方向键移动。保持距离即可绕过怪物；接触后才会进入战斗。';
     }
 };

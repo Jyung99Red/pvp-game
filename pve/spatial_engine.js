@@ -14,7 +14,7 @@ const spatialEngine = (() => {
             (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
         if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
-        if (C.formal && !C.pvp && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
+        if (C.formal && !C.pvp && !C.solo && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.fullCharge < C.chargeThreshold + gameConfig.damage.fullChargeAfterThreshold - 1e-9)) throw new Error('Invalid profile');
         if (!Object.values(C.ai).every(nonnegative)) throw new Error('Invalid AI timing');
         for (const a of [C.light, C.heavy, ...(C.actions || [C.sweep, C.stomp])]) {
@@ -25,23 +25,31 @@ const spatialEngine = (() => {
                 (a.dash && (![a.dash.distance, a.dash.speed, a.dash.width].every(positive))) ||
                 (a.lock != null && (!Number.isFinite(a.lock) || a.lock < 0 || a.lock > a.windup))) throw new Error('Invalid spatial action');
         }
-        for (const body of [C.player, C.enemy]) {
+        // A solo preset walks one actor around a region: no enemy to validate.
+        for (const body of C.solo ? [C.player] : [C.player, C.enemy]) {
             if (![body.x, body.y, body.facing].every(Number.isFinite) || !positive(body.radius) || !positive(body.maxHp) ||
                 !Number.isFinite(body.hp) || body.hp < 0 || body.hp > body.maxHp ||
                 body.x < body.radius || body.x > C.width - body.radius || body.y < body.radius || body.y > C.height - body.radius) throw new Error('Invalid spawn');
         }
-        if (S.distance(C.player, C.enemy) < C.player.radius + C.enemy.radius) throw new Error('Overlapping spawns');
+        // An overlapping pair is deliberately NOT rejected here: a fight can
+        // legitimately start exactly where two bodies already stand. create()
+        // separates them on its own copy -- see below.
     }
     function create(config = C, random = Math.random) {
         validate(config);
         const C = JSON.parse(JSON.stringify(config));
+        // Bodies that start touching are pushed apart rather than refused; only
+        // an arena with no room for both is an error. Done on the clone, so
+        // validating a caller's config never moves their actors -- b.player and
+        // b.enemy below are the authoritative post-separation positions.
+        if (!C.solo && !S.separate(C.player, C.enemy, C, C.walls || [])) throw new Error('Overlapping spawns');
         C.skills = spatialData.skillRules(C.skillMode || (C.pvp ? 'fair' : 'pve'), C.skillOverrides || {});
         return {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
             skillPoints: Math.max(0, Math.min(C.skillPointMax ?? gameConfig.training.skillPointMax, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
             player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0 },
-            enemy: { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
+            enemy: C.solo ? null : { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
             controls: { ...gameConfig.controls, ...C.controls },
             move: null, action: null, guard: null, skill: null, queuedCommand: null, motionBuffs: [], events: [], inputVersion: 0, actionInputVersion: 0,
             stats: { attacks: 0, hits: 0, misses: 0, dodges: 0, blocks: 0, parries: 0, cancels: 0 }
@@ -334,7 +342,7 @@ const spatialEngine = (() => {
         if (p.phase === 'idle') {
             if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
                 p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
-            } else if (b.controls.autoFace) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
+            } else if (b.controls.autoFace && b.enemy) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
         } else if (p.phase === 'charging') {
             if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.deadZone) {
                 p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? gameConfig.training.chargeTurnMultiplier) * motion(b, 'chargeTurn'));
@@ -348,7 +356,9 @@ const spatialEngine = (() => {
             }
         }
         if (['idle', 'recover', 'stunned'].includes(p.phase)) p.ap = Math.min(C.apMax, p.ap + dt * C.apRegen * b.apRateMult);
-        tickSkillPoints(b, dt);
+        // Solo walking must not bank skill points: they belong to a fight, and
+        // accruing them on the way there would start every encounter at max SP.
+        if (!C.solo) tickSkillPoints(b, dt);
         if (p.timer > 0) {
             p.timer = Math.max(0, p.timer - dt);
             if (p.timer === 0) {
@@ -433,6 +443,9 @@ const spatialEngine = (() => {
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
 
         tickPlayer(b, dt);
+        // A solo preset has no opponent to tick and nothing to settle against;
+        // walking is the whole simulation.
+        if (C.solo) return;
         if (!C.formal && finish(b)) return;
         tickEnemy(b, dt);
         if (!deferFinish) finish(b);
@@ -490,7 +503,9 @@ const spatialEngine = (() => {
         dt = Math.min(dt, .05);
         b.time += dt; b.elapsed += dt;
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
-        tickPlayer(b, dt, onStrike);
+        // A solo actor has no opponent, so a stray swing while walking must not
+        // reach the hit resolution -- it would dereference a null enemy.
+        tickPlayer(b, dt, b.config.solo ? () => {} : (onStrike || playerHit));
     }
     return { advanceActor, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();

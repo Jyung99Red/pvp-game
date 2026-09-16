@@ -1,0 +1,10 @@
+<!-- Persistent authored-world map. Combat begins only at physical contact. -->
+<div id="view-adventure" class="view-section hidden adventure">
+    <header class="camp-heading"><div><span class="eyebrow">区域地图</span><h1 id="adventure-region-name">—</h1></div><span id="adventure-region-kind" class="status-chip"><i></i> 探索中</span></header>
+    <section class="adventure-map" aria-label="可探索的大地图">
+        <canvas id="adventure-world" aria-label="拖动或使用方向键移动，接近怪物才会进入战斗"></canvas>
+        <div class="adventure-map-legend"><span>● 你</span><span>● 怪物</span><span>◆ 区域出口</span></div>
+    </section>
+    <section class="camp-panel adventure-panel"><p id="adventure-region-desc" class="adventure-desc"></p><p id="adventure-hint" class="adventure-hint">拖动地图移动。保持距离即可绕过怪物。</p></section>
+    <button onclick="ui.switchTab('base')" class="training-link"><span>← 返回曙光据点</span><small>查看基地功能</small></button>
+</div>

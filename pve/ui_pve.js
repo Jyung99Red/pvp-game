@@ -8,7 +8,7 @@ const uiPve = (() => {
         initFight(eData) {
             this.destroy(); this.hideOverlays();
             const b = state.pveBattle, engine = b.spatial;
-            $('pve-floor-label').textContent = `第 ${b.floor} 层${b.isBossFloor ? ' · 首领' : ''}`;
+            $('pve-floor-label').textContent = `${b.region.name}${b.isBoss ? ' · 首领' : ''}`;
             $('pve-enemy-name').textContent = eData.name; $('pve-enemy-vital').textContent = eData.name;
             settings = combatSettings.attach($('view-battle'), () => engine); settings.apply(engine);
             view = uiSpatialBattle.create($('view-battle'), engine.config, 'pve-s-');
@@ -56,12 +56,12 @@ const uiPve = (() => {
         clearInputs() { input?.clear(); },
         destroy() { renderedAt = 0; input?.destroy(); view?.destroy(); settings?.destroy(); abort?.abort(); input = null; view = null; settings = null; abort = null; },
         showPause(show) { $('pve-s-overlay').hidden = !show; this.updateFrame(); },
-        showWinChoice(drops, exp, gold) {
+        showWinChoice(drops, exp, gold, isBoss) {
             const lootEl = document.getElementById('pve-win-loot');
             if (lootEl) {
                 let html = `🧪 EXP +${exp} &nbsp; 💰 +${gold}`;
-                html += `<br><span style="color:#e9c46a;">本次探索累计 💰 ${state.world.runGold}</span>` +
-                        `<span style="color:#888;font-size:11px;">（阵亡将全部丢失，回城才能入账）</span>`;
+                html += `<br><span style="color:#e9c46a;">奖励已立即入账</span>`;
+                if (isBoss) html += `<br><span style="color:#b9d69d;">首领已击败，新的区域入口已开启。</span>`;
                 if (drops && drops.length) {
                     html += '<br>' + drops.map(d => {
                         const m = content.materials[d.id];

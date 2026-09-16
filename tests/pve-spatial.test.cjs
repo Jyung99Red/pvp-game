@@ -6,7 +6,7 @@ function setup() {
     const c = vm.createContext({ console, performance: { now: () => 0 }, document: { hidden: false },
         requestAnimationFrame: fn => { loops.set(++next, fn); return next; }, cancelAnimationFrame: id => loops.delete(id),
         localStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k) || null },
-        ui: { switchTab() {}, updateBase() {} },
+        ui: { switchTab() {}, updateBase() {}, log() {} },
         uiPve: new Proxy({}, { get: () => () => {} }), fx: { log: new Proxy({}, { get: () => () => {} }) }
     });
     for (const file of ['game_config.js','core/data.js','core/effects.js','core/save.js','core/player.js','core/combat_rules.js','core/arena_effects.js','core/spatial_combat.js','core/combat_gestures.js','pve/spatial_data.js','pve/spatial_engine.js','core/spatial_profiles.js','pve/pve_profiles.js','pve/pve_logic.js','core/tick.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),c);
@@ -71,27 +71,24 @@ test('every configured enemy validates; profiles apply enhancement, defense, tim
  after.player.x=-1; assert.throws(()=>t.spatialEngine.create(after));
 });
 
-test('base, reward, next floor and retreat settle exactly once; HP and skill points carry',()=>{
- const t=setup(); t.state.player.currentHp=70; t.pveLogic.enterDungeon(); quiet(t);
- const id=t.state.pveBattle.battleId; t.pveLogic.enterDungeon(); assert.equal(t.state.pveBattle.battleId,id);
- t.state.pveBattle.skillPoints=2; victory(t);
- const exp=t.state.inventory.exp, gold=t.state.world.runGold; assert.ok(gold>0); assert.equal(t.state.resources.gold,0);
- t.pveLogic.advance(.1); assert.equal(t.state.inventory.exp,exp);
- t.pveLogic.continueNext(); const b=t.state.pveBattle; assert.equal(b.floor,2); assert.equal(b.skillPoints,2); assert.equal(b.player.hp,70);
- t.pveLogic.continueNext(); assert.equal(t.state.pveBattle.battleId,b.battleId);
- t.pveLogic.flee(); t.pveLogic.flee(); t.pveLogic.endFight(true);
- assert.equal(t.state.resources.gold,gold); assert.equal(t.state.world.runGold,0); assert.equal(t.state.world.status,'base');
+test('area travel bypasses encounters and normal rewards bank immediately',()=>{
+ const t=setup(); assert.equal(t.pveLogic.travel('b'),true); assert.equal(t.state.progress.currentRegionId,'b');
+ assert.equal(t.pveLogic.travel('c'),true); assert.equal(t.state.progress.currentRegionId,'c');
+ assert.equal(t.pveLogic.travel('b'),true); assert.equal(t.state.progress.currentRegionId,'b');
+ assert.equal(t.pveLogic.startEncounter('goblin'),true); quiet(t); victory(t);
+ const exp=t.state.inventory.exp, gold=t.state.resources.gold; assert.ok(exp>0); assert.ok(gold>0);
+ t.pveLogic.advance(.1); assert.equal(t.state.inventory.exp,exp); assert.equal(t.state.resources.gold,gold);
+ assert.equal(t.pveLogic.returnToRegion(),true); assert.equal(t.state.world.status,'exploring');
  assert.equal(t.loops.size,0);
 });
 
-test('boss checkpoint advances; simultaneous environmental death loses run gold with no reward',()=>{
- const t=setup(); t.state.progress.checkpointFloor=9; t.pveLogic.enterDungeon(); assert.equal(t.state.pveBattle.enemyId,'elder_dragon');
- victory(t); assert.equal(t.state.progress.checkpointFloor,10);
- t.pveLogic.continueNext(); quiet(t); const exp=t.state.inventory.exp;
- t.state.pveBattle.arena=t.arenaEffects.create([{key:'burning_ground',startMs:0,intervalMs:10,pct:1}]);
- t.pveLogic.advance(.03);
- assert.equal(t.state.pveBattle.spatial.result,'defeat'); assert.equal(t.state.world.runGold,0); assert.equal(t.state.inventory.exp,exp);
- t.pveLogic.endFight(false); assert.ok(t.state.player.currentHp>0); t.pveLogic.enterDungeon(); assert.equal(t.state.pveBattle.floor,10); assert.equal(t.state.pveBattle.skillPoints,0);
+test('C boss unlocks D once and never becomes a valid encounter again',()=>{
+ const t=setup(); t.pveLogic.travel('b'); t.pveLogic.travel('c');
+ assert.equal(t.pveLogic.travel('d'),false); assert.equal(t.pveLogic.isRegionUnlocked('d'),false);
+ assert.equal(t.pveLogic.startEncounter('elder_dragon'),true); victory(t);
+ assert.equal(t.pveLogic.isBossDefeated('elder_dragon'),true); assert.equal(t.pveLogic.isRegionUnlocked('d'),true);
+ t.pveLogic.returnToRegion(); assert.equal(t.pveLogic.startEncounter('elder_dragon'),false);
+ assert.equal(t.pveLogic.travel('d'),true); assert.equal(t.state.progress.currentRegionId,'d');
 });
 
 test('simulation owns regen; paused battle has no HP or time drift; choice regen remains',()=>{
@@ -142,13 +139,15 @@ test('30/60/120 FPS share simulation output and arena AP surge timing',()=>{
  assert.deepEqual(results[0],results[1]); assert.deepEqual(results[1],results[2]); assert.ok(results[0][0]>2);
 });
 
-test('v1 fixture round-trips equipment/progress and omits transient spatial combat',()=>{
- const t=setup(), key='idle_rpg_save_v1';
- t.storage.set(key,fs.readFileSync(path.join(__dirname,'fixtures/save-v1.json'),'utf8')); assert.equal(t.save.load(),true);
- t.pveLogic.enterDungeon(); t.save.save(); const saved=JSON.parse(t.storage.get(key));
- assert.equal(saved.resources.gold,123); assert.equal(saved.inventory.enhance.iron_sword,2); assert.equal(saved.progress.checkpointFloor,9);
+test('v1 fixture migrates to persistent area progress and omits transient combat',()=>{
+ const t=setup(), legacyKey='idle_rpg_save_v1', key='idle_rpg_save_v2';
+ t.storage.set(legacyKey,fs.readFileSync(path.join(__dirname,'fixtures/save-v1.json'),'utf8')); assert.equal(t.save.load(),true);
+ t.pveLogic.travel('b'); t.pveLogic.travel('c'); t.pveLogic.startEncounter('elder_dragon'); victory(t); t.save.save(); const saved=JSON.parse(t.storage.get(key));
+ assert.equal(saved.v,2); assert.equal(saved.resources.gold>123,true); assert.equal(saved.inventory.enhance.iron_sword,2);
+ assert.equal(saved.progress.currentRegionId,'c'); assert.equal(saved.progress.defeatedBosses.elder_dragon,true); assert.equal(saved.progress.unlockedRegions.d,true);
  assert.equal(saved.pveBattle,undefined); assert.equal(saved.world,undefined);
  const fresh=setup(); fresh.storage.set(key,t.storage.get(key)); fresh.save.load(); assert.equal(fresh.state.world.status,'base'); assert.equal(fresh.state.pveBattle,null);
+ assert.equal(fresh.state.progress.currentRegionId,'c'); assert.equal(fresh.state.progress.defeatedBosses.elder_dragon,true);
 });
 
 test('wall contact does not push a stationary guard or overlap actors',()=>{
@@ -236,7 +235,7 @@ test('diagonal dash stops at wall and boundary contact without sliding',()=>{
 
 
 test('refreshing a defeat save returns alive at base without granting rewards',()=>{
- const t=setup(),key='idle_rpg_save_v1'; t.state.player.currentHp=0; t.save.save();
+ const t=setup(),key='idle_rpg_save_v2'; t.state.player.currentHp=0; t.save.save();
  const fresh=setup(); fresh.storage.set(key,t.storage.get(key)); fresh.save.load();
  assert.equal(fresh.state.player.currentHp,10); assert.equal(fresh.state.world.status,'base');
  assert.equal(fresh.state.resources.gold,0); assert.equal(fresh.state.inventory.exp,0);
@@ -274,7 +273,36 @@ test('foreground restore preserves battle and rewards and resume schedules one l
  t.pveLogic.restore();t.pveLogic.restore();assert.equal(t.loops.size,0);
  assert.equal(t.state.pveBattle,b);assert.equal(b.spatial.time,time);
  t.pveLogic.resume();t.pveLogic.resume();assert.equal(t.loops.size,1);
- victory(t);const exp=t.state.inventory.exp,gold=t.state.world.runGold;
+ victory(t);const exp=t.state.inventory.exp,gold=t.state.resources.gold;
  t.pveLogic.restore();t.pveLogic.resume();
- assert.equal(t.loops.size,0);assert.equal(t.state.inventory.exp,exp);assert.equal(t.state.world.runGold,gold);
+ assert.equal(t.loops.size,0);assert.equal(t.state.inventory.exp,exp);assert.equal(t.state.resources.gold,gold);
+});
+
+test('region and enemy profiles build for every authored region and monster',()=>{
+ const t=setup(), zoom=vm.runInContext('gameConfig.adventure.camera.zoom',t.c);
+ for(const def of Object.values(t.content.regions)){
+  const r=t.pveProfiles.region(def);
+  assert.equal(r.width,def.map.width);assert.equal(r.height,def.map.height);
+  assert.equal(r.solo,true);assert.equal(r.camera.zoom,zoom);
+  const walk=t.spatialEngine.create(r);
+  assert.equal(walk.enemy,null);
+  t.spatialEngine.start(walk);
+  const x=walk.player.x,y=walk.player.y;
+  for(let i=0;i<60;i++) t.spatialEngine.advanceActor(walk,1/60);
+  assert.equal(walk.player.x,x);assert.equal(walk.player.y,y);   // no input, no drift
+  assert.equal(walk.skillPoints,0);                              // walking banks no SP
+  const radius=m=>m.boss?25:16;
+  for(const m of def.map.monsters||[]){
+   const C=t.pveProfiles.enemy(def,m.enemyId,t.content.enemies[m.enemyId],{radius:radius(m),speed:m.speed});
+   assert.equal(C.width,def.map.width);assert.equal(C.height,def.map.height);
+   assert.equal(C.ai.speed,m.speed);assert.equal(C.enemy.radius,radius(m));
+   // Combat starts wherever the bodies already stand, so a fully overlapping
+   // pair has to be resolved by separation rather than refused.
+   C.player.x=m.x;C.player.y=m.y;C.enemy.x=m.x;C.enemy.y=m.y;
+   const b=t.spatialEngine.create(C);
+   assert.ok(Math.hypot(b.player.x-b.enemy.x,b.player.y-b.enemy.y)>=b.player.radius+b.enemy.radius-1e-6,
+     `${m.id} failed to separate`);
+   assert.equal(C.enemy.x,m.x);assert.equal(C.enemy.y,m.y);   // create must not move the caller's actors
+  }
+ }
 });

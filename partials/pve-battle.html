@@ -3,7 +3,7 @@
         <canvas id="pve-s-arena" aria-label="蓝色剑盾角色对战地下城敌人，橙色范围是起手，红色范围是锁定攻击"></canvas>
     <header class="topbar">
         <button type="button" onclick="pveLogic.flee()">撤退</button>
-        <div><strong id="pve-floor-label">地下城</strong><span id="pve-enemy-name">敌人</span></div>
+        <div><strong id="pve-floor-label">区域战斗</strong><span id="pve-enemy-name">敌人</span></div>
         <button id="pve-s-pause" type="button" onclick="pveLogic.pause()">暂停 / 设置</button>
     </header>
     <section class="vitals" aria-label="双方状态">
@@ -58,14 +58,14 @@
     <div id="log"></div>
     </section>
     <div id="pve-empty-overlay" class="result-overlay hidden">
-        <h2>准备探索地下城</h2><p>中央拖动移动、短按轻击；原位长按蓄力后拖动，圈外松手重击，回落指点取消。</p>
-        <button onclick="pveLogic.enterDungeon()">下地下城</button><button onclick="ui.switchTab('base')">回到基地</button>
+        <h2>准备冒险</h2><p>从区域地图选择遭遇。中央拖动移动、短按轻击；原位长按蓄力后拖动，圈外松手重击，回落指点取消。</p>
+        <button onclick="pveLogic.openAdventure()">打开区域地图</button><button onclick="ui.switchTab('base')">回到基地</button>
     </div>
     <div id="pve-win-overlay" class="result-overlay hidden">
         <h2>战斗胜利</h2><div id="pve-win-loot"></div>
-        <div class="btn-row"><button onclick="pveLogic.continueNext()">继续深入</button><button onclick="pveLogic.safeRetreat()">携宝回城</button></div>
+        <div class="btn-row"><button onclick="pveLogic.returnToRegion()">返回区域</button></div>
     </div>
     <div id="pve-defeat-overlay" class="result-overlay hidden">
-        <h2>英雄倒下</h2><p>本次携带金币已失去。</p><button onclick="pveLogic.endFight(false)">回到基地</button>
+        <h2>英雄倒下</h2><p>你被救回了曙光据点。</p><button onclick="pveLogic.endFight()">回到基地</button>
     </div>
 </div>

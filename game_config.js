@@ -118,8 +118,16 @@ const gameConfig = (() => {
             motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 }
         },
 
-        // 7. Dungeon scaling and common enemy behavior.
-        dungeon: { statGrowthPerFloor: 0.08, goldPerExp: 0.60 },
+        // 7. Adventure rewards and common enemy behavior. Area encounters use
+        // the authored enemy data directly; there is no floor scaling or run.
+        // Region-session camera. `zoom` is world units per CSS pixel; 1 keeps the
+        // overworld at its historic 1:1 scale. The SAME number feeds the fight as
+        // well, which is what stops starting combat from causing a zoom jump --
+        // the fixed-window `camera` preset above is what PVP and training use.
+        adventure: {
+            goldPerExp: 0.60,
+            camera: { zoom: 1, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 }
+        },
         enemyDefaults: { apMax: 5, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
             enrageThreshold: 0, enrageAtkMult: 1.3, enrageSpdMult: 1.2 },
         enemyTiming: { windupBonus: 0.10, recoveryBonus: 0.15, active: 0.16 },
@@ -406,21 +414,75 @@ const gameConfig = (() => {
                 }
             },
 
-            // Roguelike dungeon floors (replaces the old fixed-area system).
-            // Every bossFloorInterval'th floor (9, 18, 27...) is a boss floor,
-            // rotating through bossRotation (floor 9 → [0], 18 → [1], 27 → [0]...).
-            // Non-boss floors pick one enemy at random from the tier whose maxFloor
-            // covers the ABSOLUTE floor number; floors past the last tier keep
-            // drawing from it (stat scaling continues via _scaledEnemyData).
-            floorPools: [
-                { maxFloor: 3,  pool: ['goblin', 'wolf'] },
-                { maxFloor: 6,  pool: ['goblin', 'wolf', 'orc'] },
-                { maxFloor: 8,  pool: ['orc', 'young_dragon'] },
-                { maxFloor: 12, pool: ['orc', 'young_dragon', 'skeleton_warrior'] },
-                { maxFloor: 17, pool: ['skeleton_warrior', 'shadow_assassin', 'stone_golem'] }
-            ],
-            bossRotation: ['elder_dragon', 'abyss_lord'],
-            bossFloorInterval: 9,
+            // Authored adventure graph. Exits are independent of encounters:
+            // crossing an exit never requires clearing nearby enemies or an
+            // interaction. `portal` is the physical exit trigger in the
+            // overworld renderer.
+            //
+            // `portal.angle` (radians, 0 = +x) is the gate's own facing -- its
+            // `in`, the direction it leads. It is drawn as an arrow at the gate's
+            // mouth, and a return trip emerges on the far side of the gate leading
+            // back, facing the reverse of that gate's angle. Omit it and the gate
+            // is assumed to lead out of the region.
+            // `playerSpawn.facing` (radians) is the heading a fresh spawn starts
+            // with. Both fields are optional.
+            regions: {
+                a: {
+                    id: 'a', name: '曙光据点', kind: 'safe',
+                    desc: '安全的主基地，可整备并前往晨雾原野。',
+                    map: { width: 1200, height: 900, playerSpawn: { x: 260, y: 610 } },
+                    exits: [{ to: 'b', label: '北门 · 晨雾原野', portal: { x: 1120, y: 450, angle: 0 } }],
+                    encounters: []
+                },
+                b: {
+                    id: 'b', name: '晨雾原野', kind: 'field',
+                    desc: '开阔的野外区域。可绕开敌人，沿东侧山道进入熔岩巢穴。',
+                    map: {
+                        width: 2200, height: 1400, playerSpawn: { x: 150, y: 720 },
+                        monsters: [
+                            { id: 'b-goblin-1', enemyId: 'goblin', x: 590, y: 380, patrolRadius: 80, alertRange: 150, encounterRange: 52, speed: 54, leash: 260 },
+                            { id: 'b-wolf-1', enemyId: 'wolf', x: 1090, y: 820, patrolRadius: 110, alertRange: 180, encounterRange: 50, speed: 78, leash: 300 },
+                            { id: 'b-orc-1', enemyId: 'orc', x: 1490, y: 470, patrolRadius: 65, alertRange: 135, encounterRange: 55, speed: 44, leash: 240 }
+                        ]
+                    },
+                    exits: [
+                        { to: 'a', label: '南门 · 曙光据点', portal: { x: 80, y: 480, angle: Math.PI } },
+                        { to: 'c', label: '东侧山道 · 熔岩巢穴', portal: { x: 1840, y: 530, angle: 0 } }
+                    ],
+                    encounters: ['goblin', 'wolf', 'orc']
+                },
+                c: {
+                    id: 'c', name: '熔岩巢穴', kind: 'danger',
+                    desc: '龙巢深处由远古巨龙把守。击败它后，深渊边境入口才会打开。',
+                    map: {
+                        width: 2200, height: 1400, playerSpawn: { x: 150, y: 760 },
+                        monsters: [
+                            { id: 'c-drake-1', enemyId: 'young_dragon', x: 830, y: 710, patrolRadius: 100, alertRange: 165, encounterRange: 58, speed: 62, leash: 280 },
+                            { id: 'c-elder-dragon', enemyId: 'elder_dragon', x: 1770, y: 260, patrolRadius: 0, alertRange: 245, encounterRange: 68, speed: 42, leash: 330, boss: true }
+                        ]
+                    },
+                    exits: [
+                        { to: 'b', label: '西侧山道 · 晨雾原野', portal: { x: 120, y: 530, angle: Math.PI } },
+                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 1960, y: 470, angle: 0 } }
+                    ],
+                    encounters: ['young_dragon'],
+                    boss: { enemyId: 'elder_dragon', unlocks: ['d'] }
+                },
+                d: {
+                    id: 'd', name: '深渊边境', kind: 'danger',
+                    desc: '巨龙败亡后才显现的裂隙彼端。',
+                    map: {
+                        width: 2400, height: 1600, playerSpawn: { x: 170, y: 790 },
+                        monsters: [
+                            { id: 'd-skeleton-1', enemyId: 'skeleton_warrior', x: 720, y: 530, patrolRadius: 85, alertRange: 150, encounterRange: 55, speed: 52, leash: 260 },
+                            { id: 'd-shadow-1', enemyId: 'shadow_assassin', x: 1310, y: 860, patrolRadius: 125, alertRange: 205, encounterRange: 48, speed: 92, leash: 340 },
+                            { id: 'd-golem-1', enemyId: 'stone_golem', x: 1860, y: 450, patrolRadius: 45, alertRange: 135, encounterRange: 70, speed: 38, leash: 250 }
+                        ]
+                    },
+                    exits: [{ to: 'c', label: '裂隙回程 · 熔岩巢穴', portal: { x: 120, y: 470, angle: Math.PI } }],
+                    encounters: ['skeleton_warrior', 'shadow_assassin', 'stone_golem']
+                }
+            },
 
             buildings: {
                 hotSpring: { name: "温泉", baseProduce: {} },

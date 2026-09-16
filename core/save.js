@@ -4,8 +4,8 @@
 //
 // What gets saved, what doesn't:
 // - Saved: resources (gold) / inventory (exp+items+materials) / base.buildings /
-//   player (level, stats, HP, equip) / progress (checkpointFloor -- permanent
-//   dungeon progress, NOT the same as `world` below)
+//   player (level, stats, HP, equip) / progress (world-map location,
+//   discoveries and defeated bosses; not the live `world` view)
 // - Not saved: world (current tab/in-run floor position), battle (mid-fight state),
 //   pvpBattle (online match state) -- these are all transient "session-only"
 //   state that should always reset to defaults on page reload, rather than
@@ -13,7 +13,8 @@
 //   scope here).
 
 const save = (() => {
-    const KEY = 'idle_rpg_save_v1';
+    const KEY = 'idle_rpg_save_v2';
+    const LEGACY_KEY = 'idle_rpg_save_v1';
     const AUTOSAVE_INTERVAL_MS = 8000;
 
     let _timer = null;
@@ -21,7 +22,7 @@ const save = (() => {
 
     function _snapshot() {
         return {
-            v: 1,
+            v: 2,
             savedAt: Date.now(),
             resources: state.resources,
             inventory: state.inventory,
@@ -45,7 +46,7 @@ const save = (() => {
     function _doLoad() {
         let raw;
         try {
-            raw = localStorage.getItem(KEY);
+            raw = localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY);
         } catch (e) {
             console.warn('[save] read failed', e);
             return false;
@@ -85,7 +86,22 @@ const save = (() => {
             // never caches an old reference.
         }
 
-        if (data.progress) Object.assign(state.progress, data.progress);
+        if (data.progress) {
+            // v1 stored only a dungeon floor checkpoint. Preserve all other
+            // character progress while starting the new authored map at A.
+            const p = data.progress;
+            if (typeof p.currentRegionId === 'string' && content.regions[p.currentRegionId]) {
+                state.progress.currentRegionId = p.currentRegionId;
+            }
+            if (p.unlockedRegions && typeof p.unlockedRegions === 'object') {
+                for (const id of Object.keys(content.regions)) {
+                    if (p.unlockedRegions[id]) state.progress.unlockedRegions[id] = true;
+                }
+            }
+            if (p.defeatedBosses && typeof p.defeatedBosses === 'object') {
+                Object.assign(state.progress.defeatedBosses, p.defeatedBosses);
+            }
+        }
 
         // Reload returns to base, including saves written on the defeat screen.
         // Zero HP cannot pass passive regen's alive gate; mirror death return.
@@ -97,7 +113,7 @@ const save = (() => {
     }
 
     function _clear() {
-        try { localStorage.removeItem(KEY); } catch (e) {}
+        try { localStorage.removeItem(KEY); localStorage.removeItem(LEGACY_KEY); } catch (e) {}
     }
 
     return {

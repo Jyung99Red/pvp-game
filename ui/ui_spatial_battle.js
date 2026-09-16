@@ -1,17 +1,30 @@
 // Read-only battle view. Presentation effects belong to this instance, never the engine.
-const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix = '') {
+const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix = '', options = {}) {
     const L = combatGestures, S = spatialCombat;
     let battle, contextLost = false;
     const abort = new AbortController();
     const $ = id => root.querySelector(`[id="${prefix}${id}"]`);
-    const canvas = $('arena'), ctx = canvas.getContext('2d');
+    // A region session draws into its own canvas and supplies a world layer, so
+    // one view serves both walking and fighting with no seam between them.
+    const canvas = $(options.canvasId || 'arena'), ctx = canvas.getContext('2d');
+    const layer = options.layer || null;
     const pads = { move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
     const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
     const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
-    const viewWidth = Math.min(C.width, C.camera?.width || C.width);
-    const viewHeight = Math.min(C.height, C.camera?.height || C.height);
+    // `zoom` (world units per CSS pixel) pins the scale and DERIVES the visible
+    // window from it, so walking and fighting share one world-to-screen mapping
+    // and starting a fight cannot zoom. Without it the window is a fixed size
+    // fitted into the canvas, which is what PVP and training still do.
+    const zoom = C.camera?.zoom || 0;
+    let viewWidth = Math.min(C.width, C.camera?.width || C.width);
+    let viewHeight = Math.min(C.height, C.camera?.height || C.height);
+    function syncWindow() {
+        if (!zoom) return;
+        viewWidth = Math.max(1, (width - worldInset * 2) / zoom);
+        viewHeight = Math.max(1, Math.max(1, height - worldTop - worldBottom) / zoom);
+    }
     let camera = null;
     let hintVisible = false, presentationDt = 0;
     let visiblePolygon = [];
@@ -50,7 +63,12 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
     // faction mapping, never a camera rotation.
     function viewportLayout() {
         const availableHeight = Math.max(1, height - worldTop - worldBottom);
-        const scale = Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
+        // Zoom mode pins the scale; the fit branch is what PVP and training use.
+        // syncWindow derived the window from this same zoom, so in normal cases
+        // the fit would already agree -- do not "simplify" this away: it is what
+        // keeps a degenerate canvas (insets wider than the element, which clamps
+        // viewWidth to 1) from collapsing the scale to the .01 floor.
+        const scale = zoom || Math.max(.01, Math.min((width - worldInset * 2) / viewWidth, availableHeight / viewHeight));
         return {
             scale,
             x: (width - viewWidth * scale) / 2,
@@ -103,6 +121,7 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         }
         canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        syncWindow();
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
@@ -347,7 +366,7 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
     }
     function draw() {
         if (contextLost || !battle || canvas.width < 1 || canvas.height < 1) return;
-        const p = battle.player, e = battle.enemy, enemyVisible = battle.enemyVisible !== false;
+        const p = battle.player, e = battle.enemy, enemyVisible = !!e && battle.enemyVisible !== false;
         ctx.clearRect(0, 0, width, height);
         if (fullscreen) {
             const ground = ctx.createRadialGradient(width / 2, height * .42, 20, width / 2, height * .42, Math.max(width, height) * .7);
@@ -363,15 +382,18 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         ctx.beginPath(); ctx.rect(0, 0, viewWidth, viewHeight); ctx.clip();
         if (C.reverseView) { ctx.translate(viewWidth, viewHeight); ctx.rotate(Math.PI); }
         if (camera) ctx.translate(viewWidth / 2 - camera.x, viewHeight / 2 - camera.y);
-        ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
-        ctx.strokeStyle = '#294044'; ctx.lineWidth = .6;
-        for (let x = 0; x <= C.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke(); }
-        for (let y = 0; y <= C.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke(); }
-        ctx.strokeStyle = '#496265'; ctx.strokeRect(0, 0, C.width, C.height);
-        arenaDecor();
+        if (layer) layer.world(ctx, { camera, viewWidth, viewHeight, scale });
+        else {
+            ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
+            ctx.strokeStyle = '#294044'; ctx.lineWidth = .6;
+            for (let x = 0; x <= C.width; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, C.height); ctx.stroke(); }
+            for (let y = 0; y <= C.height; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(C.width, y); ctx.stroke(); }
+            ctx.strokeStyle = '#496265'; ctx.strokeRect(0, 0, C.width, C.height);
+            arenaDecor();
+            circle(C.width / 2, C.height / 2, 135, null, '#31494a');
+            circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
+        }
         drawWalls();
-        circle(C.width / 2, C.height / 2, 135, null, '#31494a');
-        circle(C.width / 2, C.height / 2, 131, null, '#243c3e');
         // Clip telegraphs at the arena boundary; actors are clamped by logic.
         ctx.beginPath(); ctx.rect(0, 0, C.width, C.height); ctx.clip();
         visiblePolygon = wallList().length ? S.visibilityPolygon(battle.visibilityOrigin || battle.player, C, wallList()) : [];
@@ -430,7 +452,7 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         ctx.restore();
         if (wallList().length) { shadeHiddenArea(); drawWalls(); }
         ctx.restore();
-        drawOffscreenHint();
+        if (e) drawOffscreenHint();
     }
     function controls() {
         for (const [channel, pad] of Object.entries(pads)) {
@@ -458,7 +480,9 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         presentationDt = Math.min(.1, Math.max(0, frameDt));
         // Advance presentation once per frame, never on ResizeObserver redraws.
         for (const key of ['player', 'enemy']) {
-            const body = battle[key], guarding = ['guard_start', 'guard'].includes(body.phase);
+            const body = battle[key];
+            if (!body) continue;                 // a solo preset has no enemy body
+            const guarding = ['guard_start', 'guard'].includes(body.phase);
             const config = key === 'enemy' ? (C.opponentConfig || C) : C;
             if (guarding) shieldPose[key] = body.phase === 'guard' ? 1 : S.clamp(1 - body.timer / Math.max(.001, config.guardStartup), 0, 1);
             else shieldPose[key] *= Math.exp(-11 * presentationDt);
@@ -471,19 +495,22 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         }
         draw(); controls();
         const p = battle.player, e = battle.enemy;
-        const enemyVisible = battle.enemyVisible !== false, knownEnemyHp = battle.enemyKnownHp ?? e.hp;
         text('battle-log', logs.join('\n'));
         text('player-hp', `${p.hp} / ${p.maxHp}`);
-        text('enemy-hp', `${knownEnemyHp} / ${e.maxHp}${enemyVisible ? '' : ' · 旧信息'}`);
-        nodes['player-meter'].max = p.maxHp; nodes['enemy-meter'].max = e.maxHp;
-        nodes['player-meter'].value = p.hp; nodes['enemy-meter'].value = knownEnemyHp;
+        nodes['player-meter'].max = p.maxHp; nodes['player-meter'].value = p.hp;
+        // A solo preset has no opponent, so the whole enemy half of the HUD is absent.
+        if (e) {
+            const enemyVisible = battle.enemyVisible !== false, knownEnemyHp = battle.enemyKnownHp ?? e.hp;
+            text('enemy-hp', `${knownEnemyHp} / ${e.maxHp}${enemyVisible ? '' : ' · 旧信息'}`);
+            nodes['enemy-meter'].max = e.maxHp; nodes['enemy-meter'].value = knownEnemyHp;
+            const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
+            text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
+            if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
+        }
         apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
-        const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
-        text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
-        if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;

@@ -366,3 +366,48 @@ test('replacing a queued charge restores ordinary movement and turning without a
     assert.equal(b.move.mode, 'move'); assert.ok(b.player.facing > -Math.PI / 2);
     L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
 });
+
+// A region session and a fight must share ONE world-to-screen mapping: if the
+// fight kept the fixed 350x390 window while the overworld drew 1:1, starting a
+// fight would zoom ~2x -- exactly the visual cut the merge exists to remove.
+test('a zoomed region config pins the scale and derives its window from the canvas', () => {
+    const scales = [], rects = [];
+    const canvasContext = new Proxy({}, { get: (_, key) => key === 'scale' ? (x) => scales.push(x) :
+        key === 'rect' ? (x, y, w, h) => rects.push({ w, h }) :
+        key === 'createRadialGradient' ? () => ({ addColorStop() {} }) : () => {} });
+    const nodes = new Map();
+    function element() {
+        return { textContent: '', style: { setProperty() {} }, classList: { toggle() {} }, addEventListener() {}, querySelectorAll: () => [],
+            setAttribute() {}, appendChild: node => node, remove() {},
+            getBoundingClientRect: () => ({ width: 390, height: 844, top: 700, bottom: 90 }),
+            querySelector: () => ({ style: {} }) };
+    }
+    const root = { classList: { contains: () => true }, querySelector(s) { if (!nodes.has(s)) nodes.set(s, element()); return nodes.get(s); } };
+    const canvas = root.querySelector('[id="arena"]');
+    canvas.getContext = () => canvasContext;
+    canvas.getBoundingClientRect = () => ({ width: 390, height: 844, top: 0 });
+    const c = vm.createContext({ root, AbortController, document: { createElement: element }, window: { devicePixelRatio: 1, addEventListener() {} },
+        ResizeObserver: class { observe() {} disconnect() {} } });
+    for (const file of ['game_config.js', 'core/spatial_combat.js', 'core/combat_gestures.js', 'pve/spatial_data.js', 'pve/spatial_engine.js', 'ui/ui_spatial_battle.js'])
+        vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), c);
+    const built = vm.runInContext(`(() => {
+        const R = JSON.parse(JSON.stringify(spatialData.baseCombatPreset));
+        R.solo = true; R.width = 2200; R.height = 1400; R.camera = { ...gameConfig.adventure.camera };
+        const region = uiSpatialBattle.create(root, R, '');
+        const arena = uiSpatialBattle.create(root);
+        return { region, arena, zoom: gameConfig.adventure.camera.zoom,
+                 battle: spatialEngine.create(R), fixed: spatialEngine.create() };
+    })()`, c);
+    // Fullscreen HUD strip: 844 - 700 (vitals) - 12 = 132 usable, 8px insets.
+    const usableHeight = 132, usableWidth = 390 - 16;
+    // The arena transform is the FIRST scale() of a draw -- fighter() rescales
+    // again for the shield, so read positionally rather than off the end.
+    built.region.render(built.battle);
+    assert.equal(scales[0], built.zoom, 'a region fight must draw at the configured zoom');
+    assert.ok(Math.abs(rects[0].w - usableWidth / built.zoom) < 1e-9, `window width ${rects[0].w}`);
+    assert.ok(Math.abs(rects[0].h - usableHeight / built.zoom) < 1e-9, `window height ${rects[0].h}`);
+    // The fit-the-window branch is untouched for everything without a zoom.
+    scales.length = 0;
+    built.arena.render(built.fixed);
+    assert.ok(Math.abs(scales[0] - Math.min(usableWidth / built.fixed.config.width, usableHeight / built.fixed.config.height)) < 1e-9);
+});

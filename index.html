@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>放置地牢</title>
+    <title>冒险 RPG</title>
     <!-- 引入独立出来的 CSS 样式 -->
     <style data-boot-shell>
         html[data-client-state="loading"] { background: #101b20; }
@@ -21,6 +21,8 @@
     <div class="content-area">
         <div id="mount-base"></div>
 
+        <div id="mount-adventure"></div>
+
         <div id="mount-pve-battle"></div>
 
         <div id="mount-pvp-room"></div>
@@ -31,7 +33,7 @@
 
     <div class="nav-bar">
         <button class="nav-btn active" id="tab-base" onclick="ui.switchTab('base')">基地</button>
-        <button class="nav-btn" id="tab-battle" onclick="ui.switchTab('battle')">地下城</button>
+        <button class="nav-btn" id="tab-battle" onclick="ui.switchTab('battle')">区域战斗</button>
         <button class="nav-btn" id="tab-pvp-room" onclick="ui.switchTab('pvp-room')">玩家对战</button>
     </div>
 

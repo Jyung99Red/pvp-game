@@ -17,19 +17,22 @@ const state = {
         currentHp: gameConfig.progression.baseStats.maxHp,
         equip: { ...gameConfig.progression.startingEquipment }
     },
-    // Permanent dungeon progress -- unlike `world` below, this IS saved
-    // (see save.js). checkpointFloor is where the next dungeon run starts;
-    // it only advances when a boss floor (every 9th) is cleared.
-    progress: { checkpointFloor: 1 },
+    // Persistent authored-world progress. Region location, discoveries and
+    // defeated bosses survive reloads; `world` only controls the live view.
+    progress: {
+        currentRegionId: 'a',
+        unlockedRegions: { a: true, b: true, c: true },
+        defeatedBosses: {}
+    },
     world: {
         status: 'base',
         currentTab: 'base',
-        currentFloor: 0,  // 0 = not currently in a dungeon run
-        // Gold earned this run, banked into resources only on making it
-        // back alive (retreat/flee) -- lost entirely on death
-        runGold: 0
+        // Region the player last travelled from. The adventure scene builder
+        // consumes it once to drop the player next to the portal that leads
+        // back, instead of the region's default spawn. Transient, never saved.
+        arrivalFrom: null
     },
-    pveBattle: null   // created at runtime by pveLogic.enterDungeon/continueNext (transient, never saved)
+    pveBattle: null   // created at runtime by pveLogic.startEncounter (transient, never saved)
 };
 
 // Runtime content is copied so game/test overrides cannot mutate tuning templates.
