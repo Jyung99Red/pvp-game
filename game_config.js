@@ -193,7 +193,7 @@ const gameConfig = (() => {
         },
 
         // 9. Content catalog: equipment stats/effects, enemies, drops, recipes,
-        // floor pools, bosses, buildings and shop prices. IDs are stable save keys.
+        // regions, buildings and shop prices. IDs are stable save keys.
         content: {
             items: {
                 wooden_sword: {
@@ -342,7 +342,6 @@ const gameConfig = (() => {
                     },
                     drops: [{ id: 'dragon_scale', chance: 0.80, amount: [1, 2] }]
                 },
-                // ── Deep floors (10+) ──
                 skeleton_warrior: {
                     name: "骷髅武士", hp: 100, atk: 34, def: 9, exp: 80,
                     acts: {
@@ -375,7 +374,7 @@ const gameConfig = (() => {
                         { id: 'shadow_crystal', chance: 0.25, amount: [1, 1] }
                     ]
                 },
-                // ── Bosses (content.bossRotation) ──
+                // ── Bosses (referenced by a region's `boss`) ──
                 elder_dragon: {
                     name: "古龙", hp: 500, atk: 55, def: 15, exp: 400,
                     acts: {
@@ -535,7 +534,7 @@ const gameConfig = (() => {
             },
 
             // Shop: spend gold to buy materials directly (gold now comes from
-            // combat/floor clears, not a production building) -- placeholder prices.
+            // combat, not a production building) -- placeholder prices.
             shopPrices: {
                 goblin_ear:     15,
                 wolf_pelt:      20,

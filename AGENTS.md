@@ -25,6 +25,7 @@ change should not require editing it.**
 |---|---|
 | `SYSTEMS.md` | Everything that moves with the code: module map, current state, combat rules, boot behaviour, and the settled decisions — **the one file to update**. |
 | `README.md` | What the game is, how to run and play it (Chinese). |
+| `docs/tasks/combat-parameter-inventory.md` | The parameter tables (Chinese) — a mirror of `game_config.js` for design work. Keep it in step when numbers move. |
 | `pve/COMBAT_CONTROLS.md` | Dated gesture/skill tuning notes. |
 | `pvp/SPATIAL_MIGRATION.md` | Dated PVP spatial design record. |
 

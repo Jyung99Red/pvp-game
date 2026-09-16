@@ -1,8 +1,10 @@
 # 战斗参数盘点（按当前代码）
 
-盘点日期：2026-09-14。本文只记录当前实现，服务于后续属性重设计；数值单位以代码语义为准。
+盘点日期：2026-09-14；2026-09-16 复核（怪物 HP/DEF 重调、地牢相关行删除）。
 
-当前所有面向玩法和平衡调整的数值以根目录 `game_config.js` 为唯一来源。该文件按成长、资源与伤害、输入、技能、训练模板、场地、地牢、怪物动作和内容表分区，并使用英文注释标明单位和覆盖关系。模拟步长、网络超时、协议校验及纯表现常量继续由各自模块管理。
+本文只记录当前实现，服务于后续属性重设计；数值单位以代码语义为准。**数值以 `game_config.js` 为准**，本文是它的对照表：代码改了要顺手改这里，行号会漂移，定位以符号名/文件为准而不是行号。
+
+当前所有面向玩法和平衡调整的数值以根目录 `game_config.js` 为唯一来源。该文件按成长、资源与伤害、输入、技能、训练模板、场地、区域、怪物动作和内容表分区，并使用英文注释标明单位和覆盖关系。模拟步长、网络超时、协议校验及纯表现常量继续由各自模块管理。
 
 ## 1. 读表规则与参数来源
 
@@ -94,7 +96,7 @@
 | `full` 满蓄 | 下 | `2` | charging 时立即满蓄，否则设置一次性 `instantCharge` | 已有 `instantCharge` 时拒绝；一次性消费 |
 | `parry` 弹反 | 左 | `3` | 设置一次 `autoParry`，下一次符合条件的攻击自动弹反 | 已有 auto-parry 时拒绝；自动弹反不扣 AP；注意普通 guard parry 仍消耗 `.5 AP` |
 
-技能按成功执行时扣 SP；锁定期间可排队，队列真正执行才扣点（`pve/pve_logic.js:L245-L251`、`pvp/spatial_duel.js:L26-L31`）。SP 不再因命中/弹反瞬间增加，而由共享引擎按时间生成；PVE 连层保留点数与小数进度，PVP 快照同步进度且客机预测不生成可消费 SP。训练允许免费练习的“页面适配”规则不改变共享技能定义。
+技能按成功执行时扣 SP；锁定期间可排队，队列真正执行才扣点（`pve/pve_logic.js:L245-L251`、`pvp/spatial_duel.js:L26-L31`）。SP 不再因命中/弹反瞬间增加，而由共享引擎按时间生成；PVE 跨战斗保留点数与小数进度，PVP 快照同步进度且客机预测不生成可消费 SP。训练允许免费练习的“页面适配”规则不改变共享技能定义。
 
 ## 4. 正式 PVE 玩家/伤害派生
 
@@ -122,22 +124,22 @@
 
 ### 5.1 基础属性、动作伤害倍率和基础伤害
 
-`gameConfig.content.enemies` 中的 HP/ATK/DEF/EXP 是 1 层基础值。动作名称只用于显示；每个动作的几何/时序来自 `gameConfig.enemyMoves`，正式伤害为 `round(enemy.atk × multiplier)` 且至少 1。下表“基础伤害”是未做楼层缩放时的当前值。
+`gameConfig.content.enemies` 中的 HP/ATK/DEF/EXP 即当前基础值。动作名称只用于显示；每个动作的几何/时序来自 `gameConfig.enemyMoves`，正式伤害为 `round(enemy.atk × multiplier)` 且至少 1。下表“基础伤害”按当前数值现算。
 
 | ID（名称） | HP | ATK | DEF | EXP | AI focus | 动作1：名称 / multiplier → 伤害 | 动作2：名称 / multiplier → 伤害 |
 |---|---:|---:|---:|---:|---:|---|---|
 | `test_combat`（测试木桩） | 200 | 5 | 1 | 20 | 10默认 | 快斩 / `.6` → 3 | 重击 / `1` → 5 |
-| `goblin`（哥布林） | 55 | 12 | 4 | 20 | 10默认 | 乱挥 / `.6` → 7 | 猛扑 / `.9` → 11 |
-| `wolf`（野狼） | 50 | 18 | 3 | 15 | 10默认 | 撕咬 / `.6` → 11 | 扑击 / `.9` → 16 |
-| `orc`（兽人苦工） | 80 | 25 | 8 | 50 | 10默认 | 挥锤 / `.7` → 18 | 砸地 / `1.1` → 28 |
-| `young_dragon`（幼龙） | 200 | 30 | 8 | 120 | 10默认 | 爪击 / `.7` → 21 | 火焰吐息 / `1.1` → 33 |
-| `skeleton_warrior`（骷髅武士） | 130 | 34 | 10 | 80 | 10默认 | 骨刃斩 / `.7` → 24 | 碎骨击 / `1.1` → 37 |
-| `shadow_assassin`（暗影刺客） | 95 | 42 | 6 | 100 | 12 | 影袭 / `.6` → 25 | 致命突刺 / `1.1` → 46 |
-| `stone_golem`（岩石傀儡） | 320 | 30 | 24 | 120 | 8 | 岩拳 / `.7` → 21 | 地裂 / `1.1` → 33 |
+| `goblin`（哥布林） | 35 | 12 | 3 | 20 | 10默认 | 乱挥 / `.6` → 7 | 猛扑 / `.9` → 11 |
+| `wolf`（野狼） | 30 | 18 | 2 | 15 | 10默认 | 撕咬 / `.6` → 11 | 扑击 / `.9` → 16 |
+| `orc`（兽人苦工） | 50 | 25 | 5 | 50 | 10默认 | 挥锤 / `.7` → 18 | 砸地 / `1.1` → 28 |
+| `young_dragon`（幼龙） | 120 | 30 | 6 | 120 | 10默认 | 爪击 / `.7` → 21 | 火焰吐息 / `1.1` → 33 |
+| `skeleton_warrior`（骷髅武士） | 100 | 34 | 9 | 80 | 10默认 | 骨刃斩 / `.7` → 24 | 碎骨击 / `1.1` → 37 |
+| `shadow_assassin`（暗影刺客） | 85 | 42 | 7 | 100 | 12 | 影袭 / `.6` → 25 | 致命突刺 / `1.1` → 46 |
+| `stone_golem`（岩石傀儡） | 250 | 30 | 22 | 120 | 8 | 岩拳 / `.7` → 21 | 地裂 / `1.1` → 33 |
 | `elder_dragon`（古龙） | 500 | 55 | 15 | 400 | 10默认 | 龙爪斩 / `.7` → 39 | 龙焰冲击 / `1.1` → 61 |
 | `abyss_lord`（深渊领主） | 850 | 70 | 20 | 700 | 10默认 | 深渊爪 / `.7` → 49 | 湮灭波动 / `1.1` → 77 |
 
-楼层实际战斗数据按 `scale = 1 + (floor-1)×.08` 同时缩放 HP、ATK、DEF、EXP，并四舍五入；掉落表和 arena 配置不随该函数缩放（`pve/pve_logic.js:L21-L30`）。因此动作伤害也随缩放后的 ATK 重新四舍五入。
+数值即当前基础值，没有任何楼层缩放或 run 修正：区域里的怪就是这些数。动作伤害由 ATK 与 multiplier 现算（`round(atk × multiplier)`，至少 1），因此改 ATK 会同时改动作伤害。
 
 ### 5.2 每个动作的几何与时序
 
@@ -185,16 +187,15 @@
 
 Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每个 combo 仍使用动作数组轮换。enrage 会乘敌人 timer 消耗和 AP 回复，并乘命中 raw damage。模板 windup/recovery 数值虽不变，实际阶段耗时会除以 enrageSpdMult，因而更快；approach 移速和攻击几何不变（`pve/spatial_engine.js:L340-L377`）。
 
-### 5.4 Arena 效果、楼层与奖励相关固定值
+### 5.4 Arena 效果与战斗收益
 
 | 怪物/机制 | 参数 | 当前行为 |
 |---|---|---|
-| 古龙 `burning_ground` | `startMs=20000`、`intervalMs=3000`、`pct=.03` | 20s 后播报；首个伤害落在约 23s；之后每 3s 双方各受自身 maxHP 的 3%（至少 1），`core/arena_effects.js:L70-L99` |
-| 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后双方 AP 回复 ×2，过渡帧播报一次，`core/arena_effects.js:L53-L69` |
-| PVE arena 结算 | — | 只在 `pve_logic` 驱动；环境伤害与同一 10ms 步中的攻击一起结算，双方同时死亡判玩家败北（`pve/pve_logic.js:L135-L154`）；当前 PVP 不使用 arena |
-| floor pools | `≤3: goblin/wolf`; `≤6: goblin/wolf/orc`; `≤8: orc/young_dragon`; `≤12: orc/young_dragon/skeleton_warrior`; `≤17: skeleton_warrior/shadow_assassin/stone_golem` | 超过 17 层继续使用最后一池；绝对楼层数继续参与 8% 缩放；配置位于 `gameConfig.content.floorPools` |
-| Boss轮换 | `bossFloorInterval=9`；`bossRotation=[elder_dragon,abyss_lord]` | 9/18/27… 层依次轮换；击杀 Boss 才推进 checkpoint，`pve/pve_logic.js:L7-L18,L67-L74` |
-| 金币 | `goldReward=round(exp×.6)` | 每场胜利加入本次 runGold；活着回城才入资源，死亡清零，`pve/pve_logic.js:L52-L64,L229-L242` |
+| 古龙 `burning_ground` | `startMs=20000`、`intervalMs=3000`、`pct=.03` | 20s 后播报；首个伤害落在约 23s；之后每 3s 双方各受自身 maxHP 的 3%（至少 1），`core/arena_effects.js` |
+| 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后双方 AP 回复 ×2，过渡帧播报一次，`core/arena_effects.js` |
+| PVE arena 结算 | — | 只在 `pve_logic` 驱动；环境伤害与同一 10ms 步中的攻击一起结算，双方同时死亡判玩家败北；当前 PVP 不使用 arena |
+| 金币 | `adventure.goldPerExp=.6` | `goldReward=round(exp×.6)`，胜利当场入账；没有 run 结算，死亡也不清空已得金币（`pve/pve_logic.js` 的 `_onVictory`） |
+| 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。战斗/区域结构见 `SYSTEMS.md` |
 
 ## 6. PVP 固定规则（当前 v10 / rule v6）
 
@@ -285,7 +286,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 |---|---|
 | 心眼 | 使用 `insight` 属性；通过 `getInsight()` / `getParryWindowMultiplier()` 作为弹反窗口钩子，当前为 `max(.5, 1 + (心眼-10)×.03)`，数值可后续单独调整 |
 | 专注 | 使用 `focus` 属性；通过 `getFocus()` 同时影响 AP 和 SP 回复。基础 AP 为 2000ms/点，SP 为 3000ms/点，因此 SP 默认慢 1.5 倍 |
-| SP | 战斗模拟时间按小数进度回复，上限 3；暂停、局外和结束不增长；移除命中/弹反整点奖励；PVE 连层保留小数，PVP 客机不自行生成可消费 SP |
+| SP | 战斗模拟时间按小数进度回复，上限 3；暂停、局外和结束不增长；移除命中/弹反整点奖励；PVE 跨战斗保留小数，PVP 客机不自行生成可消费 SP |
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
 | 武器蓄力起点 | 基准 `resources.chargeThresholdMs=300ms` 加武器自己的 `chargeOffsetMs`，再按 `chargeThresholdRangeMs={min:200,max:450}` 夹紧（`core/combat_rules.js` 的 `weaponChargeThresholdMs()`）：木剑 `0`→300ms、铁剑 `+50`→350ms、刺客短刃 `-20`→280ms。离散的 light/heavy/basic 模板已移除，新增武器只需一个数字；强化只作用于 atk/def，不会改变该阈值，profile 仍统一使用 `chargeThresholdMs`，三把武器数值未变所以协议/规则版本不需要升级 |
 | 怪物冲刺 | 狼 `扑击`：直线预警、蓄力 `1.05s`、锁向 `.35s`、距离 `150`、速度 `280/s`、轨迹宽 `18`、收招 `1.20s`；暗影刺客 `致命突刺`：直线预警、`.55s/.25s/180/450/s/12/.90s`。冲刺沿实际路径检测一次命中，撞身体、墙或边界停止，不穿身 |

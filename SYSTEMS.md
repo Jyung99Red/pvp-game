@@ -239,9 +239,11 @@ matching pad height in `pve/combat_controls.css`.
 - AP costs 20/focus seconds per point and only regenerates while idle, recovering
   or stunned; SP costs 30/focus seconds per point, regenerates in every living
   stance, caps at 3, and is no longer awarded for hits or parries.
-- Defense mitigation is `min(raw×0.2, def×0.15)`; blocking multiplies again.
-  Insight adjusts the parry window; the auto-parry skill spends SP while a manual
-  parry spends AP.
+- Defense mitigation is `max(1, round(raw × (1 − def/(def + 17.5))))` — DEF equal
+  to `damage.defenseConstant` (17.5) halves incoming raw damage. Blocking
+  multiplies again by `blockMultiplier` (`.4 × guardDamageMultiplier`), and a
+  crit is ×1.5. Insight adjusts the parry window; the auto-parry skill spends SP
+  while a manual parry spends AP.
 - A dash telegraph is a path hint. The real sweep half-width is the path
   half-width plus the monster radius, and contact adds the player radius; the
   narrow line stays so the player can judge with body volume. The telegraph
@@ -251,10 +253,11 @@ matching pad height in `pve/combat_controls.css`.
   predicts and corrects smoothly; HP and the result come from the host; both
   sides' attacks are collected before either resolves. Spatial clash is still not
   implemented.
-- PVP v9 / rule v5; fair and progression are matched into separate rooms, and
-  fair mode reads no progression. 570×630 L-wall arena; PVE 510×566; training
-  360×400. Formal camera 350×390; the guest view is flipped 180° and skill
-  directions stay in screen coordinates.
+- PVP v10 / rule v6 (the constants at the top of `pvp/pvp_logic.js`; a balance
+  change both clients must agree on needs a bump); fair and progression are
+  matched into separate rooms, and fair mode reads no progression. 570×630
+  L-wall arena; PVE 510×566; training 360×400. Formal camera 350×390; the guest
+  view is flipped 180° and skill directions stay in screen coordinates.
 - Region fights have no result screen but defeat: a win banks its rewards and
   hands the walk straight back, with the report as one expiring log line over the
   map. Flee and disengage take the same hand-back path and return the character
