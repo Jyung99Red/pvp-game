@@ -39,10 +39,10 @@ python -m http.server 8422
 
 ## 测试
 
-运行完整的战斗与启动回归：
+运行完整的战斗与启动回归（Node 自己展开通配符，加测试文件不用改这行）：
 
 ```powershell
-node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs tests/pvp-spatial.test.cjs tests/adventure-world.test.cjs tests/region-combat.test.cjs
+node --test "tests/*.test.cjs"
 ```
 
 自动测试覆盖资源启动、共享空间引擎、PVE 生命周期、区域行走/传送门/建筑交互和 PVP 同步。触屏手感、锁屏恢复、设备旋转和双设备网络体验仍应在真实设备上检查。
@@ -51,13 +51,13 @@ node --test tests/client-boot.test.cjs tests/spatial-engine.test.cjs tests/pve-s
 
 ```text
 core/       共享状态、存档、规则、几何和启动逻辑
-ui/         基地 UI、共享战斗输入与绘制
-pve/        地下城档案、空间引擎、训练场和 PVE 流程
+ui/         共享 UI、战斗输入与绘制
+pve/        区域模拟、空间引擎、训练场和 PVE 流程
 pvp/        双人判定、网络同步、房间和 PVP UI
 partials/   启动时挂载的页面片段
 tests/      启动、共享引擎、PVE 与 PVP 回归测试
 ```
 
-详细的现行职责和数据流见 [战斗架构](structure.md)。PVP 的空间战斗规则与迁移边界见 [PVP 空间战斗](pvp/SPATIAL_MIGRATION.md)。
+现行的模块职责、当前状态、战斗规则和已定决策都在 [SYSTEMS.md](SYSTEMS.md)（英文）——**改代码时只更新那一个文件**，`AGENTS.md` 保持固定。PVP 的空间设计记录见 [PVP 空间战斗](pvp/SPATIAL_MIGRATION.md)。
 
 新增或删除脚本、样式及正式页面 partial 时，需要同步更新 `client-assets.json`。所有脚本按清单顺序作为全局经典脚本执行。
