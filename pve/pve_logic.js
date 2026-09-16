@@ -9,6 +9,9 @@ const pveLogic = (() => {
     const _currentRegion = () => _region(state.progress.currentRegionId);
     const _bossDefeated = enemyId => !!state.progress.defeatedBosses[enemyId];
     const _exitOpen = exit => !exit.requiresBoss || _bossDefeated(exit.requiresBoss);
+    // adventure_world is absent from the scene-less dev/test harness, where the
+    // legacy arena stands in and there is no region to hand back to.
+    const _hasField = () => typeof adventureWorld !== 'undefined' && adventureWorld.isActive();
 
     function _rollDrops(enemyId) {
         const eData = content.enemies[enemyId];
@@ -50,7 +53,7 @@ const pveLogic = (() => {
 
         b.waitingChoice = true;
         _stopLoop();
-        uiPve.clearInputs();
+        uiAdventure.clearInputs();
         _pendingOutcome = { type: 'victory', drops, exp: eData.exp, gold: goldReward, isBoss: b.isBoss };
     }
 
@@ -61,7 +64,7 @@ const pveLogic = (() => {
         fx.log.death();
         b.active = false;
         _stopLoop();
-        uiPve.clearInputs();
+        uiAdventure.clearInputs();
         _pendingOutcome = { type: 'defeat' };
     }
     // Running out of leash is its own outcome: nobody won, no rewards, no
@@ -71,14 +74,21 @@ const pveLogic = (() => {
         const b = state.pveBattle;
         if (b.settled || b.ended) return;
         b.settled = true; b.ended = true; b.active = false; b.waitingChoice = false;
-        spatialEngine.pause(b.spatial); _stopLoop(); uiPve.destroy();
+        spatialEngine.pause(b.spatial); _stopLoop();
         if (typeof adventureWorld !== 'undefined') {
             adventureWorld.endCombat(b.mapEntityId, { disengaged: true, player: b.spatial.player, enemy: b.spatial.enemy });
         }
         // Without this the encounter guard blocks every later fight in the region.
         state.world.status = 'exploring';
         fx.log.disengaged(b.enemyData.name);
-        uiPve.hideOverlays(); ui.switchTab('adventure'); ui.updateAdventure?.();
+        uiAdventure.hideOverlays();
+        _returnToField();
+    }
+    // Hand the region back to the player. There is no tab to switch to any more:
+    // the same view that drew the fight draws the walk, so this only swaps the
+    // shared view's config back and resumes the region loop.
+    function _returnToField() {
+        if (_hasField()) uiAdventure.endFight();
     }
     // Mirrors adventure_world's own leash rule so territory feels identical on
     // both sides of the encounter boundary. The engine's AI has no home
@@ -124,17 +134,21 @@ const pveLogic = (() => {
         _sync();
         _displayEvents.push(...events);
     }
+    // Render the frame that just advanced and raise any pending outcome overlay.
+    // Called from `advance` itself rather than from the loop that drives it, so
+    // BOTH drivers present -- the page adapter's single rAF and the scene-less
+    // fallback loop -- and neither can forget to.
     function _present() {
         const b = state.pveBattle;
         // `ended` covers the disengage path, which retires the fight without an
-        // overlay and destroys the view -- nothing left to present.
+        // overlay and hands the region straight back -- nothing left to present.
         if (!b?.spatial || b.ended) return;
         const events = _displayEvents.splice(0);
-        uiPve.updateFrame(events);
+        uiAdventure.updateFrame(events);
         if (_pendingOutcome) {
             const outcome = _pendingOutcome; _pendingOutcome = null;
-            if (outcome.type === 'victory') uiPve.showWinChoice(outcome.drops, outcome.exp, outcome.gold, outcome.isBoss);
-            else uiPve.showDefeat();
+            if (outcome.type === 'victory') uiAdventure.showWinChoice(outcome.drops, outcome.exp, outcome.gold, outcome.isBoss);
+            else uiAdventure.showDefeat();
         }
     }
     function advance(seconds) {
@@ -169,24 +183,28 @@ const pveLogic = (() => {
             else if (engine.result === 'victory') _onVictory();
             else if (_disengaged(engine, b)) _onDisengage();
         }
+        _present();
     }
+    // DANGER: this is the SCENE-LESS fallback loop only. In the browser the region
+    // session is stepped by `uiAdventure`, which owns the single rAF for walking
+    // and fighting both; a second live loop would double-advance the same fight.
+    // It survives for the dev shortcut and the headless tests, which mount no
+    // adapter -- `_beginFight` is the only place allowed to start it.
     function _loop(now) {
         _rAF = null;
         const b = state.pveBattle;
         if (!b?.spatial?.running || b.waitingChoice) return;
         advance((now - _lastTime) / 1000); _lastTime = now;
-        _present();
         if (b.spatial.running && !b.waitingChoice) _rAF = requestAnimationFrame(_loop);
     }
     function _beginFight(enemyId, region, isBoss, mapEntityId = null) {
-        _stopLoop(); _displayEvents = []; _pendingOutcome = null; uiPve.destroy();
+        _stopLoop(); _displayEvents = []; _pendingOutcome = null;
         const skillPoints = 0, skillProgress = 0;
         const eData = { ...content.enemies[enemyId] };
         // A live region scene fights in region space at the monster's own
         // position; with no scene (the dev shortcut and its headless tests) the
         // legacy arena stands in unchanged.
-        const enlisted = typeof adventureWorld !== 'undefined' && adventureWorld.isActive()
-            ? adventureWorld.enlist(enemyId, mapEntityId) : null;
+        const enlisted = _hasField() ? adventureWorld.enlist(enemyId, mapEntityId) : null;
         const engine = spatialEngine.create(enlisted ? enlisted.config : pveProfiles.create(enemyId, eData), _random);
         engine.skillPoints = skillPoints; engine.skillProgress = skillProgress;
         state.pveBattle = {
@@ -201,33 +219,51 @@ const pveLogic = (() => {
         };
         state.world.status = 'fighting';
         fx.log.encounter(eData.name);
-        if (typeof adventureWorld !== 'undefined') adventureWorld.deactivate();
-        ui.switchTab('battle'); uiPve.initFight(eData);
         spatialEngine.start(engine); _lastTime = performance.now();
-        _rAF = requestAnimationFrame(_loop);
+        // A live region scene is stepped by the page adapter, which owns the one
+        // rAF for walking AND fighting -- starting a second loop here would
+        // double-advance the fight. This branch is the scene-less dev/test path
+        // only: no adapter mounted, and nothing to present to.
+        if (_hasField()) uiAdventure.beginFight(eData);
+        else _rAF = requestAnimationFrame(_loop);
         if (document.hidden) pause();
     }
+    // The pause overlay is shared by both modes. Out of combat it still has to
+    // open: the settings it hosts write to whichever engine is live, so they
+    // apply to walking too.
     function pause() {
         const b = state.pveBattle;
-        if (!b?.active || b.waitingChoice || !b.spatial.running) return;
-        spatialEngine.pause(b.spatial); _stopLoop(); uiPve.clearInputs(); uiPve.showPause(true); _sync();
+        if (b?.active) {
+            if (b.waitingChoice) return;                 // an outcome overlay is up
+            if (b.spatial.running) { spatialEngine.pause(b.spatial); _sync(); }
+        } else if (_hasField()) {
+            adventureWorld.pauseField();
+        } else {
+            return;
+        }
+        _stopLoop(); uiAdventure.clearInputs(); uiAdventure.setPaused(true); uiAdventure.showPause(true);
     }
     // Foreground/BFCache return must restore presentation without recreating a fight.
     function restore() {
         const b = state.pveBattle;
-        if (!b?.spatial || b.ended || document.hidden) return;
-        if (b.active && !b.waitingChoice && !b.spatial.result && b.spatial.started) {
-            spatialEngine.pause(b.spatial); _stopLoop(); uiPve.clearInputs();
-            uiPve.showPause(true); _sync();
-        }
-        uiPve.refresh();
+        if (b?.ended || document.hidden) return;
+        if (b?.active && !b.waitingChoice && !b.spatial.result) pause();
+        uiAdventure.refresh();
     }
     function resume() {
         const b = state.pveBattle;
-        if (!b?.active || b.waitingChoice || b.spatial.result || b.spatial.running) return;
-        _stopLoop(); uiPve.refresh();
-        spatialEngine.start(b.spatial); uiPve.showPause(false); _lastTime = performance.now();
-        _rAF = requestAnimationFrame(_loop);
+        uiAdventure.showPause(false);
+        if (b?.active && !b.waitingChoice && !b.spatial.result) {
+            if (!b.spatial.running) {
+                _stopLoop(); uiAdventure.refresh();
+                spatialEngine.start(b.spatial); _lastTime = performance.now();
+                if (!_hasField()) _rAF = requestAnimationFrame(_loop);
+            }
+        } else if (_hasField()) {
+            adventureWorld.startField();
+        }
+        uiAdventure.setPaused(false);
+        uiAdventure.refresh();
     }
     return {
         SKILL_COSTS, advance, pause, resume, restore,
@@ -283,10 +319,10 @@ const pveLogic = (() => {
             const b = state.pveBattle;
             if (!b || b.ended) return false;
             b.ended = true; b.active = false; b.waitingChoice = false;
-            spatialEngine.pause(b.spatial); _stopLoop(); uiPve.destroy();
+            spatialEngine.pause(b.spatial); _stopLoop();
             if (typeof adventureWorld !== 'undefined') adventureWorld.returnFromCombat(b.mapEntityId, b.spatial.result === 'victory');
             state.world.status = 'exploring';
-            uiPve.hideOverlays(); ui.switchTab('adventure'); ui.updateAdventure?.();
+            uiAdventure.hideOverlays(); _returnToField();
             return true;
         },
         safeRetreat() {
@@ -301,11 +337,13 @@ const pveLogic = (() => {
             const b = state.pveBattle;
             if (!b || b.ended) return;
             b.ended = true; b.active = false; b.waitingChoice = false;
-            spatialEngine.pause(b.spatial); _stopLoop(); uiPve.destroy();
+            spatialEngine.pause(b.spatial); _stopLoop();
             if (state.player.currentHp <= 0) state.player.currentHp = Math.max(1, Math.floor(player.getStats().maxHp * gameConfig.progression.recovery.reviveHpRatio));
             state.progress.currentRegionId = 'a'; state.world.status = 'base';
             state.world.arrivalFrom = null;
-            uiPve.hideOverlays(); ui.switchTab('base'); ui.updateBase();
+            // Leaving to base unmounts the region session, which is what tears the
+            // shared view down -- there is no per-fight destroy any more.
+            uiAdventure.hideOverlays(); ui.switchTab('base'); ui.updateBase();
         },
         // Kept as a dev/test shortcut. It starts one normal B-area encounter,
         // not an endless floor run.

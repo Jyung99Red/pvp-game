@@ -7,7 +7,7 @@ function setup() {
         requestAnimationFrame: fn => { loops.set(++next, fn); return next; }, cancelAnimationFrame: id => loops.delete(id),
         localStorage: { setItem: (k,v) => storage.set(k,v), getItem: k => storage.get(k) || null },
         ui: { switchTab() {}, updateBase() {}, log() {} },
-        uiPve: new Proxy({}, { get: () => () => {} }), fx: { log: new Proxy({}, { get: () => () => {} }) }
+        uiAdventure: new Proxy({}, { get: () => () => {} }), fx: { log: new Proxy({}, { get: () => () => {} }) }
     });
     for (const file of ['game_config.js','core/data.js','core/effects.js','core/save.js','core/player.js','core/combat_rules.js','core/arena_effects.js','core/spatial_combat.js','core/combat_gestures.js','pve/spatial_data.js','pve/spatial_engine.js','core/spatial_profiles.js','pve/pve_profiles.js','pve/pve_logic.js','core/tick.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),c);
     const objects = vm.runInContext('({state,content,player,save,spatialEngine,pveProfiles,pveLogic,tick,arenaEffects})',c);

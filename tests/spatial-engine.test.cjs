@@ -395,7 +395,7 @@ test('a zoomed region config pins the scale and derives its window from the canv
         R.solo = true; R.width = 2200; R.height = 1400; R.camera = { ...gameConfig.adventure.camera };
         const region = uiSpatialBattle.create(root, R, '');
         const arena = uiSpatialBattle.create(root);
-        return { region, arena, zoom: gameConfig.adventure.camera.zoom,
+        return { region, arena, zoom: gameConfig.adventure.camera.zoom, config: R,
                  battle: spatialEngine.create(R), fixed: spatialEngine.create() };
     })()`, c);
     // Fullscreen HUD strip: 844 - 700 (vitals) - 12 = 132 usable, 8px insets.
@@ -404,10 +404,21 @@ test('a zoomed region config pins the scale and derives its window from the canv
     // again for the shield, so read positionally rather than off the end.
     built.region.render(built.battle);
     assert.equal(scales[0], built.zoom, 'a region fight must draw at the configured zoom');
-    assert.ok(Math.abs(rects[0].w - usableWidth / built.zoom) < 1e-9, `window width ${rects[0].w}`);
-    assert.ok(Math.abs(rects[0].h - usableHeight / built.zoom) < 1e-9, `window height ${rects[0].h}`);
+    // A region config states its own window insets, and they WIN over the
+    // fullscreen strip -- which this fake root claims to be. That is what makes
+    // the window independent of `.vitals`, and `.vitals` is hidden while walking.
+    assert.ok(Math.abs(rects[0].w - 390 / built.zoom) < 1e-9, `window width ${rects[0].w}`);
+    assert.ok(Math.abs(rects[0].h - 844 / built.zoom) < 1e-9, `window height ${rects[0].h}`);
     // The fit-the-window branch is untouched for everything without a zoom.
     scales.length = 0;
     built.arena.render(built.fixed);
     assert.ok(Math.abs(scales[0] - Math.min(usableWidth / built.fixed.config.width, usableHeight / built.fixed.config.height)) < 1e-9);
+    // One view serves both halves of a region session: swapping the config must
+    // retarget the scale without the view being rebuilt.
+    scales.length = 0; rects.length = 0;
+    built.arena.useConfig(built.config);
+    built.arena.render(built.battle);
+    assert.equal(scales[0], built.zoom, 'useConfig must adopt the new camera');
+    assert.ok(Math.abs(rects[0].w - 390 / built.zoom) < 1e-9, `swapped window width ${rects[0].w}`);
+    assert.ok(Math.abs(rects[0].h - 844 / built.zoom) < 1e-9, `swapped window height ${rects[0].h}`);
 });

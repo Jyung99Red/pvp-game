@@ -25,7 +25,7 @@ PeerJS 不参与首屏加载。`core/client_dependencies.js` 在创建/加入房
 | `pvp/pvp_logic.js` | 主机权威、客机预测/校正、快照、准备/重赛/掉线 |
 | `pvp/pvp_net.js` / `pvp/pvp_room.js` | WebRTC 传输、房间生命周期与版本/模式匹配 |
 | `ui/ui_spatial_battle.js` | 只读绘制、镜头、特效；每帧一个视野多边形供裁剪和阴影共用 |
-| `pve/ui_pve.js` / `pvp/ui_pvp.js` | 各模式的状态显示、输入连接和页面生命周期 |
+| `pve/ui_adventure.js` / `pvp/ui_pvp.js` | 各模式的状态显示、输入连接和页面生命周期 |
 | `core/save.js` / `core/tick.js` | 成长存档、基地时间/回复；活动 PVE 战斗 HP 由引擎拥有 |
 
 ## 当前战斗规则

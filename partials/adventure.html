@@ -1,10 +1,83 @@
-<!-- Persistent authored-world map. Combat begins only at physical contact. -->
-<div id="view-adventure" class="view-section hidden adventure">
-    <header class="camp-heading"><div><span class="eyebrow">区域地图</span><h1 id="adventure-region-name">—</h1></div><span id="adventure-region-kind" class="status-chip"><i></i> 探索中</span></header>
+<!-- The region, and the only place the world is drawn. Walking and fighting share
+     this canvas, camera and control pads -- a fight is the same view reading the
+     fight's config instead of the walking preset, so contact has no cut to make.
+     The `training` class is load-bearing: it is what carries the shared pad
+     styling from combat_controls.css. The view must NOT carry
+     `spatial-fullscreen` -- that class is what makes PVP a full-screen takeover. -->
+<div id="view-adventure" class="view-section hidden adventure training">
+    <header class="camp-heading">
+        <div><span class="eyebrow">区域地图</span><h1 id="adventure-region-name">—</h1><p id="adventure-region-desc" class="adventure-desc"></p></div>
+        <span id="adventure-region-kind" class="status-chip"><i></i> 探索中</span>
+    </header>
     <section class="adventure-map" aria-label="可探索的大地图">
-        <canvas id="adventure-world" aria-label="拖动或使用方向键移动，接近怪物才会进入战斗"></canvas>
-        <div class="adventure-map-legend"><span>● 你</span><span>● 怪物</span><span>◆ 区域出口</span></div>
+        <canvas id="adventure-world" aria-label="拖动移动键行走，接触怪物后直接进入战斗"></canvas>
+
+        <header class="topbar">
+            <button type="button" class="adventure-flee fight-only" onclick="pveLogic.flee()">撤退</button>
+            <div><strong id="adv-floor-label">区域地图</strong><span id="adv-enemy-name">探索中</span></div>
+            <button id="adv-s-pause" type="button" onclick="pveLogic.pause()">暂停 / 设置</button>
+        </header>
+        <section class="vitals fight-only" aria-label="双方状态">
+            <div class="vital"><div><span>你 · 剑盾</span><b id="adv-s-player-hp">120 / 120</b></div><meter id="adv-s-player-meter" min="0" max="120" value="120">120</meter></div>
+            <div class="vital enemy"><div><span id="adv-enemy-vital">敌人</span><b id="adv-s-enemy-hp">360 / 360</b></div><meter id="adv-s-enemy-meter" min="0" max="360" value="360">360</meter></div>
+        </section>
+        <div class="legend fight-only"><i></i>起手 <i></i>锁定 <i></i>反击空档</div>
+
+        <div id="adv-s-overlay" class="overlay" hidden>
+            <div class="overlay-card"><h1>已暂停</h1><p>触摸已释放，点击继续。</p>
+            <fieldset class="combat-settings"><legend>玩家操作</legend>
+                <label><input type="checkbox" data-combat-setting="cancelAtCenter" checked> 中心松手取消（重击 / 技能）</label>
+                <small>关闭后重击直接释放；技能沿用本次最后选中方向，未拖出死区不释放。</small>
+                <label><input type="checkbox" data-combat-setting="autoFace"> 自动朝向怪物</label>
+                <small>仅待机时按转速自动转向敌人；移动跟随拖动方向，攻击按松手时人物朝向。</small>
+            </fieldset>
+            <button type="button" onclick="pveLogic.resume()">继续</button></div>
+        </div>
+
+        <section class="feedback" aria-label="操作反馈">
+            <div class="ap-row"><span>行动力</span><div id="adv-s-ap" aria-label="行动力 5 / 5"></div><span id="adv-s-player-state">准备就绪</span></div>
+            <div class="charge-track"><div id="adv-s-charge-fill"></div></div>
+            <div id="adv-s-notice" role="status">拖动移动键行走 · 短按轻击 · 原位长按蓄力</div>
+            <div class="skill-status">技能 <span id="adv-self-sp">0 / 3</span></div>
+            <div id="adv-s-battle-log" class="battle-log" aria-label="最近战斗记录"></div>
+            <div class="arena-top fight-only"><span id="adv-s-enemy-state">观察起手 → 走位或接招</span><span id="adv-s-clock">0:00</span></div>
+            <div id="adv-s-log" aria-label="场地记录"></div>
+        </section>
+
+        <section class="controls combined-controls" aria-label="中央移动，左侧防御，右侧技能">
+            <div class="control-group move-group" aria-label="中央操作区：拖动移动，短按轻击，原位长按蓄力">
+                <button id="adv-s-move-pad" class="pad move-pad" data-origin-at-press type="button" aria-label="拖动移动；短按轻击；原位长按蓄力后拖动移动转向，圈外松手重击，回落指点松手取消">
+                    <span class="pad-icon">✥</span><strong id="adv-s-move-label">移动 / 攻击</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
+                </button>
+            </div>
+            <div class="control-group guard-group">
+                <button id="adv-s-guard-pad" class="pad guard-pad" type="button" aria-label="防御：按住举盾，拖动转向，可同时操作中央移动键，松手撤防">
+                    <span class="pad-icon">○</span><strong id="adv-s-guard-label">防御 / 转向</strong><span class="pad-knob"></span>
+                </button>
+            </div>
+            <section class="skill-dock" aria-label="四向技能">
+                <button id="adv-s-skill-pad" class="pad skill-pad" type="button" aria-label="拖动选择技能，松手释放：上治疗、右疾速、下满蓄、左弹反">
+                    <strong id="adv-s-skill-label">技能</strong><span class="pad-knob"></span>
+                    <span data-skill="heal" class="skill-direction skill-up">治疗 · 2</span>
+                    <span data-skill="haste" class="skill-direction skill-right">疾速 · 2</span>
+                    <span data-skill="full" class="skill-direction skill-down">满蓄 · 2</span>
+                    <span data-skill="parry" class="skill-direction skill-left">弹反 · 3</span>
+                </button>
+            </section>
+        </section>
+
+        <div id="adv-buff-display" class="buff-status"></div>
+
+        <div id="adv-win-overlay" class="result-overlay hidden">
+            <h2>战斗胜利</h2><div id="adv-win-loot"></div>
+            <div class="btn-row"><button onclick="pveLogic.returnToRegion()">返回区域</button></div>
+        </div>
+        <div id="adv-defeat-overlay" class="result-overlay hidden">
+            <h2>英雄倒下</h2><p>你被救回了曙光据点。</p><button onclick="pveLogic.endFight()">回到基地</button>
+        </div>
     </section>
-    <section class="camp-panel adventure-panel"><p id="adventure-region-desc" class="adventure-desc"></p><p id="adventure-hint" class="adventure-hint">拖动地图移动。保持距离即可绕过怪物。</p></section>
-    <button onclick="ui.switchTab('base')" class="training-link"><span>← 返回曙光据点</span><small>查看基地功能</small></button>
+    <section class="camp-panel adventure-panel">
+        <p id="adventure-hint" class="adventure-hint">拖动移动键行走。保持距离即可绕过怪物；接触后才会进入战斗。</p>
+    </section>
+    <div id="log"></div>
 </div>

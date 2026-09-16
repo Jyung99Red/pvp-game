@@ -1,18 +1,24 @@
-// Large-area exploration renderer. It deliberately has no combat rules: it
-// only turns a physical enemy/exit overlap into a pveLogic request.
+// Large-area exploration simulation plus its world layer. It deliberately owns
+// no DOM of its own -- no canvas, no listeners, no rAF -- so a single region
+// session can be stepped by the page adapter and drawn into the shared battle
+// view's canvas, which is what lets walking and fighting be one continuous view
+// instead of two. It also owns no combat rules: it only turns a physical enemy
+// or exit overlap into a `pveLogic` request.
+//
+// The player body is a spatial actor (`scene.field.player`), stepped with
+// `spatialEngine.advanceActor`. Walking therefore uses exactly the movement,
+// gear motion multipliers and gesture rules a fight does -- the move pad is the
+// only movement control in either mode.
 const adventureWorld = (() => {
-    let scene = null, canvas = null, ctx = null, abort = null, raf = null, lastAt = 0;
-    const keys = new Set();
-    const PLAYER_RADIUS = 14, EXIT_RADIUS = 52, PLAYER_SPEED = 185;
+    let scene = null;
     // Arrivals land this far from the return portal -- beyond EXIT_RADIUS so a
     // fresh scene cannot immediately re-trigger the exit and bounce back.
+    const PLAYER_RADIUS = 14, EXIT_RADIUS = 52;
     const ARRIVAL_OFFSET = EXIT_RADIUS + 40;
-    // Held-pointer walk stops only inside this radius, so a finger resting on
-    // the player does not jitter the actor back and forth.
-    const POINTER_DEAD_ZONE = 6;
     // Contact radii, shared by the drawn monster and the fight it enlists into
     // so the sprite does not change size the moment combat starts.
     const MONSTER_RADIUS = 16, BOSS_RADIUS = 25;
+    const STEP = .01, MAX_CATCH_UP = .1;
     const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
     const region = () => content.regions[state.progress.currentRegionId] || null;
@@ -54,95 +60,60 @@ const adventureWorld = (() => {
         }
         return { ...point, facing: reverse };
     }
+    // The walking preset and its actor. Rebuilt rather than reused whenever a
+    // fight ends: the engine that walked into the fight may be parked mid-charge
+    // or mid-stun, and carrying that into the resumed walk would show up as a
+    // phantom action with no input behind it.
+    function _field(def, at) {
+        const field = spatialEngine.create(pveProfiles.region(def));
+        const spawn = at || _spawnPoint(def);
+        field.player.x = spawn.x; field.player.y = spawn.y; field.player.facing = spawn.facing || 0;
+        spatialEngine.start(field);
+        return field;
+    }
     function _makeScene(def) {
         const map = def.map;
         const monsters = (map.monsters || []).filter(item => !item.boss || !bossDefeated(item.enemyId)).map(item => ({
             ...item, home: { x: item.x, y: item.y }, phase: 'idle', alive: true, patrolAt: Math.random() * Math.PI * 2
         }));
-        const player = _spawnPoint(def);
+        // Resolved before the field exists: `_spawnPoint` consumes the arrival
+        // hint, and the hint has to be read before anything clears it.
+        const spawn = _spawnPoint(def);
+        const field = _field(def, spawn);
+        const boss = def.boss;
         state.world.arrivalFrom = null;   // consumed: only the first build honours it
-        return { regionId: def.id, def, map, player, monsters, pointer: null, exitCooldown: .7, notice: '' };
-    }
-    function _notice(text) {
-        if (!scene) return;
-        scene.notice = text;
-        document.getElementById('adventure-hint').textContent = text || '拖动地图移动。保持距离即可绕过怪物。';
-    }
-    function _camera() {
-        const rect = canvas.getBoundingClientRect();
         return {
-            x: clamp(scene.player.x - rect.width / 2, 0, Math.max(0, scene.map.width - rect.width)),
-            y: clamp(scene.player.y - rect.height / 2, 0, Math.max(0, scene.map.height - rect.height)),
-            width: rect.width, height: rect.height
+            regionId: def.id, def, map, field, player: field.player, monsters,
+            notice: '', exitCooldown: .7, accumulator: 0,
+            // Written into the hint line by the adapter, which owns the DOM.
+            hint: boss && bossDefeated(boss.enemyId)
+                ? '首领已被击败，不会重生。其余怪物会在再次进入区域时重新出现。'
+                : '拖动移动键行走。保持距离即可绕过怪物；接触后才会进入战斗。'
         };
     }
-    // Held in canvas-local pixels, NOT world units. The camera follows the
-    // player, so a world-space target goes stale as soon as the player moves
-    // and the walk dies at that frozen point; re-deriving it from the current
-    // camera each frame is what keeps a held pointer walking continuously.
-    function _pointerPoint(event) {
-        const rect = canvas.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    }
-    function _resize() {
-        const rect = canvas.getBoundingClientRect(), dpr = Math.max(1, window.devicePixelRatio || 1);
-        canvas.width = Math.round(rect.width * dpr); canvas.height = Math.round(rect.height * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    function _attach() {
-        abort?.abort(); abort = new AbortController();
-        const signal = abort.signal;
-        canvas.addEventListener('pointerdown', event => {
-            canvas.setPointerCapture?.(event.pointerId); scene.pointer = _pointerPoint(event); event.preventDefault();
-        }, { signal });
-        canvas.addEventListener('pointermove', event => { if (scene?.pointer) scene.pointer = _pointerPoint(event); }, { signal });
-        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-            canvas.addEventListener(type, () => { if (scene) scene.pointer = null; }, { signal });
-        }
-        window.addEventListener('keydown', event => {
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(event.key)) {
-                keys.add(event.key); event.preventDefault();
-            }
-        }, { signal });
-        window.addEventListener('keyup', event => keys.delete(event.key), { signal });
-        window.addEventListener('resize', _resize, { signal }); _resize();
+    function _notice(text) {
+        if (scene) scene.notice = text;
     }
     function _moveToward(actor, target, speed, dt) {
         const dx = target.x - actor.x, dy = target.y - actor.y, d = Math.hypot(dx, dy);
         if (!d) return;
         const step = Math.min(d, speed * dt); actor.x += dx / d * step; actor.y += dy / d * step;
     }
-    function _updatePlayer(dt) {
-        let dx = 0, dy = 0;
-        if (keys.has('ArrowLeft') || keys.has('a')) dx -= 1;
-        if (keys.has('ArrowRight') || keys.has('d')) dx += 1;
-        if (keys.has('ArrowUp') || keys.has('w')) dy -= 1;
-        if (keys.has('ArrowDown') || keys.has('s')) dy += 1;
-        if (dx || dy) {
-            const len = Math.hypot(dx, dy); scene.player.x += dx / len * PLAYER_SPEED * dt; scene.player.y += dy / len * PLAYER_SPEED * dt;
-            scene.player.facing = Math.atan2(dy, dx);
-        } else if (scene.pointer) {
-            const cam = _camera();
-            const target = { x: cam.x + scene.pointer.x, y: cam.y + scene.pointer.y };
-            if (distance(scene.player, target) > POINTER_DEAD_ZONE) {
-                // Facing reads off the pre-move heading, so the notch points
-                // where the walk is going rather than where it just came from.
-                scene.player.facing = Math.atan2(target.y - scene.player.y, target.x - scene.player.x);
-                _moveToward(scene.player, target, PLAYER_SPEED, dt);
-            }
-        }
-        scene.player.x = clamp(scene.player.x, PLAYER_RADIUS, scene.map.width - PLAYER_RADIUS);
-        scene.player.y = clamp(scene.player.y, PLAYER_RADIUS, scene.map.height - PLAYER_RADIUS);
-    }
     function _updateMonsters(dt) {
-        // Only ever reached while exploring: _loop stops the whole region for the
-        // duration of a fight. Anyone already chasing was sent home at enlist.
+        // The region keeps living during a fight -- patrols continue and the world
+        // stays put under the duel -- so this runs in both modes. The one thing it
+        // must not do is start a SECOND engagement: the enlisted monster is owned
+        // by the fight engine (it is `engaged`, and skipped below), and every other
+        // monster is barred from picking a target until that fight resolves. The
+        // guard was written in phase 3, found unreachable because the whole loop
+        // was stopped, and is genuinely load-bearing now.
+        const fighting = !!state.pveBattle?.active;
         for (const monster of scene.monsters) {
             if (!monster.alive || monster.phase === 'engaged') continue;
             const playerDistance = distance(scene.player, monster), homeDistance = distance(monster, monster.home);
-            if (monster.phase === 'idle' && playerDistance <= monster.alertRange) monster.phase = 'chase';
+            if (monster.phase === 'idle' && !fighting && playerDistance <= monster.alertRange) monster.phase = 'chase';
             if (monster.phase === 'chase') {
-                if (playerDistance <= monster.encounterRange) {
+                if (!fighting && playerDistance <= monster.encounterRange) {
                     monster.phase = 'engaged';
                     if (pveLogic.startEncounter(monster.enemyId, monster.id)) return;
                     monster.phase = 'idle';
@@ -170,68 +141,113 @@ const adventureWorld = (() => {
             pveLogic.travel(exit.to); return;
         }
     }
-    function _drawWorld(cam) {
+
+    // ── World layer ───────────────────────────────────────────────────────────
+    // Handed to the shared view as `options.layer`, so the region is drawn inside
+    // the same transform, clip and camera the fighters are. Everything below is
+    // in ABSOLUTE world coordinates -- the view has already applied the camera.
+    function _drawGround(ctx, camera, viewWidth, viewHeight) {
+        const left = camera ? camera.x - viewWidth / 2 : 0, top = camera ? camera.y - viewHeight / 2 : 0;
         const lava = scene.regionId === 'c' || scene.regionId === 'd';
         ctx.fillStyle = lava ? '#2a211e' : scene.regionId === 'a' ? '#243027' : '#1f2d28';
-        ctx.fillRect(0, 0, cam.width, cam.height);
+        ctx.fillRect(left, top, viewWidth, viewHeight);
         ctx.strokeStyle = lava ? '#5d3931' : '#3d5448'; ctx.lineWidth = 1;
-        for (let x = -cam.x % 100; x < cam.width; x += 100) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cam.height); ctx.stroke(); }
-        for (let y = -cam.y % 100; y < cam.height; y += 100) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cam.width, y); ctx.stroke(); }
+        for (let x = Math.floor(left / 100) * 100; x < left + viewWidth; x += 100) {
+            ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + viewHeight); ctx.stroke();
+        }
+        for (let y = Math.floor(top / 100) * 100; y < top + viewHeight; y += 100) {
+            ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + viewWidth, y); ctx.stroke();
+        }
     }
-    function _point(point, cam) { return { x: point.x - cam.x, y: point.y - cam.y }; }
-    function _drawLabel(text, x, y, color) { ctx.fillStyle = color; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText(text, x, y); }
-    function _draw(cam) {
-        if (!ctx || !scene) return;
-        _drawWorld(cam);
+    function _drawLabel(ctx, text, x, y, color) {
+        ctx.fillStyle = color; ctx.font = '11px system-ui'; ctx.textAlign = 'center'; ctx.fillText(text, x, y);
+    }
+    function _drawWorldLayer(ctx, offer = {}) {
+        if (!scene) return;
+        const { camera = null, viewWidth = 0, viewHeight = 0 } = offer;
+        _drawGround(ctx, camera, viewWidth, viewHeight);
         for (const exit of scene.def.exits || []) {
-            const p = _point(exit.portal, cam), blocked = exit.requiresBoss && !bossDefeated(exit.requiresBoss);
+            const blocked = exit.requiresBoss && !bossDefeated(exit.requiresBoss);
             const angle = _portalAngle(scene.def, exit);
-            ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(angle + Math.PI / 4); ctx.fillStyle = blocked ? '#70413d' : '#c59b58'; ctx.fillRect(-16, -16, 32, 32); ctx.restore();
+            ctx.save(); ctx.translate(exit.portal.x, exit.portal.y); ctx.rotate(angle + Math.PI / 4);
+            ctx.fillStyle = blocked ? '#70413d' : '#c59b58'; ctx.fillRect(-16, -16, 32, 32); ctx.restore();
             // The diamond is symmetric, so the facing needs a mark of its own:
             // a chevron at the gate's mouth pointing the way it leads.
-            ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(angle);
+            ctx.save(); ctx.translate(exit.portal.x, exit.portal.y); ctx.rotate(angle);
             ctx.beginPath(); ctx.moveTo(28, 0); ctx.lineTo(16, -7); ctx.lineTo(16, 7); ctx.closePath();
             ctx.fillStyle = blocked ? '#8f5751' : '#ecd29d'; ctx.fill(); ctx.restore();
-            _drawLabel(blocked ? '封锁的裂隙' : exit.label, p.x, p.y - 26, blocked ? '#d39a91' : '#ecd29d');
+            _drawLabel(ctx, blocked ? '封锁的裂隙' : exit.label, exit.portal.x, exit.portal.y - 26, blocked ? '#d39a91' : '#ecd29d');
         }
         for (const monster of scene.monsters) {
-            if (!monster.alive) continue;
-            const p = _point(monster, cam), enemy = content.enemies[monster.enemyId], chasing = monster.phase === 'chase';
-            if (chasing) { ctx.beginPath(); ctx.arc(p.x, p.y, monster.alertRange, 0, Math.PI * 2); ctx.strokeStyle = '#b5694b55'; ctx.stroke(); }
-            ctx.beginPath(); ctx.arc(p.x, p.y, monster.boss ? BOSS_RADIUS : MONSTER_RADIUS, 0, Math.PI * 2); ctx.fillStyle = monster.boss ? '#b35340' : chasing ? '#d08050' : '#9b6a4c'; ctx.fill();
-            _drawLabel(monster.boss ? `首领 · ${enemy.name}` : enemy.name, p.x, p.y - (monster.boss ? 34 : 25), chasing ? '#ffd2b4' : '#e9b58a');
+            // `engaged` means the fight engine owns this body now: it is drawn by
+            // the shared view's own fighter, and drawing the region's marker too
+            // would show the monster twice, a circle behind the sprite.
+            if (!monster.alive || monster.phase === 'engaged') continue;
+            const enemy = content.enemies[monster.enemyId], chasing = monster.phase === 'chase';
+            if (chasing) {
+                ctx.beginPath(); ctx.arc(monster.x, monster.y, monster.alertRange, 0, Math.PI * 2);
+                ctx.strokeStyle = '#b5694b55'; ctx.stroke();
+            }
+            ctx.beginPath(); ctx.arc(monster.x, monster.y, monster.boss ? BOSS_RADIUS : MONSTER_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = monster.boss ? '#b35340' : chasing ? '#d08050' : '#9b6a4c'; ctx.fill();
+            _drawLabel(ctx, monster.boss ? `首领 · ${enemy.name}` : enemy.name, monster.x, monster.y - (monster.boss ? 34 : 25), chasing ? '#ffd2b4' : '#e9b58a');
         }
-        const player = _point(scene.player, cam); ctx.beginPath(); ctx.arc(player.x, player.y, PLAYER_RADIUS, 0, Math.PI * 2); ctx.fillStyle = '#82c3d7'; ctx.fill(); ctx.strokeStyle = '#e4fbff'; ctx.stroke();
-        // Facing wedge: a notch from the centre out to the rim, so heading reads at a glance.
-        const facing = scene.player.facing || 0;
-        ctx.beginPath();
-        ctx.moveTo(player.x + Math.cos(facing) * PLAYER_RADIUS, player.y + Math.sin(facing) * PLAYER_RADIUS);
-        ctx.lineTo(player.x + Math.cos(facing + 2.4) * PLAYER_RADIUS * .5, player.y + Math.sin(facing + 2.4) * PLAYER_RADIUS * .5);
-        ctx.lineTo(player.x + Math.cos(facing - 2.4) * PLAYER_RADIUS * .5, player.y + Math.sin(facing - 2.4) * PLAYER_RADIUS * .5);
-        ctx.closePath(); ctx.fillStyle = '#e4fbff'; ctx.fill();
-        _drawLabel('你', player.x, player.y - 23, '#dffaff');
+        // The player body itself is drawn by the shared view, from the same solo
+        // snapshot the fight renders -- that is what makes the two continuous.
     }
-    function _loop(at) {
-        raf = null;
-        if (!scene || state.world.currentTab !== 'adventure' || state.pveBattle?.active) return;
-        const dt = Math.min(.05, Math.max(0, (at - lastAt) / 1000)); lastAt = at;
-        _updatePlayer(dt); _updateMonsters(dt); _updateExits(dt); _draw(_camera());
-        if (scene && state.world.currentTab === 'adventure' && !state.pveBattle?.active) raf = requestAnimationFrame(_loop);
-    }
+
     return {
-        activate() {
-            const def = region(); if (!def || !document.getElementById('adventure-world')) return;
-            canvas = document.getElementById('adventure-world'); ctx = canvas.getContext('2d');
+        // Build the region session. Re-entering the same region keeps the scene;
+        // travelling (or arriving with an `arrivalFrom` hint) rebuilds it.
+        enter(def = region()) {
+            if (!def) return false;
             if (!scene || scene.regionId !== def.id) scene = _makeScene(def);
-            _attach(); cancelAnimationFrame(raf); lastAt = performance.now(); raf = requestAnimationFrame(_loop);
+            else spatialEngine.start(scene.field);
+            return true;
         },
-        deactivate() { if (raf != null) cancelAnimationFrame(raf); raf = null; abort?.abort(); abort = null; keys.clear(); if (scene) scene.pointer = null; },
-        // A region session survives deactivate(), so this reports whether one
-        // exists -- not which tab is showing. A fight keeps the scene alive so
-        // the world can be handed back when it ends.
+        // Resume a walk that `pauseField` (a fight, or the pause overlay) stopped.
+        startField() { if (scene) spatialEngine.start(scene.field); },
+        leave() { if (scene) spatialEngine.pause(scene.field); },
+        // A region session survives leaving the tab, so this reports whether one
+        // exists -- not which tab is showing. A fight keeps the scene alive so the
+        // world can be handed back when it ends.
         isActive() { return !!scene; },
         // Read-only view of the live scene, for the adapter and for tests.
         scene() { return scene; },
+        // The world drawer the shared view calls instead of its default arena.
+        worldLayer(ctx, offer) { _drawWorldLayer(ctx, offer); },
+        // One fixed-step pass of the region. The engine clamps a single actor step
+        // to 50ms and the frame clock can hand us more than that after a stall, so
+        // this accumulates exactly like the fight loop does.
+        //
+        // Called in BOTH modes: the world stays alive under a fight, so patrols
+        // keep moving and the region keeps its clock. Only the walking half is
+        // mode-specific -- the field engine is paused for the duration of a fight,
+        // so `advanceActor` no-ops, and exits are skipped because it is the
+        // walking body that triggers them and that body is not moving.
+        stepWorld(seconds) {
+            if (!scene || !Number.isFinite(seconds)) return;
+            const current = scene, fighting = !!state.pveBattle?.active;
+            current.accumulator += Math.max(0, Math.min(seconds, MAX_CATCH_UP));
+            while (current.accumulator >= STEP - 1e-9) {
+                current.accumulator = Math.max(0, current.accumulator - STEP);
+                spatialEngine.advanceActor(current.field, STEP);
+                _updateMonsters(STEP);
+                if (!fighting) _updateExits(STEP);
+                // Travelling swaps the scene out from under us mid-step; the next
+                // frame belongs to the new region, not this loop.
+                if (scene !== current) return;
+            }
+        },
+        pauseField() { if (scene) spatialEngine.pause(scene.field); },
+        // Hand the walk back after a fight, on a clean engine at wherever the fight
+        // actually left the player.
+        resumeField() {
+            if (!scene) return;
+            const at = { x: scene.player.x, y: scene.player.y, facing: scene.player.facing || 0 };
+            const field = _field(scene.def, at);
+            scene.field = field; scene.player = field.player; scene.accumulator = 0;
+        },
         // Region-space enlist: build the fight at the monster's live position so
         // combat starts exactly where the two bodies already stand, and hand back
         // the leash data the disengage rule needs. Returns null when there is no

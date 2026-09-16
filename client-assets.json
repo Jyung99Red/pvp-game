@@ -27,7 +27,7 @@
       "core/combat_settings.js",
       "ui/combat_input.js",
       "ui/ui_spatial_battle.js",
-      "pve/ui_pve.js",
+      "pve/ui_adventure.js",
       "pve/adventure_world.js",
       "pve/pve_logic.js",
       "core/client_dependencies.js",
@@ -40,7 +40,6 @@
     "partials": [
       "base",
       "adventure",
-      "pve-battle",
       "pvp-room",
       "pvp-battle"
     ]

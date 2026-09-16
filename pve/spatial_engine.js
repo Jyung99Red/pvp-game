@@ -138,6 +138,13 @@ const spatialEngine = (() => {
     const armed = combatGestures.armed;
     function holdMove(b) {
         if (!canAct(b) || b.action || b.guard || b.skill) return;
+        // A solo walker has nothing to charge at. Charging exists to deliver a
+        // heavy attack, so converting a resting thumb into one would only arm a
+        // pad with no target and slow the walk to chargeMoveMultiplier -- the
+        // charge would then be discarded anyway when a fight builds its own
+        // engine. Walking keeps the plain move gesture; everything else about the
+        // gesture, the ramp and the speed is shared with a fight.
+        if (b.config.solo) return;
         const command = combatGestures.hold(b.move, b.time);
         if (!command) return;
         // Separate serializable records: snapshots need no move/action alias repair.

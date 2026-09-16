@@ -1,18 +1,26 @@
-// The adventure view is plain canvas + pointer events, so it gets a fake DOM
-// small enough to drive by hand. Two tricks make it assertable:
-//   - A canvas exactly the size of the region map pins the camera to (0,0),
-//     so drawn coordinates ARE world coordinates.
-//   - Otherwise the camera centres on the player and hides their position, so
-//     a stationary exit label is used as a fiducial to recover the camera.
+// The region simulation is stepped by the page adapter and drawn by the shared
+// spatial view, so it has no canvas and no listeners of its own. This harness
+// therefore drives `stepWorld` by hand and renders through the REAL view, with a
+// fake ctx that keeps a real transform stack -- which is what lets the facing
+// tests read a heading straight off the drawn geometry.
+//
+// A canvas exactly the size of the region map makes the view's camera a no-op
+// (its window is the whole map, so the clamp has nothing to choose), which pins
+// the world-to-screen mapping to the identity: drawn coordinates ARE world
+// coordinates.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 
-const PLAYER_ARC_RADIUS = 14, EXIT_LABEL_LIFT = 26;
+const PLAYER_ARC_RADIUS = 12, EXIT_LABEL_LIFT = 26;
+const FILES = ['game_config.js', 'core/data.js', 'core/effects.js', 'core/save.js', 'core/player.js',
+    'core/combat_rules.js', 'core/spatial_combat.js', 'core/combat_gestures.js',
+    'pve/spatial_data.js', 'pve/spatial_engine.js', 'core/spatial_profiles.js', 'pve/pve_profiles.js',
+    'ui/ui_spatial_battle.js', 'pve/adventure_world.js'];
 
 function setup(rect, { region = 'b', arrivalFrom = null, defeated = {} } = {}) {
-    const ops = [], labels = [], listeners = new Map(), frame = { fn: null }, clock = { t: 0 };
+    const ops = [], labels = [], clock = { t: 0 };
     // A real transform stack. Facing is expressed purely through
     // translate/rotate, so a ctx that swallows transforms cannot be asserted
     // on; every recorded point is in screen space, after the transform.
@@ -28,42 +36,76 @@ function setup(rect, { region = 'b', arrivalFrom = null, defeated = {} } = {}) {
         save() { stack.push(m.slice()); }, restore() { m = stack.pop() || [1, 0, 0, 1, 0, 0]; },
         translate(x, y) { mul([1, 0, 0, 1, x, y]); },
         rotate(a) { const c = Math.cos(a), s = Math.sin(a); mul([c, s, -s, c, 0, 0]); },
+        scale(x, y) { mul([x, 0, 0, y, 0, 0]); },
         setTransform() {}, beginPath() {}, closePath() {}, fill() {}, stroke() {}, fillRect() {}, lineTo() {},
+        rect() {}, clip() {}, clearRect() {}, ellipse() {}, createRadialGradient: () => ({ addColorStop() {} }),
         moveTo(x, y) { ops.push({ type: 'move', ...at(x, y) }); },
         arc(x, y, r) { ops.push({ type: 'arc', ...at(x, y), r }); },
         fillText(text, x, y) { const p = at(x, y); labels.push({ text, x: p.x, y: p.y }); }
     };
+    // Every id the shared view or the adapter resolves, plus the canvas itself.
+    const nodes = new Map();
+    function element() {
+        return {
+            textContent: '', className: '', max: 0, value: 0, hidden: false, dataset: {},
+            style: { setProperty() {}, transform: '' },
+            classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+            addEventListener() {}, setAttribute() {}, remove() {}, appendChild: node => node,
+            querySelector: () => ({ style: {} }), querySelectorAll: () => [],
+            getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 })
+        };
+    }
     const canvas = {
-        width: 0, height: 0,
-        getContext: () => ctx,
+        width: 0, height: 0, getContext: () => ctx,
         getBoundingClientRect: () => ({ left: 0, top: 0, width: rect.width, height: rect.height }),
-        addEventListener: (type, fn) => listeners.set(type, [...(listeners.get(type) || []), fn]),
-        setPointerCapture() {}
+        addEventListener() {}, setPointerCapture() {}, releasePointerCapture() {}
+    };
+    nodes.set('[id="adventure-world"]', canvas);
+    const root = {
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        querySelector(selector) { if (!nodes.has(selector)) nodes.set(selector, element()); return nodes.get(selector); }
     };
     const context = vm.createContext({
         console, Math, JSON, Object, Array, Set, Map, Number, String, Boolean, Error, isNaN, AbortController,
         performance: { now: () => clock.t },
-        requestAnimationFrame: fn => { frame.fn = fn; return 1; },
-        cancelAnimationFrame: () => { frame.fn = null; },
-        document: { getElementById: id => (id === 'adventure-world' ? canvas : null) },
-        window: { addEventListener: () => {}, devicePixelRatio: 1 },
+        document: { createElement: element, hidden: false, getElementById: id => nodes.get(`[id="${id}"]`) || null },
+        window: { addEventListener() {}, devicePixelRatio: 1 },
+        ResizeObserver: class { observe() {} disconnect() {} },
         ui: { switchTab() {}, log() {} },
         pveLogic: { travel() {}, startEncounter: () => false }
     });
-    for (const file of ['game_config.js', 'core/data.js', 'pve/adventure_world.js'])
-        vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context);
+    for (const file of FILES) vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), context);
     vm.runInContext(`state.progress.currentRegionId = ${JSON.stringify(region)}`, context);
     vm.runInContext(`state.world.currentTab = 'adventure'`, context);
     vm.runInContext(`state.world.arrivalFrom = ${JSON.stringify(arrivalFrom)}`, context);
     vm.runInContext(`state.progress.defeatedBosses = ${JSON.stringify(defeated)}`, context);
+    const world = vm.runInContext('adventureWorld', context), engine = vm.runInContext('spatialEngine', context);
+    let view = null;
+    const field = () => world.scene().field;
     return {
-        context, regions: vm.runInContext('content.regions', context),
-        activate() { vm.runInContext('adventureWorld.activate()', context); },
+        context, world, engine, regions: vm.runInContext('content.regions', context), field, root,
+        // Exactly what the adapter does: the region's own canvas, and the region
+        // as the view's world layer.
+        activate() {
+            world.enter();
+            view = vm.runInContext('uiSpatialBattle', context).create(root, field().config, 'adv-s-',
+                { canvasId: 'adventure-world', layer: { world: (c, offer) => world.worldLayer(c, offer) } });
+        },
         arrivalFrom: () => vm.runInContext('state.world.arrivalFrom', context),
         // dt comes from the frame timestamp, so the clock has to advance with it.
-        step(seconds, fps = 60) { for (let i = 0; i < Math.round(seconds * fps); i++) { clock.t += 1000 / fps; frame.fn(clock.t); } },
-        pointer(type, x, y) {
-            for (const fn of listeners.get(type) || []) fn({ clientX: x, clientY: y, pointerId: 1, preventDefault() {} });
+        step(seconds, fps = 60) {
+            for (let i = 0; i < Math.round(seconds * fps); i++) {
+                clock.t += 1000 / fps;
+                world.stepWorld(1 / fps);
+                view?.render(field(), [], 1 / fps);
+            }
+        },
+        // The move pad is the only movement control, so walking is driven through
+        // the engine's gesture surface rather than through canvas pointer events.
+        pad: {
+            press: () => engine.press(field(), 'move'),
+            drag: (dx, dy) => engine.drag(field(), 'move', dx, dy),
+            release: () => engine.release(field(), 'move', false)
         },
         clear() { ops.length = 0; labels.length = 0; },
         ops: () => ops,
@@ -122,9 +164,7 @@ test('the arrival hint is consumed once and default spawns stay untouched', () =
     assert.ok(arrived.x !== to.playerSpawn.x || arrived.y !== to.playerSpawn.y, 'a return trip must not reuse the default spawn');
 });
 
-test('a held pointer keeps walking instead of dying at the first pointer position', () => {
-    // Viewport smaller than the map, so the camera actually follows the player
-    // and a stale world-space target would visibly stall the walk.
+test('the move pad walks the player and a release stops them', () => {
     const t = setup({ width: 800, height: 600 }, { region: 'b' });
     const b = t.regions.b;
     t.activate(); t.step(1 / 60);
@@ -132,39 +172,46 @@ test('a held pointer keeps walking instead of dying at the first pointer positio
     const start = worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点');
     assert.deepEqual({ x: Math.round(start.x), y: Math.round(start.y) }, { x: 150, y: 720 }, 'starts at the region spawn');
 
-    t.pointer('pointerdown', 650, 300);          // 500px to the right of the player
+    // A stationary press is a tap, not a walk: the gesture stays `pending` until
+    // the drag clears the dead zone.
+    t.pad.press();
+    t.clear(); t.step(.5);
+    const still = worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点');
+    assert.ok(Math.abs(still.x - start.x) < .5 && Math.abs(still.y - start.y) < .5, 'a press alone must not move the player');
+    // And resting a thumb there must not arm a charge: walking has no target for
+    // one, and chargeMoveMultiplier would silently cut the walk to 60% speed.
+    assert.equal(t.field().move?.mode, 'pending', 'a solo walk must never slip into a charge');
+
+    // Dragging east walks east, and keeps walking while held -- the gesture is a
+    // direction, not a one-shot nudge to where the finger is.
+    t.pad.drag(80, 0);
     const path = [];
-    for (let i = 0; i < 240; i++) {              // 4 seconds
+    for (let i = 0; i < 120; i++) {              // 2 seconds
         t.clear(); t.step(1 / 60);
         path.push(worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点').x);
     }
-    // ~185px/s for 4s is ~740px, but the walk stalls at 650 the moment the
-    // target is a fixed world point rather than the pointer's screen position.
-    assert.ok(path.at(-1) > 800, `expected to keep walking past the pointer, ended at ${path.at(-1).toFixed(0)}`);
+    t.pad.release();
+    const walked = path.at(-1) - start.x;
+    // playerSpeed 115 u/s, full ramp (the drag is well past moveRamp), so two
+    // seconds is ~230px -- the same speed a fight moves at.
+    assert.ok(walked > 200, `expected ~2s of walking at the shared battle speed, moved ${walked.toFixed(0)}px`);
     for (let i = 1; i < path.length; i++)
         assert.ok(path[i] >= path[i - 1] - .01, `walk stalled at frame ${i} (${path[i - 1].toFixed(1)} -> ${path[i].toFixed(1)})`);
+
+    t.clear(); t.step(.5);
+    const stopped = worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点').x;
+    t.clear(); t.step(.5);
+    assert.ok(Math.abs(worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点').x - stopped) < .5, 'releasing the pad must stop the walk');
 });
 
-test('a pointer resting on the player does not jitter them', () => {
-    const t = setup({ width: 800, height: 600 }, { region: 'b' });
-    t.activate(); t.step(1 / 60);
-    t.clear(); t.step(1 / 60);
-    const before = t.drawn();
-    t.pointer('pointerdown', before.x, before.y);   // dead centre of the player
-    t.step(1);
-    const after = t.drawn();
-    assert.equal(Math.round(after.x), Math.round(before.x));
-    assert.equal(Math.round(after.y), Math.round(before.y));
-});
-
-// The player's facing wedge is the first moveTo drawn after the player's own
-// arc -- the notch runs from the centre out along the heading.
+// The player's facing is the first moveTo drawn after the player's own arc --
+// the aiming notch runs from the centre out along the heading.
 function playerFacing(t) {
     const all = t.ops();
     const i = all.findLastIndex(o => o.type === 'arc' && o.r === PLAYER_ARC_RADIUS);
     assert.ok(i >= 0, 'expected the player to be drawn');
     const tip = all.slice(i).find(o => o.type === 'move');
-    assert.ok(tip, 'expected a facing wedge after the player');
+    assert.ok(tip, 'expected a facing notch after the player');
     return Math.atan2(tip.y - all[i].y, tip.x - all[i].x);
 }
 

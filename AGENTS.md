@@ -30,7 +30,7 @@ are unaffected by which subfolder a `.js` file lives in.
 `core/tick.js` → `ui/fx.js` → `core/combat_rules.js` →
 `core/arena_effects.js` → `ui/icons.js` → `ui/ui.js` → `core/spatial_combat.js` → `core/combat_gestures.js` →
 `pve/spatial_data.js` → `pve/spatial_engine.js` → `core/spatial_profiles.js` → `pve/pve_profiles.js` →
-`core/combat_settings.js` → `ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_pve.js` → `pve/adventure_world.js` → `pve/pve_logic.js` → `core/client_dependencies.js` (lazy PeerJS) → `pvp/spatial_duel.js` → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
+`core/combat_settings.js` → `ui/combat_input.js` → `ui/ui_spatial_battle.js` → `pve/ui_adventure.js` → `pve/adventure_world.js` → `pve/pve_logic.js` → `core/client_dependencies.js` (lazy PeerJS) → `pvp/spatial_duel.js` → `pvp/pvp_logic.js` → `pvp/pvp_net.js` →
 `pvp/pvp_room.js` → `pvp/ui_pvp.js`
 
 ### Core systems
@@ -69,15 +69,25 @@ are unaffected by which subfolder a `.js` file lives in.
   its leash and out of alert range — no rewards, no overlay, `world.status` back
   to `exploring` (miss that and every later encounter stays blocked). The rule
   mirrors adventure_world's own so territory feels the same on both sides.
-- **`pve/adventure_world.js`** — the walkable region view (canvas + pointer), owning
-  no combat rules: it only turns a physical overlap into a `pveLogic` request.
+  **`advance` ends by calling `_present`**, so both drivers render — the page
+  adapter's single rAF and the scene-less fallback loop in `_loop`; nothing else
+  may call `_present`, and `_loop` is the ONLY loop `_beginFight` may start. An
+  enlisted fight is handed back with `_returnToField`, which swaps the shared view
+  back to the walking preset instead of switching tabs.
+- **`pve/adventure_world.js`** — the walkable region simulation, owning no DOM and
+  no combat rules: it steps a body, moves monsters, and turns a physical overlap
+  into a `pveLogic` request. The player IS a spatial actor (`scene.field.player`),
+  advanced with `spatialEngine.advanceActor` on the solo region preset, so walking
+  uses the same movement, gear motion multipliers and gestures a fight does; a solo
+  preset never banks SP and never converts a resting thumb into a charge.
   Monsters patrol inside `patrolRadius`, chase inside `alertRange`, disengage past
   `leash`, and trigger a fight only at `encounterRange`; a boss is just a monster
-  with `boss: true` and `patrolRadius: 0`. Exits are physical portals, and arrivals
-  spawn `ARRIVAL_OFFSET` from the portal leading back. A held pointer is kept in
-  **screen** space and re-projected through the camera every frame — storing it in
-  world units makes the moving camera stall the walk, which is a regression the
-  tests pin.
+  with `boss: true` and `patrolRadius: 0`. `stepWorld` runs in BOTH modes — the
+  world stays alive under a fight — so `_updateMonsters` carries the
+  `state.pveBattle.active` guard that stops a second engagement, while exits are
+  skipped because it is the walking body that triggers them.
+  Exits are physical portals, and arrivals spawn `ARRIVAL_OFFSET` from the portal
+  leading back.
   Gates and the player both carry a facing (`portal.angle`, `playerSpawn.facing`,
   radians, 0 = +x). A gate's `angle` is the direction it leads — its `in` — drawn as
   an arrow at its mouth, and an unauthored gate is assumed to lead out of the region.
@@ -91,8 +101,12 @@ are unaffected by which subfolder a `.js` file lives in.
   `enlist(enemyId, mapEntityId)` builds a fight at the monster's live position and
   sends every other chaser home, so nothing hovers at `encounterRange` and chains
   a second fight the moment the first ends; `endCombat` hands the region back,
-  walking a disengaged monster home from where the fight actually left it.
-  `scene()` is a read-only view for the adapter and tests.
+  walking a disengaged monster home from where the fight actually left it, and
+  `resumeField` rebuilds the walking engine at wherever the fight left the player
+  rather than reusing one parked mid-charge. `worldLayer(ctx, view)` is the region
+  drawer the shared view calls instead of its default arena; it works in absolute
+  world coordinates and the view supplies the transform. `scene()` is a read-only
+  view for the adapter and tests.
 - **`pve/spatial_engine.js`** — shared training/formal engine. Inject preset and
   RNG with `create(config, random)`. Formal profiles add defense, crit, thorns,
   charge thresholds, AP regen and skills; training keeps its baseline parameters.
@@ -108,13 +122,28 @@ are unaffected by which subfolder a `.js` file lives in.
   speed})` re-homes an enemy into a region. `create` keeps its legacy 510x566
   arena for the scene-less dev/test path.
 - **`ui/combat_input.js` / `ui/ui_spatial_battle.js`** — shared input capture and
-  read-only view. Formal DOM IDs use `pve-s-`; training uses unprefixed IDs.
-  `create(root, C, prefix, options)` takes `canvasId` and a `layer` world-drawer.
+  read-only view. Region DOM IDs use `adv-s-`; PVP uses `pvp-s-`; training uses
+  unprefixed IDs. `create(root, C, prefix, options)` takes `canvasId` and a `layer`
+  world-drawer; `canvasId` is a full, UNPREFIXED id (`adventure-world`), unlike
+  every other lookup.
   A camera carrying `zoom` (world units per CSS pixel) pins the scale and derives
   the visible window from it, so walking and fighting share one world-to-screen
   mapping and entering combat cannot zoom; without it the fixed window is fitted
-  as before, which is what PVP and training still do. A solo snapshot renders with
-  the enemy half of the HUD and the offscreen hint simply absent.
+  as before, which is what PVP and training still do. A camera may also state its
+  own window insets (`top`/`bottom`/`inset`), which is how a region view paints the
+  whole canvas instead of inheriting the fullscreen HUD strip — and why
+  `#view-adventure` must NOT carry `spatial-fullscreen`, since that class would
+  otherwise derive `worldTop` from `.vitals`, which is hidden while walking.
+  `useConfig(C)` swaps which preset the view reads (walking preset, then the fight
+  preset) without touching the DOM or the camera. A solo snapshot renders with the
+  enemy half of the HUD and the offscreen hint simply absent.
+- **`pve/ui_adventure.js`** — region page adapter and the single owner of the
+  region's rAF, view, input group, combat settings and DOM. Per frame it steps the
+  world, then either advances the fight or presents the walk — one loop for both
+  modes, which is what removes the cut. `mount`/`unmount` are per region session
+  and re-entry reuses the scene, so `combatInput.attach` happens once and never per
+  fight (it has no handled flag; a second live group would double-dispatch every
+  gesture). See the merge section below.
 - Formal PVE has one implementation; the legacy fallback and its URL selector were
   removed after user acceptance.
 - **`pvp/pvp_logic.js`** — WebRTC PVP on the same core. Host is the sole judgment
@@ -147,19 +176,57 @@ are unaffected by which subfolder a `.js` file lives in.
   equip slots — an empty slot opens the backpack — the backpack grid, which
   lists currently-equipped items first tagged 已装备, and the shop/smithy as
   4-col grids of materials/equipment whose cells open a detail/buy/craft popup
-  reusing `#modal-overlay`), `pve/ui_pve.js` (formal spatial adapter) / `pvp/ui_pvp.js` (original
+  reusing `#modal-overlay`), `pve/ui_adventure.js` (region session adapter) / `pvp/ui_pvp.js` (original
   per-frame PVP renderer); both read their own battle state, `ui/fx.js` (CSS-class animation triggers + battle log lines,
   incl. `pvpChargeFlash`), `ui/icons.js` (inline SVG icons).
+
+### The region view: walking and fighting are one view
+
+A region fight happens INSIDE the region rather than replacing it. `#view-adventure`
+is the only place the world is drawn, and `uiAdventure` owns the single rAF, the
+single `uiSpatialBattle` instance, the single `combatInput` group and the single
+`combatSettings` handle for the whole region session:
+
+```
+uiAdventure._frame (one rAF)
+  ├─ adventureWorld.stepWorld(dt)   always: patrols keep moving under a fight
+  └─ fighting → pveLogic.advance(dt)        → view.render(fight engine)
+     walking  → uiAdventure.updateFrame()   → view.render(solo engine)
+```
+
+Entering combat is a config swap, not a teardown: `enlist` builds the fight at the
+monster's live position, `view.useConfig(fightConfig)` retargets the same canvas,
+camera and pads, and a `walking` class on the root hides the fight-only HUD group
+(`.vitals`, `.legend`, enemy state, clock). Leaving a fight is the same swap back
+plus `adventureWorld.resumeField()`. The camera is deliberately carried across —
+both presets carry `gameConfig.adventure.camera`, and the player body does not move
+at the swap, so there is nothing to jump.
+
+The consequences to keep in mind when editing any of it:
+
+- The walk is stepped with `advanceActor` on a `solo` preset, never `step`: `step`
+  would resolve a pad tap against a null enemy. Solo also never charges and never
+  banks SP.
+- The 3 pads are the ONLY movement control in both modes; the canvas is not an
+  input surface.
+- `pveLogic._loop` is the scene-less dev/test fallback only. Two live loops would
+  double-advance the same fight.
+- PVP and training share `uiSpatialBattle` and `combat_controls.css` but keep their
+  own roots, prefixes, fixed positioning and per-frame lifecycles — nothing here
+  changes them. `pve/training.css` is loaded only by `training.html`, but
+  `combat_controls.css` is loaded by both, so its `.training`-prefixed rules are
+  shared and the training-page-only ones are scoped with `body >`.
 
 ### Testing notes
 
 - Run `node --test tests/spatial-engine.test.cjs tests/pve-spatial.test.cjs
   tests/adventure-world.test.cjs tests/region-combat.test.cjs` for focused training
   and formal PVE regressions. Browser and real-device QA complement them.
-  `region-combat` drives BOTH the region loop and the fight loop, so its fake
-  `requestAnimationFrame` is a queue of pending callbacks rather than a single
-  slot — a one-slot fake silently hands every frame to whichever loop asked last
-  and makes the region side unobservable.
+  `region-combat` drives the merged loop by hand (the adapter is stubbed out), so
+  each of its frames steps the world and then advances any live fight — the same
+  order the real adapter uses. `adventure-world` drives `stepWorld` directly and
+  renders through the REAL shared view, because its facing tests read a heading off
+  drawn geometry and only the real transform tells the truth.
 - Background/hidden tabs pause `requestAnimationFrame`, freezing battle loops
   in automated preview environments. Workaround: monkey-patch rAF to
   setTimeout at runtime (`window.requestAnimationFrame = cb =>
@@ -219,9 +286,15 @@ Confirmed by the user directly — change them only when asked to:
 
 - **Adventure world** — the dungeon→region conversion replaced floors and runGold, so
   old save fixtures still carry `checkpointFloor` only to prove the v1 migration drops
-  it. Arrival points and held-pointer walking are covered by
-  `tests/adventure-world.test.cjs`; the rest of the canvas renderer is not, and region
+  it. Arrival points, gate facings and pad walking are covered by
+  `tests/adventure-world.test.cjs`; the rest of the world layer is not, and region
   D has no boss or goal yet.
+- **Fleeing next to a monster's home re-engages instantly.** `returnFromCombat`
+  teleports the monster home on a flee, and a monster standing on its own home
+  post re-aggros the player the moment the region resumes. Reachable in normal
+  play (walk up to a patrolling monster, flee). Predates the merge; unchanged by
+  it. Needs a decision — a post-flee grace window, or walking the monster home
+  instead of teleporting it.
 - **Spatial clash (stage C)** — explicitly deferred and still required: PVP
   resolves simultaneous attacks, but clashing weapons are not resolved yet.
 - **Real-device QA** — mobile foreground recovery, rotation and the rare

@@ -87,6 +87,23 @@ test('room dependency failures return to a usable retry entry',async()=>{
     assert.match(status.textContent,/创建失败/); await room.hostRoom(); assert.equal(h.c.pvpNet.role,null);
 });
 
+// The other tests build a synthetic manifest, so nothing above would notice a
+// partial being dropped from one side only. `client_boot` mounts each listed
+// partial into `#mount-<id>` and throws when the div is absent, so a manifest
+// entry with no mount point is a hard boot failure -- and a mount point whose
+// partial was deleted leaves a silent hole. Check the real files agree.
+test('the manifest and the page agree on every partial, script and stylesheet',()=>{
+    const manifest=JSON.parse(source('client-assets.json')), page=source('index.html');
+    for(const id of manifest.game.partials){
+        assert.ok(fs.existsSync(path.join(__dirname,'..','partials',`${id}.html`)),`partials/${id}.html is listed but missing`);
+        assert.match(page,new RegExp(`id="mount-${id}"`),`index.html has no mount point for the "${id}" partial`);
+    }
+    for(const [,id] of page.matchAll(/id="mount-([^"]+)"/g))
+        assert.ok(manifest.game.partials.includes(id),`index.html mounts "${id}", which the manifest does not list`);
+    for(const file of [...manifest.game.styles,...manifest.game.scripts])
+        assert.ok(fs.existsSync(path.join(__dirname,'..',file)),`${file} is listed but missing`);
+});
+
 test('rooms generate and accept exactly four digits',async()=>{
     const status={textContent:''}, steps=new Map(), input={value:'12345'}; let hosted='';
     const h=harness();

@@ -124,9 +124,12 @@ const gameConfig = (() => {
         // overworld at its historic 1:1 scale. The SAME number feeds the fight as
         // well, which is what stops starting combat from causing a zoom jump --
         // the fixed-window `camera` preset above is what PVP and training use.
+        // top/bottom/inset are the window insets in CSS pixels. They are 0 here
+        // because the region layer paints exactly the derived window and the HUD
+        // floats over it; the PVE/PVP/training views keep their own insets.
         adventure: {
             goldPerExp: 0.60,
-            camera: { zoom: 1, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 }
+            camera: { zoom: 1, top: 0, bottom: 0, inset: 0, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 }
         },
         enemyDefaults: { apMax: 5, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
             enrageThreshold: 0, enrageAtkMult: 1.3, enrageSpdMult: 1.2 },

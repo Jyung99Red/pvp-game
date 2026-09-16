@@ -1,30 +1,61 @@
 // Read-only battle view. Presentation effects belong to this instance, never the engine.
-const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix = '', options = {}) {
+const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPreset, prefix = '', options = {}) {
     const L = combatGestures, S = spatialCombat;
     let battle, contextLost = false;
     const abort = new AbortController();
     const $ = id => root.querySelector(`[id="${prefix}${id}"]`);
     // A region session draws into its own canvas and supplies a world layer, so
     // one view serves both walking and fighting with no seam between them.
-    const canvas = $(options.canvasId || 'arena'), ctx = canvas.getContext('2d');
+    // `canvasId` is a full, unprefixed id (`adventure-world`); the default keeps
+    // every other caller on the prefix convention (`arena` -> `pvp-s-arena`).
+    const canvas = options.canvasId ? root.querySelector(`[id="${options.canvasId}"]`) : $('arena'), ctx = canvas.getContext('2d');
     const layer = options.layer || null;
     const pads = { move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
     const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
-    const apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
+    let apDots = [];
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
+    // The config is swapped per mode in a merged region session (walking preset,
+    // then the fight preset) through useConfig, so nothing derived from it may be
+    // captured once at create time.
+    let C = initialConfig;
     // `zoom` (world units per CSS pixel) pins the scale and DERIVES the visible
     // window from it, so walking and fighting share one world-to-screen mapping
     // and starting a fight cannot zoom. Without it the window is a fixed size
     // fitted into the canvas, which is what PVP and training still do.
-    const zoom = C.camera?.zoom || 0;
-    let viewWidth = Math.min(C.width, C.camera?.width || C.width);
-    let viewHeight = Math.min(C.height, C.camera?.height || C.height);
+    // A region config also owns its window insets, because the world layer paints
+    // exactly the derived window and would otherwise leave a bare frame around it.
+    let zoom = C.camera?.zoom || 0;
+    let viewWidth = 0, viewHeight = 0;
+    // The window insets keep the HUD off the world. A world-view config states
+    // them itself (0/0/0 for a region, so the layer paints right up to the edges);
+    // everything else keeps the fullscreen / fitted defaults it has always had.
+    function syncInsets(rect) {
+        if (C.camera?.top != null || C.camera?.bottom != null || C.camera?.inset != null) {
+            worldTop = C.camera.top ?? 0; worldBottom = C.camera.bottom ?? 0; worldInset = C.camera.inset ?? 0;
+        } else if (fullscreen) {
+            worldTop = Math.max(12, root.querySelector('.vitals').getBoundingClientRect().top - rect.top);
+            worldBottom = 12; worldInset = 8;
+        } else {
+            worldTop = 25; worldBottom = 19; worldInset = 6;
+        }
+    }
     function syncWindow() {
         if (!zoom) return;
         viewWidth = Math.max(1, (width - worldInset * 2) / zoom);
         viewHeight = Math.max(1, Math.max(1, height - worldTop - worldBottom) / zoom);
     }
+    function buildApDots() {
+        apDots.forEach(dot => dot.remove());
+        apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
+    }
+    function fitWindow() {
+        viewWidth = Math.min(C.width, C.camera?.width || C.width);
+        viewHeight = Math.min(C.height, C.camera?.height || C.height);
+        syncWindow();
+    }
+    buildApDots();
+    fitWindow();
     let camera = null;
     let hintVisible = false, presentationDt = 0;
     let visiblePolygon = [];
@@ -115,10 +146,7 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
         const rect = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
         if (rect.width < 1 || rect.height < 1 || contextLost) return;
         width = rect.width; height = rect.height;
-        if (fullscreen) {
-            worldTop = Math.max(12, root.querySelector('.vitals').getBoundingClientRect().top - rect.top);
-            worldBottom = 12; worldInset = 8;
-        }
+        syncInsets(rect);
         canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         syncWindow();
@@ -526,5 +554,19 @@ const uiSpatialBattle = { create(root, C = spatialData.baseCombatPreset, prefix 
     canvas.addEventListener('contextlost', e => { e.preventDefault(); contextLost = true; }, { signal: abort.signal });
     canvas.addEventListener('contextrestored', () => { contextLost = false; resize(); }, { signal: abort.signal });
     resize();
-    return { render, refresh: resize, destroy() { abort.abort(); observer.disconnect(); apDots.forEach(dot => dot.remove()); } };
+    // Swap which preset this view reads without touching the DOM: a merged region
+    // session walks on the solo preset and fights on the enemy preset through the
+    // same canvas, camera, pads and listeners. The camera is deliberately carried
+    // across -- walking and fighting share one follow config, and the player body
+    // does not move at the swap, so the transition is continuous by construction.
+    function useConfig(next) {
+        if (!next || next === C) return;
+        const previousApMax = C.apMax;
+        C = next;
+        zoom = C.camera?.zoom || 0;
+        fitWindow();
+        if (C.apMax !== previousApMax) buildApDots();
+        resize();
+    }
+    return { render, refresh: resize, useConfig, destroy() { abort.abort(); observer.disconnect(); apDots.forEach(dot => dot.remove()); } };
 } };

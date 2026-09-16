@@ -14,9 +14,9 @@ const FILES = ['game_config.js', 'core/data.js', 'core/effects.js', 'core/save.j
 
 function setup({ region = 'b' } = {}) {
     const nodes = new Map(), clock = { t: 0 };
-    // A QUEUE of pending frames, not a single slot: the region loop and the fight
-    // loop are both alive at the merge seam, and a one-slot fake would silently
-    // hand every frame to whichever asked last -- making the region unobservable.
+    // rAF stays stubbed only because the scene-less fallback loop in pve_logic
+    // still calls it. With a live region scene `_beginFight` deliberately starts
+    // NO loop -- the page adapter owns the one rAF, and this harness drives it.
     let nextFrame = 0; const pending = new Map();
     const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
     function element() {
@@ -34,7 +34,7 @@ function setup({ region = 'b' } = {}) {
         window: { addEventListener() {}, devicePixelRatio: 1 },
         localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
         ui: { switchTab() {}, updateBase() {}, updateAdventure() {}, log() {} },
-        uiPve: new Proxy({}, { get: () => () => {} }),
+        uiAdventure: new Proxy({}, { get: () => () => {} }),
         fx: { log: new Proxy({}, { get: () => () => {} }) }
     });
     for (const file of FILES) vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), c);
@@ -43,14 +43,16 @@ function setup({ region = 'b' } = {}) {
     // Entering a region builds its scene; startEncounter is guarded on status.
     vm.runInContext(`state.progress.currentRegionId = ${JSON.stringify(region)}`, c);
     vm.runInContext(`state.world.currentTab = 'adventure'`, c);
-    t.adventureWorld.activate();
+    t.adventureWorld.enter();
     vm.runInContext(`state.world.status = 'exploring'`, c);
-    // dt is read from the frame timestamp, so the clock has to advance with it.
-    // Every callback pending at the start of a frame is driven, the way a real
-    // browser runs every registered loop.
+    // One frame of the page adapter's single loop: the world always steps, and the
+    // fight advances on top of it. `uiAdventure` is stubbed out here, so this is
+    // the loop the adapter would be running, driven by hand.
     t.frames = (count, fps = 60) => {
         for (let i = 0; i < count; i++) {
             clock.t += 1000 / fps;
+            t.adventureWorld.stepWorld(1 / fps);
+            if (t.state.pveBattle?.active) t.pveLogic.advance(1 / fps);
             const due = [...pending.values()]; pending.clear();
             for (const fn of due) fn(clock.t);
         }
@@ -97,25 +99,44 @@ test('running past the leash ends the fight with no reward and hands the region 
     assert.equal(monster.alive, true, 'a disengage does not kill it');
 });
 
-test('a fight locks the region: chasers go home and nothing else can engage', () => {
+test('a fight keeps the region alive without letting it start a second one', () => {
     const t = setup();
     const wolf = t.monster('b-wolf-1');
     wolf.phase = 'chase';
     t.pveLogic.startEncounter('goblin', 'b-goblin-1');
     assert.equal(wolf.phase, 'return', 'a chaser is sent home at enlist');
     const id = t.state.pveBattle.battleId;
-    // The region world must not advance for the duration of a fight, so a monster
-    // parked inside its alert range neither picks a target nor drifts toward the
-    // duel. Deliberately mechanism-agnostic: _beginFight deactivating the region
-    // and _loop's own `pveBattle.active` guard each hold this on their own, and
-    // this asserts the invariant rather than either implementation.
     const scene = t.adventureWorld.scene();
+    // The world keeps running under the fight -- that is the point of the merge --
+    // so a monster parked inside its alert range has to be held off by the guard
+    // in _updateMonsters, not by the region being frozen. Without it the fight
+    // that just ended would chain straight into the next one.
     wolf.x = scene.player.x + 120; wolf.y = scene.player.y; wolf.phase = 'idle';
-    const parked = [wolf.x, wolf.y];
-    t.frames(30);
+    const patrol = t.monster('b-orc-1'), patrolFrom = [patrol.x, patrol.y];
+    t.frames(60);
     assert.equal(t.state.pveBattle.battleId, id, 'no second encounter while one is running');
     assert.equal(wolf.phase, 'idle', 'nothing picks a target while a fight is running');
-    assert.deepEqual([wolf.x, wolf.y], parked, 'and nothing closes in on the duel');
+    assert.notDeepEqual([patrol.x, patrol.y], patrolFrom, 'but the rest of the region keeps patrolling');
+});
+
+test('the region resumes engagement the moment the fight resolves', () => {
+    const t = setup();
+    t.pveLogic.startEncounter('goblin', 'b-goblin-1');
+    const scene = t.adventureWorld.scene(), wolf = t.monster('b-wolf-1');
+    wolf.x = scene.player.x + 120; wolf.y = scene.player.y; wolf.phase = 'idle';
+    t.frames(10);
+    assert.equal(wolf.phase, 'idle', 'held off while the fight runs');
+    // Disengage: nobody wins, the region simply resumes where it left off.
+    const b = t.state.pveBattle;
+    b.spatial.enemy.x = b.home.x + b.leash + 40; b.spatial.enemy.y = b.home.y;
+    b.spatial.player.x = b.spatial.enemy.x + 800;
+    t.pveLogic.advance(.05);
+    assert.equal(b.active, false);
+    // Placed against where the region actually handed the player back, inside the
+    // wolf's alert range (180) but well outside its encounter range (50).
+    wolf.x = scene.player.x + 120; wolf.y = scene.player.y; wolf.phase = 'idle';
+    t.frames(2);
+    assert.equal(wolf.phase, 'chase', 'the guard is scoped to the fight, not a permanent freeze');
 });
 
 test('a walking monster still aggros into a fight on contact', () => {

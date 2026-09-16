@@ -12,8 +12,8 @@ const ui = {
         // Build building list
         this.updateBuildingList();
 
-        // (PVE battle buttons are inline-wired in partials/pve-battle.html,
-        //  same pattern as the PVP view — no init-time bindings needed)
+        // (Region and PVP buttons are inline-wired in their partials, so no
+        //  init-time bindings are needed here)
 
         this.initPanels();
 
@@ -96,7 +96,9 @@ const ui = {
     },
 
     switchTab(tabId) {
-        if (state.pveBattle && state.pveBattle.active && tabId !== 'battle') { ui.log("正在战斗中！"); return; }
+        // A fight runs inside the region view, so there is no battle tab to escape
+        // to: every tab switch is blocked until the fight is won, fled or lost.
+        if (state.pveBattle && state.pveBattle.active) { ui.log("正在战斗中！"); return; }
 
         // While a PVP match is active or a connection is being set up, block switching to other main tabs to avoid accidental taps breaking the connection
         // pvp-battle itself isn't a nav-btn (only reachable via code), so what's intercepted here is the "leave" action
@@ -110,7 +112,7 @@ const ui = {
             return;
         }
 
-        if (tabId !== 'adventure' && typeof adventureWorld !== 'undefined') adventureWorld.deactivate();
+        if (tabId !== 'adventure' && typeof uiAdventure !== 'undefined') uiAdventure.unmount();
         state.world.currentTab = tabId;
         if (tabId !== 'base') document.getElementById('camp-toast')?.replaceChildren();
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
@@ -124,12 +126,9 @@ const ui = {
         }
 
         if (tabId === 'base') this.updateEquip();
-        if (tabId === 'adventure') { this.updateAdventure(); adventureWorld.activate(); }
-        if (tabId === 'battle' && !(state.pveBattle && state.pveBattle.active)) {
-            document.getElementById('pve-enemy-name').innerText = "当前无战斗";
-            uiPve.hideOverlays();
-            uiPve.showEmpty?.();
-        }
+        // The region view is the only place the world is drawn, fighting included,
+        // so there is no empty battle tab to fill.
+        if (tabId === 'adventure') { this.updateAdventure(); uiAdventure.mount(); }
 
         // Mapping hooks for PVP view transitions
         if (tabId === 'pvp-room') {
@@ -458,9 +457,7 @@ const ui = {
         $('adventure-region-name').textContent = region.name;
         $('adventure-region-desc').textContent = region.desc;
         $('adventure-region-kind').innerHTML = `<i></i> ${region.kind === 'safe' ? '安全区域' : '探索区域'}`;
-        const boss = region.boss;
-        $('adventure-hint').textContent = boss && pveLogic.isBossDefeated(boss.enemyId)
-            ? '首领已被击败，不会重生。其余怪物会在再次进入区域时重新出现。'
-            : '拖动地图或使用方向键移动。保持距离即可绕过怪物；接触后才会进入战斗。';
+        // The hint line is NOT written here: only the live scene knows about a
+        // blocked gate or a defeated boss, so the region adapter owns it.
     }
 };
