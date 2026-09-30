@@ -71,7 +71,7 @@ test('PVP melee center-line cannot hit through an L wall',()=>{
  const t=setup({atk:100,def:0}), [a,b]=t.d.sides;
  a.player.x=180; a.player.y=280; a.player.facing=Math.PI/2;
  b.player.x=180; b.player.y=360; b.player.facing=-Math.PI/2;
- light(t,0); step(t,.12);
+ light(t,0); step(t,.2);
  assert.equal(b.player.hp,b.player.maxHp);
  assert.ok(t.d.events.some(e=>e.type==='miss' && e.blocked));
 });
@@ -80,16 +80,16 @@ test('symmetric players share spatial tuning, equipment profiles and independent
  const t=setup({atk:90,def:12,motion:{move:1.2,turn:1.1,chargeMove:1,chargeTurn:1}});
  const [a,b]=t.d.sides;
  assert.equal(a.player.radius,b.player.radius);assert.equal(a.player.hp,a.player.maxHp);
- assert.equal(a.config.heavy.windup,.45);assert.equal(b.config.heavy.recovery,.6);
+ assert.equal(a.config.combo.moves.charged.windup,.45);assert.equal(b.config.combo.moves.charged.recovery,.6);
  assert.equal(a.config.fullCharge,2.3);assert.equal(a.config.motion.move,1.2);
  a.buffs.autoParry=1; assert.equal(b.buffs.autoParry,0);
  assert.equal(a.enemy,b.player);assert.equal(b.enemy,a.player);
  assert.throws(()=>t.D.create([{...t.d.profiles[0],atk:Infinity},t.d.profiles[1]]));
 });
 test('both actors obey reach; same-step lethal attacks trade and settle once as a draw',()=>{
- const t=setup({atk:100,maxHp:20,def:0});light(t,0);light(t,1);step(t,.12);
+ const t=setup({atk:100,maxHp:20,def:0});light(t,0);light(t,1);step(t,.2);
  assert.equal(t.d.sides[0].player.hp,20);assert.equal(t.d.sides[1].player.hp,20);
- step(t,.4);close(t);light(t,0);light(t,1);step(t,.12);
+ step(t,.4);close(t);light(t,0);light(t,1);step(t,.2);
  assert.equal(t.d.result,'draw');assert.equal(t.d.sides[0].player.hp,0);assert.equal(t.d.sides[1].player.hp,0);
  assert.equal(t.d.events.filter(e=>e.type==='finished').length,1);
  const n=t.d.events.length;step(t,1);assert.equal(t.d.events.length,n);
@@ -99,7 +99,7 @@ test('guard, rear hit and parry work identically for host and guest; AP belongs 
  for(const defender of [0,1]) for(const mode of ['parry','block','rear']) {
   const t=setup({atk:100,maxHp:500,def:0});close(t);guard(t,defender);step(t,mode==='parry'?.17:.5);
   const b=t.d.sides[defender],a=t.d.sides[1-defender];if(mode==='rear')b.player.facing+=Math.PI;
-  const ap=b.player.ap; light(t,1-defender);step(t,.12);
+  const ap=b.player.ap; light(t,1-defender);step(t,.2);
   if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(b.player.ap<ap);assert.equal(b.skillPoints,0);}
   else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.equal(b.player.ap,ap-1);}
   else {assert.equal(b.player.phase,'stunned');assert.equal(b.player.hp,470);assert.equal(b.action,null);}
@@ -109,13 +109,13 @@ test('auto parry uses three SP, works from behind, but ordinary front guard pres
  for(const front of [true,false]) {
   const t=setup({atk:100,maxHp:500,def:0});close(t);const b=t.d.sides[1];
   b.skillPoints=2;assert.equal(skill(t,1,'parry'),false);b.skillPoints=3;assert.equal(skill(t,1,'parry'),true);assert.equal(b.skillPoints,0);
-  guard(t,1);step(t,.5);if(!front)b.player.facing+=Math.PI;light(t,0);step(t,.12);
+  guard(t,1);step(t,.5);if(!front)b.player.facing+=Math.PI;light(t,0);step(t,.2);
   assert.equal(b.buffs.autoParry,front?1:0);assert.equal(b.player.hp,front?488:500);
  }
 });
 test('four-way gesture casts current skill rules; center cancels, full HP preserves queue and SP',()=>{
  const t=setup(), b=t.d.sides[1];b.skillPoints=3;
- light(t,1);light(t,1);assert.equal(b.queuedCommand.type,'light');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'light');
+ light(t,1);light(t,1);assert.equal(b.queuedCommand.type,'tap');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'tap');
  step(t,1);b.player.hp-=20;
  input(t,1,'press','skill',[0,0]);input(t,1,'drag','skill',[0,-60,0,-60]);input(t,1,'drag','skill',[0,0,0,0]);input(t,1,'release','skill');
  assert.equal(b.skillPoints,3);
@@ -142,7 +142,7 @@ test('haste and full charge retain latest tuning without auto-fire or cross-play
 test('hit cancels only victims right input; held movement resumes and no tap leaks through stun',()=>{
  const t=setup({atk:10,maxHp:500});close(t);const b=t.d.sides[1];
  input(t,1,'press','move',[0,0]);input(t,1,'drag','move',[60,0,60,0]);
- light(t,0);step(t,.12);assert.equal(b.player.phase,'stunned');assert.equal(b.action,null);assert.equal(b.move.suppressTap,true);
+ light(t,0);step(t,.2);assert.equal(b.player.phase,'stunned');assert.equal(b.action,null);assert.equal(b.move.suppressTap,true);
  const x=b.player.x;step(t,.2);assert.equal(b.player.x,x);step(t,.3);assert.ok(b.player.x>x);
  input(t,1,'release','move');assert.equal(b.stats.attacks,0);
 });
@@ -159,7 +159,7 @@ test('snapshot restoration relinks queued held gestures and never aliases actors
 test('combined charge survives snapshot replay and both sides release along their real facing',()=>{
  for(const side of [0,1]) {
   const t=setup(), b=t.d.sides[side];
-  light(t,side);step(t,.12);b.player.timer=1;
+  light(t,side);step(t,.2);b.player.timer=1;
   input(t,side,'press','move',[0,0]);step(t,.3);
   const snap=t.D.snapshot(t.d), restored=t.D.create(t.d.profiles);
   t.D.restore(restored,snap);const r=restored.sides[side];
@@ -176,9 +176,9 @@ test('combined charge survives snapshot replay and both sides release along thei
 });
 test('SP caps, thorns double death, and bounded auto-face are symmetric',()=>{
  const t=setup({maxHp:20,atk:100,def:0,guardThorns:1});close(t);guard(t,1);step(t,.5);
- t.d.sides[1].player.hp=10;light(t,0);step(t,.12);assert.equal(t.d.result,'draw');
+ t.d.sides[1].player.hp=10;light(t,0);step(t,.2);assert.equal(t.d.result,'draw');
  const u=setup();const b=u.d.sides[1];b.controls.autoFace=true;b.player.facing=0;step(u,.01);assert.ok(Math.abs(b.player.facing)<=.08+1e-9);
- close(u);u.d.sides[0].skillPoints=3;light(u,0);step(u,.12);assert.equal(u.d.sides[0].skillPoints,3);
+ close(u);u.d.sides[0].skillPoints=3;light(u,0);step(u,.2);assert.equal(u.d.sides[0].skillPoints,3);
 });
 
 test('guest prediction cannot heal HP before the authoritative snapshot',()=>{

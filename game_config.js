@@ -44,15 +44,10 @@ const gameConfig = (() => {
             // DEF equal to defenseConstant halves incoming raw damage.
             defenseConstant: 17.5,
             critMultiplier: 1.5,
-            lightAtkRatio: 0.30,
-            heavyAtkRatio: 0.30,
-            heavyChargeAtkRatio: 0.80,
-            parryAtkRatio: 0.50,
+            parryAtkRatio: 0.50, // Move damage ratios live in the combo table.
             blockMultiplier: 0.40, // Multiplied by equipment guard reduction.
             fullChargeAfterThreshold: 2,
             maxParryWindow: 1,
-            fallbackHeavyRangeRatio: 0.60,
-            fallbackHeavyArcRatio: 0.40,
         },
 
         // 3. Touch input. Distances are CSS pixels; hysteresis is radians.
@@ -82,7 +77,7 @@ const gameConfig = (() => {
             player: { x: 180, y: 275, radius: 12, facing: -Math.PI / 2, hp: 120, maxHp: 120 },
             enemy: { x: 180, y: 160, radius: 23, facing: Math.PI / 2, hp: 360, maxHp: 360 },
             ai: { initialDelay: 0.8, delay: 0.45, speed: 47, stopDistance: 88, attackDistance: 150, turn: 3, trackingTurn: 1.6 },
-            stagger: { threshold: 3, duration: 1.5, heavy: 1, parry: 1 },
+            stagger: { threshold: 3, duration: 1.5, parry: 1 }, // Moves carry their own stagger points.
             apRegen: 0.7, // Training AP/second; formal rates come from focus.
             moveRamp: 32, // CSS pixels beyond the dead zone to reach full speed.
             hitStun: 0.35, // Shared hit stun duration.
@@ -92,10 +87,48 @@ const gameConfig = (() => {
             parryWindow: 0.18, apMax: 5, // Training defaults; formal profiles override both.
             skillPointMax: 3, // SP cap shared by training, PVE and PVP.
             spRegen: 1 / 3, // Training SP/second; formal rates come from focus.
-            light: { kind: 'sector', range: 69, arc: Math.PI * 0.52, damage: 18, windup: 0.10, recovery: 0.28 },
-            heavy: { kind: 'sector', minRange: 60, range: 103, minArc: Math.PI * 0.28, arc: Math.PI * 0.68, damage: 28, chargeBonus: 30, windup: 0.45, recovery: 0.6 },
+            atk: 60, // Training attack; move damage = atk * move ratio. Formal profiles use the stat.
             sweep: { kind: 'sector', range: 145, arc: Math.PI * 0.64, windup: 1.35, lock: 0.45, active: 0.16, recovery: 1.3, damage: 25 },
             stomp: { kind: 'circle', range: 110, windup: 1.5, lock: 0.55, active: 0.16, recovery: 1.45, damage: 30 }
+        },
+
+        // 5b. Player move tree (first version, shared by every weapon).
+        // Each move is its own windup -> swing -> recovery. The blade sweeps the
+        // arc during `swing`; a target is hit when the blade passes its angle.
+        // `derive` is when, counted from the swing's end, a buffered next input
+        // cuts the recovery short; a finisher has none and plays out in full.
+        // Timing is fixed per move: no stat or equipment changes it.
+        // `arc` is a multiple of PI in this section only. `sweep` 1 starts on
+        // the left of facing and swings right; -1 swings back. `ratio` is damage
+        // per ATK, `stagger` is enemy stagger points. `next` maps the following
+        // input -- tap, hold, or a tap after a pause -- to the move it derives;
+        // an input with no entry starts over from `root`. `view` is presentation
+        // only and the simulation never reads it.
+        // pauseAfterRecovery: the pause line, seconds after recovery ends.
+        // windowAfterRecovery: the chain resets this long after recovery ends.
+        combo: {
+            root: { tap: 'slash', hold: 'charged' },
+            pauseAfterRecovery: 0.20, windowAfterRecovery: 0.70,
+            moves: {
+                slash: { range: 69, arc: 0.52, sweep: 1, windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.30, stagger: 0,
+                    next: { tap: 'backslash', hold: 'rising' }, view: { name: '横扫', trail: 'light' } },
+                backslash: { range: 72, arc: 0.56, sweep: -1, windup: 0.10, swing: 0.08, recovery: 0.36, derive: 0.14, ratio: 0.32, stagger: 0,
+                    next: { tap: 'spin', hold: 'cleave', pause: 'thrust' }, view: { name: '回扫', trail: 'light' } },
+                spin: { range: 78, arc: 2, sweep: 1, windup: 0.16, swing: 0.18, recovery: 0.60, ratio: 0.55, stagger: 1,
+                    view: { name: '回旋斩', trail: 'heavy' } },
+                thrust: { range: 100, arc: 0.14, sweep: 1, windup: 0.12, swing: 0.06, recovery: 0.55, ratio: 0.60, stagger: 1,
+                    view: { name: '连刺', trail: 'thrust' } },
+                rising: { range: 85, arc: 0.50, sweep: -1, windup: 0.30, swing: 0.10, recovery: 0.60, ratio: 0.70, stagger: 1.5,
+                    view: { name: '上挑', trail: 'heavy' } },
+                cleave: { range: 95, arc: 0.30, sweep: 1, windup: 0.30, swing: 0.08, recovery: 0.65, ratio: 0.80, stagger: 1.5,
+                    view: { name: '下劈', trail: 'heavy' } },
+                // The opening hold. Its reach and arc grow with charge from
+                // minRange/minArc; damage = atk * (ratio + chargeRatio * charge share).
+                charged: { minRange: 60, range: 103, minArc: 0.28, arc: 0.68, sweep: 1, windup: 0.45, swing: 0.12, recovery: 0.60, derive: 0.25,
+                    ratio: 0.30, chargeRatio: 0.80, stagger: 1, next: { tap: 'follow' }, view: { name: '蓄力斩', trail: 'heavy' } },
+                follow: { range: 75, arc: 0.50, sweep: -1, windup: 0.10, swing: 0.08, recovery: 0.45, ratio: 0.40, stagger: 0.5,
+                    view: { name: '追斩', trail: 'light' } }
+            }
         },
 
         // 6. Camera and arenas. PVE spawn offsets preserve encounter distances.

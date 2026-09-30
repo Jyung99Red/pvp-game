@@ -10,14 +10,14 @@ const spatialEngine = (() => {
             w.width <= 0 || w.height <= 0 || w.x < 0 || w.y < 0 || w.x + w.width > C.width || w.y + w.height > C.height))) throw new Error('Invalid arena walls');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
         if (![C.playerTurn ?? gameConfig.training.playerTurn, C.chargeMoveMultiplier ?? gameConfig.training.chargeMoveMultiplier, C.chargeTurnMultiplier ?? gameConfig.training.chargeTurnMultiplier, C.guardMoveMultiplier ?? gameConfig.training.guardMoveMultiplier, C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
-        if ((C.heavy.minRange != null && (!positive(C.heavy.minRange) || C.heavy.minRange > C.heavy.range)) ||
-            (C.heavy.minArc != null && (!positive(C.heavy.minArc) || C.heavy.minArc > C.heavy.arc))) throw new Error('Invalid charge sector');
+        validateCombo(C.combo);
+        if (!nonnegative(C.atk)) throw new Error('Invalid attack');
         if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
         if (C.formal && !C.pvp && !C.solo && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.fullCharge < C.chargeThreshold + gameConfig.damage.fullChargeAfterThreshold - 1e-9)) throw new Error('Invalid profile');
         if (!Object.values(C.ai).every(nonnegative)) throw new Error('Invalid AI timing');
-        for (const a of [C.light, C.heavy, ...(C.actions || [C.sweep, C.stomp])]) {
+        for (const a of C.actions || [C.sweep, C.stomp]) {
             if (!a || !['sector', 'circle', 'dash'].includes(a.kind) || !positive(a.range) ||
                 (a.kind === 'sector' && (!positive(a.arc) || a.arc > Math.PI * 2)) ||
                 ![a.windup, a.recovery, a.damage].every(v => Number.isFinite(v) && v >= 0) ||
@@ -35,6 +35,23 @@ const spatialEngine = (() => {
         // legitimately start exactly where two bodies already stand. create()
         // separates them on its own copy -- see below.
     }
+    const INPUTS = ['tap', 'hold', 'pause'];
+    function validateCombo(K) {
+        const positive = v => Number.isFinite(v) && v > 0, nonnegative = v => Number.isFinite(v) && v >= 0;
+        if (!K?.moves || !K.root || !K.moves[K.root.tap] || !K.moves[K.root.hold]) throw new Error('Invalid combo root');
+        if (!positive(K.pauseAfterRecovery) || !(K.windowAfterRecovery > K.pauseAfterRecovery)) throw new Error('Invalid combo window');
+        for (const m of Object.values(K.moves)) {
+            if (!m || m.kind !== 'sector' || !positive(m.range) || !positive(m.arc) || m.arc > Math.PI * 2 + 1e-9 || ![1, -1].includes(m.sweep) ||
+                !nonnegative(m.windup) || !positive(m.swing) || !positive(m.recovery) ||
+                (m.derive != null && (!positive(m.derive) || m.derive > m.recovery)) ||
+                !nonnegative(m.ratio) || !nonnegative(m.stagger) || (m.chargeRatio != null && !nonnegative(m.chargeRatio)) ||
+                (m.minRange != null && (!positive(m.minRange) || m.minRange > m.range)) ||
+                (m.minArc != null && (!positive(m.minArc) || m.minArc > m.arc)) ||
+                Object.entries(m.next || {}).some(([input, id]) => !INPUTS.includes(input) || !K.moves[id])) throw new Error('Invalid combo move');
+        }
+        const charged = K.moves[K.root.hold];
+        if (charged.minRange == null || charged.minArc == null || charged.chargeRatio == null) throw new Error('Invalid charge sector');
+    }
     function create(config = C, random = Math.random) {
         validate(config);
         const C = JSON.parse(JSON.stringify(config));
@@ -48,7 +65,7 @@ const spatialEngine = (() => {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
             skillPoints: Math.max(0, Math.min(C.skillPointMax ?? gameConfig.training.skillPointMax, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
-            player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0 },
+            player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0, chain: null },
             enemy: C.solo ? null : { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
             controls: { ...gameConfig.controls, ...C.controls },
             move: null, action: null, guard: null, skill: null, queuedCommand: null, motionBuffs: [], events: [], inputVersion: 0, actionInputVersion: 0,
@@ -69,8 +86,10 @@ const spatialEngine = (() => {
             if (b.buffs.instantCharge) { p.charge = C.fullCharge; b.buffs.instantCharge = false; }
             return true;
         }
-        if (command.type === 'light' && p.phase === 'idle' && b.move?.mode === 'pending' && !b.guard && !b.action) { attack(b, false); return true; }
-        if (command.type === 'heavy' && p.phase === 'charging' && combatGestures.armed(b.action)) { attack(b, true); return true; }
+        if (command.type === 'light' && p.phase === 'idle' && b.move?.mode === 'pending' && !b.guard && !b.action) {
+            attack(b, derive(b, 'tap', b.move.start)); return true;
+        }
+        if (command.type === 'heavy' && p.phase === 'charging' && combatGestures.armed(b.action)) { attack(b, C.combo.root.hold); return true; }
         if (command.type === 'cancel_charge' && p.phase === 'charging') {
             b.stats.cancels++; p.phase = 'idle'; p.charge = 0;
             if (b.action) b.action.mode = 'blocked';
@@ -82,7 +101,26 @@ const spatialEngine = (() => {
         return b.running && !b.result; }
     function start(b) {
         if (!b.result) { b.started = true; b.running = true; } }
-    function locked(b) { return ['attack', 'recover', 'stunned'].includes(b.player.phase); }
+    function locked(b) { return ['attack', 'swing', 'recover', 'stunned'].includes(b.player.phase); }
+    function moveOf(b, id) { return b.config.combo.moves[id]; }
+    // The chain stays open through the recovery and windowAfterRecovery past it.
+    function chainOpen(b) {
+        const c = b.player.chain;
+        return !!c && b.time - c.at <= moveOf(b, c.move).recovery + b.config.combo.windowAfterRecovery + 1e-9;
+    }
+    // The move an input starts: the open chain's derivation, else the root.
+    // A tap pressed past the pause line takes the pause derivation; a node
+    // without one treats it as an ordinary tap, so pausing never costs a move.
+    function derive(b, input, pressedAt = b.time) {
+        const K = b.config.combo, c = b.player.chain;
+        if (chainOpen(b)) {
+            const m = moveOf(b, c.move), next = m.next || {};
+            const paused = input === 'tap' && pressedAt - c.at >= m.recovery + K.pauseAfterRecovery - 1e-9;
+            const id = paused ? next.pause ?? next.tap : next[input];
+            if (id) return id;
+        }
+        return K.root[input];
+    }
     // One replaceable next command: taps never accumulate into an attack backlog.
     function flushQueue(b) {
         if (b.player.phase !== 'idle' || !b.queuedCommand) return;
@@ -94,18 +132,29 @@ const spatialEngine = (() => {
             b.guard.queued = false;
             if (p.ap >= gameConfig.resources.guardRequiredAp) { p.phase = 'guard_start'; p.timer = b.config.guardStartup; }
             else { b.guard = null; emit(b, 'ap_insufficient'); }
-        } else if (q.type === 'light') attack(b, false);
+        } else if (q.type === 'tap') attack(b, derive(b, 'tap', q.at));
         else if (q.type === 'skill') emit(b, 'skill_ready', { kind: q.kind });
         else if (q.type === 'heavy') {
             p.charge = q.charge; p.facing = q.facing;
             if (b.buffs.instantCharge) { p.charge = b.config.fullCharge; b.buffs.instantCharge = false; }
-            attack(b, true);
+            attack(b, b.config.combo.root.hold);
         }
     }
+    // At the derive point a buffered tap cuts the rest of the recovery short.
+    function deriveNow(b) {
+        const p = b.player, q = b.queuedCommand, m = p.attack && moveOf(b, p.attack.move);
+        if (q?.type !== 'tap' || m?.derive == null || m.recovery - p.timer < m.derive - 1e-9) return false;
+        b.queuedCommand = null; attack(b, derive(b, 'tap', q.at)); return true;
+    }
+    // The opening hold's sector grows with charge from minRange/minArc.
     function heavyShape(b, charge = b.player.charge) {
-        const a = b.config.heavy, t = S.clamp(charge / b.config.fullCharge, 0, 1);
-        return { ...a, range: (a.minRange ?? a.range * gameConfig.damage.fallbackHeavyRangeRatio) + (a.range - (a.minRange ?? a.range * gameConfig.damage.fallbackHeavyRangeRatio)) * t,
-            arc: (a.minArc ?? a.arc * gameConfig.damage.fallbackHeavyArcRatio) + (a.arc - (a.minArc ?? a.arc * gameConfig.damage.fallbackHeavyArcRatio)) * t };
+        const a = b.config.combo.moves[b.config.combo.root.hold], t = S.clamp(charge / b.config.fullCharge, 0, 1);
+        return { kind: 'sector', range: a.minRange + (a.range - a.minRange) * t, arc: a.minArc + (a.arc - a.minArc) * t };
+    }
+    // Damage share of the charge: 0 at the weapon threshold, 1 at full charge.
+    function chargeShare(b, charge) {
+        const C = b.config;
+        return C.chargeThreshold != null ? S.clamp((charge - C.chargeThreshold) / (C.fullCharge - C.chargeThreshold), 0, 1) : S.clamp(charge / C.fullCharge, 0, 1);
     }
     // Equipment feeds config.motion; temporary buffs use these same independent multipliers.
     function setMotionBuff(b, id, multipliers, seconds) {
@@ -200,19 +249,60 @@ const spatialEngine = (() => {
             // This only changes facing. It never restarts the parry clock.
         }
     }
-    function attack(b, heavy) {
-        const C = b.config;
-        const p = b.player;
-        if (p.ap < gameConfig.resources.attackApCost) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; return; }
+    // Start a move: windup (`attack`) -> `swing` -> `recover`. Shape, damage,
+    // origin and facing are fixed here; nothing during the move changes them.
+    function attack(b, id) {
+        const C = b.config, p = b.player, m = moveOf(b, id);
+        if (p.ap < gameConfig.resources.attackApCost) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; p.chain = null; return; }
         p.ap -= gameConfig.resources.attackApCost;
+        const charged = m.chargeRatio != null;
         p.attack = {
-            shape: heavy ? heavyShape(b) : { ...C.light },
-            damage: heavy ? Math.round(C.heavy.damage + C.heavy.chargeBonus * (C.chargeThreshold != null ? S.clamp((p.charge - C.chargeThreshold) / (C.fullCharge - C.chargeThreshold), 0, 1) : p.charge / C.fullCharge)) : C.light.damage,
-            heavy, origin: { x: p.x, y: p.y }, facing: p.facing
+            move: id, shape: charged ? heavyShape(b) : { kind: 'sector', range: m.range, arc: m.arc }, sweep: m.sweep,
+            damage: Math.max(1, Math.round(C.atk * (m.ratio + (charged ? m.chargeRatio * chargeShare(b, p.charge) : 0)))),
+            stagger: m.stagger, heavy: charged, origin: { x: p.x, y: p.y }, facing: p.facing, progress: 0, hit: false
         };
-        p.phase = 'attack'; p.timer = heavy ? C.heavy.windup : C.light.windup; p.charge = 0;
+        p.phase = 'attack'; p.timer = m.windup; p.charge = 0; p.chain = null;
         b.stats.attacks++;
-        emit(b, 'attack_started', { heavy });
+        emit(b, 'attack_started', { move: id, heavy: charged });
+    }
+    // The part of the arc the blade crossed between two swing progress values,
+    // as a sector of its own, so a fast blade cannot skip a target between steps.
+    function bladeSlice(a, from, to) {
+        const angle = u => a.sweep * a.shape.arc * (u - .5), start = angle(from), end = angle(to);
+        return { shape: { kind: 'sector', range: a.shape.range, arc: Math.abs(end - start) }, facing: a.facing + (start + end) / 2 };
+    }
+    function swingStep(b, dt, onSwing) {
+        const p = b.player, a = p.attack, m = moveOf(b, a.move);
+        p.timer = Math.max(0, p.timer - dt);
+        const from = a.progress, to = p.timer === 0 ? 1 : S.clamp(1 - p.timer / m.swing, from, 1);
+        a.progress = to;
+        onSwing(b, bladeSlice(a, from, to), to >= 1);
+    }
+    // End of the swing: report it, then recover. The chain opens here, so every
+    // derive/pause/window time is counted from this moment.
+    function finishSwing(b, quiet = false) {
+        const p = b.player, a = p.attack;
+        if (p.phase !== 'swing') return;
+        if (!quiet) {
+            emit(b, 'strike', { side: 'player', move: a.move, shape: a.shape, origin: { ...a.origin }, facing: a.facing, sweep: a.sweep });
+            if (!a.hit && !b.config.solo) { b.stats.misses++; emit(b, 'miss', { side: 'player', blocked: !!a.blocked }); }
+        }
+        p.phase = 'recover'; p.timer = moveOf(b, a.move).recovery;
+        p.chain = { move: a.move, at: b.time };
+    }
+    // What a renderer needs to pose a fighter: phase, 0..1 progress through it
+    // and the blade angle relative to facing (0 = resting, pointing forward).
+    function pose(body, config) {
+        const a = body.attack, m = a && config.combo.moves[a.move];
+        if (!m || !['attack', 'swing', 'recover'].includes(body.phase)) return { phase: body.phase, progress: 0, blade: 0, move: null };
+        const start = -a.sweep * a.shape.arc / 2;
+        if (body.phase === 'attack') {
+            const progress = m.windup > 0 ? S.clamp(1 - body.timer / m.windup, 0, 1) : 1;
+            return { phase: 'attack', progress, blade: start * progress, move: a.move };
+        }
+        if (body.phase === 'swing') return { phase: 'swing', progress: a.progress, blade: start + a.sweep * a.shape.arc * a.progress, move: a.move };
+        const progress = S.clamp(1 - body.timer / m.recovery, 0, 1);
+        return { phase: 'recover', progress, blade: -start * (1 - progress), move: a.move };
     }
     function release(b, channel, cancelled = false) {
         if (channel === 'skill') {
@@ -223,7 +313,7 @@ const spatialEngine = (() => {
             if (!cancelled) holdMove(b);
             releaseCharge(b, cancelled);
             if (b.move?.mode === 'pending' && !b.move.suppressTap && !cancelled && canAct(b) && !b.action && !b.guard && !b.skill) {
-                if (locked(b)) b.queuedCommand = { type: 'light' };
+                if (locked(b)) b.queuedCommand = { type: 'tap', at: b.move.start };
                 else dispatch(b, { type: 'light' });
             }
             b.move = null; return;
@@ -281,30 +371,21 @@ const spatialEngine = (() => {
         body.hp = Math.max(0, body.hp - amount);
         emit(b, 'hp_changed', { side, previous, hp: body.hp, x: body.x, y: body.y });
     }
-    // Ending the swing in recovery is what returns the player to `idle`; only
-    // the hit resolution differs. A solo walker has no opponent to test
-    // against, so its swing resolves to the recovery alone -- without this the
-    // player stays locked in `attack` for good and the region stops answering.
-    function soloStrike(b) {
-        const p = b.player, a = p.attack;
-        emit(b, 'strike', { side: 'player', shape: a.shape, origin: { ...a.origin }, facing: a.facing });
-        p.phase = 'recover'; p.timer = a.heavy ? b.config.heavy.recovery : b.config.light.recovery;
-    }
-    // What a completed swing does when the caller supplies no resolution of its
-    // own. PVP does: it collects both sides' strikes before settling either.
-    function resolveStrike(b) { (b.config.solo ? soloStrike : playerHit)(b); }
-    function playerHit(b) {
-        const C = b.config;
-        const p = b.player, e = b.enemy, a = p.attack;
-        emit(b, 'strike', { side: 'player', shape: a.shape, origin: { ...a.origin }, facing: a.facing });
-        if (S.contains(a.shape, a.origin, a.facing, e)) {
+    // What each swing step does when the caller supplies no resolution of its
+    // own. PVP does: it collects both sides' slices before settling either, then
+    // ends the swings itself. A solo walker has no opponent, so its swing only
+    // runs out -- without finishing, it would stay locked in `swing` for good.
+    function resolveSwing(b, slice, done) {
+        const C = b.config, p = b.player, e = b.enemy, a = p.attack;
+        if (!C.solo && !a.hit && S.contains(slice.shape, a.origin, slice.facing, e)) {
+            a.hit = true; // one hit per move and target
             const crit = C.formal && b.random() < C.critChance;
             const amount = C.formal ? defended(a.damage * (crit ? gameConfig.damage.critMultiplier : 1), C.enemy.def) : a.damage;
             damage(b, 'enemy', amount); b.stats.hits++;
-            emit(b, 'hit', { side: 'player', heavy: a.heavy, damage: amount, crit });
-            if (a.heavy) stagger(b, C.stagger.heavy);
-        } else { b.stats.misses++; emit(b, 'miss', { side: 'player' }); }
-        p.phase = 'recover'; p.timer = a.heavy ? C.heavy.recovery : C.light.recovery;
+            emit(b, 'hit', { side: 'player', move: a.move, heavy: a.heavy, damage: amount, crit });
+            if (a.stagger > 0) stagger(b, a.stagger);
+        }
+        if (done) finishSwing(b);
     }
     function enemyHit(b, path = null) {
         const C = b.config;
@@ -342,11 +423,11 @@ const spatialEngine = (() => {
             }
         } else {
             damage(b, 'player', incoming);
-            cancelInputs(b, true); p.phase = 'stunned'; p.timer = C.hitStun;
+            cancelInputs(b, true); p.phase = 'stunned'; p.timer = C.hitStun; p.chain = null;
             emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.ap >= gameConfig.resources.guardRequiredAp });
         }
     }
-    function tickPlayer(b, dt, onStrike = resolveStrike) {
+    function tickPlayer(b, dt, onSwing = resolveSwing) {
         const C = b.config;
         const p = b.player;
         flushQueue(b);
@@ -360,6 +441,7 @@ const spatialEngine = (() => {
         }
         if (p.phase === 'idle') {
             if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
+                p.chain = null; // actually walking away ends the combo
                 p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
             } else if (b.controls.autoFace && b.enemy) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
         } else if (p.phase === 'charging') {
@@ -378,14 +460,17 @@ const spatialEngine = (() => {
         // Solo walking must not bank skill points: they belong to a fight, and
         // accruing them on the way there would start every encounter at max SP.
         if (!C.solo) tickSkillPoints(b, dt);
-        if (p.timer > 0) {
+        if (p.phase === 'swing') swingStep(b, dt, onSwing);
+        else if (p.timer > 0 || p.phase === 'attack') {
             p.timer = Math.max(0, p.timer - dt);
+            if (p.phase === 'recover' && deriveNow(b)) return;
             if (p.timer === 0) {
                 if (p.phase === 'guard_start') { p.phase = 'guard'; p.guardReadyAt = b.time; }
-                else if (p.phase === 'attack') onStrike(b);
+                else if (p.phase === 'attack') { p.phase = 'swing'; p.timer = moveOf(b, p.attack.move).swing; }
                 else if (['recover', 'stunned'].includes(p.phase)) { p.phase = 'idle'; flushQueue(b); }
             }
         }
+        if (p.chain && p.phase === 'idle' && !chainOpen(b)) p.chain = null;
     }
     function tickEnemy(b, dt) {
         const C = b.config;
@@ -516,13 +601,13 @@ const spatialEngine = (() => {
         b.queuedCommand = { type: 'skill', kind }; return true;
     }
     // A human-controlled actor can be advanced independently of the PVE AI.
-    // The duel adapter collects both strikes before applying either outcome.
-    function advanceActor(b, dt, onStrike) {
+    // The duel adapter collects both sides' swing slices before applying either.
+    function advanceActor(b, dt, onSwing) {
         if (!canAct(b) || !Number.isFinite(dt) || dt <= 0) return;
         dt = Math.min(dt, .05);
         b.time += dt; b.elapsed += dt;
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
-        tickPlayer(b, dt, onStrike);
+        tickPlayer(b, dt, onSwing);
     }
-    return { advanceActor, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
+    return { advanceActor, finishSwing, pose, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();

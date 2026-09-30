@@ -14,6 +14,12 @@ const spatialData = (() => {
         }
         return action;
     })]));
+    // Player moves: arcs to radians. Every move is a sector; a full turn is arc 2PI.
+    const combo = { ...gameConfig.combo, moves: Object.fromEntries(Object.entries(gameConfig.combo.moves).map(([id, move]) => {
+        const action = { ...move, kind: 'sector', arc: Math.PI * move.arc };
+        if (move.minArc != null) action.minArc = Math.PI * move.minArc;
+        return [id, action];
+    })) };
     function freeze(value) { Object.values(value).forEach(v => { if (v && typeof v === 'object') freeze(v); }); return Object.freeze(value); }
     function skillRules(mode = 'pve', overrides = {}) {
         const rules = {};
@@ -27,5 +33,5 @@ const spatialData = (() => {
         }
         return rules;
     }
-    return { baseCombatPreset: gameConfig.training, enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera: gameConfig.camera, pvpArena: gameConfig.pvpArena, skillRules };
+    return { baseCombatPreset: freeze({ ...gameConfig.training, combo }), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera: gameConfig.camera, pvpArena: gameConfig.pvpArena, skillRules };
 })();

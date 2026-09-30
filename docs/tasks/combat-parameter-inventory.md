@@ -50,19 +50,31 @@
 | `parryDamage` | `10` | 训练弹反原始反击伤害；正式为 `round(atk×.5)` |
 | `hitStun` | `.35` | 秒；被敌人命中或 PVP 命中后的玩家硬直基础时长 |
 | `stagger.threshold/duration` | `3 / 1.5` | 怪物累计 stagger 点数 / 秒 |
-| `stagger.heavy/parry` | `1 / 1` | 玩家重击/弹反各增加的 stagger 点数 |
+| `stagger.parry` | `1` | 弹反增加的 stagger 点数；招式的失衡值写在招式表（见 2.2） |
+| `atk` | `60` | 训练用攻击力；招式伤害 = atk × 招式倍率。正式模式用角色 ATK |
 
 正式 PVE 中出生点在深复制模板上整体平移 `(75,83)`，保持原 encounter 距离（`pve/pve_profiles.js:L9-L12`）。正式 PVP 以场地中心 `(285,315)` 为基准，主机 `(285,405)`、客机 `(285,225)`，双方半径都为 `12`（`pvp/spatial_duel.js:L14-L20`）。
 
-### 2.2 玩家动作几何与时间
+### 2.2 玩家招式表（连招初版，2026-09-30）
 
-`light` 和 `heavy` 在 `gameConfig.training` 中定义；重击的范围和扇形角在蓄力期间由 `heavyShape` 线性插值。玩家动作的 `arc` 直接使用弧度；敌人动作表的 `arc` 使用 π 倍数，并由 `pve/spatial_data.js` 转成弧度。
+招式表在 `gameConfig.combo`，所有武器共用；`pve/spatial_data.js` 把 `arc`（π 倍数）转成弧度后挂到基础预设的 `combo` 上。每招分三段：前摇（`attack` 阶段）→ 挥动（`swing`）→ 后摇（`recover`）。时序按招式写死，不受属性和装备影响。
 
-| 动作 | 形状 | 几何 | 时间 | 伤害/蓄力 |
-|---|---|---|---|---|
-| 轻击 | sector | range `69`，arc `0.52π` | windup `.10s`，recovery `.28s` | 训练 `18`；正式 `round(atk×.3)` |
-| 重击 | sector | range `60→103`，arc `0.28π→0.68π` | windup `.45s`，recovery `.60s` | 训练基础 `28` + `30×充能比例`；正式基础 `atk×.3` + `atk×.8×充能比例` |
-| 重击 `chargeBonus` 的充能比例 | — | — | — | 正式从 `chargeThreshold` 到 `fullCharge` 线性插值；阈值前比例为 0，因此仍为约 `0.3×atk`，不会成为 0 伤害（`pve/spatial_engine.js:L185-L190`） |
+- **命中**：挥动期间刀从扇形一侧扫到另一侧（`sweep` 1 从朝向左侧扫向右侧，-1 反向）。每个模拟步把刀扫过的角度区间当作一个小扇形做圆盘相交，所以快速挥动不会漏判；每招对同一目标只中一次，站在起刀一侧的先挨打。
+- **派生点 `derive`**：从挥动结束起算。已缓冲下一段时，到派生点立刻出招，剩余后摇跳过；收尾招没有派生点，后摇完整放完。
+- **连段窗口**：后摇结束后 `pauseAfterRecovery=.20s` 为停顿线，`windowAfterRecovery=.70s` 窗口关闭，之后回到第 1 段。越过停顿线再轻点走 `pause` 派生；节点没有停顿派生时按普通轻点。真正开始移动、受击会中断连段。
+- **伤害** = `max(1, round(atk × ratio))`；蓄力斩为 `atk × (ratio + chargeRatio × 充能比例)`，充能比例在 `chargeThreshold` 到 `fullCharge` 之间线性插值，阈值前为 0。正式模式再过暴击和防御公式。
+- **失衡**：命中时给怪物加该招的 `stagger` 点数，取代原来"重击 +1"的规则。
+
+| 序列 | ID | 名称 | 射程 / 扇形 | 前摇 / 挥动 / 后摇 / 派生点 (s) | 倍率 | 失衡 | 派生 |
+|---|---|---|---|---|---:|---:|---|
+| `T` | `slash` | 横扫 | 69 / `.52π` | .10 / .08 / .30 / .12 | .30 | 0 | T→回扫，H→上挑 |
+| `T T` | `backslash` | 回扫 | 72 / `.56π` | .10 / .08 / .36 / .14 | .32 | 0 | T→回旋斩，H→下劈，停顿 T→连刺 |
+| `T T T` | `spin` | 回旋斩 | 78 / `2π` | .16 / .18 / .60 / — | .55 | 1 | 收尾 |
+| `T T - T` | `thrust` | 连刺 | 100 / `.14π` | .12 / .06 / .55 / — | .60 | 1 | 收尾 |
+| `T H` | `rising` | 上挑 | 85 / `.50π` | .30 / .10 / .60 / — | .70 | 1.5 | 收尾 |
+| `T T H` | `cleave` | 下劈 | 95 / `.30π` | .30 / .08 / .65 / — | .80 | 1.5 | 收尾 |
+| `H` | `charged` | 蓄力斩 | 60→103 / `.28π→.68π` | .45 / .12 / .60 / .25 | .30 + .80×充能 | 1 | T→追斩 |
+| `H T` | `follow` | 追斩 | 75 / `.50π` | .10 / .08 / .45 / — | .40 | .5 | 收尾 |
 
 正式 PVE/PVP profile 将 `chargeThresholdMs` 转为 `chargeThreshold` 秒，并计算 `fullCharge = chargeThreshold + 2`。武器模板决定蓄力增伤起点；从起点后固定2秒达到满伤害。训练仍保留 `1.6s` 基础满蓄值。
 
@@ -72,14 +84,14 @@
 |---|---|
 | 模拟步长 | PVE `pve_logic` 固定每 `10ms` 调用 `spatialEngine.step`；PVP `pvpLogic` 累积后每 `10ms` 调用 `spatialDuel.step`（`pve/pve_logic.js:L127-L155`、`pvp/pvp_logic.js:L98-L112`） |
 | 单次补帧上限 | 引擎 `step/advanceActor` 将 `dt` 限制到 `0.05s`；PVE 外层每次最多累计 `.1s`，PVP 外层最多 `.25s` |
-| 输入状态 | `idle / charging / attack / recover / stunned / guard_start / guard`；`attack` 到时间点执行一次命中，再进入 recovery |
-| 锁定状态 | `attack/recover/stunned`；锁定期间只保留一个可替换的 queued command，不积累攻击 backlog（`pve/spatial_engine.js:L75-L93`） |
+| 输入状态 | `idle / charging / attack / swing / recover / stunned / guard_start / guard`；`attack` 是前摇，`swing` 期间逐步判定命中，再进入 recovery |
+| 锁定状态 | `attack/swing/recover/stunned`；锁定期间只保留一个可替换的 queued command，不积累攻击 backlog；缓冲的轻点在派生点执行 |
 | 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `24px` 内松手取消 |
 | 蓄力移动/转向 | 移动倍率 `.6`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
 | 防御启动/持续 | `guardStartup=.16s` 后生效；移动 ×`.3`、转向 ×`.5`；正面判定为防御者朝向攻击来源 ±90° |
 | AP回复 | 玩家只在 `idle/recover/stunned` 回 AP（`pve/spatial_engine.js:L330`）；正式 PVE/PVP `apRegen = 1000 / apRecoveryMs(专注)`，基础为 2 秒/点 |
 | SP回复 | 活跃战斗中按模拟时间累计小数进度，基础 3 秒/点、上限 3；暂停/局外/结束不增长，满点不继续累计 |
-| 命中/攻击快照 | 命中使用出手时的 `origin/facing/shape`，一次 active 只判定一次；被命中会清理右手输入但保留可恢复的移动按住状态 |
+| 命中/攻击快照 | 命中使用出手时的 `origin/facing/shape`，挥动期间逐步判定、每招每个目标只中一次；被命中会清理右手输入但保留可恢复的移动按住状态 |
 
 攻击命中使用圆盘-扇区相交，目标半径计入范围和扇形边缘；移动使用小步碰撞，步长最多约为半径的一半，防止穿墙（`core/spatial_combat.js:L52-L127`）。
 
@@ -112,8 +124,7 @@
 | 正面弹反窗口 | `clamp(parryWindowBaseMs×judgmentMultiplier/1000,0,1)s` |
 | 正式格挡承伤 | `blockMultiplier=clamp(.4×guardDamageMultiplier,0,1)` |
 | 弹反伤害 | `max(1,round(atk×.5))`，再按敌 DEF 防御减伤 |
-| 轻击 | `max(1,round(atk×.3))` |
-| 重击 | 基础 `atk×.3`，充能奖励 `atk×.8` |
+| 招式伤害 | `max(1,round(atk×招式倍率))`；蓄力斩 `atk×(.3+.8×充能比例)`，见 2.2 |
 | 正式暴击 | `critChance` 命中判定；暴击伤害 ×`1.5`（`pve/spatial_engine.js:L258-L268`） |
 | 防御减伤 | `max(1, round(raw × (1 - def/(def + 17.5))))`，等价于 `max(1, round(raw × 17.5/(def+17.5)))`；DEF=17.5 时承受约 50% 原始伤害 |
 | 荆棘 | 格挡时 `defended(raw×guardThorns, 攻击者DEF)` 反射 |
@@ -197,7 +208,7 @@ Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每
 | 金币 | `adventure.goldPerExp=.6` | `goldReward=round(exp×.6)`，胜利当场入账；没有 run 结算，死亡也不清空已得金币（`pve/pve_logic.js` 的 `_onVictory`） |
 | 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。 |
 
-## 6. PVP 固定规则（当前 v10 / rule v6）
+## 6. PVP 固定规则（当前 v10 / rule v7）
 
 ### 6.1 档案与开局
 
@@ -218,7 +229,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 移动和双方分离都受同一墙列表/边界约束；攻击只有在扇区命中且攻击起点到目标中心线不被墙阻断时才有效（`pvp/spatial_duel.js:L71-L88`、`core/spatial_combat.js:L68-L127`）。双方按各自位置计算 line-of-sight；事件带 `visibleTo`，墙后事件由表现层过滤。
 
-每个 10ms step 先让双方基于对方上一 movement snapshot 各自推进，再做对称分离，然后收集两边本 step 到达 strike 的结果，最后统一 apply（`pvp/spatial_duel.js:L109-L125`）。双方同时死亡结果是 `draw`；单边死亡结果为 `host` 或 `guest`。当前明确没有 spatial Clash：攻击之间不会因同时/近同时出手自动进入对撞规则，文件本身也注明 Stage two 才加入。
+每个 10ms step 先让双方基于对方上一 movement snapshot 各自推进，再做对称分离，然后收集两边本 step 挥动扫过的角度区间，统一判定、统一 apply，最后才结束本步挥完的招式（`pvp/spatial_duel.js` 的 `step`）。双方同时死亡结果是 `draw`；单边死亡结果为 `host` 或 `guest`。当前明确没有 spatial Clash：攻击之间不会因同时/近同时出手自动进入对撞规则，文件本身也注明 Stage two 才加入。
 
 ### 6.3 PVP 判定和资源效果
 
@@ -240,7 +251,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | 参数 | 当前值/规则 | 路径 |
 |---|---|---|
 | protocol `VERSION` | `10` | `pvp/pvp_logic.js`；因防御公式变化升级 |
-| `RULE_VERSION` | `6` | `pvp/pvp_logic.js`；因防御公式变化升级 |
+| `RULE_VERSION` | `7` | `pvp/pvp_logic.js`；连招招式表与挥动判定上线时升级 |
 | 场地校验 | 每个 start/rematch/snapshot 校验 `pvp-l-v1` + version 1 | `pvp/pvp_logic.js:L14-L16,L179-L183` |
 | 开局倒计时 | `1.5s` | `pvp/pvp_logic.js:L73-L81` |
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
@@ -273,7 +284,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 ## 8. 设计边界
 
-- PVP 当前协议 v10 / rule v6，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
+- PVP 当前协议 v10 / rule v7，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
 - `comboDelayMs` 只读取首项；`ai.focus` 只改变 AP 回复。
 - 技能弹反消耗 3 SP，普通操作弹反消耗 .5 AP，两者独立。
 - 冲刺预警为窄路径提示，实际扫掠半宽为 dash.width + enemy.radius，接触判定再计入 player.radius。

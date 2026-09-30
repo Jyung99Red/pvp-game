@@ -60,8 +60,7 @@ const spatialProfiles = (() => {
         C.blockMultiplier = clamp(gameConfig.damage.blockMultiplier * stats.guardDamageMultiplier, 0, 1);
         C.critChance = clamp(stats.critChance, 0, 1); C.guardThorns = Math.max(0, stats.guardThorns);
         C.parryDamage = Math.max(1, Math.round(stats.atk * gameConfig.damage.parryAtkRatio));
-        C.light.damage = Math.max(1, Math.round(stats.atk * gameConfig.damage.lightAtkRatio));
-        C.heavy.damage = stats.atk * gameConfig.damage.heavyAtkRatio; C.heavy.chargeBonus = stats.atk * gameConfig.damage.heavyChargeAtkRatio;
+        C.atk = stats.atk; // Move damage = atk * the move's ratio, taken when the move starts.
         return C;
     }
     return { MODES, FAIR_PROFILE, local, fair, isFair, forMode, normalize, apply };

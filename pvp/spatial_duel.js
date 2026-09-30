@@ -66,14 +66,14 @@ const spatialDuel = (() => {
     }
     function stun(d, i) {
         const b = d.sides[i]; E.cancelInputs(b, true);
-        b.player.phase = 'stunned'; b.player.timer = b.config.hitStun;
+        b.player.phase = 'stunned'; b.player.timer = b.config.hitStun; b.player.chain = null;
     }
-    // Decide from the same post-movement snapshot, then apply all effects.
-    // Stage two will add spatial clash rules here; there is no legacy time-only clash.
-    function judge(d, i) {
+    // Decide every swing slice from the same post-movement snapshot, then apply
+    // all effects. A move reaches the other side at most once.
+    function judge(d, { i, slice }) {
         const atk = d.sides[i], def = d.sides[1 - i], a = atk.player.attack;
-        const result = { i, a, type: 'miss' };
-        if (!S.contains(a.shape, a.origin, a.facing, def.player)) return result;
+        const result = { i, a, type: 'none' };
+        if (a.hit || !S.contains(slice.shape, a.origin, slice.facing, def.player)) return result;
         if (S.segmentBlocked(a.origin, def.player, atk.config.walls)) return { ...result, blocked: true };
         const front = Math.abs(S.angleDelta(S.facing(def.player, a.origin), def.player.facing)) <= Math.PI / 2;
         const guard = def.player.phase === 'guard' && front && def.player.ap >= gameConfig.resources.guardRequiredAp;
@@ -89,8 +89,8 @@ const spatialDuel = (() => {
     }
     function apply(d, r) {
         const i = r.i, j = 1 - i, atk = d.sides[i], def = d.sides[j];
-        emit(d, i, 'strike', { shape: r.a.shape, origin: r.a.origin, facing: r.a.facing });
-        if (r.type === 'miss') { emit(d, i, 'miss', { blocked: r.blocked }); return; }
+        if (r.type === 'none') { if (r.blocked) r.a.blocked = true; return; }
+        r.a.hit = true;
         if (r.type === 'parry') {
             if (r.auto) def.buffs.autoParry--;
             else def.player.ap = Math.max(0, def.player.ap - def.config.parryCost);
@@ -102,7 +102,7 @@ const spatialDuel = (() => {
             if (r.thorns) { hurt(d, i, r.thorns); emit(d, j, 'thorns', { damage: r.thorns }); }
         } else {
             hurt(d, j, r.amount); stun(d, j);
-            emit(d, i, 'hit', { damage: r.amount, heavy: r.a.heavy, crit: r.crit, rear: r.rear });
+            emit(d, i, 'hit', { damage: r.amount, move: r.a.move, heavy: r.a.heavy, crit: r.crit, rear: r.rear });
         }
     }
     function step(d, dt = .01) {
@@ -111,16 +111,17 @@ const spatialDuel = (() => {
         const ready = [], previous = d.sides.map(b => ({ ...b.player }));
         d.sides.forEach((b, i) => {
             b.enemy = previous[1 - i];
-            E.advanceActor(b, dt, () => ready.push(i));
+            E.advanceActor(b, dt, (_, slice, done) => ready.push({ i, slice, done }));
             events(d, i);
         });
         d.sides.forEach((b, i) => { b.enemy = d.sides[1 - i].player; });
         // Symmetric separation after both movement proposals (no host-first push).
         const [a, b] = d.sides.map(side => side.player), gap = S.distance(a, b), radius = a.radius + b.radius;
         S.separate(a, b, d.sides[0].config, d.sides[0].config.walls, previous);
-        const results = ready.map(i => judge(d, i));
-        for (const i of ready) { const b = d.sides[i]; b.player.phase = 'recover'; b.player.timer = b.player.attack.shape.recovery; }
+        const results = ready.map(slice => judge(d, slice));
         for (const r of results) apply(d, r);
+        // A parried swing already ended in stun; finishSwing ignores it.
+        for (const { i, done } of ready) if (done) { E.finishSwing(d.sides[i]); events(d, i); }
         if (a.hp <= 0 || b.hp <= 0) end(d, a.hp <= 0 && b.hp <= 0 ? 'draw' : a.hp <= 0 ? 'guest' : 'host');
     }
     function end(d, result) {
@@ -147,14 +148,16 @@ const spatialDuel = (() => {
             if (!p || ![p.x, p.y, p.hp, p.maxHp, p.facing, p.ap, p.timer, p.charge, b.time, b.elapsed].every(Number.isFinite) ||
                 p.maxHp !== C.player.maxHp || p.radius !== C.player.radius || p.hp < 0 || p.hp > p.maxHp || p.ap < 0 || p.ap > C.apMax ||
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
-                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','recover','stunned','guard_start','guard'].includes(p.phase) ||
+                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||
                 !Number.isInteger(b.skillPoints) || b.skillPoints < 0 || b.skillPoints > C.skillPointMax || !Number.isFinite(b.skillProgress) || b.skillProgress < 0 || b.skillProgress >= 1 || !b.buffs || !b.controls || !b.stats || !Array.isArray(b.motionBuffs)) return false;
-            if (['attack','recover'].includes(p.phase)) {
+            if (['attack','swing','recover'].includes(p.phase)) {
                 const a = p.attack;
-                if (!a?.shape || !a.origin || ![a.origin.x,a.origin.y,a.facing,a.damage,a.shape.range,a.shape.arc,a.shape.windup,a.shape.recovery].every(Number.isFinite) ||
-                    a.shape.kind !== 'sector' || a.shape.range <= 0 || a.shape.windup <= 0 || a.shape.recovery <= 0) return false;
+                if (!a?.shape || !a.origin || !C.combo.moves[a.move] || ![a.origin.x,a.origin.y,a.facing,a.damage,a.shape.range,a.shape.arc,a.progress,a.stagger].every(Number.isFinite) ||
+                    a.shape.kind !== 'sector' || a.shape.range <= 0 || a.shape.arc <= 0 || a.shape.arc > Math.PI * 2 + 1e-9 ||
+                    ![1, -1].includes(a.sweep) || a.progress < 0 || a.progress > 1 || typeof a.hit !== 'boolean') return false;
             }
+            if (p.chain != null && (!C.combo.moves[p.chain.move] || !Number.isFinite(p.chain.at) || p.chain.at > b.time)) return false;
             return true;
         });
     }
@@ -182,7 +185,9 @@ const spatialDuel = (() => {
     function predict(d, i, dt) {
         const hp = d.sides[i].player.hp;
         const skillPoints = d.sides[i].skillPoints, skillProgress = d.sides[i].skillProgress;
-        E.advanceActor(d.sides[i], dt, b => { b.player.phase = 'recover'; b.player.timer = b.player.attack.shape.recovery; });
+        // Prediction never judges hits; a predicted swing ends silently and the
+        // host's strike/miss events arrive with the snapshot.
+        E.advanceActor(d.sides[i], dt, (b, _, done) => { if (done) E.finishSwing(b, true); });
         events(d, i);
         d.sides[i].player.hp = hp;
         d.sides[i].skillPoints = skillPoints; d.sides[i].skillProgress = skillProgress;

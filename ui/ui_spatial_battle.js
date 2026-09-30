@@ -162,7 +162,8 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
-    let notice = '拖动移动 · 短按轻击 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
+    let notice = '拖动移动 · 短按出招连段 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
+    const moveName = id => C.combo?.moves?.[id]?.view?.name || '攻击';
     const hitFlashes = { player: 0, enemy: 0 };
     function consume(events) {
         const dt = Math.max(0, battle.time - lastTime); lastTime = battle.time;
@@ -178,10 +179,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             const messages = {
                 ap_insufficient: '行动力不足，走位等待恢复',
                 dash_started: '冲刺！横向躲开或及时弹反',
-                attack_started: e.heavy ? '重击起手 · 范围亮起时命中' : '轻击起手',
+                attack_started: `${moveName(e.move)}${e.heavy ? ' · 刀扫过时命中' : ''}`,
                 charge_cancelled: '已取消蓄力 · 未消耗行动力',
                 stagger: '失衡！抓住空档打重击',
-                hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}${e.heavy ? ' · 失衡 +1' : ''}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
+                hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${moveName(e.move)}命中 −${e.damage}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
                 miss: e.side === 'player' ? (e.blocked ? '攻击被墙挡住' : '挥空 · 再靠近一点，留意朝向') : '走位避开！现在可以反击',
                 parry: `精准防御！反击 −${e.damage} · 失衡 +1`,
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
@@ -189,8 +190,8 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             };
             if (C.pvp) {
                 const who = e.side === 'player' ? '你' : '对手';
-                messages.attack_started = `${who}${e.heavy ? '重击' : '轻击'}起手`;
-                messages.hit = `${who}${e.crit ? '暴击' : ''}${e.heavy ? '重击' : '轻击'}命中 −${e.damage}`;
+                messages.attack_started = `${who}${moveName(e.move)}`;
+                messages.hit = `${who}${e.crit ? '暴击' : ''}${moveName(e.move)}命中 −${e.damage}`;
                 messages.miss = e.side === 'player' && e.blocked ? `${who}的攻击被墙挡住` : `${who}${e.side === 'player' ? '挥空' : '未命中'}`;
                 messages.parry = `${who}弹反 · 反击 −${e.damage}`;
                 messages.block = `${who}格挡 −${e.damage}`;
@@ -276,17 +277,15 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             if (body.phase === 'charging') {
                 const a = spatialEngine.heavyShape({ config: enemy ? C.opponentConfig : C, player: body });
                 angle = -a.arc / 2;
-            } else if (body.phase === 'attack' || body.phase === 'recover') {
-                const a = body.attack.shape;
-                if (body.phase === 'attack') {
-                    const progress = S.clamp(1 - body.timer / Math.max(.001, a.windup), 0, 1);
-                    angle = -a.arc / 2 + a.arc * progress;
-                    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, reach * .92, -a.arc / 2, angle);
-                    ctx.strokeStyle = '#b6fff19a'; ctx.lineWidth = body.attack.heavy ? 7 : 4; ctx.stroke();
+            } else if (['attack', 'swing', 'recover'].includes(body.phase)) {
+                // The engine owns the pose; this only draws the blade where it says.
+                const pose = spatialEngine.pose(body, enemy ? C.opponentConfig : C), a = body.attack;
+                angle = pose.blade;
+                if (pose.phase === 'swing') {
+                    const start = -a.sweep * a.shape.arc / 2;
+                    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, reach * .92, Math.min(start, angle), Math.max(start, angle));
+                    ctx.strokeStyle = '#b6fff19a'; ctx.lineWidth = a.heavy ? 7 : 4; ctx.stroke();
                     ctx.restore();
-                } else {
-                    const remaining = S.clamp(body.timer / Math.max(.001, a.recovery), 0, 1);
-                    angle = a.arc / 2 * remaining;
                 }
             }
             // Fixed blade geometry; only rotation follows the attack sector, never scale.
@@ -449,10 +448,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         }
         if (enemyVisible && ['recover', 'stagger'].includes(e.phase)) circle(e.x, e.y, 33, '#81e6d914', '#81e6d9');
         if (enemyVisible && C.pvp && e.phase === 'charging') shape(spatialEngine.heavyShape({ config: C.opponentConfig, player: e }), e, e.facing, '#f27365', .65);
-        if (enemyVisible && C.pvp && e.phase === 'attack') shape(e.attack.shape, e.attack.origin, e.attack.facing, '#f27365', .8);
+        if (enemyVisible && C.pvp && ['attack', 'swing'].includes(e.phase)) shape(e.attack.shape, e.attack.origin, e.attack.facing, '#f27365', .8);
         if (p.phase === 'charging') shape(spatialEngine.heavyShape(battle), p, p.facing, L.armed(battle.action) ? '#81e6d9' : '#f27365', .65);
         else if (p.phase === 'attack') {
-            const progress = 1 - p.timer / (p.attack.heavy ? C.heavy.windup : C.light.windup);
+            const progress = spatialEngine.pose(p, C).progress;
             shape(p.attack.shape, p.attack.origin, p.attack.facing, '#81e6d9', .4 + progress * .5);
             ctx.beginPath(); ctx.arc(p.x, p.y, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
             ctx.strokeStyle = '#efc181'; ctx.lineWidth = 3; ctx.stroke();
@@ -512,7 +511,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         // Resting wording differs by mode: a solo walker has nothing to attack,
         // so advertising one would be a lie. The region adapter rewrites this
         // into the interact prompt when a building is in reach.
-        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
+        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'swing', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
         text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = [], frameDt = 0) {
@@ -545,18 +544,19 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             nodes['enemy-meter'].max = e.maxHp; nodes['enemy-meter'].value = knownEnemyHp;
             const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
             text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
-            if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
+            if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', swing: '挥刀', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         }
         apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
         $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
-        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${p.attack && p.attack.heavy ? '重击' : '轻击'}前摇`, recover: battle.queuedCommand ? '收招 · 指令已排队' : '收招', guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
+        const current = moveName(p.attack?.move);
+        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
         const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回落指点取消' : '原位松手取消 · 拖动走位转向';
         const q = battle.queuedCommand;
-        const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'light' ? '轻击' : '重击蓄力';
+        const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'tap' ? '下一段' : '重击蓄力';
         const selected = L.selectedSkill(battle.skill);
         const skillHint = battle.skill ? (selected ? `松手释放${skillDefinition(selected).name}` : battle.skill.kind ? '已回到中心 · 松手取消技能' : '向外拖动选择技能 · 上治疗 / 右疾速 / 下满蓄 / 左弹反') : '';
         text('notice', skillHint || (p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice));

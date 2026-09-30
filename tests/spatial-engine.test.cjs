@@ -106,7 +106,8 @@ test('charged hold is immobile, never auto-fires, and release in place cancels w
 test('charged drag moves at 60 percent; release attacks and returning to origin cancels', () => {
     const b = setup(); L.press(b, 'move'); advance(b, 2);
     L.drag(b, 'move', 0, -50); advance(b, .1); L.release(b, 'move');
-    assert.equal(b.player.attack.heavy, true); assert.equal(b.player.attack.damage, 58);
+    // Training atk 60 x (ratio .3 + chargeRatio .8 at full charge).
+    assert.equal(b.player.attack.heavy, true); assert.equal(b.player.attack.damage, 66);
     assert.ok(Math.abs(b.player.y - (275 - 115 * .6 * .1)) < 1e-8); assert.equal(b.stats.attacks, 1);
     const c = setup(); L.press(c, 'move'); advance(c, .5);
     L.drag(c, 'move', 0, -50); L.drag(c, 'move', 2, 3); L.release(c, 'move');
@@ -167,9 +168,82 @@ test('locked windup stops tracking, and moving outside its sector avoids damage'
     assert.equal(b.enemy.facing, facing); assert.equal(b.player.hp, 120); assert.equal(b.stats.dodges, 1);
 });
 test('a lethal player hit ends the fight before a pending enemy hit can execute', () => {
-    const b = setup(); incoming(b, .1); b.enemy.hp = 1; b.player.hp = 1;
+    // The slash lands mid-swing (~.15s); the enemy's windup would end at .3s.
+    const b = setup(); incoming(b, .3); b.enemy.hp = 1; b.player.hp = 1;
     L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
     assert.equal(b.result, 'victory'); assert.equal(b.player.hp, 1); assert.equal(b.running, false);
+});
+
+// Combo tree: every move is windup -> swing -> recovery, read from the table.
+const K = L.config.combo;
+function tap(b) { L.press(b, 'move'); L.release(b, 'move'); }
+function phaseLog(b, seconds) {
+    const log = [];
+    for (let left = seconds; left > 1e-8; left -= .01) {
+        L.step(b, .01);
+        const key = `${b.player.phase}:${b.player.attack?.move ?? ''}`;
+        if (log.at(-1)?.key !== key) log.push({ key, time: b.time });
+    }
+    return log;
+}
+test('taps walk the tap chain and a buffered tap starts the next move at the derive point', () => {
+    const b = setup(); b.enemy.y = b.player.y - 60;
+    tap(b); const log = phaseLog(b, .2);
+    tap(b); log.push(...phaseLog(b, .3));
+    tap(b); log.push(...phaseLog(b, 2));
+    assert.deepEqual(log.map(x => x.key).filter(k => k.startsWith('attack')), ['attack:slash', 'attack:backslash', 'attack:spin']);
+    const swingEnd = log.find(x => x.key === 'recover:backslash').time;
+    const next = log.find(x => x.key === 'attack:spin').time;
+    assert.ok(Math.abs(next - swingEnd - K.moves.backslash.derive) < .011, 'the recovery is cut at the derive point');
+    // A finisher has no derive point: its recovery always plays out in full.
+    const spinEnd = log.find(x => x.key === 'recover:spin').time, idle = log.find(x => x.key === 'idle:spin').time;
+    assert.ok(Math.abs(idle - spinEnd - K.moves.spin.recovery) < .011);
+    assert.deepEqual(Array.from(L.drainEvents(b).filter(e => e.type === 'hit'), e => e.move), ['slash', 'backslash', 'spin']);
+});
+test('without a buffered input the recovery plays out, and the chain window then closes', () => {
+    const b = setup(); tap(b);
+    const log = phaseLog(b, .6);
+    assert.ok(Math.abs(log.find(x => x.key === 'idle:slash').time - log.find(x => x.key === 'recover:slash').time - K.moves.slash.recovery) < .011);
+    tap(b); assert.equal(b.player.attack.move, 'backslash', 'inside the window a tap continues the chain');
+    const c = setup(); tap(c); advance(c, .18 + K.moves.slash.recovery + K.windowAfterRecovery + .05);
+    assert.equal(c.player.chain, null); tap(c); assert.equal(c.player.attack.move, 'slash', 'after the window a tap starts over');
+    const d = setup(); tap(d); advance(d, .5);
+    L.press(d, 'move'); L.drag(d, 'move', 60, 0); advance(d, .05); L.release(d, 'move');
+    assert.equal(d.player.chain, null, 'walking away ends the combo'); tap(d); assert.equal(d.player.attack.move, 'slash');
+});
+test('the blade hits whoever stands on its starting side first, once per move', () => {
+    const hitAt = side => {
+        const b = setup(); b.enemy.radius = 8;
+        const a = -Math.PI / 2 + side * K.moves.slash.arc * .4;
+        b.enemy.x = b.player.x + Math.cos(a) * 50; b.enemy.y = b.player.y + Math.sin(a) * 50;
+        tap(b);
+        for (let i = 0; i < 40; i++) { L.step(b, .01); if (b.stats.hits) return b.time; }
+        return null;
+    };
+    const left = hitAt(-1), right = hitAt(1);
+    assert.ok(left != null && right != null && left < right, `left ${left} right ${right}`);
+    const b = setup(); b.enemy.y = b.player.y - 60; tap(b); advance(b, .6);
+    assert.equal(b.stats.hits, 1); assert.equal(b.enemy.hp, 360 - 18);
+});
+test('a fast swing cannot skip a target between two steps', () => {
+    const b = setup(); b.player.chain = { move: 'backslash', at: 0 }; b.time = .5;
+    b.enemy.x = b.player.x; b.enemy.y = b.player.y + 50; // directly behind: only the spin reaches it
+    tap(b); assert.equal(b.player.attack.move, 'spin');
+    for (let i = 0; i < 20; i++) L.step(b, .05); // the engine's largest step
+    assert.equal(b.stats.hits, 1);
+});
+test('pose reports phase, progress and a blade that crosses the whole arc', () => {
+    const b = setup(); tap(b);
+    const arc = K.moves.slash.arc, angles = [];
+    let first = null;
+    for (let i = 0; i < 30; i++) {
+        L.step(b, .01); const pose = L.pose(b.player, b.config);
+        if (pose.phase === 'swing') angles.push(pose.blade);
+        if (pose.phase === 'recover' && !first) first = pose;
+    }
+    assert.ok(angles[0] < 0 && angles.every((v, i) => !i || v >= angles[i - 1]), 'sweep 1 moves left to right');
+    assert.ok(Math.abs(first.blade - arc / 2) < arc * .05, 'the recovery starts where the swing ended, on the far side');
+    assert.equal(L.pose(b.player, b.config).phase, 'recover');
 });
 
 test('semantic commands cannot bypass charge, AP, pause or finished state', () => {
@@ -183,7 +257,7 @@ test('semantic commands cannot bypass charge, AP, pause or finished state', () =
 });
 
 test('events describe damage and finish once, draining cannot change combat', () => {
-    const b = setup(); incoming(b, .1); b.enemy.hp = 1;
+    const b = setup(); incoming(b, .3); b.enemy.hp = 1;
     L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
     const events = L.drainEvents(b);
     assert.equal(events.filter(e => e.type === 'finished').length, 1);
@@ -200,7 +274,7 @@ test('hit invalidates right input and instances do not share mutable fighter sta
     assert.ok(b.actionInputVersion > version); assert.equal(b.action, null); assert.equal(b.guard, null);
     L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
     assert.equal(other.player.hp, 120); assert.equal(other.events.length, 0);
-    assert.equal(Object.isFrozen(L.config.heavy), true);
+    assert.equal(Object.isFrozen(L.config.combo.moves.charged), true);
 });
 
 

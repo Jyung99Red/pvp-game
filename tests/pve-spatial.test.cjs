@@ -35,7 +35,7 @@ test('latest queued command replaces earlier input; cancelled move and pause do 
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine,x=b.player.x;
  L.press(b,'move'); L.release(b,'move');
- L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'light');
+ L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'tap');
  L.press(b,'guard'); assert.equal(b.queuedCommand.type,'guard');
  L.release(b,'guard'); assert.equal(b.queuedCommand,null);
  L.press(b,'move'); L.drag(b,'move',60,0); L.release(b,'move',true);
@@ -44,7 +44,7 @@ test('latest queued command replaces earlier input; cancelled move and pause do 
  seconds(t,.5); assert.equal(b.stats.attacks,1); assert.equal(b.player.x,x);
 });
 
-test('heavy has .45 windup and .60 recovery before held movement resumes',()=>{
+test('charged slash has .45 windup, .12 swing and .60 recovery before held movement resumes',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine;
  b.enemy.y=b.player.y-70; const hp=b.enemy.hp,x=b.player.x;
@@ -52,8 +52,9 @@ test('heavy has .45 windup and .60 recovery before held movement resumes',()=>{
  assert.equal(b.player.phase,'attack'); assert.equal(b.player.timer,.45);
  L.press(b,'move'); L.drag(b,'move',60,0);
  seconds(t,.2); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
- seconds(t,.25); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
- seconds(t,.55); assert.equal(b.player.x,x);
+ seconds(t,.25); assert.equal(b.enemy.hp,hp); assert.equal(b.player.phase,'swing');
+ seconds(t,.14); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
+ seconds(t,.53); assert.equal(b.player.x,x);
  seconds(t,.1); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
 });
 
@@ -63,7 +64,7 @@ test('every configured enemy validates; profiles apply enhancement, defense, tim
  const before=t.pveProfiles.create('goblin',t.content.enemies.goblin);
  t.state.player.equip.left='iron_sword'; t.state.inventory.enhance.iron_sword=5;
  const after=t.pveProfiles.create('goblin',t.content.enemies.goblin);
-  assert.ok(after.heavy.chargeBonus>before.heavy.chargeBonus); assert.equal(after.chargeThreshold,.35);
+  assert.ok(after.atk>before.atk); assert.equal(after.chargeThreshold,.35);
  assert.equal(after.player.def,t.player.getStats().def); assert.equal(after.critChance,t.player.getCritChance());
  assert.equal(after.apMax,t.player.getApMax()); assert.equal(after.blockMultiplier,.4*t.player.getGuardDamageMultiplier());
  after.actions[0].range=1; assert.notEqual(t.pveProfiles.create('goblin',t.content.enemies.goblin).actions[0].range,1);
