@@ -271,6 +271,29 @@ test('pre-input: a press during the windup is kept, and still runs only at the d
     const h = setup(); tap(h); advance(h, .05); L.press(h, 'move'); advance(h, .5);
     assert.equal(h.player.attack.move, 'rising');
 });
+test('a drag to move drops a buffered attack, so a mash never fires after walking off', () => {
+    const b = setup(); tap(b); advance(b, .05); tap(b); tap(b);
+    assert.equal(b.queuedCommand.type, 'tap');
+    const x = b.player.x;
+    L.press(b, 'move'); L.drag(b, 'move', 60, 0);
+    assert.equal(b.queuedCommand, null, 'walking off wins');
+    advance(b, .8);
+    assert.equal(b.stats.attacks, 1); assert.ok(b.player.x > x, 'the walk starts when the recovery ends');
+});
+test('a buffered input expires if it cannot run in time; mashing on keeps the chain going', () => {
+    const spinFrom = b => { b.player.chain = { move: 'backslash', at: 0 }; b.time = .5; tap(b); assert.equal(b.player.attack.move, 'spin'); };
+    // Tapped early in the finisher, the tap is stale by the time its recovery ends.
+    const b = setup(); spinFrom(b); advance(b, .1); tap(b);
+    advance(b, 1.5); assert.equal(b.stats.attacks, 1, 'no extra slash after the finisher');
+    // Tapped near the end of the recovery, it still starts the next combo.
+    const c = setup(); spinFrom(c);
+    for (let i = 0; i < 200 && !(c.player.phase === 'recover' && c.player.timer < .2); i++) L.step(c, .01);
+    tap(c); advance(c, .3); assert.equal(c.player.attack.move, 'slash'); assert.equal(c.stats.attacks, 2);
+    // Mashing straight through walks the whole tap chain.
+    const m = setup(); m.enemy.y = m.player.y - 60; tap(m);
+    for (let i = 0; i < 40; i++) { advance(m, .05); tap(m); }
+    assert.deepEqual(Array.from(L.drainEvents(m).filter(e => e.type === 'attack_started').slice(0, 3), e => e.move), ['slash', 'backslash', 'spin']);
+});
 test('a pause past the recovery takes the pause move; only taps are changed by it', () => {
     const twoTaps = () => { const b = setup(); tap(b); advance(b, .2); tap(b); advance(b, .3); untilIdle(b); return b; };
     const b = twoTaps(); assert.equal(b.player.chain.move, 'backslash');

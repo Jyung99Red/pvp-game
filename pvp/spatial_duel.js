@@ -171,6 +171,7 @@ const spatialDuel = (() => {
             if (p.chain != null && (!C.combo.moves[p.chain.move] || !Number.isFinite(p.chain.at) || p.chain.at > b.time ||
                 (p.chain.cued != null && typeof p.chain.cued !== 'boolean'))) return false;
             if (b.queuedCommand?.type === 'hold' && !C.combo.moves[b.queuedCommand.move]) return false;
+            if (['tap', 'hold'].includes(b.queuedCommand?.type) && !(Number.isFinite(b.queuedCommand.queuedAt) && b.queuedCommand.queuedAt <= b.time)) return false;
             return true;
         });
     }

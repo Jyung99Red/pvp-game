@@ -39,7 +39,7 @@ const spatialEngine = (() => {
     function validateCombo(K) {
         const positive = v => Number.isFinite(v) && v > 0, nonnegative = v => Number.isFinite(v) && v >= 0;
         if (!K?.moves || !K.root || !K.moves[K.root.tap] || !K.moves[K.root.hold]) throw new Error('Invalid combo root');
-        if (!positive(K.pauseAfterRecovery) || !(K.windowAfterRecovery > K.pauseAfterRecovery)) throw new Error('Invalid combo window');
+        if (!positive(K.pauseAfterRecovery) || !(K.windowAfterRecovery > K.pauseAfterRecovery) || !positive(K.bufferSeconds)) throw new Error('Invalid combo window');
         for (const m of Object.values(K.moves)) {
             if (!m || m.kind !== 'sector' || !positive(m.range) || !positive(m.arc) || m.arc > Math.PI * 2 + 1e-9 || ![1, -1].includes(m.sweep) ||
                 !nonnegative(m.windup) || !positive(m.swing) || !positive(m.recovery) ||
@@ -209,7 +209,7 @@ const spatialEngine = (() => {
         const next = chainNext(b, 'hold', b.move.start);
         if (next) {
             b.move.mode = 'move'; b.move.suppressTap = true;
-            if (['attack', 'swing', 'recover'].includes(b.player.phase)) b.queuedCommand = { type: 'hold', move: next };
+            if (['attack', 'swing', 'recover'].includes(b.player.phase)) b.queuedCommand = { type: 'hold', move: next, queuedAt: b.time };
             else attack(b, next);
             return;
         }
@@ -294,8 +294,12 @@ const spatialEngine = (() => {
         }
         if (channel === 'move' && b.move) {
             holdMove(b);
+            const was = b.move.mode;
             combatGestures.drag(b.move, dx, dy, dx, dy);
             if (b.action) combatGestures.drag(b.action, dx, dy, dx, dy);
+            // Walking off wins over a leftover mash: the moment a press turns
+            // into a drag, a buffered tap or hold is dropped.
+            if (was !== 'move' && b.move.mode === 'move') dropBuffered(b);
             return;
         }
         if (channel === 'guard' && b.guard) {
@@ -368,7 +372,7 @@ const spatialEngine = (() => {
             // Region walking has nothing to hit: a tap there is the interact key
             // (the adapter handles it) or nothing at all.
             if (g?.mode === 'pending' && !g.suppressTap && !cancelled && canAct(b) && !b.action && !b.guard && !b.skill && !b.config.solo) {
-                if (locked(b)) b.queuedCommand = { type: 'tap', at: g.start };
+                if (locked(b)) b.queuedCommand = { type: 'tap', at: g.start, queuedAt: b.time };
                 else dispatch(b, { type: 'light' });
             }
             b.move = null; return;
@@ -508,9 +512,16 @@ const spatialEngine = (() => {
             impact(b, 'player', origin, 'hit');
         }
     }
+    // Only pre-input attacks age out or yield to a drag; a queued guard,
+    // skill or opening charge is a held gesture or an explicit choice.
+    function dropBuffered(b, olderThan = -Infinity) {
+        const q = b.queuedCommand;
+        if (['tap', 'hold'].includes(q?.type) && b.time - q.queuedAt > olderThan + 1e-9) b.queuedCommand = null;
+    }
     function tickPlayer(b, dt, onSwing = resolveSwing) {
         const C = b.config;
         const p = b.player;
+        dropBuffered(b, C.combo.bufferSeconds);
         flushQueue(b);
         holdMove(b);
         const g = b.action;

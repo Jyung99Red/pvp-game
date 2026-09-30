@@ -129,9 +129,13 @@ const gameConfig = (() => {
         // only and the simulation never reads it.
         // pauseAfterRecovery: the pause line, seconds after recovery ends.
         // windowAfterRecovery: the chain resets this long after recovery ends.
+        // bufferSeconds: a pre-input tap or hold that has not run within this
+        // long is dropped, so a stale mash cannot fire late; a drag to move
+        // drops it at once. .4 covers a whole slash/backslash up to its derive
+        // point, hitstop included.
         combo: {
             root: { tap: 'slash', hold: 'charged' },
-            pauseAfterRecovery: 0.20, windowAfterRecovery: 0.70,
+            pauseAfterRecovery: 0.20, windowAfterRecovery: 0.70, bufferSeconds: 0.40,
             moves: {
                 slash: { range: 69, arc: 0.52, sweep: 1, windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.30, stagger: 0,
                     next: { tap: 'backslash', hold: 'rising' }, view: { name: '横扫', trail: 'light' } },
