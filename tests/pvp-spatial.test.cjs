@@ -189,7 +189,7 @@ const comboScript=[
 function play(t,d,from,until){
  for(let n=from;n<until;n++){ for(const [at,side,command] of comboScript) if(Math.round(at*100)===n) t.D.input(d,side,command); t.D.step(d,.01); }
 }
-test('a combo snapshot restores mid-swing, with a buffered tap, in guard and after a hold, then plays out identically',()=>{
+test('a combo snapshot restores mid-swing, with a buffered tap, in guard and mid-poise, then plays out identically',()=>{
  const whole=setup({atk:20,maxHp:500});close(whole);play(whole,whole.d,0,260);
  const a=whole.d.sides[0];
  assert.equal(a.stats.attacks,3,'slash, backslash, then the hold move');
@@ -215,8 +215,8 @@ test('a PVP hit freezes both players and pushes the one struck, the same for hos
 });
 test('snapshot validation rejects broken combo and guard-bar state',()=>{
  const t=setup({atk:20,maxHp:500});close(t);play(t,t.d,0,140);
- const snap=t.D.snapshot(t.d);assert.equal(snap.sides[0].player.attack.move,'cleave');assert.equal(t.D.validSnapshot(t.d,snap),true);
- const bad=[s=>{s.sides[0].player.attack.move='nope';},s=>{s.sides[0].player.chain={move:'nope',at:0};},
+ const snap=t.D.snapshot(t.d);assert.equal(snap.sides[0].player.phase,'poise');assert.equal(t.D.validSnapshot(t.d,snap),true);
+ const bad=[s=>{s.sides[0].move.derived='nope';},s=>{s.sides[0].player.chain={move:'nope',at:0};},
   s=>{s.sides[1].player.guardBar=1e6;},s=>{s.sides[1].player.guardLocked='yes';},s=>{s.sides[0].player.phase='dance';}];
  for(const corrupt of bad){const c=JSON.parse(JSON.stringify(snap));corrupt(c);assert.equal(t.D.validSnapshot(t.d,c),false);}
 });

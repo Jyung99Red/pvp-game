@@ -39,7 +39,7 @@ const spatialEngine = (() => {
     function validateCombo(K) {
         const positive = v => Number.isFinite(v) && v > 0, nonnegative = v => Number.isFinite(v) && v >= 0;
         if (!K?.moves || !K.root || !K.moves[K.root.tap] || !K.moves[K.root.hold]) throw new Error('Invalid combo root');
-        if (!positive(K.pauseAfterRecovery) || !(K.windowAfterRecovery > K.pauseAfterRecovery) || !positive(K.bufferSeconds)) throw new Error('Invalid combo window');
+        if (!positive(K.pauseAfterRecovery) || !(K.windowAfterRecovery > K.pauseAfterRecovery) || !positive(K.bufferSeconds) || !positive(K.poiseSeconds)) throw new Error('Invalid combo window');
         for (const m of Object.values(K.moves)) {
             if (!m || m.kind !== 'sector' || !positive(m.range) || !positive(m.arc) || m.arc > Math.PI * 2 + 1e-9 || ![1, -1].includes(m.sweep) ||
                 !nonnegative(m.windup) || !positive(m.swing) || !positive(m.recovery) ||
@@ -98,6 +98,8 @@ const spatialEngine = (() => {
     function start(b) {
         if (!b.result) { b.started = true; b.running = true; } }
     function locked(b) { return ['attack', 'swing', 'recover', 'stunned'].includes(b.player.phase); }
+    // In the middle of a move of one's own: windup, swing or recovery.
+    function inMove(b) { return ['attack', 'swing', 'recover'].includes(b.player.phase); }
     function moveOf(b, id) { return b.config.combo.moves[id]; }
     // The chain stays open through the recovery and windowAfterRecovery past it.
     function chainOpen(b, at = b.time) {
@@ -142,14 +144,28 @@ const spatialEngine = (() => {
         }
     }
     // At the derive point a buffered input cuts the rest of the recovery short:
-    // a tap, or a hold that reached its threshold, starts its move. A thumb
-    // still down but not yet a tap or a hold waits; the recovery goes on.
+    // a tap, or a hold released after its threshold, starts its move; a hold
+    // still held poises. A thumb still down but not yet a tap or a hold waits;
+    // the recovery goes on.
     function deriveNow(b) {
         const p = b.player, q = b.queuedCommand, m = p.attack && moveOf(b, p.attack.move);
         if (m?.derive == null || m.recovery - p.timer < m.derive - 1e-9) return false;
         if (q?.type === 'tap') { b.queuedCommand = null; attack(b, derive(b, 'tap', q.at)); return true; }
         if (q?.type === 'hold') { b.queuedCommand = null; attack(b, q.move); return true; }
+        if (b.move?.mode === 'hold') { poise(b); return true; }
         return false;
+    }
+    // A decided mid-combo hold: a turn-only stance. The move fires when the
+    // thumb lifts, or by itself once the stance has lasted poiseSeconds.
+    function poise(b) {
+        const p = b.player;
+        b.queuedCommand = null; p.phase = 'poise'; p.timer = b.config.combo.poiseSeconds;
+    }
+    function firePoise(b) {
+        const g = b.move;
+        if (g?.mode !== 'hold') { b.player.phase = 'idle'; return; }
+        g.mode = 'move'; g.suppressTap = true; // spent: lifting the thumb now does nothing
+        attack(b, g.derived);
     }
     // The opening hold's sector grows with charge from minRange/minArc.
     function heavyShape(b, charge = b.player.charge) {
@@ -201,16 +217,15 @@ const spatialEngine = (() => {
         if (b.config.solo) return;
         const command = combatGestures.hold(b.move, b.time);
         if (!command) return;
-        // Inside a combo a hold is a fixed-threshold switch to that node's hold
-        // move: reaching the threshold fires it -- at once, or at the derive
-        // point if the move under way has not got there yet. The gesture is
-        // spent: lifting the thumb afterwards does nothing. Elsewhere a hold
-        // is the opening charge.
+        // Inside a combo a hold -- held still to the threshold, exactly like
+        // the opening charge, so a drag is always a walk -- switches to that
+        // node's hold move. It poises at once, or at the derive point if the
+        // move under way has not got there yet. Elsewhere a hold is the
+        // opening charge.
         const next = chainNext(b, 'hold', b.move.start);
         if (next) {
-            b.move.mode = 'move'; b.move.suppressTap = true;
-            if (['attack', 'swing', 'recover'].includes(b.player.phase)) b.queuedCommand = { type: 'hold', move: next, queuedAt: b.time };
-            else attack(b, next);
+            b.move.mode = 'hold'; b.move.derived = next;
+            if (b.player.phase === 'idle') poise(b);
             return;
         }
         // Separate serializable records: snapshots need no move/action alias repair.
@@ -235,18 +250,22 @@ const spatialEngine = (() => {
             if (b.move) return false;
             b.move = combatGestures.begin(b.time, 0, 0);
             // Pre-input: a press during a move is kept, not dropped. One input
-            // is buffered (the latest wins) and runs at the derive point, so
-            // pressing early never makes a move faster.
+            // is buffered and runs at the derive point, so pressing early never
+            // makes a move faster. The latest input wins, and it wins from the
+            // moment the thumb lands: a new press replaces a buffered tap or
+            // hold, whether it ends up a tap, a hold, a turn or a walk.
+            dropBuffered(b);
             b.move.suppressTap = !!(b.guard || b.skill); return true;
         }
-        if (b.guard || !['idle', 'charging', 'attack', 'swing', 'recover', 'stunned'].includes(p.phase)) return false;
+        if (b.guard || !['idle', 'charging', 'poise', 'attack', 'swing', 'recover', 'stunned'].includes(p.phase)) return false;
         if (p.guardLocked) { emit(b, 'guard_locked'); return false; }
         // Guard is the one input that interrupts: it drops a charge (active or
         // queued) and cuts a recovery. Windup and swing always finish, so a
         // guard pressed there waits for the swing's end; a stun is waited out.
         if (b.action) b.action.mode = 'blocked';
         if (p.phase === 'charging') { p.phase = 'idle'; p.charge = 0; b.stats.cancels++; emit(b, 'charge_cancelled'); }
-        if (b.move) b.move.suppressTap = true;
+        if (p.phase === 'poise') p.phase = 'idle';
+        if (b.move) { b.move.suppressTap = true; if (b.move.mode === 'hold') b.move.mode = 'move'; }
         b.guard = { dx: 0, dy: 0, cx, cy };
         if (['attack', 'swing', 'stunned'].includes(p.phase)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
         raiseGuard(b);
@@ -294,12 +313,8 @@ const spatialEngine = (() => {
         }
         if (channel === 'move' && b.move) {
             holdMove(b);
-            const was = b.move.mode;
             combatGestures.drag(b.move, dx, dy, dx, dy);
             if (b.action) combatGestures.drag(b.action, dx, dy, dx, dy);
-            // Walking off wins over a leftover mash: the moment a press turns
-            // into a drag, a buffered tap or hold is dropped.
-            if (was !== 'move' && b.move.mode === 'move') dropBuffered(b);
             return;
         }
         if (channel === 'guard' && b.guard) {
@@ -375,6 +390,11 @@ const spatialEngine = (() => {
                 if (locked(b)) b.queuedCommand = { type: 'tap', at: g.start, queuedAt: b.time };
                 else dispatch(b, { type: 'light' });
             }
+            if (g?.mode === 'hold') {
+                if (cancelled || !canAct(b)) { if (p.phase === 'poise') p.phase = 'idle'; }
+                else if (['poise', 'idle'].includes(p.phase)) attack(b, g.derived);
+                else if (inMove(b)) b.queuedCommand = { type: 'hold', move: g.derived, queuedAt: b.time };
+            }
             b.move = null; return;
         }
         if (channel === 'guard') {
@@ -400,6 +420,7 @@ const spatialEngine = (() => {
     function cancelInputs(b, preserveMove = false) {
         if (!preserveMove) release(b, 'move', true);
         else if (b.move) { b.move.suppressTap = true; b.move.mode = 'move'; }
+        if (b.player.phase === 'poise') b.player.phase = 'idle';
         releaseCharge(b, true); release(b, 'guard', true); release(b, 'skill', true);
         b.queuedCommand = null;
         if (preserveMove) b.actionInputVersion++;
@@ -557,7 +578,7 @@ const spatialEngine = (() => {
             p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) *
                 (b.time <= b.buffs.chargeHasteUntil ? (C.skills?.haste?.chargeRate ?? gameConfig.skills.haste.chargeRate) : 1));
             p.chargeUpdatedAt = b.time;
-        } else if (p.phase === 'recover') {
+        } else if (['recover', 'poise'].includes(p.phase)) {
             // Inside a combo a drag only turns; the next move goes where the
             // fighter faces the moment it starts.
             if (b.move && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
@@ -583,6 +604,7 @@ const spatialEngine = (() => {
                     p.phase = 'swing'; p.timer = moveOf(b, p.attack.move).swing;
                     emit(b, 'swing_started', { side: 'player', move: p.attack.move, heavy: p.attack.heavy });
                 }
+                else if (p.phase === 'poise') firePoise(b);
                 else if (['recover', 'stunned'].includes(p.phase)) { p.phase = 'idle'; flushQueue(b); }
             }
         }
@@ -712,7 +734,8 @@ const spatialEngine = (() => {
             if (b.buffs.autoParry) return false;
             b.buffs.autoParry = 1;
         } else return false;
-        p.chain = null; // a skill ends the combo
+        p.chain = null; // a skill ends the combo, a poised hold included
+        if (p.phase === 'poise') { p.phase = 'idle'; if (b.move) { b.move.mode = 'move'; b.move.suppressTap = true; } }
         return true;
     }
     function tickSkillPoints(b, dt) {

@@ -183,7 +183,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         node.hidden = !C.training;
         if (!C.training) return;
         const p = battle.player, list = comboPaths();
-        const current = ['attack', 'swing', 'recover'].includes(p.phase) ? p.attack?.move : null;
+        const current = ['attack', 'swing', 'recover', 'poise'].includes(p.phase) ? (p.phase === 'poise' ? battle.move?.derived : p.attack?.move) : null;
         const from = p.phase === 'recover' ? p.attack?.move : p.phase === 'idle' ? p.chain?.move : null;
         const next = new Set(Object.values(C.combo.moves[from]?.next || {}));
         const key = `${current}|${[...next].join(',')}`;
@@ -553,7 +553,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             // Only skills keep a center cancel; a charge or a combo hold always fires.
             pad.classList.toggle('no-center-cancel', channel !== 'skill' || !battle.controls.cancelAtCenter);
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
-            pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) : channel === 'skill' && !!L.selectedSkill(g));
+            pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) || g?.mode === 'hold' : channel === 'skill' && !!L.selectedSkill(g));
             pad.classList.toggle('cancel-ready', channel === 'skill' && !!g && !L.selectedSkill(g));
             const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
             const len = Math.hypot(dx, dy), factor = (len > 42 ? 42 / len : 1) * (C.reverseView && channel !== 'skill' ? -1 : 1);
@@ -567,8 +567,8 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         // Resting wording differs by mode: a solo walker has nothing to attack,
         // so advertising one would be a lie. The region adapter rewrites this
         // into the interact prompt when a building is in reach.
-        const inCombo = ['attack', 'swing', 'recover'].includes(battle.player.phase);
-        text('move-label', g?.mode === 'charge' ? (g.queued ? '收招后蓄力' : '松手 · 蓄力斩') :
+        const inCombo = ['attack', 'swing', 'recover', 'poise'].includes(battle.player.phase);
+        text('move-label', g?.mode === 'charge' ? (g.queued ? '收招后蓄力' : '松手 · 蓄力斩') : battle.move?.mode === 'hold' ? `${moveName(battle.move.derived)} · 拖动转向` :
             battle.move?.mode === 'move' ? (inCombo ? '拖动转向' : battle.player.phase === 'stunned' ? '硬直后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
         text('guard-label', battle.player.guardLocked ? '格挡恢复中' : battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
@@ -609,7 +609,8 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         bar.classList.toggle('locked', !!p.guardLocked);
         bar.setAttribute('aria-label', `格挡条 ${Math.round(p.guardBar)} / ${Math.round(max)}${p.guardLocked ? ' · 恢复中' : ''}`);
         const current = stageName(p.attack?.move);
-        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
+        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`,
+            poise: `${stageName(battle.move?.derived)} · 蓄势 · 拖动转向，松手或到时出招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);

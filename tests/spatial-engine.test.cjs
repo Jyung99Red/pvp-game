@@ -268,10 +268,10 @@ test('pre-input: a press during the windup is kept, and still runs only at the d
     const c = setup(); tap(c); for (let i = 0; i < 5; i++) { advance(c, .02); tap(c); }
     advance(c, 1.5); assert.equal(c.stats.attacks, 2);
     // A hold pressed during the windup counts once it reaches the threshold.
-    const h = setup(); tap(h); advance(h, .05); L.press(h, 'move'); advance(h, .5);
+    const h = setup(); tap(h); advance(h, .05); L.press(h, 'move'); advance(h, .7);
     assert.equal(h.player.attack.move, 'rising');
 });
-test('a drag to move drops a buffered attack, so a mash never fires after walking off', () => {
+test('a new press replaces a buffered attack, so a mash never fires after walking off', () => {
     const b = setup(); tap(b); advance(b, .05); tap(b); tap(b);
     assert.equal(b.queuedCommand.type, 'tap');
     const x = b.player.x;
@@ -306,21 +306,32 @@ test('a pause past the recovery takes the pause move; only taps are changed by i
     tap(late); assert.equal(late.player.attack.move, 'backslash');
     // A hold is the node's hold, pause or not.
     const held = twoTaps(); advance(held, K.pauseAfterRecovery + .05);
-    L.press(held, 'move'); advance(held, .3); assert.equal(held.player.attack.move, 'cleave');
+    L.press(held, 'move'); advance(held, .3); assert.equal(held.player.phase, 'poise');
+    advance(held, K.poiseSeconds); assert.equal(held.player.attack.move, 'cleave');
     L.release(held, 'move');
 });
-test('a hold inside the chain fires the node\'s hold move the moment it reaches the threshold', () => {
-    const hold = vm.runInContext('combatGestures.config.holdSeconds', context);
+test('a hold inside the chain poises, turns while held, and fires on release or by itself', () => {
+    const hold = vm.runInContext('combatGestures.config.holdSeconds', context), stance = K.poiseSeconds;
     const b = setup(); tap(b); advance(b, .2);
-    L.press(b, 'move'); advance(b, hold - .02);
-    assert.equal(b.stats.attacks, 1, 'not yet: still short of the threshold');
-    advance(b, .03);
-    assert.equal(b.player.attack.move, 'rising'); assert.equal(b.stats.attacks, 2); assert.equal(b.action, null, 'no opening charge');
-    const { x, y } = b.player; advance(b, .5);
+    L.press(b, 'move'); advance(b, hold + .01);
+    assert.equal(b.player.phase, 'poise'); assert.equal(b.stats.attacks, 1); assert.equal(b.action, null, 'no opening charge');
+    const { x, y, facing } = b.player;
+    L.drag(b, 'move', 60, 0); advance(b, stance - .03);
+    assert.equal(b.player.phase, 'poise'); assert.ok(b.player.facing > facing, 'dragging in the stance turns');
+    assert.equal(b.player.x, x); assert.equal(b.player.y, y, 'but never walks');
+    advance(b, .04);
+    assert.equal(b.player.attack.move, 'rising', 'it fires by itself, no release needed');
+    assert.equal(b.player.attack.facing, b.player.facing, 'where the stance turned the fighter');
     L.release(b, 'move'); assert.equal(b.stats.attacks, 2, 'lifting the thumb afterwards does nothing');
-    assert.equal(b.player.x, x); assert.equal(b.player.y, y, 'a hold never walks');
-    // In the window after the recovery it fires just the same.
-    const w = setup(); tap(w); untilIdle(w); L.press(w, 'move'); advance(w, hold + .01);
+    // Lifting the thumb in the stance fires at once.
+    const r = setup(); tap(r); advance(r, .2); L.press(r, 'move'); advance(r, hold + .02);
+    assert.equal(r.player.phase, 'poise'); L.release(r, 'move'); assert.equal(r.player.attack.move, 'rising');
+    // A drag before the threshold is a walk, exactly as outside a combo.
+    const m = setup(); tap(m); advance(m, .05); const x0 = m.player.x;
+    L.press(m, 'move'); L.drag(m, 'move', 60, 0); advance(m, .8);
+    assert.equal(m.stats.attacks, 1); assert.ok(m.player.x > x0);
+    // In the window after the recovery it poises and fires just the same.
+    const w = setup(); tap(w); untilIdle(w); L.press(w, 'move'); advance(w, hold + stance + .02);
     assert.equal(w.player.attack.move, 'rising');
     // Past the derive point with the thumb still undecided, the recovery goes
     // on; the tap it turns out to be then fires at once.
