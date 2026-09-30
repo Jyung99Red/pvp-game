@@ -15,7 +15,7 @@ const uiAdventure = (() => {
     const _setText = (id, text) => { const node = $(id); if (node) node.textContent = text; };
     const _setLabel = (id, value) => { const node = $(id); if (node) node.setAttribute('aria-label', value); };
     const WALK_PAD_HINT = '拖动移动键行走；走近建筑后点击中央键与之交互';
-    const FIGHT_PAD_HINT = '拖动移动；短按轻击；原位长按蓄力后拖动移动转向，圈外松手重击，回落指点松手取消';
+    const FIGHT_PAD_HINT = '拖动移动；短按出招，按节奏连段；原位长按蓄力，松手出招；按防御放弃蓄力';
     // Walking reads the solo preset; fighting reads the fight's own. Every shared
     // surface -- input dispatch, combat settings, the rendered snapshot -- points
     // at whichever of the two is live, so neither mode needs its own plumbing.

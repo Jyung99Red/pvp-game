@@ -156,7 +156,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         if (battle) draw();
     }
     const observer = new ResizeObserver(resize); observer.observe(canvas);
-    let notice = '拖动移动 · 短按出招连段 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
+    let notice = '拖动移动 · 短按出招，按节奏连段 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
     const moveName = id => C.combo?.moves?.[id]?.view?.name || '攻击';
     const hitFlashes = { player: 0, enemy: 0 };
     function consume(events) {
@@ -170,13 +170,15 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
                     damage: e.previous - e.hp, life: .55 });
             }
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
+            if (e.type === 'pause_ready' && e.side !== 'enemy') effects.push({ type: 'glint', life: .35 });
             const messages = {
                 guard_broken: '格挡条耗尽！恢复到四成前无法举盾',
                 guard_locked: '格挡条恢复中 · 先走位拉开',
                 guard_ready: '格挡条已恢复，可以举盾',
                 dash_started: '冲刺！横向躲开或及时弹反',
                 attack_started: `${moveName(e.move)}${e.heavy ? ' · 刀扫过时命中' : ''}`,
-                charge_cancelled: '已取消蓄力',
+                charge_cancelled: '放弃蓄力，举盾',
+                pause_ready: `停顿到位 · 轻点出${moveName(e.move)}`,
                 stagger: '失衡！抓住空档打重击',
                 hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${moveName(e.move)}命中 −${e.damage}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
                 miss: e.side === 'player' ? (e.blocked ? '攻击被墙挡住' : '挥空 · 再靠近一点，留意朝向') : '走位避开！现在可以反击',
@@ -194,7 +196,9 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
                 messages.thorns = `${who}荆棘反伤 −${e.damage}`;
                 messages.skill_used = `${who}使用${({ heal: '治疗', haste: '疾速', full: '满蓄', parry: '弹反护体' })[e.kind]}`;
             }
-            if (messages[e.type]) {
+            // Guard-bar and combo cues only ever describe your own fighter.
+            const ownOnly = ['guard_broken', 'guard_locked', 'guard_ready', 'pause_ready', 'charge_cancelled'].includes(e.type);
+            if (messages[e.type] && !(ownOnly && e.side === 'enemy')) {
                 if (['hit', 'miss', 'parry', 'block', 'thorns', 'stagger', 'enrage', 'skill_used', 'dash_started'].includes(e.type)) {
                     logs.unshift(messages[e.type]); logs.length = Math.min(logs.length, 2);
                     notice = '';
@@ -288,6 +292,14 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             ctx.save(); ctx.rotate(angle); ctx.translate(weaponBackOffset, weaponSide * 15);
             polygon([[11, -3], [reach - 9, -3], [reach, 0], [reach - 9, 3], [11, 3]], tint('#dae6dc'), '#81e6d9');
             ctx.strokeStyle = '#ecc185'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(14, -7); ctx.lineTo(14, 7); ctx.stroke();
+            // Pause-line cue: a short glint on the blade tip.
+            const glint = !enemy && effects.find(fx => fx.type === 'glint');
+            if (glint) {
+                const s = 3 + 5 * Math.sin(Math.PI * glint.life / .35);
+                ctx.globalAlpha = Math.min(1, glint.life / .15);
+                polygon([[reach - 4, -s], [reach - 3, -1], [reach - 4 + s, 0], [reach - 3, 1], [reach - 4, s], [reach - 5, 1], [reach - 4 - s, 0], [reach - 5, -1]], '#fff6d8');
+                ctx.globalAlpha = 1;
+            }
             ctx.restore();
             // Keep the shield on the opposite local side from the weapon.
             // Using one local side for both fighters also stays correct when
@@ -491,10 +503,11 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             const g = channel === 'move' ? battle.move : channel === 'skill' ? battle.skill : battle.guard;
             const charge = channel === 'move' ? battle.action : null;
             pad.style.setProperty('--cancel-radius', `${L.config.cancelRadius}px`);
-            pad.classList.toggle('no-center-cancel', !battle.controls.cancelAtCenter);
+            // Only skills keep a center cancel; a charge or a combo hold always fires.
+            pad.classList.toggle('no-center-cancel', channel !== 'skill' || !battle.controls.cancelAtCenter);
             pad.classList.toggle('active', !!g && g.mode !== 'blocked');
-            pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) : channel === 'skill' && !!L.selectedSkill(g));
-            pad.classList.toggle('cancel-ready', channel === 'move' ? charge?.mode === 'charge' && !L.armed(charge) : channel === 'skill' && !!g && !L.selectedSkill(g));
+            pad.classList.toggle('armed', channel === 'move' ? L.armed(charge) || g?.mode === 'hold' : channel === 'skill' && !!L.selectedSkill(g));
+            pad.classList.toggle('cancel-ready', channel === 'skill' && !!g && !L.selectedSkill(g));
             const dx = g ? (channel === 'move' ? g.dx : g.cx) : 0, dy = g ? (channel === 'move' ? g.dy : g.cy) : 0;
             const len = Math.hypot(dx, dy), factor = (len > 42 ? 42 / len : 1) * (C.reverseView && channel !== 'skill' ? -1 : 1);
             pad.querySelector('.pad-knob').style.transform = `translate(${dx * factor}px, ${dy * factor}px)`;
@@ -507,7 +520,9 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         // Resting wording differs by mode: a solo walker has nothing to attack,
         // so advertising one would be a lie. The region adapter rewrites this
         // into the interact prompt when a building is in reach.
-        text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'swing', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
+        const inCombo = ['attack', 'swing', 'recover', 'poise'].includes(battle.player.phase);
+        text('move-label', g?.mode === 'charge' ? (g.queued ? '收招后蓄力' : '松手 · 蓄力斩') : battle.move?.mode === 'hold' ? `松手 · ${moveName(battle.move.derived)}` :
+            battle.move?.mode === 'move' ? (inCombo ? '拖动转向' : battle.player.phase === 'stunned' ? '硬直后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
         text('guard-label', battle.player.guardLocked ? '格挡恢复中' : battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = [], frameDt = 0) {
@@ -547,17 +562,18 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         bar.classList.toggle('locked', !!p.guardLocked);
         bar.setAttribute('aria-label', `格挡条 ${Math.round(p.guardBar)} / ${Math.round(max)}${p.guardLocked ? ' · 恢复中' : ''}`);
         const current = moveName(p.attack?.move);
-        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
+        const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`,
+            poise: `${moveName(battle.move?.derived)} · 蓄势 · 松手出招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
         nodes['charge-fill'].style.width = `${p.charge / C.fullCharge * 100}%`;
-        const chargeHint = !battle.controls.cancelAtCenter ? '松手重击 · 中心取消已关闭' : L.armed(battle.action) ? '松手重击 · 回落指点取消' : '原位松手取消 · 拖动走位转向';
+        const chargeHint = '松手出招 · 拖动走位转向 · 按防御放弃';
         const q = battle.queuedCommand;
-        const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '重击' : q?.type === 'tap' ? '下一段' : '重击蓄力';
+        const queuedName = q?.type === 'skill' ? skillDefinition(q.kind).name : q?.type === 'guard' ? '防御' : q?.type === 'heavy' ? '蓄力斩' : q?.type === 'tap' ? '下一段' : q?.type === 'hold' ? moveName(q.move) : '蓄力';
         const selected = L.selectedSkill(battle.skill);
         const skillHint = battle.skill ? (selected ? `松手释放${skillDefinition(selected).name}` : battle.skill.kind ? '已回到中心 · 松手取消技能' : '向外拖动选择技能 · 上治疗 / 右疾速 / 下满蓄 / 左弹反') : '';
-        text('notice', skillHint || (p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName} · 收招后执行` : notice));
+        text('notice', skillHint || (p.phase === 'charging' ? `${Math.round(p.charge / C.fullCharge * 100)}% 蓄力 · ${chargeHint}` : q ? `下一指令：${queuedName}` : notice));
     }
     window.addEventListener('resize', resize, { signal: abort.signal });
     window.visualViewport?.addEventListener('resize', resize, { signal: abort.signal });

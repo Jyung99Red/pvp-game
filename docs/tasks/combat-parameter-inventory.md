@@ -18,7 +18,7 @@
 | `core/data.js` | 运行时 state 与 content 副本 | 初始状态读取配置；content 从冻结配置深复制，供运行时安全使用 |
 | `pvp/spatial_duel.js` | 两名人类的同步空间对局、同时命中收集、PVP 判定、快照 | 双方共用新防御公式；当前没有空间对刀/Clash 规则 |
 
-世界坐标、半径、范围、移动速度都使用同一套无量纲世界单位；速度是世界单位/秒，角度是弧度。动作的 `windup`、`lock`、`active`、`recovery` 是秒；技能疾速持续时间也是秒。arena 的 `atMs/startMs/intervalMs` 是毫秒，PVE 在 `pve/pve_logic.js:L135-L142` 以 10ms 调用边界转换。手势死区和取消半径是 CSS 像素（`core/combat_gestures.js:L3-L24`）。
+世界坐标、半径、范围、移动速度都使用同一套无量纲世界单位；速度是世界单位/秒，角度是弧度。动作的 `windup`、`lock`、`active`、`recovery` 是秒；技能疾速持续时间也是秒。arena 的 `atMs/startMs/intervalMs` 是毫秒，PVE 在 `pve/pve_logic.js:L135-L142` 以 10ms 调用边界转换。手势死区和技能取消半径是 CSS 像素（`core/combat_gestures.js`）。
 
 ## 2. 共享空间模板与固定时序
 
@@ -83,7 +83,13 @@
 | 单次补帧上限 | 引擎 `step/advanceActor` 将 `dt` 限制到 `0.05s`；PVE 外层每次最多累计 `.1s`，PVP 外层最多 `.25s` |
 | 输入状态 | `idle / charging / attack / swing / recover / stunned / guard_start / guard`；`attack` 是前摇，`swing` 期间逐步判定命中，再进入 recovery |
 | 锁定状态 | `attack/swing/recover/stunned`；锁定期间只保留一个可替换的 queued command，不积累攻击 backlog；缓冲的轻点在派生点执行 |
-| 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `24px` 内松手取消 |
+| 出招输入 | 中央 move 通道，三种输入：轻点 `T`（`input.holdSeconds=.25s` 前松手，松手时出招）、长按 `H`（按满 `.25s`）、停顿后轻点（见 2.2 的停顿线）。先拖出死区则锁定为普通移动直到松手 |
+| 起手长按 | 不在连段窗口内（或节点没有长按派生）时，长按是起手蓄力：拖动同时移动／转向，松手按人物实际朝向出蓄力斩。**没有取消圈**，原位松手也出招；放弃蓄力只能按防御 |
+| 连段中的长按 | 节点有长按派生时，按下那一刻在连段窗口内的长按是固定阈值开关：满 `.25s` 即定为该节点的长按招；到派生点（或已在待机）仍按着则进入 `poise` 蓄势，只能拖动转向、不能移动，松手出招；伤害不随时长变化 |
+| 输入接受 | 前摇与挥动期间按下的中央键直接丢弃（不缓冲，也不会变成长按）；挥动结束后缓冲一个输入，到派生点执行。派生点时手指还按着、未分出轻点或长按，则后摇照常继续，判定出来再出招 |
+| 连段中转向 | 后摇与蓄势期间拖动中央键只转向（`playerTurn`×`motion.turn`），不移动；下一段沿出招那一刻的朝向。后摇结束时仍拖着则开始移动并中断连段 |
+| 连段中断 | 超出窗口、受击、真正开始移动、举盾、放技能 |
+| 区域探索 | 拖动永远是移动；轻点在建筑旁是交互，其他时候什么都不做，不出招 |
 | 蓄力移动/转向 | 移动倍率 `.6`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
 | 防御启动/持续 | `guardStartup=.16s` 后生效；移动 ×`.3`、转向 ×`.5`；正面判定为防御者朝向攻击来源 ±90° |
 | 格挡条 | 见 2.4；玩家没有行动力，出招不耗资源 |
@@ -92,7 +98,7 @@
 
 攻击命中使用圆盘-扇区相交，目标半径计入范围和扇形边缘；移动使用小步碰撞，步长最多约为半径的一半，防止穿墙（`core/spatial_combat.js:L52-L127`）。
 
-`combatGestures.config.holdSeconds=.24` 及 `hold()` 仍保留在 `core/combat_gestures.js:L3-L10`，但当前输入链没有调用 `combatGestures.hold()`；`spatialEngine.press()` 对 action 会立即 dispatch charge（`pve/spatial_engine.js:L142-L149`）。因此 `.24s` 不是当前实际的起蓄延迟。武器仍共用 `light/heavy` 几何与 windup/recovery，但蓄力阈值已按 basic/heavy/light 模板派生。
+`combatGestures.hold()` 按 `input.holdSeconds=.25s` 判定长按，起手蓄力与连段中长按共用这个阈值。所有武器共用同一张招式表；武器只决定起手蓄力的增伤起点（`chargeOffsetMs`）。设置里的「中心松手取消」（`controls.cancelAtCenter`）现在只作用于技能。
 
 ### 2.4 格挡条（初版，2026-09-30，取代玩家行动力）
 
@@ -222,7 +228,7 @@ Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每
 | 金币 | `adventure.goldPerExp=.6` | `goldReward=round(exp×.6)`，胜利当场入账；没有 run 结算，死亡也不清空已得金币（`pve/pve_logic.js` 的 `_onVictory`） |
 | 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。 |
 
-## 6. PVP 固定规则（当前 v10 / rule v8）
+## 6. PVP 固定规则（当前 v10 / rule v9）
 
 ### 6.1 档案与开局
 
@@ -265,7 +271,7 @@ PVP 建局时两边从满 HP、满格挡条开始，`skillPoints=0`（`pvp/spati
 | 参数 | 当前值/规则 | 路径 |
 |---|---|---|
 | protocol `VERSION` | `10` | `pvp/pvp_logic.js`；因防御公式变化升级 |
-| `RULE_VERSION` | `8` | `pvp/pvp_logic.js`；7：连招招式表与挥动判定；8：AP 换格挡条（档案字段 `apMax` → `guardBarBonus`） |
+| `RULE_VERSION` | `9` | `pvp/pvp_logic.js`；7：连招招式表与挥动判定；8：AP 换格挡条（档案字段 `apMax` → `guardBarBonus`）；9：完整连招输入 |
 | 场地校验 | 每个 start/rematch/snapshot 校验 `pvp-l-v1` + version 1 | `pvp/pvp_logic.js:L14-L16,L179-L183` |
 | 开局倒计时 | `1.5s` | `pvp/pvp_logic.js:L73-L81` |
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
@@ -298,7 +304,7 @@ PVP 建局时两边从满 HP、满格挡条开始，`skillPoints=0`（`pvp/spati
 
 ## 8. 设计边界
 
-- PVP 当前协议 v10 / rule v8，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
+- PVP 当前协议 v10 / rule v9，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
 - `comboDelayMs` 只读取首项；`ai.focus` 只改变敌人隐藏 AP 的回复。
 - 技能弹反消耗 3 SP，普通操作弹反扣格挡条，两者独立。
 - 冲刺预警为窄路径提示，实际扫掠半宽为 dash.width + enemy.radius，接触判定再计入 player.radius。
@@ -315,6 +321,6 @@ PVP 建局时两边从满 HP、满格挡条开始，`skillPoints=0`（`pvp/spati
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
 | 武器蓄力起点 | 基准 `resources.chargeThresholdMs=300ms` 加武器自己的 `chargeOffsetMs`，再按 `chargeThresholdRangeMs={min:200,max:450}` 夹紧（`core/combat_rules.js` 的 `weaponChargeThresholdMs()`）：木剑 `0`→300ms、铁剑 `+50`→350ms、刺客短刃 `-20`→280ms。离散的 light/heavy/basic 模板已移除，新增武器只需一个数字；强化只作用于 atk/def，不会改变该阈值，profile 仍统一使用 `chargeThresholdMs`，三把武器数值未变所以协议/规则版本不需要升级 |
 | 怪物冲刺 | 狼 `扑击`：直线预警、蓄力 `1.05s`、锁向 `.35s`、距离 `150`、速度 `280/s`、轨迹宽 `18`、收招 `1.20s`；暗影刺客 `致命突刺`：直线预警、`.55s/.25s/180/450/s/12/.90s`。冲刺沿实际路径检测一次命中，撞身体、墙或边界停止，不穿身 |
-| PVP 协议 | 当前 `VERSION=10`、`RULE_VERSION=6`，双方必须匹配；本次因防御公式变化升级 |
+| PVP 协议 | 当时因防御公式变化升到 `VERSION=10`、`RULE_VERSION=6`；当前版本见 6.4 |
 
 本节之后，前文关于 PVP v6/rule v2、命中/弹反增加 SP、铁剑 700ms、短刃 400ms、狼/刺客原地扇形攻击的描述均视为历史基线。技能效果与费用本轮暂不调整。

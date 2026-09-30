@@ -24,7 +24,7 @@
             $('start').textContent = '重新练习';
         } else {
             $('overlay-title').textContent = '已暂停';
-            $('overlay-copy').textContent = '中央拖动走位、短按轻击；原位长按后拖动蓄力走位，圈外松手重击，回落指点取消。两侧操作防御与技能。';
+            $('overlay-copy').textContent = '中央拖动走位、短按出招，按节奏连段；原位长按蓄力，松手出招，按防御放弃。两侧操作防御与技能。';
             $('summary').textContent = '切换窗口会自动暂停 · 触摸已安全释放';
             $('start').textContent = '继续练习';
         }

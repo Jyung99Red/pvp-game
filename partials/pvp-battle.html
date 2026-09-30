@@ -15,8 +15,8 @@
         <div id="pvp-s-overlay" class="overlay" hidden>
             <div class="overlay-card"><h1>操作设置</h1><p>对局仍在继续，关闭设置后继续操作。</p>
             <fieldset class="combat-settings"><legend>玩家操作</legend>
-                <label><input type="checkbox" data-combat-setting="cancelAtCenter" checked> 中心松手取消（重击 / 技能）</label>
-                <small>关闭后重击直接释放；技能沿用本次最后选中方向，未拖出死区不释放。</small>
+                <label><input type="checkbox" data-combat-setting="cancelAtCenter" checked> 中心松手取消技能</label>
+                <small>关闭后技能沿用本次最后选中方向，未拖出死区不释放。蓄力没有取消圈，放弃蓄力请按防御。</small>
                 <label><input type="checkbox" data-combat-setting="autoFace"> 自动朝向对手</label>
                 <small>仅待机时按转速自动转向敌人；移动跟随拖动方向，攻击按松手时人物朝向。</small>
             </fieldset>
@@ -33,7 +33,7 @@
     </section>
     <section class="controls combined-controls" aria-label="中央移动轻重击，左侧防御，右侧技能">
         <div class="control-group move-group" aria-label="中央操作区：拖动移动，短按轻击，原位长按蓄力">
-            <button id="pvp-s-move-pad" class="pad move-pad" data-origin-at-press type="button" aria-label="拖动移动；短按轻击；原位长按蓄力后拖动移动转向，圈外松手重击，回落指点松手取消">
+            <button id="pvp-s-move-pad" class="pad move-pad" data-origin-at-press type="button" aria-label="拖动移动；短按出招，按节奏连段；原位长按蓄力，松手出招；按防御放弃蓄力">
                 <span class="pad-icon">✥</span><strong id="pvp-s-move-label">移动 / 攻击</strong><span class="cancel-zone" aria-hidden="true"></span><span class="pad-knob"></span>
             </button>
         </div>

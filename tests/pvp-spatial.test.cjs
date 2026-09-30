@@ -116,7 +116,8 @@ test('auto parry uses three SP, works from behind, but ordinary front guard pres
 });
 test('four-way gesture casts current skill rules; center cancels, full HP preserves queue and SP',()=>{
  const t=setup(), b=t.d.sides[1];b.skillPoints=3;
- light(t,1);light(t,1);assert.equal(b.queuedCommand.type,'tap');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'tap');
+ light(t,1);light(t,1);assert.equal(b.queuedCommand,null);step(t,.2);
+ light(t,1);assert.equal(b.queuedCommand.type,'tap');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'tap');
  step(t,1);b.player.hp-=20;
  input(t,1,'press','skill',[0,0]);input(t,1,'drag','skill',[0,-60,0,-60]);input(t,1,'drag','skill',[0,0,0,0]);input(t,1,'release','skill');
  assert.equal(b.skillPoints,3);
@@ -131,12 +132,12 @@ test('queued skill spends only on execution, and full HP at execution cancels he
   step(t,.5);assert.equal(b.skillPoints,full?3:1);
  }
 });
-test('haste and full charge retain latest tuning without auto-fire or cross-player buffs',()=>{
+test('haste and full charge retain latest tuning; a charge fires only on release, never across players',()=>{
  const t=setup(),b=t.d.sides[0];b.skillPoints=3;assert.equal(skill(t,0,'haste'),true);assert.equal(b.skillPoints,1);
  assert.equal(b.buffs.chargeHasteUntil,10);assert.equal(t.d.sides[1].buffs.chargeHasteUntil,0);
  input(t,0,'press','move',[0,0]);step(t,1.25);assert.ok(Math.abs(b.player.charge-1.5)<1e-6);
  step(t,2);assert.equal(b.player.charge,2.3);assert.equal(b.player.phase,'charging');
- input(t,0,'release','move');assert.equal(b.player.phase,'idle');
+ input(t,0,'release','move');assert.equal(b.player.phase,'attack');step(t,1.3);
  b.skillPoints=3;assert.equal(skill(t,0,'full'),true);input(t,0,'press','move',[0,0]);step(t,.25);assert.equal(b.player.charge,2.3);
  input(t,0,'release','move');assert.equal(b.buffs.instantCharge,false);assert.equal(b.skillPoints,1);
 });
@@ -160,7 +161,8 @@ test('snapshot restoration relinks queued held gestures and never aliases actors
 test('combined charge survives snapshot replay and both sides release along their real facing',()=>{
  for(const side of [0,1]) {
   const t=setup(), b=t.d.sides[side];
-  light(t,side);step(t,.2);b.player.timer=1;
+  // A hold where the chain has no hold move queues the opening charge.
+  light(t,side);step(t,.2);b.player.timer=1;b.player.chain=null;
   input(t,side,'press','move',[0,0]);step(t,.3);
   const snap=t.D.snapshot(t.d), restored=t.D.create(t.d.profiles);
   t.D.restore(restored,snap);const r=restored.sides[side];

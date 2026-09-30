@@ -31,13 +31,15 @@ test('left movement held through light attack resumes after recovery and stops o
  }
 });
 
-test('latest queued command replaces earlier input; cancelled move and pause do not drift',()=>{
+test('presses before the swing ends are dropped, guard cuts a buffered recovery; cancelled move and pause do not drift',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine,x=b.player.x;
  L.press(b,'move'); L.release(b,'move');
+ L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand,null,'a press during the windup is dropped');
+ seconds(t,.2); assert.equal(b.player.phase,'recover');
  L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'tap');
- L.press(b,'guard'); assert.equal(b.queuedCommand.type,'guard');
- L.release(b,'guard'); assert.equal(b.queuedCommand,null);
+ L.press(b,'guard'); assert.equal(b.player.phase,'guard_start'); assert.equal(b.queuedCommand,null);
+ L.release(b,'guard'); assert.equal(b.player.phase,'idle');
  L.press(b,'move'); L.drag(b,'move',60,0); L.release(b,'move',true);
  seconds(t,.5); assert.equal(b.player.x,x); assert.equal(b.stats.attacks,1);
  L.press(b,'move'); L.drag(b,'move',60,0); t.pveLogic.pause(); t.pveLogic.resume();
@@ -113,16 +115,17 @@ test('simulation owns regen; paused battle has no HP or time drift; a retired fi
  assert.ok(t.state.player.currentHp - walk <= 1, 'the spring must not reach past the base');
 });
 
-test('all four skills retain costs; full charge awaits swipe and is spent once',()=>{
+test('all four skills retain costs; a charge always fires and full charge is spent once',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
  b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,1);
  b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,1);
  L.press(e,'move'); seconds(t,.75); assert.ok(b.player.charge>.5); const q=b.player.charge;
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
- L.release(e,'move'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
- L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2.3); assert.equal(e.stats.attacks,0);
- L.release(e,'move'); assert.equal(b.buffs.instantCharge,false);
- b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
+ L.release(e,'move'); assert.equal(e.stats.attacks,1); seconds(t,1.3);
+ b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
+ L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2.3); assert.equal(e.stats.attacks,1);
+ L.release(e,'move'); assert.equal(b.buffs.instantCharge,false); assert.equal(e.stats.attacks,2);
+ seconds(t,1.3); b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
 });
 
 test('auto parry checks spatial reach and protects from the rear, even with the guard bar locked',()=>{

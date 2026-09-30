@@ -153,7 +153,7 @@ const spatialDuel = (() => {
                 p.maxHp !== C.player.maxHp || p.radius !== C.player.radius || p.hp < 0 || p.hp > p.maxHp ||
                 p.guardBar < 0 || p.guardBar > C.guardMax + 1e-9 || typeof p.guardLocked !== 'boolean' ||
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
-                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
+                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','poise','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||
                 !Number.isInteger(b.skillPoints) || b.skillPoints < 0 || b.skillPoints > C.skillPointMax || !Number.isFinite(b.skillProgress) || b.skillProgress < 0 || b.skillProgress >= 1 || !b.buffs || !b.controls || !b.stats || !Array.isArray(b.motionBuffs)) return false;
             if (['attack','swing','recover'].includes(p.phase)) {
@@ -162,7 +162,10 @@ const spatialDuel = (() => {
                     a.shape.kind !== 'sector' || a.shape.range <= 0 || a.shape.arc <= 0 || a.shape.arc > Math.PI * 2 + 1e-9 ||
                     ![1, -1].includes(a.sweep) || a.progress < 0 || a.progress > 1 || typeof a.hit !== 'boolean') return false;
             }
-            if (p.chain != null && (!C.combo.moves[p.chain.move] || !Number.isFinite(p.chain.at) || p.chain.at > b.time)) return false;
+            if (p.chain != null && (!C.combo.moves[p.chain.move] || !Number.isFinite(p.chain.at) || p.chain.at > b.time ||
+                (p.chain.cued != null && typeof p.chain.cued !== 'boolean'))) return false;
+            if (b.move?.mode === 'hold' && !C.combo.moves[b.move.derived]) return false;
+            if (b.queuedCommand?.type === 'hold' && !C.combo.moves[b.queuedCommand.move]) return false;
             return true;
         });
     }

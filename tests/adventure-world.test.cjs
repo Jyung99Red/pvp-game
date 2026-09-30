@@ -204,30 +204,25 @@ test('the move pad walks the player and a release stops them', () => {
     assert.ok(Math.abs(worldPlayer(t, { x: 80, y: 480 }, '南门 · 曙光据点').x - stopped) < .5, 'releasing the pad must stop the walk');
 });
 
-test('a standing tap swings and recovers instead of locking the walker up', () => {
+test('a standing tap in a region swings nothing and never locks the walker up', () => {
     const map = mapSize('b');
     const t = setup({ width: map.width, height: map.height }, { region: 'b' });
     t.activate(); t.step(1 / 60);
     t.clear();
 
-    // A tap on the move pad is a light attack -- the same gesture a fight reads.
-    // Walking has no target, but the swing still has to end: a player left in
-    // `attack` is `locked`, which stops movement, attacks and guard alike until
-    // the page is reloaded.
+    // Walking has no target: a tap there is the interact key next to a
+    // building and nothing at all elsewhere. It must never start a swing.
     t.pad.press();
     t.pad.release();
     t.step(1 / 60);
-    assert.equal(t.field().player.phase, 'attack');
-    t.step(.2);
-    assert.equal(t.field().player.phase, 'recover');
-    t.step(.5);
-    assert.equal(t.field().player.phase, 'idle', 'the walker must come out of the swing');
+    assert.equal(t.field().player.phase, 'idle');
+    assert.equal(t.field().stats.attacks, 0);
 
     // And the region still answers: the same pad walks again straight after.
     const start = t.drawn().x;
     t.pad.press(); t.pad.drag(80, 0);
     t.step(1);
-    assert.ok(t.drawn().x > start + 50, `moved ${(t.drawn().x - start).toFixed(0)}px after the swing`);
+    assert.ok(t.drawn().x > start + 50, `moved ${(t.drawn().x - start).toFixed(0)}px after the tap`);
     t.pad.release();
 });
 

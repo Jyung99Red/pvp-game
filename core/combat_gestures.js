@@ -13,13 +13,12 @@ const combatGestures = (() => {
         g.dx = dx; g.dy = dy; g.cx = cx; g.cy = cy;
         if (g.mode === 'pending' && Math.hypot(dx, dy) > config.deadZone) g.mode = 'move';
     }
-    function armed(g) {
-        return !!g && g.mode === 'charge' && (g.cancelAtCenter === false || Math.hypot(g.cx ?? g.dx, g.cy ?? g.dy) > config.cancelRadius);
-    }
-    function release(g, cancelled) {
-        if (cancelled) return { type: 'cancel_charge' };
+    // An opening charge has no cancel circle: releasing it always attacks.
+    // Only guard gives a charge up.
+    function armed(g) { return !!g && g.mode === 'charge'; }
+    function release(g) {
         if (g.mode === 'pending') return { type: 'light' };
-        if (g.mode === 'charge') return { type: armed(g) ? 'heavy' : 'cancel_charge' };
+        if (g.mode === 'charge') return { type: 'heavy' };
         return null;
     }
     const skillDirections = ['haste', 'full', 'parry', 'heal'];

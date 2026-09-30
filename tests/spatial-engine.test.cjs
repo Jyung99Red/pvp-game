@@ -94,16 +94,16 @@ test('upward movement starts immediately and release never attacks, even after a
     assert.equal(b.stats.attacks, 0); assert.equal(b.player.charge, 0);
     const y = b.player.y; advance(b, .2); assert.equal(b.player.y, y);
 });
-test('charged hold is immobile, never auto-fires, and release in place cancels', () => {
+test('charged hold is immobile, never auto-fires, and release in place still fires: there is no cancel circle', () => {
     const b = setup(); L.press(b, 'move'); advance(b, 2);
     assert.equal(b.player.phase, 'charging'); assert.equal(b.player.charge, L.config.fullCharge);
     assert.equal(b.stats.attacks, 0);
     assert.equal(b.player.x, 180); assert.equal(b.player.y, 275);
     L.release(b, 'move');
-    assert.equal(b.stats.attacks, 0); assert.equal(b.stats.cancels, 1);
-    assert.equal(b.player.phase, 'idle');
+    assert.equal(b.stats.attacks, 1); assert.equal(b.stats.cancels, 0);
+    assert.equal(b.player.phase, 'attack'); assert.equal(b.player.attack.move, 'charged');
 });
-test('charged drag moves at 60 percent; release attacks and returning to origin cancels', () => {
+test('charged drag moves at 60 percent; release attacks, returning to the origin included', () => {
     const b = setup(); L.press(b, 'move'); advance(b, 2);
     L.drag(b, 'move', 0, -50); advance(b, .1); L.release(b, 'move');
     // Training atk 60 x (ratio .3 + chargeRatio .8 at full charge).
@@ -111,7 +111,7 @@ test('charged drag moves at 60 percent; release attacks and returning to origin 
     assert.ok(Math.abs(b.player.y - (275 - 115 * .6 * .1)) < 1e-8); assert.equal(b.stats.attacks, 1);
     const c = setup(); L.press(c, 'move'); advance(c, .5);
     L.drag(c, 'move', 0, -50); L.drag(c, 'move', 2, 3); L.release(c, 'move');
-    assert.equal(c.stats.attacks, 0); assert.equal(c.stats.cancels, 1);
+    assert.equal(c.stats.attacks, 1); assert.equal(c.stats.cancels, 0);
 });
 test('pointer cancellation and pause cannot release an armed attack', () => {
     for (const cancel of [b => L.release(b, 'move', true), b => L.pause(b)]) {
@@ -244,6 +244,62 @@ test('pose reports phase, progress and a blade that crosses the whole arc', () =
     assert.ok(angles[0] < 0 && angles.every((v, i) => !i || v >= angles[i - 1]), 'sweep 1 moves left to right');
     assert.ok(Math.abs(first.blade - arc / 2) < arc * .05, 'the recovery starts where the swing ended, on the far side');
     assert.equal(L.pose(b.player, b.config).phase, 'recover');
+});
+
+function untilIdle(b) { for (let i = 0; i < 300 && b.player.phase !== 'idle'; i++) L.step(b, .01); }
+test('presses before the swing ends are dropped, even when held into the recovery', () => {
+    const b = setup(); tap(b); advance(b, .05);
+    tap(b); assert.equal(b.queuedCommand, null, 'a tap during the windup is not buffered');
+    L.press(b, 'move'); advance(b, .6);
+    assert.equal(b.move.mode, 'pending', 'nor does the held press become a hold'); assert.equal(b.player.phase, 'idle');
+    L.release(b, 'move'); assert.equal(b.stats.attacks, 1);
+});
+test('a pause past the recovery takes the pause move; only taps are changed by it', () => {
+    const twoTaps = () => { const b = setup(); tap(b); advance(b, .2); tap(b); advance(b, .3); untilIdle(b); return b; };
+    const b = twoTaps(); assert.equal(b.player.chain.move, 'backslash');
+    advance(b, K.pauseAfterRecovery + .02);
+    assert.ok(L.drainEvents(b).some(ev => ev.type === 'pause_ready' && ev.move === 'thrust'), 'crossing the pause line is cued');
+    tap(b); assert.equal(b.player.attack.move, 'thrust');
+    const onTime = twoTaps(); advance(onTime, .05); tap(onTime); assert.equal(onTime.player.attack.move, 'spin');
+    // A node without a pause move treats the late tap as its ordinary tap.
+    const late = setup(); tap(late); untilIdle(late); advance(late, K.pauseAfterRecovery + .05);
+    tap(late); assert.equal(late.player.attack.move, 'backslash');
+    // A hold is the node's hold, pause or not.
+    const held = twoTaps(); advance(held, K.pauseAfterRecovery + .05);
+    L.press(held, 'move'); advance(held, .3); assert.equal(held.player.phase, 'poise');
+    L.release(held, 'move'); assert.equal(held.player.attack.move, 'cleave');
+});
+test('a hold inside the chain poises at the derive point, turns but never walks, and fires on release', () => {
+    const b = setup(); tap(b); advance(b, .2);
+    L.press(b, 'move'); advance(b, .3);
+    assert.equal(b.move.mode, 'hold'); assert.equal(b.player.phase, 'poise'); assert.equal(b.action, null, 'no opening charge');
+    const { x, y } = b.player; L.drag(b, 'move', 60, 0); advance(b, .3);
+    assert.equal(b.player.x, x); assert.equal(b.player.y, y); assert.ok(b.player.facing > -Math.PI / 2, 'dragging turns');
+    L.release(b, 'move'); assert.equal(b.player.attack.move, 'rising'); assert.equal(b.player.attack.facing, b.player.facing);
+    // Past the derive point with the thumb still undecided, the recovery goes
+    // on; the tap it turns out to be then fires at once.
+    const c = setup(); tap(c); advance(c, .2); L.press(c, 'move'); advance(c, .15);
+    assert.equal(c.player.phase, 'recover'); L.release(c, 'move'); advance(c, .01);
+    assert.equal(c.player.attack.move, 'backslash');
+    // Guard gives a poised hold up.
+    const d = setup(); tap(d); advance(d, .2); L.press(d, 'move'); advance(d, .3); assert.equal(d.player.phase, 'poise');
+    L.press(d, 'guard'); assert.equal(d.player.phase, 'guard_start'); L.release(d, 'move'); assert.equal(d.stats.attacks, 1);
+});
+test('the opening hold is part of the tree: a tap after the charged slash follows up', () => {
+    const b = setup(); L.press(b, 'move'); advance(b, .6); L.release(b, 'move');
+    advance(b, .45 + .12 + .05); tap(b); advance(b, .3);
+    assert.equal(b.player.attack.move, 'follow');
+});
+test('inside a combo a drag only turns; still dragging when the recovery ends walks off and ends the combo', () => {
+    const b = setup(); tap(b); advance(b, .2);
+    const { x, y } = b.player; L.press(b, 'move'); L.drag(b, 'move', 60, 0); advance(b, .2);
+    assert.equal(b.player.phase, 'recover'); assert.equal(b.player.x, x); assert.equal(b.player.y, y);
+    assert.ok(b.player.facing > -Math.PI / 2 + .5, 'the recovery turned the fighter');
+    advance(b, .2); assert.equal(b.player.phase, 'idle'); assert.ok(b.player.x > x); assert.equal(b.player.chain, null);
+    // Turn, lift, tap: the next move goes the new way.
+    const c = setup(); tap(c); advance(c, .2); L.press(c, 'move'); L.drag(c, 'move', 60, 0); advance(c, .15); L.release(c, 'move');
+    const facing = c.player.facing; tap(c); advance(c, .05);
+    assert.equal(c.player.attack.move, 'backslash'); assert.equal(c.player.attack.facing, facing);
 });
 
 test('semantic commands cannot bypass charge, pause or finished state', () => {
