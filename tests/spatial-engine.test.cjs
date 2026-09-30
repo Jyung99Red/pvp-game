@@ -274,24 +274,27 @@ test('a pause past the recovery takes the pause move; only taps are changed by i
     tap(late); assert.equal(late.player.attack.move, 'backslash');
     // A hold is the node's hold, pause or not.
     const held = twoTaps(); advance(held, K.pauseAfterRecovery + .05);
-    L.press(held, 'move'); advance(held, .3); assert.equal(held.player.phase, 'poise');
-    L.release(held, 'move'); assert.equal(held.player.attack.move, 'cleave');
+    L.press(held, 'move'); advance(held, .3); assert.equal(held.player.attack.move, 'cleave');
+    L.release(held, 'move');
 });
-test('a hold inside the chain poises at the derive point, turns but never walks, and fires on release', () => {
+test('a hold inside the chain fires the node\'s hold move the moment it reaches the threshold', () => {
+    const hold = vm.runInContext('combatGestures.config.holdSeconds', context);
     const b = setup(); tap(b); advance(b, .2);
-    L.press(b, 'move'); advance(b, .3);
-    assert.equal(b.move.mode, 'hold'); assert.equal(b.player.phase, 'poise'); assert.equal(b.action, null, 'no opening charge');
-    const { x, y } = b.player; L.drag(b, 'move', 60, 0); advance(b, .3);
-    assert.equal(b.player.x, x); assert.equal(b.player.y, y); assert.ok(b.player.facing > -Math.PI / 2, 'dragging turns');
-    L.release(b, 'move'); assert.equal(b.player.attack.move, 'rising'); assert.equal(b.player.attack.facing, b.player.facing);
+    L.press(b, 'move'); advance(b, hold - .02);
+    assert.equal(b.stats.attacks, 1, 'not yet: still short of the threshold');
+    advance(b, .03);
+    assert.equal(b.player.attack.move, 'rising'); assert.equal(b.stats.attacks, 2); assert.equal(b.action, null, 'no opening charge');
+    const { x, y } = b.player; advance(b, .5);
+    L.release(b, 'move'); assert.equal(b.stats.attacks, 2, 'lifting the thumb afterwards does nothing');
+    assert.equal(b.player.x, x); assert.equal(b.player.y, y, 'a hold never walks');
+    // In the window after the recovery it fires just the same.
+    const w = setup(); tap(w); untilIdle(w); L.press(w, 'move'); advance(w, hold + .01);
+    assert.equal(w.player.attack.move, 'rising');
     // Past the derive point with the thumb still undecided, the recovery goes
     // on; the tap it turns out to be then fires at once.
     const c = setup(); tap(c); advance(c, .2); L.press(c, 'move'); advance(c, .15);
     assert.equal(c.player.phase, 'recover'); L.release(c, 'move'); advance(c, .01);
     assert.equal(c.player.attack.move, 'backslash');
-    // Guard gives a poised hold up.
-    const d = setup(); tap(d); advance(d, .2); L.press(d, 'move'); advance(d, .3); assert.equal(d.player.phase, 'poise');
-    L.press(d, 'guard'); assert.equal(d.player.phase, 'guard_start'); L.release(d, 'move'); assert.equal(d.stats.attacks, 1);
 });
 test('the opening hold is part of the tree: a tap after the charged slash follows up', () => {
     const b = setup(); L.press(b, 'move'); advance(b, .6); L.release(b, 'move');

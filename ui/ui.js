@@ -110,6 +110,9 @@ const ui = {
     openBuildingModal() { this.updateBuildingList(); this.openPanel('building-overlay'); },
     closeBuildingModal() { this.closePanel('building-overlay'); },
 
+    // Back to the region the player is standing in: the base or the field.
+    openWorld() { this.switchTab(state.progress.currentRegionId === 'a' ? 'base' : 'adventure'); },
+
     switchTab(tabId) {
         // A fight runs inside the region view, so there is no battle tab to escape
         // to: every tab switch is blocked until the fight is won, fled or lost.
@@ -145,7 +148,7 @@ const ui = {
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
 
         // Safely check and activate the corresponding tab element if it exists
-        const tabEl = document.getElementById(`tab-${tabId}`);
+        const tabEl = document.getElementById(region ? 'tab-world' : `tab-${tabId}`);
         if (tabEl) {
             tabEl.classList.add('active');
         }

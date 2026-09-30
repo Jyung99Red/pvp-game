@@ -159,7 +159,7 @@ const spatialDuel = (() => {
                 (p.freeze != null && !(Number.isFinite(p.freeze) && p.freeze >= 0 && p.freeze <= 1)) ||
                 (p.push != null && ![p.push.x, p.push.y, p.push.t].every(Number.isFinite)) ||
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
-                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','poise','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
+                p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||
                 !Number.isInteger(b.skillPoints) || b.skillPoints < 0 || b.skillPoints > C.skillPointMax || !Number.isFinite(b.skillProgress) || b.skillProgress < 0 || b.skillProgress >= 1 || !b.buffs || !b.controls || !b.stats || !Array.isArray(b.motionBuffs)) return false;
             if (['attack','swing','recover'].includes(p.phase)) {
@@ -170,7 +170,6 @@ const spatialDuel = (() => {
             }
             if (p.chain != null && (!C.combo.moves[p.chain.move] || !Number.isFinite(p.chain.at) || p.chain.at > b.time ||
                 (p.chain.cued != null && typeof p.chain.cued !== 'boolean'))) return false;
-            if (b.move?.mode === 'hold' && !C.combo.moves[b.move.derived]) return false;
             if (b.queuedCommand?.type === 'hold' && !C.combo.moves[b.queuedCommand.move]) return false;
             return true;
         });
