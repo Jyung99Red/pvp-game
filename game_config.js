@@ -512,7 +512,12 @@ const gameConfig = (() => {
                             { id: 'a-smithy',    kind: 'smithy',    label: '铁匠铺',     x: 640,  y: 210 },
                             { id: 'a-shop',      kind: 'shop',      label: '商店',       x: 640,  y: 520 },
                             { id: 'a-storage',   kind: 'storage',   label: '仓库',       x: 300,  y: 780 },
-                            { id: 'a-training',  kind: 'training',  label: '训练场',     x: 920,  y: 720 },
+                            // The dummy is anchored beside the post, level with it and facing
+                            // west toward a player arriving from the spawn: side by side keeps
+                            // the fight in the band between the HUD and the pads on a phone,
+                            // off the map edge, and well clear of the east gate.
+                            { id: 'a-training',  kind: 'training',  label: '训练场',     x: 920,  y: 560,
+                              dummy: { x: 1000, y: 580, facing: Math.PI } },
                             { id: 'a-build',     kind: 'build',     label: '建设管理',   x: 1000, y: 240 }
                         ]
                     },

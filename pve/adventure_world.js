@@ -353,19 +353,22 @@ const adventureWorld = (() => {
             return { config: C, home: { ...monster.home }, leash: monster.leash, alertRange: monster.alertRange };
         },
         // The base's training post: the same formal fight a region monster
-        // gives, against a dummy set down a few steps in front of the player.
-        // The `training` flag is what makes the fight reward-free and deathless
-        // (pveLogic) and shows the combo tree (the shared view).
+        // gives, against a dummy anchored at the post's authored spot (`dummy`),
+        // facing one way -- it never chases, turns or gets pushed. The player
+        // stays where they stood. The `training` flag is what makes the fight
+        // reward-free and deathless (pveLogic) and shows the combo tree.
         enlistTraining(enemyId) {
             const def = region();
             if (!scene || !def || !content.enemies[enemyId]) return null;
+            const post = scene.structures.find(item => item.kind === 'training' && item.id === scene.interaction?.id) ||
+                scene.structures.find(item => item.kind === 'training');
+            if (!post) return null;
+            const spot = post.dummy || { x: post.x, y: post.y - 130, facing: Math.PI / 2 };
             const C = pveProfiles.enemy(def, enemyId, content.enemies[enemyId], { radius: MONSTER_RADIUS });
-            const p = scene.player, facing = p.facing || 0, gap = 90;
+            const p = scene.player;
             C.training = true;
-            Object.assign(C.player, { x: p.x, y: p.y, facing, hp: C.player.maxHp });
-            C.enemy.x = clamp(p.x + Math.cos(facing) * gap, MONSTER_RADIUS, def.map.width - MONSTER_RADIUS);
-            C.enemy.y = clamp(p.y + Math.sin(facing) * gap, MONSTER_RADIUS, def.map.height - MONSTER_RADIUS);
-            C.enemy.facing = Math.atan2(p.y - C.enemy.y, p.x - C.enemy.x);
+            Object.assign(C.player, { x: p.x, y: p.y, facing: p.facing || 0, hp: C.player.maxHp });
+            Object.assign(C.enemy, { x: spot.x, y: spot.y, facing: spot.facing, anchored: true });
             return { config: C, home: null, leash: 0, alertRange: 0 };
         },
         // Hand the region back after a fight. On victory the monster is already

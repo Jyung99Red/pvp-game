@@ -116,8 +116,7 @@ test('auto parry uses three SP, works from behind, but ordinary front guard pres
 });
 test('four-way gesture casts current skill rules; center cancels, full HP preserves queue and SP',()=>{
  const t=setup(), b=t.d.sides[1];b.skillPoints=3;
- light(t,1);light(t,1);assert.equal(b.queuedCommand,null);step(t,.2);
- light(t,1);assert.equal(b.queuedCommand.type,'tap');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'tap');
+ light(t,1);light(t,1);assert.equal(b.queuedCommand.type,'tap');assert.equal(skill(t,1,'heal'),false);assert.equal(b.queuedCommand.type,'tap');
  step(t,1);b.player.hp-=20;
  input(t,1,'press','skill',[0,0]);input(t,1,'drag','skill',[0,-60,0,-60]);input(t,1,'drag','skill',[0,0,0,0]);input(t,1,'release','skill');
  assert.equal(b.skillPoints,3);

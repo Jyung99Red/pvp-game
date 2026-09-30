@@ -236,6 +236,9 @@ test('the training post is a real fight with no rewards and no death, and hands 
         assert.equal(b.training, true); assert.equal(b.enemyId, vm.runInContext('gameConfig.adventure.trainingEnemyId', t.c));
         assert.equal(b.spatial.config.training, true, 'the view shows the combo tree for it');
         assert.equal(b.player.hp, b.player.maxHp, 'practice starts at full HP');
+        // The dummy stands anchored at the post's authored spot, facing one way.
+        assert.deepEqual([b.enemy.x, b.enemy.y, b.enemy.facing], [post.dummy.x, post.dummy.y, post.dummy.facing]);
+        assert.equal(b.enemy.anchored, true);
         assert.deepEqual(Object.keys(b.spatial.config.combo.moves), Object.keys(vm.runInContext('spatialData.baseCombatPreset.combo.moves', t.c)), 'the same move table');
         if (outcome === 'victory') b.enemy.hp = 0; else b.player.hp = 0;
         t.pveLogic.advance(.01);
@@ -244,6 +247,33 @@ test('the training post is a real fight with no rewards and no death, and hands 
         assert.equal(t.state.inventory.exp, exp); assert.equal(t.state.resources.gold, gold);
         assert.match(scene.notice, /训练结束/);
     }
+});
+
+test('the training dummy never walks, turns or gets pushed, and attacks one way on its own clock', () => {
+    const t = setup({ region: 'a' });
+    vm.runInContext(`state.world.status = 'base'`, t.c);
+    const scene = t.adventureWorld.scene(), post = scene.structures.find(item => item.kind === 'training');
+    scene.player.x = post.x - 30; scene.player.y = post.y + 20;
+    t.frames(1); t.pveLogic.interact();
+    const b = t.state.pveBattle, e = b.enemy, L = t.spatialEngine;
+    const spot = { x: e.x, y: e.y, facing: e.facing };
+    // Walk right round it, well out of its reach, for a while.
+    L.press(b.spatial, 'move'); L.drag(b.spatial, 'move', 60, -40);
+    let windups = 0, last = e.phase;
+    for (let i = 0; i < 400; i++) {
+        t.pveLogic.advance(.01);
+        if (e.phase === 'windup' && last !== 'windup') windups++;
+        last = e.phase;
+    }
+    L.release(b.spatial, 'move');
+    assert.deepEqual([e.x, e.y, e.facing], [spot.x, spot.y, spot.facing], 'no chasing, no turning');
+    assert.ok(windups >= 1, 'it attacks without the player in reach');
+    // A landed hit does not push it either.
+    b.spatial.player.x = e.x; b.spatial.player.y = e.y + 50; b.spatial.player.facing = -Math.PI / 2;
+    e.phase = 'recover'; e.timer = 5;
+    L.press(b.spatial, 'move'); L.release(b.spatial, 'move');
+    for (let i = 0; i < 60; i++) t.pveLogic.advance(.01);
+    assert.ok(b.spatial.stats.hits >= 1); assert.deepEqual([e.x, e.y], [spot.x, spot.y]);
 });
 
 test('an unbuilt facility opens the build panel instead of its own', () => {

@@ -601,7 +601,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             text('enemy-hp', `${knownEnemyHp} / ${e.maxHp}${enemyVisible ? '' : ' · 旧信息'}`);
             nodes['enemy-meter'].max = e.maxHp; nodes['enemy-meter'].value = knownEnemyHp;
             const enemyWindupName = e.attack?.label || (e.attack?.kind === 'dash' ? '直线冲刺' : e.attack?.kind === 'circle' ? '周身践踏' : '扇形重扫');
-            text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
+            text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : e.anchored ? '定点木桩 · 固定朝向出招' : '接近中 · 留意距离');
             if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', swing: '挥刀', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         }
         const bar = $('guard-bar'), max = C.guardMax || gameConfig.guardBar.max;

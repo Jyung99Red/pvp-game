@@ -31,11 +31,11 @@ test('left movement held through light attack resumes after recovery and stops o
  }
 });
 
-test('presses before the swing ends are dropped, guard cuts a buffered recovery; cancelled move and pause do not drift',()=>{
+test('a press during a move is buffered, guard cuts a buffered recovery; cancelled move and pause do not drift',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t);
  const b=t.state.pveBattle.spatial,L=t.spatialEngine,x=b.player.x;
  L.press(b,'move'); L.release(b,'move');
- L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand,null,'a press during the windup is dropped');
+ L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'tap','a press during the windup is buffered');
  seconds(t,.2); assert.equal(b.player.phase,'recover');
  L.press(b,'move'); L.release(b,'move'); assert.equal(b.queuedCommand.type,'tap');
  L.press(b,'guard'); assert.equal(b.player.phase,'guard_start'); assert.equal(b.queuedCommand,null);

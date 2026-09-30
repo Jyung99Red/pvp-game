@@ -104,14 +104,21 @@ const spatialEngine = (() => {
         const c = b.player.chain;
         return !!c && at - c.at <= moveOf(b, c.move).recovery + b.config.combo.windowAfterRecovery + 1e-9;
     }
-    // What the open chain derives for an input pressed at `pressedAt`, or null.
-    // A tap pressed past the pause line takes the pause derivation; a node
-    // without one treats it as an ordinary tap, so pausing never costs a move.
-    // A pause only changes taps: a hold is the node's hold either way.
+    // What the chain derives for an input pressed at `pressedAt`, or null. The
+    // node is the move under way (an input pressed ahead, during its windup or
+    // swing) or the finished one while its window is open. A tap pressed past
+    // the pause line takes the pause derivation; a node without one treats it
+    // as an ordinary tap, so pausing never costs a move. A pause only changes
+    // taps: a hold is the node's hold either way.
     function chainNext(b, input, pressedAt = b.time) {
-        if (!chainOpen(b, pressedAt)) return null;
-        const K = b.config.combo, c = b.player.chain, m = moveOf(b, c.move), next = m.next || {};
-        const paused = input === 'tap' && pressedAt - c.at >= m.recovery + K.pauseAfterRecovery - 1e-9;
+        const K = b.config.combo, p = b.player;
+        let m, paused = false;
+        if (['attack', 'swing'].includes(p.phase) && p.attack) m = moveOf(b, p.attack.move);
+        else if (chainOpen(b, pressedAt)) {
+            m = moveOf(b, p.chain.move);
+            paused = input === 'tap' && pressedAt - p.chain.at >= m.recovery + K.pauseAfterRecovery - 1e-9;
+        } else return null;
+        const next = m.next || {};
         return (paused ? next.pause ?? next.tap : next[input]) || null;
     }
     // The move an input starts: the chain's derivation, else the root.
@@ -194,15 +201,15 @@ const spatialEngine = (() => {
         if (b.config.solo) return;
         const command = combatGestures.hold(b.move, b.time);
         if (!command) return;
-        // Inside an open chain a hold is a fixed-threshold switch to that node's
-        // hold move: reaching the threshold fires it -- at once, or at the
-        // derive point if the recovery has not got there yet. The gesture is
+        // Inside a combo a hold is a fixed-threshold switch to that node's hold
+        // move: reaching the threshold fires it -- at once, or at the derive
+        // point if the move under way has not got there yet. The gesture is
         // spent: lifting the thumb afterwards does nothing. Elsewhere a hold
         // is the opening charge.
         const next = chainNext(b, 'hold', b.move.start);
         if (next) {
             b.move.mode = 'move'; b.move.suppressTap = true;
-            if (b.player.phase === 'recover') b.queuedCommand = { type: 'hold', move: next };
+            if (['attack', 'swing', 'recover'].includes(b.player.phase)) b.queuedCommand = { type: 'hold', move: next };
             else attack(b, next);
             return;
         }
@@ -227,12 +234,10 @@ const spatialEngine = (() => {
         if (channel === 'move') {
             if (b.move) return false;
             b.move = combatGestures.begin(b.time, 0, 0);
-            // Presses before the move's hit is settled are dropped, never
-            // buffered: mashing cannot speed a move up or grab the next one
-            // early. Settled means the swing has ended, or it has already hit --
-            // so hitstop lengthening a landed swing never eats the next input.
-            const early = p.phase === 'attack' || (p.phase === 'swing' && !p.attack?.hit);
-            b.move.suppressTap = !!(b.guard || b.skill) || early; return true;
+            // Pre-input: a press during a move is kept, not dropped. One input
+            // is buffered (the latest wins) and runs at the derive point, so
+            // pressing early never makes a move faster.
+            b.move.suppressTap = !!(b.guard || b.skill); return true;
         }
         if (b.guard || !['idle', 'charging', 'attack', 'swing', 'recover', 'stunned'].includes(p.phase)) return false;
         if (p.guardLocked) { emit(b, 'guard_locked'); return false; }
@@ -423,7 +428,7 @@ const spatialEngine = (() => {
         const I = gameConfig.impact, stop = I.hitstop[kind] || 0;
         for (const body of [b.player, b.enemy]) if (body) body.freeze = Math.max(body.freeze || 0, stop);
         const body = b[victim], distance = I.knockback[kind] || 0;
-        if (!body || distance <= 0) return;
+        if (!body || body.anchored || distance <= 0) return;
         const dx = body.x - from.x, dy = body.y - from.y, len = Math.hypot(dx, dy);
         if (len < 1e-9) return;
         const speed = distance / I.knockbackSeconds;
@@ -610,21 +615,26 @@ const spatialEngine = (() => {
             return;
         }
         e.timer = Math.max(0, e.timer - dt * tempo);
+        // An anchored enemy (the training dummy) never walks or turns: it
+        // attacks on its own clock, always in the direction it was set down.
+        const anchored = !!e.anchored;
         if (e.phase === 'approach') {
-            e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.turn);
             const d = S.distance(e, p);
-            if (d > C.ai.stopDistance) {
-                const a = S.facing(e, p);
-                S.move(e, Math.cos(a) * C.ai.speed, Math.sin(a) * C.ai.speed, dt, C, p);
+            if (!anchored) {
+                e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.turn);
+                if (d > C.ai.stopDistance) {
+                    const a = S.facing(e, p);
+                    S.move(e, Math.cos(a) * C.ai.speed, Math.sin(a) * C.ai.speed, dt, C, p);
+                }
             }
-            if (e.timer === 0 && d < C.ai.attackDistance && (!C.formal || e.ap >= gameConfig.enemyDefaults.attackApCost)) {
+            if (e.timer === 0 && (anchored || d < C.ai.attackDistance) && (!C.formal || e.ap >= gameConfig.enemyDefaults.attackApCost)) {
                 e.attack = C.actions ? C.actions[e.sequence++ % C.actions.length] : e.sequence++ % 3 === 2 ? C.stomp : C.sweep;
                 if (C.formal) e.ap -= gameConfig.enemyDefaults.attackApCost;
                 e.phase = 'windup'; e.timer = e.attack.windup;
-                e.facing = S.facing(e, p);
+                if (!anchored) e.facing = S.facing(e, p);
             }
         } else if (e.phase === 'windup') {
-            if (e.timer > e.attack.lock) e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.trackingTurn);
+            if (!anchored && e.timer > e.attack.lock) e.facing = S.turn(e.facing, S.facing(e, p), dt * C.ai.trackingTurn);
             if (e.timer === 0) {
                 if (e.attack.dash) {
                     e.phase = 'dash'; e.dashFacing = e.facing;

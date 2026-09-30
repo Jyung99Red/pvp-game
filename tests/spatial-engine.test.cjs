@@ -255,12 +255,21 @@ test('pose reports phase, progress and a blade that crosses the whole arc', () =
 });
 
 function untilIdle(b) { for (let i = 0; i < 300 && b.player.phase !== 'idle'; i++) L.step(b, .01); }
-test('presses before the swing ends are dropped, even when held into the recovery', () => {
+test('pre-input: a press during the windup is kept, and still runs only at the derive point', () => {
     const b = setup(); tap(b); advance(b, .05);
-    tap(b); assert.equal(b.queuedCommand, null, 'a tap during the windup is not buffered');
-    L.press(b, 'move'); advance(b, .6);
-    assert.equal(b.move.mode, 'pending', 'nor does the held press become a hold'); assert.equal(b.player.phase, 'idle');
-    L.release(b, 'move'); assert.equal(b.stats.attacks, 1);
+    tap(b); assert.equal(b.queuedCommand.type, 'tap', 'kept, not dropped');
+    let swingEnd = null;
+    for (let i = 0; i < 60 && b.player.attack.move === 'slash'; i++) {
+        L.step(b, .01); if (b.player.phase === 'recover' && swingEnd == null) swingEnd = b.time;
+    }
+    assert.equal(b.player.attack.move, 'backslash');
+    assert.ok(Math.abs(b.time - swingEnd - K.moves.slash.derive) < .011, 'pressing early is never faster');
+    // Mashing buffers one input, never a backlog.
+    const c = setup(); tap(c); for (let i = 0; i < 5; i++) { advance(c, .02); tap(c); }
+    advance(c, 1.5); assert.equal(c.stats.attacks, 2);
+    // A hold pressed during the windup counts once it reaches the threshold.
+    const h = setup(); tap(h); advance(h, .05); L.press(h, 'move'); advance(h, .5);
+    assert.equal(h.player.attack.move, 'rising');
 });
 test('a pause past the recovery takes the pause move; only taps are changed by it', () => {
     const twoTaps = () => { const b = setup(); tap(b); advance(b, .2); tap(b); advance(b, .3); untilIdle(b); return b; };
@@ -337,14 +346,14 @@ test('knockback stops at a wall', () => {
     tap(b); advance(b, .6);
     assert.equal(b.stats.hits, 1); assert.ok(b.enemy.y - b.enemy.radius >= 160 - 1e-6, 'the wall holds the body');
 });
-test('once the move has hit, the next press is buffered even though the swing is still held by hitstop', () => {
+test('a press during the swing is buffered, before its hit and during the hitstop alike', () => {
     const b = setup(); b.enemy.y = b.player.y - 60;
     tap(b); for (let i = 0; i < 30 && !b.stats.hits; i++) L.step(b, .01);
     assert.equal(b.player.phase, 'swing'); assert.ok(b.player.freeze > 0);
     tap(b); assert.equal(b.queuedCommand.type, 'tap', 'the hit is settled, so the tap counts');
     const c = setup(); c.enemy.y = c.player.y - 60; tap(c); advance(c, .11);
     assert.equal(c.player.phase, 'swing'); assert.equal(c.stats.hits, 0);
-    tap(c); assert.equal(c.queuedCommand, null, 'before the hit it is still dropped');
+    tap(c); assert.equal(c.queuedCommand.type, 'tap', 'before the hit as well');
 });
 
 test('semantic commands cannot bypass charge, pause or finished state', () => {
