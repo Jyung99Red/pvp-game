@@ -46,6 +46,11 @@ const gameConfig = (() => {
         // to unlockRatio. Equipment can raise `max`; costs stay on the base max.
         guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 2, parryCostRatio: 0.5,
             refillSeconds: 3, unlockRatio: 0.4 },
+        // Impact, simulation side (first version). On contact both fighters'
+        // timers hold still for `hitstop` seconds, then the one struck (the
+        // attacker, for a parry) is pushed `knockback` world units away over
+        // knockbackSeconds, with normal collision. Keyed by outcome.
+        impact: { hitstop: { hit: 0.06, block: 0.04, parry: 0.08 }, knockback: { hit: 10, block: 5, parry: 8 }, knockbackSeconds: 0.12 },
         damage: {
             // Damage = max(1, round(raw * (1 - DEF / (DEF + defenseConstant)))).
             // DEF equal to defenseConstant halves incoming raw damage.

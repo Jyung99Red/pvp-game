@@ -55,7 +55,8 @@ test('charged slash has .45 windup, .12 swing and .60 recovery before held movem
  L.press(b,'move'); L.drag(b,'move',60,0);
  seconds(t,.2); assert.equal(b.enemy.hp,hp); assert.equal(b.player.x,x);
  seconds(t,.25); assert.equal(b.enemy.hp,hp); assert.equal(b.player.phase,'swing');
- seconds(t,.14); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
+ // The hit's hitstop holds the swing for .06s on top of its .12s.
+ seconds(t,.2); assert.ok(b.enemy.hp<hp); assert.equal(b.player.phase,'recover');
  seconds(t,.53); assert.equal(b.player.x,x);
  seconds(t,.1); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
 });

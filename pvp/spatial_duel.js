@@ -92,13 +92,16 @@ const spatialDuel = (() => {
         const i = r.i, j = 1 - i, atk = d.sides[i], def = d.sides[j];
         if (r.type === 'none') { if (r.blocked) r.a.blocked = true; return; }
         r.a.hit = true;
+        // Hitstop for both, knockback for whoever was struck (the attacker, on a parry).
         if (r.type === 'parry') {
             if (r.auto) def.buffs.autoParry--;
             hurt(d, i, r.amount); stun(d, i);
             emit(d, j, 'parry', { damage: r.amount });
+            E.impact(def, 'enemy', def.player, 'parry');
         } else if (r.type === 'block') {
             hurt(d, j, r.amount);
             emit(d, j, 'block', { damage: r.amount });
+            E.impact(atk, 'enemy', r.a.origin, 'block');
             if (r.thorns) { hurt(d, i, r.thorns); emit(d, j, 'thorns', { damage: r.thorns }); }
         }
         // Paid after the hit is settled: the block that empties the bar still counts.
@@ -107,6 +110,7 @@ const spatialDuel = (() => {
         {
             hurt(d, j, r.amount); stun(d, j);
             emit(d, i, 'hit', { damage: r.amount, move: r.a.move, heavy: r.a.heavy, crit: r.crit, rear: r.rear });
+            E.impact(atk, 'enemy', r.a.origin, 'hit');
         }
     }
     function step(d, dt = .01) {
@@ -152,6 +156,8 @@ const spatialDuel = (() => {
             if (!p || ![p.x, p.y, p.hp, p.maxHp, p.facing, p.guardBar, p.timer, p.charge, b.time, b.elapsed].every(Number.isFinite) ||
                 p.maxHp !== C.player.maxHp || p.radius !== C.player.radius || p.hp < 0 || p.hp > p.maxHp ||
                 p.guardBar < 0 || p.guardBar > C.guardMax + 1e-9 || typeof p.guardLocked !== 'boolean' ||
+                (p.freeze != null && !(Number.isFinite(p.freeze) && p.freeze >= 0 && p.freeze <= 1)) ||
+                (p.push != null && ![p.push.x, p.push.y, p.push.t].every(Number.isFinite)) ||
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
                 p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','poise','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||

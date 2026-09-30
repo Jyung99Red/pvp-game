@@ -188,9 +188,17 @@ function phaseLog(b, seconds) {
 }
 test('taps walk the tap chain and a buffered tap starts the next move at the derive point', () => {
     const b = setup(); b.enemy.y = b.player.y - 60;
-    tap(b); const log = phaseLog(b, .2);
-    tap(b); log.push(...phaseLog(b, .3));
-    tap(b); log.push(...phaseLog(b, 2));
+    // Each tap goes in as soon as the previous move is in its recovery.
+    const log = [], until = done => {
+        for (let i = 0; i < 300 && !done(); i++) {
+            L.step(b, .01);
+            const key = `${b.player.phase}:${b.player.attack?.move ?? ''}`;
+            if (log.at(-1)?.key !== key) log.push({ key, time: b.time });
+        }
+    };
+    tap(b); until(() => b.player.phase === 'recover');
+    tap(b); until(() => b.player.phase === 'recover' && b.player.attack.move === 'backslash');
+    tap(b); until(() => b.player.phase === 'idle');
     assert.deepEqual(log.map(x => x.key).filter(k => k.startsWith('attack')), ['attack:slash', 'attack:backslash', 'attack:spin']);
     const swingEnd = log.find(x => x.key === 'recover:backslash').time;
     const next = log.find(x => x.key === 'attack:spin').time;
@@ -302,6 +310,40 @@ test('inside a combo a drag only turns; still dragging when the recovery ends wa
     assert.equal(c.player.attack.move, 'backslash'); assert.equal(c.player.attack.facing, facing);
 });
 
+// Impact: hitstop freezes both fighters, then the one struck is pushed away.
+const I = vm.runInContext('gameConfig.impact', context);
+test('a landed hit holds both fighters for the hitstop, then pushes the target away', () => {
+    const swingEnd = near => {
+        const b = setup(); if (near) b.enemy.y = b.player.y - 60;
+        b.enemy.phase = 'windup'; b.enemy.attack = L.config.sweep; b.enemy.timer = 5;
+        tap(b); const y = b.enemy.y;
+        for (let i = 0; i < 40 && b.player.phase !== 'recover'; i++) L.step(b, .01);
+        const time = b.time; advance(b, .4 - b.time);
+        return { time, enemyTimer: b.enemy.timer, b, y };
+    };
+    const miss = swingEnd(false), hit = swingEnd(true);
+    assert.ok(Math.abs(hit.time - miss.time - I.hitstop.hit) < .011, 'the swing waits out the hitstop');
+    assert.ok(Math.abs(hit.enemyTimer - miss.enemyTimer - I.hitstop.hit) < .011, 'so does the one struck');
+    advance(hit.b, I.knockbackSeconds + .05);
+    assert.ok(Math.abs(hit.y - hit.b.enemy.y - I.knockback.hit) < 1e-6, 'pushed straight back, away from the attacker');
+});
+test('knockback stops at a wall', () => {
+    const C = JSON.parse(JSON.stringify(L.config)); C.walls = [{ x: 150, y: 150, width: 60, height: 10 }];
+    const b = L.create(C); L.start(b); b.enemy.phase = 'recover'; b.enemy.timer = 100;
+    b.enemy.y = 160 + b.enemy.radius + 1; b.player.y = b.enemy.y + 60;
+    tap(b); advance(b, .6);
+    assert.equal(b.stats.hits, 1); assert.ok(b.enemy.y - b.enemy.radius >= 160 - 1e-6, 'the wall holds the body');
+});
+test('once the move has hit, the next press is buffered even though the swing is still held by hitstop', () => {
+    const b = setup(); b.enemy.y = b.player.y - 60;
+    tap(b); for (let i = 0; i < 30 && !b.stats.hits; i++) L.step(b, .01);
+    assert.equal(b.player.phase, 'swing'); assert.ok(b.player.freeze > 0);
+    tap(b); assert.equal(b.queuedCommand.type, 'tap', 'the hit is settled, so the tap counts');
+    const c = setup(); c.enemy.y = c.player.y - 60; tap(c); advance(c, .11);
+    assert.equal(c.player.phase, 'swing'); assert.equal(c.stats.hits, 0);
+    tap(c); assert.equal(c.queuedCommand, null, 'before the hit it is still dropped');
+});
+
 test('semantic commands cannot bypass charge, pause or finished state', () => {
     const b = setup();
     assert.equal(L.dispatch(b, { type: 'heavy' }), false);
@@ -386,8 +428,9 @@ test('hit preserves held left movement through stun; release during stun stops i
         L.press(b,'move'); L.drag(b,'move',60,0);
         advance(b,.02); assert.equal(b.player.phase,'stunned');
         assert.ok(b.move); assert.equal(b.action,null);
+        advance(b,.2); // hitstop, then the knockback runs out
         const x=b.player.x;
-        advance(b,.1); assert.equal(b.player.x,x);
+        advance(b,.1); assert.equal(b.player.phase,'stunned'); assert.equal(b.player.x,x);
         if (releaseDuringStun) L.release(b,'move');
         advance(b,.4);
         assert.equal(b.stats.attacks,0);

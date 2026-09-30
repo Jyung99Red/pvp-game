@@ -144,8 +144,9 @@ test('haste and full charge retain latest tuning; a charge fires only on release
 test('hit cancels only victims right input; held movement resumes and no tap leaks through stun',()=>{
  const t=setup({atk:10,maxHp:500});close(t);const b=t.d.sides[1];
  input(t,1,'press','move',[0,0]);input(t,1,'drag','move',[60,0,60,0]);
- light(t,0);step(t,.2);assert.equal(b.player.phase,'stunned');assert.equal(b.action,null);assert.equal(b.move.suppressTap,true);
- const x=b.player.x;step(t,.2);assert.equal(b.player.x,x);step(t,.3);assert.ok(b.player.x>x);
+ // Hit at ~.13s; hitstop, then the knockback runs out by ~.31s; the stun lasts to ~.54s.
+ light(t,0);step(t,.35);assert.equal(b.player.phase,'stunned');assert.equal(b.action,null);assert.equal(b.move.suppressTap,true);
+ const x=b.player.x;step(t,.1);assert.equal(b.player.x,x);step(t,.3);assert.ok(b.player.x>x);
  input(t,1,'release','move');assert.equal(b.stats.attacks,0);
 });
 test('snapshot restoration relinks queued held gestures and never aliases actors between matches',()=>{
@@ -201,6 +202,17 @@ test('a combo snapshot restores mid-swing, with a buffered tap, in guard and mid
   assert.equal(JSON.stringify(t.D.snapshot(restored)),JSON.stringify(t.D.snapshot(whole.d)),`cut at step ${cut}`);
  }
  assert.equal(whole.d.sides[0].player.attack.move,'cleave');
+});
+test('a PVP hit freezes both players and pushes the one struck, the same for host and guest',()=>{
+ for(const attacker of [0,1]){
+  const t=setup({atk:10,maxHp:500});close(t);const a=t.d.sides[attacker],v=t.d.sides[1-attacker];
+  const start={x:v.player.x,y:v.player.y};light(t,attacker);
+  for(let n=0;n<30&&v.player.hp===500;n++)t.D.step(t.d,.01);
+  assert.ok(a.player.freeze>0&&v.player.freeze>0,'both hold still');
+  step(t,.3);
+  const moved=Math.hypot(v.player.x-start.x,v.player.y-start.y),away=attacker===0?start.y-v.player.y:v.player.y-start.y;
+  assert.ok(Math.abs(moved-10)<1e-6&&away>9.99,`pushed ${moved} away from the attacker`);
+ }
 });
 test('snapshot validation rejects broken combo and guard-bar state',()=>{
  const t=setup({atk:20,maxHp:500});close(t);play(t,t.d,0,140);

@@ -230,9 +230,12 @@ const spatialEngine = (() => {
         if (channel === 'move') {
             if (b.move) return false;
             b.move = combatGestures.begin(b.time, 0, 0);
-            // Presses before the swing has ended are dropped, never buffered:
-            // mashing cannot speed a move up or grab the next one early.
-            b.move.suppressTap = !!(b.guard || b.skill) || ['attack', 'swing'].includes(p.phase); return true;
+            // Presses before the move's hit is settled are dropped, never
+            // buffered: mashing cannot speed a move up or grab the next one
+            // early. Settled means the swing has ended, or it has already hit --
+            // so hitstop lengthening a landed swing never eats the next input.
+            const early = p.phase === 'attack' || (p.phase === 'swing' && !p.attack?.hit);
+            b.move.suppressTap = !!(b.guard || b.skill) || early; return true;
         }
         if (b.guard || !['idle', 'charging', 'poise', 'attack', 'swing', 'recover', 'stunned'].includes(p.phase)) return false;
         if (p.guardLocked) { emit(b, 'guard_locked'); return false; }
@@ -423,6 +426,26 @@ const spatialEngine = (() => {
             emit(b, 'stagger');
         }
     }
+    // Simulation-side impact: both fighters hold still for a moment (hitstop),
+    // then the one struck is pushed away from `from`. `victim` is 'player' or
+    // 'enemy' of this battle; kind is 'hit', 'block' or 'parry'.
+    function impact(b, victim, from, kind) {
+        const I = gameConfig.impact, stop = I.hitstop[kind] || 0;
+        for (const body of [b.player, b.enemy]) if (body) body.freeze = Math.max(body.freeze || 0, stop);
+        const body = b[victim], distance = I.knockback[kind] || 0;
+        if (!body || distance <= 0) return;
+        const dx = body.x - from.x, dy = body.y - from.y, len = Math.hypot(dx, dy);
+        if (len < 1e-9) return;
+        const speed = distance / I.knockbackSeconds;
+        body.push = { x: dx / len * speed, y: dy / len * speed, t: I.knockbackSeconds };
+    }
+    // Knockback runs once hitstop is over, with ordinary collision.
+    function knock(b, body, other, dt) {
+        const k = body.push, span = Math.min(dt, k.t);
+        S.move(body, k.x, k.y, span, b.config, other, b.config.walls || []);
+        k.t -= span;
+        if (k.t <= 1e-9) body.push = null;
+    }
     function damage(b, side, amount) {
         const body = b[side], previous = body.hp;
         body.hp = Math.max(0, body.hp - amount);
@@ -441,6 +464,7 @@ const spatialEngine = (() => {
             damage(b, 'enemy', amount); b.stats.hits++;
             emit(b, 'hit', { side: 'player', move: a.move, heavy: a.heavy, damage: amount, crit });
             if (a.stagger > 0) stagger(b, a.stagger);
+            impact(b, 'enemy', a.origin, 'hit');
         }
         if (done) finishSwing(b);
     }
@@ -468,10 +492,12 @@ const spatialEngine = (() => {
                 const counter = C.formal ? defended(C.parryDamage, C.enemy.def) : C.parryDamage;
                 b.stats.parries++; damage(b, 'enemy', counter);
                 emit(b, 'parry', { damage: counter }); stagger(b, C.stagger.parry);
+                impact(b, 'enemy', p, 'parry');
             } else {
                 const amount = Math.round(incoming * C.blockMultiplier);
                 damage(b, 'player', amount); b.stats.blocks++;
                 emit(b, 'block', { damage: amount });
+                impact(b, 'player', origin, 'block');
                 if (C.guardThorns > 0) {
                     const reflected = defended(raw * C.guardThorns, C.enemy.def);
                     damage(b, 'enemy', reflected); emit(b, 'thorns', { damage: reflected });
@@ -480,9 +506,11 @@ const spatialEngine = (() => {
             // Paid after the hit is settled: the block that empties the bar still counts.
             if (!auto) spendGuard(b, guardCost(b, raw, parry));
         } else {
+            const wasGuarding = p.phase === 'guard';
             damage(b, 'player', incoming);
             cancelInputs(b, true); p.phase = 'stunned'; p.timer = C.hitStun; p.chain = null;
-            emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.phase === 'guard' });
+            emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && wasGuarding });
+            impact(b, 'player', origin, 'hit');
         }
     }
     function tickPlayer(b, dt, onSwing = resolveSwing) {
@@ -494,6 +522,20 @@ const spatialEngine = (() => {
         if (b.move?.mode === 'charge' && g?.mode !== 'charge') {
             b.move.mode = 'move'; b.move.suppressTap = true;
         }
+        // Hitstop holds the fighter still: no movement, turning or timers.
+        // Input bookkeeping, the guard bar and SP go on underneath it.
+        const frozen = p.freeze > 0;
+        if (frozen) p.freeze = Math.max(0, p.freeze - dt);
+        else if (p.push) knock(b, p, b.enemy, dt);
+        if (!frozen) tickMotion(b, dt);
+        tickGuardBar(b, dt);
+        // Solo walking must not bank skill points: they belong to a fight, and
+        // accruing them on the way there would start every encounter at max SP.
+        if (!C.solo) tickSkillPoints(b, dt);
+        if (!frozen) tickTimers(b, dt, onSwing);
+    }
+    function tickMotion(b, dt) {
+        const C = b.config, p = b.player, g = b.action;
         if (['move', 'charge'].includes(b.move?.mode) && ['idle', 'charging', 'guard_start', 'guard'].includes(p.phase)) {
             movePlayer(b, b.move.dx, b.move.dy, dt, p.phase === 'charging');
         }
@@ -520,10 +562,9 @@ const spatialEngine = (() => {
                 p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn') * (C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier));
             }
         }
-        tickGuardBar(b, dt);
-        // Solo walking must not bank skill points: they belong to a fight, and
-        // accruing them on the way there would start every encounter at max SP.
-        if (!C.solo) tickSkillPoints(b, dt);
+    }
+    function tickTimers(b, dt, onSwing) {
+        const C = b.config, p = b.player;
         // A guard pressed during the windup or swing goes up as soon as the swing ends.
         if (p.phase === 'recover' && b.queuedCommand?.type === 'guard' && b.guard === b.queuedCommand.gesture) raiseGuard(b);
         if (p.phase === 'swing') swingStep(b, dt, onSwing);
@@ -553,6 +594,8 @@ const spatialEngine = (() => {
         }
         const tempo = e.enraged ? C.ai.enrageSpdMult : 1;
         if (C.formal) e.ap = Math.min(C.enemyApMax, (e.ap ?? C.enemyApMax) + dt * C.enemyApRegen * tempo * b.apRateMult);
+        if (e.freeze > 0) { e.freeze = Math.max(0, e.freeze - dt); return; }
+        if (e.push) knock(b, e, p, dt);
         if (e.phase === 'dash') {
             const dash = e.attack.dash, speed = dash.speed * tempo;
             const remaining = Math.max(0, e.dashRemaining);
@@ -686,5 +729,5 @@ const spatialEngine = (() => {
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
         tickPlayer(b, dt, onSwing);
     }
-    return { advanceActor, finishSwing, pose, spendGuard, guardCost, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
+    return { advanceActor, finishSwing, pose, spendGuard, guardCost, impact, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();
