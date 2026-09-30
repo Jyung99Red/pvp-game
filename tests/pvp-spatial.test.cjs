@@ -95,13 +95,14 @@ test('both actors obey reach; same-step lethal attacks trade and settle once as 
  const n=t.d.events.length;step(t,1);assert.equal(t.d.events.length,n);
  assert.equal(t.D.input(t.d,0,{type:'skill',kind:'heal'}),false);
 });
-test('guard, rear hit and parry work identically for host and guest; AP belongs to defender',()=>{
+test('guard, rear hit and parry work identically for host and guest; the guard bar belongs to the defender',()=>{
  for(const defender of [0,1]) for(const mode of ['parry','block','rear']) {
   const t=setup({atk:100,maxHp:500,def:0});close(t);guard(t,defender);step(t,mode==='parry'?.17:.5);
   const b=t.d.sides[defender],a=t.d.sides[1-defender];if(mode==='rear')b.player.facing+=Math.PI;
-  const ap=b.player.ap; light(t,1-defender);step(t,.2);
-  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(b.player.ap<ap);assert.equal(b.skillPoints,0);}
-  else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.equal(b.player.ap,ap-1);}
+  // Cost = raw 30 / maxHp 500 * scale 2 * 100 = 12 for a block, half for a parry; the hold drains too.
+  const bar=b.player.guardBar, drain=b.player.phase==='guard_start'||b.player.phase==='guard'?2:0; light(t,1-defender);step(t,.2);
+  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(Math.abs(bar-b.player.guardBar-6-drain)<.11);assert.equal(b.skillPoints,0);assert.equal(a.player.guardBar,a.config.guardMax);}
+  else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.ok(Math.abs(bar-b.player.guardBar-12-drain)<.11);}
   else {assert.equal(b.player.phase,'stunned');assert.equal(b.player.hp,470);assert.equal(b.action,null);}
  }
 });
@@ -282,7 +283,7 @@ test('duplicate/wrong-session input and out-of-order snapshots cannot rewind sta
  const p=pair(),[h,g]=p.peers;
  const message={msg:'duel_input',version:h.logic.VERSION,battleId:h.logic.getCurrentBattleId(),seq:1,command:command('press','move',[0,0])};
  h.logic.receiveMessage(message);h.logic.receiveMessage({...message,seq:2,command:command('release','move')});
- const ap=h.state.pvpBattle.opponent.ap;h.logic.receiveMessage(message);assert.equal(h.state.pvpBattle.opponent.ap,ap);
+ assert.equal(h.state.pvpBattle.duel.sides[1].move,null);h.logic.receiveMessage(message);assert.equal(h.state.pvpBattle.duel.sides[1].move,null);
  h.logic.receiveMessage({...message,seq:3,battleId:'previous',command:{type:'cancel'}});assert.equal(h.state.pvpBattle.opponent.phase,'attack');
  p.frame(60,false);const snap=p.messages.find(x=>x.msg.msg==='duel_snapshot').msg;p.deliver();
  const hp=g.state.pvpBattle.self.hp;snap.snapshot.sides[1].player.hp=1;g.logic.receiveMessage(snap);assert.equal(g.state.pvpBattle.self.hp,hp);

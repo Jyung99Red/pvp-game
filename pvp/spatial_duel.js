@@ -76,14 +76,15 @@ const spatialDuel = (() => {
         if (a.hit || !S.contains(slice.shape, a.origin, slice.facing, def.player)) return result;
         if (S.segmentBlocked(a.origin, def.player, atk.config.walls)) return { ...result, blocked: true };
         const front = Math.abs(S.angleDelta(S.facing(def.player, a.origin), def.player.facing)) <= Math.PI / 2;
-        const guard = def.player.phase === 'guard' && front && def.player.ap >= gameConfig.resources.guardRequiredAp;
+        const guard = def.player.phase === 'guard' && front;
         const auto = def.buffs.autoParry > 0 && !guard;
         const parry = auto || (guard && d.time - def.player.guardReadyAt <= def.config.parryWindow);
         result.auto = auto;
-        if (parry) return { ...result, type: 'parry', amount: E.defended(def.config.parryDamage, atk.config.player.def) };
+        // Guard-bar cost uses the raw hit, before DEF and block reduction.
+        if (parry) return { ...result, type: 'parry', amount: E.defended(def.config.parryDamage, atk.config.player.def), cost: auto ? 0 : E.guardCost(def, a.damage, true) };
         const crit = !guard && d.random() < atk.config.critChance;
         const raw = a.damage * (crit ? gameConfig.damage.critMultiplier : 1), incoming = E.defended(raw, def.config.player.def);
-        return { ...result, type: guard ? 'block' : 'hit', crit, rear: !front,
+        return { ...result, type: guard ? 'block' : 'hit', crit, rear: !front, cost: guard ? E.guardCost(def, raw, false) : 0,
             amount: guard ? Math.round(incoming * def.config.blockMultiplier) : incoming,
             thorns: guard && def.config.guardThorns > 0 ? E.defended(raw * def.config.guardThorns, atk.config.player.def) : 0 };
     }
@@ -93,14 +94,17 @@ const spatialDuel = (() => {
         r.a.hit = true;
         if (r.type === 'parry') {
             if (r.auto) def.buffs.autoParry--;
-            else def.player.ap = Math.max(0, def.player.ap - def.config.parryCost);
             hurt(d, i, r.amount); stun(d, i);
             emit(d, j, 'parry', { damage: r.amount });
         } else if (r.type === 'block') {
-            def.player.ap = Math.max(0, def.player.ap - gameConfig.resources.blockApCost); hurt(d, j, r.amount);
+            hurt(d, j, r.amount);
             emit(d, j, 'block', { damage: r.amount });
             if (r.thorns) { hurt(d, i, r.thorns); emit(d, j, 'thorns', { damage: r.thorns }); }
-        } else {
+        }
+        // Paid after the hit is settled: the block that empties the bar still counts.
+        if (r.cost) { E.spendGuard(def, r.cost); events(d, j); }
+        if (['parry', 'block'].includes(r.type)) return;
+        {
             hurt(d, j, r.amount); stun(d, j);
             emit(d, i, 'hit', { damage: r.amount, move: r.a.move, heavy: r.a.heavy, crit: r.crit, rear: r.rear });
         }
@@ -145,8 +149,9 @@ const spatialDuel = (() => {
             !Array.isArray(snap.sides) || snap.sides.length !== 2) return false;
         return snap.sides.every((b, i) => {
             const p = b?.player, C = d.sides[i].config;
-            if (!p || ![p.x, p.y, p.hp, p.maxHp, p.facing, p.ap, p.timer, p.charge, b.time, b.elapsed].every(Number.isFinite) ||
-                p.maxHp !== C.player.maxHp || p.radius !== C.player.radius || p.hp < 0 || p.hp > p.maxHp || p.ap < 0 || p.ap > C.apMax ||
+            if (!p || ![p.x, p.y, p.hp, p.maxHp, p.facing, p.guardBar, p.timer, p.charge, b.time, b.elapsed].every(Number.isFinite) ||
+                p.maxHp !== C.player.maxHp || p.radius !== C.player.radius || p.hp < 0 || p.hp > p.maxHp ||
+                p.guardBar < 0 || p.guardBar > C.guardMax + 1e-9 || typeof p.guardLocked !== 'boolean' ||
                 p.x < p.radius || p.x > C.width - p.radius || p.y < p.radius || p.y > C.height - p.radius ||
                 p.timer < 0 || p.charge < 0 || p.charge > C.fullCharge || !['idle','charging','attack','swing','recover','stunned','guard_start','guard'].includes(p.phase) ||
                 !Number.isSafeInteger(b.inputVersion) || !Number.isSafeInteger(b.actionInputVersion) ||

@@ -69,10 +69,11 @@ const player = {
         return t;
     },
 
-    getApMax() {
-        let m = combatRules.apMax;
-        this.getEquippedEffects('ap_max_bonus').forEach(e => { m += e.value; });
-        return m;
+    // Summed share added to the guard bar's max (0.25 = +25%).
+    getGuardBarBonus() {
+        let bonus = 0;
+        this.getEquippedEffects('guard_bar_bonus').forEach(e => { bonus += e.value; });
+        return bonus;
     },
 
     getGuardDamageMultiplier() {

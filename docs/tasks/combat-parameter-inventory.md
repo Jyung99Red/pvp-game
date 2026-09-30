@@ -40,11 +40,8 @@
 | 玩家出生点 | `(180,275)`，半径 `12`，朝向 `-π/2` | 世界单位 |
 | 训练敌人出生点 | `(180,160)`，半径 `23`，HP `360/360`，朝向 `π/2` | 世界单位；正式 PVE 替换 HP/DEF |
 | `moveRamp` | `32` | CSS 像素；输入偏移超过死区后，速度倍率按 `(输入长度-12)/32` 线性爬升，最高 1 |
-| `apMax` | `5` | 玩家 AP 上限基础值；`spatialEngine.create` 初始满 AP |
-| `apRegen` | `.7` | 玩家 AP/秒（正式 PVE/PVP 会由 focus 重算） |
 | `guardStartup` | `.16` | 秒；进入 `guard` 前的起步时间 |
 | `parryWindow` | `.18` | 秒；正式 profile 由 `parryWindowBaseMs × judgmentMultiplier` 重算并最多 1 秒 |
-| `parryCost` | `.5` | AP；自动弹反不扣 AP，普通防御窗口内弹反扣此值；这是与弹反技能 SP 费用不同的两个参数 |
 | 防御转向基础值 | 使用 `playerTurn=8` | 弧度/秒；实际再乘 `motion.turn` 与 `guardTurnMultiplier` |
 | `blockMultiplier` | `.25` | 训练基础承伤倍率；正式 profile 为 `.4 × guardDamageMultiplier` |
 | `parryDamage` | `10` | 训练弹反原始反击伤害；正式为 `round(atk×.5)` |
@@ -89,13 +86,31 @@
 | 轻重击触发 | 中央 move 通道：短按松手轻击；先拖动则锁定普通移动直到松手；原位按住 `.25s` 后蓄力，拖动同时移动／转向，松手采用人物实际朝向；启用取消时，距本次落指点 `24px` 内松手取消 |
 | 蓄力移动/转向 | 移动倍率 `.6`；转向倍率 `.65`，再乘独立 `motion.chargeMove/chargeTurn` |
 | 防御启动/持续 | `guardStartup=.16s` 后生效；移动 ×`.3`、转向 ×`.5`；正面判定为防御者朝向攻击来源 ±90° |
-| AP回复 | 玩家只在 `idle/recover/stunned` 回 AP（`pve/spatial_engine.js:L330`）；正式 PVE/PVP `apRegen = 1000 / apRecoveryMs(专注)`，基础为 2 秒/点 |
+| 格挡条 | 见 2.4；玩家没有行动力，出招不耗资源 |
 | SP回复 | 活跃战斗中按模拟时间累计小数进度，基础 3 秒/点、上限 3；暂停/局外/结束不增长，满点不继续累计 |
 | 命中/攻击快照 | 命中使用出手时的 `origin/facing/shape`，挥动期间逐步判定、每招每个目标只中一次；被命中会清理右手输入但保留可恢复的移动按住状态 |
 
 攻击命中使用圆盘-扇区相交，目标半径计入范围和扇形边缘；移动使用小步碰撞，步长最多约为半径的一半，防止穿墙（`core/spatial_combat.js:L52-L127`）。
 
 `combatGestures.config.holdSeconds=.24` 及 `hold()` 仍保留在 `core/combat_gestures.js:L3-L10`，但当前输入链没有调用 `combatGestures.hold()`；`spatialEngine.press()` 对 action 会立即 dispatch charge（`pve/spatial_engine.js:L142-L149`）。因此 `.24s` 不是当前实际的起蓄延迟。武器仍共用 `light/heavy` 几何与 windup/recovery，但蓄力阈值已按 basic/heavy/light 模板派生。
+
+### 2.4 格挡条（初版，2026-09-30，取代玩家行动力）
+
+参数在 `gameConfig.guardBar`，PVE 与 PVP 共用。格挡条只作用于防御；出招不耗任何资源。
+
+| 参数 | 值 | 作用 |
+|---|---:|---|
+| `max` | `100` | 条上限；装备 `guard_bar_bonus` 按比例加成（战意戒指 +25%） |
+| `raiseCost` | `10` | 按下格挡（举盾）立刻扣，防止反复点防御碰弹反 |
+| `holdDrain` | `10/秒` | `guard_start` 与 `guard` 期间持续扣 |
+| `blockCostScale` | `2` | 挡下一击扣 `raw / maxHp × 2 × 100`；raw 是减伤前（防御公式与格挡减伤之前）的伤害，一击等于半管血时扣满一条 |
+| `parryCostRatio` | `.5` | 完美弹反（举盾后弹反窗口内挡下）扣同一击格挡费用的一半 |
+| `refillSeconds` | `3` | 不举盾时回复，约 3 秒从 0 回满；举盾期间不回复 |
+| `unlockRatio` | `.4` | 扣空后放下盾并锁定；回复到 40% 之前不能格挡，也就不能完美弹反 |
+
+- 格挡是唯一能打断动作的输入：后摇中按防御直接切到举盾；起手蓄力中按防御丢掉蓄力直接举盾。前摇和挥动不可打断，此时按防御会等到挥动结束立刻举盾；硬直中按防御等硬直结束。
+- 扣空那一击的格挡照常生效，结算后再放下盾。
+- 弹反技能（左方向）不变，只吃 SP，与格挡条无关。
 
 ## 3. 技能参数与资源流
 
@@ -106,7 +121,7 @@
 | `heal` 治疗 | 上 | `2` | 回复 `floor(maxHp×.3)`，不超过最大 HP | 满血时按下前和执行时都拒绝，不扣 SP、不替换已有队列 |
 | `haste` 疾速 | 右 | `2` | 持续 `10s`；蓄力进度速率 ×`1.5`；移动全姿态 ×`1.10`；非 charging 转向 ×`1.05` | 同 ID buff 刷新，不叠加；移动/转向仍再乘装备和临时 motion buff |
 | `full` 满蓄 | 下 | `2` | charging 时立即满蓄，否则设置一次性 `instantCharge` | 已有 `instantCharge` 时拒绝；一次性消费 |
-| `parry` 弹反 | 左 | `3` | 设置一次 `autoParry`，下一次符合条件的攻击自动弹反 | 已有 auto-parry 时拒绝；自动弹反不扣 AP；注意普通 guard parry 仍消耗 `.5 AP` |
+| `parry` 弹反 | 左 | `3` | 设置一次 `autoParry`，下一次符合条件的攻击自动弹反 | 已有 auto-parry 时拒绝；只吃 SP，与格挡条无关（空条锁定时也能生效） |
 
 技能按成功执行时扣 SP；锁定期间可排队，队列真正执行才扣点（`pve/pve_logic.js:L245-L251`、`pvp/spatial_duel.js:L26-L31`）。SP 不再因命中/弹反瞬间增加，而由共享引擎按时间生成；PVE 跨战斗保留点数与小数进度，PVP 快照同步进度且客机预测不生成可消费 SP。训练允许免费练习的“页面适配”规则不改变共享技能定义。
 
@@ -117,9 +132,8 @@
 | 派生值 | 当前公式 |
 |---|---|
 | 玩家 maxHP/HP/DEF | `maxHp=stats.maxHp`；`hp=clamp(currentHp,0,maxHp)`；`def=stats.def` |
-| 玩家 AP上限 | `floor(stats.apMax)`，至少 1 |
-| 玩家 AP回复 | `1000 / combatRules.apRecoveryMs(focus)`，即 `focus/20 AP/s` |
-| 玩家 SP回复 | `1000 / combatRules.spRecoveryMs(focus)`，即专注 10 时 `1/3 SP/s`；基础单位时间比 AP 慢 1.5 倍 |
+| 玩家格挡条上限 | `guardBar.max × (1 + guardBarBonus)`；`guardBarBonus` 来自装备 `guard_bar_bonus` 累加 |
+| 玩家 SP回复 | `1000 / combatRules.spRecoveryMs(focus)`，即专注 10 时 `1/3 SP/s`；focus 现在只管 SP |
 | 满蓄/伤害阈值 | 正式 `chargeThreshold=chargeThresholdMs/1000`，`fullCharge=chargeThreshold+2s`；训练 `fullCharge=1.6s` |
 | 正面弹反窗口 | `clamp(parryWindowBaseMs×judgmentMultiplier/1000,0,1)s` |
 | 正式格挡承伤 | `blockMultiplier=clamp(.4×guardDamageMultiplier,0,1)` |
@@ -129,7 +143,7 @@
 | 防御减伤 | `max(1, round(raw × (1 - def/(def + 17.5))))`，等价于 `max(1, round(raw × 17.5/(def+17.5)))`；DEF=17.5 时承受约 50% 原始伤害 |
 | 荆棘 | 格挡时 `defended(raw×guardThorns, 攻击者DEF)` 反射 |
 
-正式 PVE 敌人 AP 上限为 `max(1, ai.apMax||5)`；`ai.focus` 只通过 AP 回复公式生效，未参与移动速度、前摇、后摇或攻击范围（`pve/pve_profiles.js:L15-L17`、`pve/spatial_engine.js:L340-L377`）。
+正式 PVE 敌人保留隐藏 AP，作为出招频率的节流阀：上限 `max(1, ai.apMax||enemyDefaults.apMax)`，每次出招扣 `enemyDefaults.attackApCost=1`，回复 `1000 / combatRules.enemyApRecoveryMs(focus)`（基础 `enemyDefaults.apRecoveryMs=2000ms/点`）；`ai.focus` 只通过这个回复公式生效，未参与移动速度、前摇、后摇或攻击范围（`pve/pve_profiles.js:L15-L17`、`pve/spatial_engine.js:L340-L377`）。
 
 ## 5. PVE 敌人基础属性与动作总表
 
@@ -203,18 +217,18 @@ Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每
 | 怪物/机制 | 参数 | 当前行为 |
 |---|---|---|
 | 古龙 `burning_ground` | `startMs=20000`、`intervalMs=3000`、`pct=.03` | 20s 后播报；首个伤害落在约 23s；之后每 3s 双方各受自身 maxHP 的 3%（至少 1），`core/arena_effects.js` |
-| 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后双方 AP 回复 ×2，过渡帧播报一次，`core/arena_effects.js` |
+| 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后敌人隐藏 AP 回复 ×2（玩家已无 AP），过渡帧播报一次，`core/arena_effects.js`；待怪物侧讨论后重做 |
 | PVE arena 结算 | — | 只在 `pve_logic` 驱动；环境伤害与同一 10ms 步中的攻击一起结算，双方同时死亡判玩家败北；当前 PVP 不使用 arena |
 | 金币 | `adventure.goldPerExp=.6` | `goldReward=round(exp×.6)`，胜利当场入账；没有 run 结算，死亡也不清空已得金币（`pve/pve_logic.js` 的 `_onVictory`） |
 | 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。 |
 
-## 6. PVP 固定规则（当前 v10 / rule v7）
+## 6. PVP 固定规则（当前 v10 / rule v8）
 
 ### 6.1 档案与开局
 
-公平档案在 `core/spatial_profiles.js:L7-L18`：`level=1, maxHp=120, atk=30, def=8, focus=10, insight=10, apMax=5, critChance=0, guardThorns=0, chargeThresholdMs=300ms, parryWindowBaseMs=180ms, judgmentMultiplier=1, guardDamageMultiplier=1`，四个 motion 倍率均为 1。养成对战使用本地玩家/对手 profile；双方 profile 通过 normalize 限制范围并在开战时冻结/复制。
+公平档案在 `core/spatial_profiles.js:L7-L18`：`level=1, maxHp=120, atk=30, def=8, focus=10, insight=10, guardBarBonus=0, critChance=0, guardThorns=0, chargeThresholdMs=300ms, parryWindowBaseMs=180ms, judgmentMultiplier=1, guardDamageMultiplier=1`，四个 motion 倍率均为 1。养成对战使用本地玩家/对手 profile；双方 profile 通过 normalize 限制范围并在开战时冻结/复制。
 
-PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_duel.js:L9-L23`）。技能仍是共享定义，四技能费用为 `heal 2 / haste 2 / full 2 / parry 3 SP`。Settings 可以改个人 `cancelAtCenter/autoFace`，不会改变公平档案数值。
+PVP 建局时两边从满 HP、满格挡条开始，`skillPoints=0`（`pvp/spatial_duel.js:L9-L23`）。技能仍是共享定义，四技能费用为 `heal 2 / haste 2 / full 2 / parry 3 SP`。Settings 可以改个人 `cancelAtCenter/autoFace`，不会改变公平档案数值。
 
 ### 6.2 场地、墙体、可见性与同时命中
 
@@ -233,25 +247,25 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 
 ### 6.3 PVP 判定和资源效果
 
-当前 `judge()` 顺序是：扇区命中 → 墙体阻断则 miss → 防守者正面 guard/AP 条件 → auto parry 或 guard 窗口内 parry → crit → block/hit（`pvp/spatial_duel.js:L73-L88`）。
+当前 `judge()` 顺序是：扇区命中 → 墙体阻断则 miss → 防守者正面 guard（格挡条未锁定才可能在 guard）→ auto parry 或 guard 窗口内 parry → crit → block/hit（`pvp/spatial_duel.js:L73-L88`）。
 
 | 结果 | 条件 | 效果 |
 |---|---|---|
-| miss | 几何未命中或中心线被墙阻断 | 此结算不再改变 HP/AP/SP；起手已花掉的 1 AP 不退还；阻断会带 `blocked=true` |
+| miss | 本步扫过的角度区间未命中或中心线被墙阻断 | 不改变 HP/格挡条/SP；整招挥完仍未命中才发 miss，阻断会带 `blocked=true` |
 | auto parry | 防守者有 `autoParry` 且没有同时满足普通 guard | 消费一次 autoParry；攻击者受到 `defended(parryDamage,攻击者DEF)`；攻击者硬直 `hitStun` |
-| 普通 parry | 正面 guard、AP≥1 且 `time-guardReadyAt ≤ parryWindow` | 扣防守者 `parryCost=.5 AP`；攻击者受弹反伤害并硬直 |
-| block | 正面 guard、AP≥1，但超出 parry window | 扣 1 AP；承伤 `round(defended(raw,def)×blockMultiplier)`；若有荆棘，攻击者受反伤 |
+| 普通 parry | 正面 guard 且 `time-guardReadyAt ≤ parryWindow` | 防守者格挡条扣同一击格挡费用的 `parryCostRatio=.5`；攻击者受弹反伤害并硬直 |
+| block | 正面 guard，但超出 parry window | 格挡条扣 `raw/maxHp×2×100`；承伤 `round(defended(raw,def)×blockMultiplier)`；若有荆棘，攻击者受反伤；扣空则放下盾并锁定 |
 | hit | 其余几何命中 | 承伤 `defended(raw,def)`；防守者硬直 `hitStun=.35s` |
 | crit | 非 guard 的普通 hit；由攻击者 `critChance` 随机判定 | raw ×1.5 后再过防御公式；公平模式 critChance=0 |
 
-现行共享默认值与 AP/SP 回复位于 `core/combat_rules.js`；PVE 空间判定由 `spatial_engine` 处理，PVP 同步判定由 `spatial_duel` 处理。
+现行共享默认值与 SP 回复（以及敌人隐藏 AP 回复）位于 `core/combat_rules.js`；格挡条规则在 `spatial_engine` 的 `spendGuard/guardCost`；PVE 空间判定由 `spatial_engine` 处理，PVP 同步判定由 `spatial_duel` 处理。
 
 ### 6.4 网络和版本固定值
 
 | 参数 | 当前值/规则 | 路径 |
 |---|---|---|
 | protocol `VERSION` | `10` | `pvp/pvp_logic.js`；因防御公式变化升级 |
-| `RULE_VERSION` | `7` | `pvp/pvp_logic.js`；连招招式表与挥动判定上线时升级 |
+| `RULE_VERSION` | `8` | `pvp/pvp_logic.js`；7：连招招式表与挥动判定；8：AP 换格挡条（档案字段 `apMax` → `guardBarBonus`） |
 | 场地校验 | 每个 start/rematch/snapshot 校验 `pvp-l-v1` + version 1 | `pvp/pvp_logic.js:L14-L16,L179-L183` |
 | 开局倒计时 | `1.5s` | `pvp/pvp_logic.js:L73-L81` |
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
@@ -270,23 +284,23 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | 铁剑 | atk +22 | `chargeOffsetMs=+50` | 蓄力阈值 350ms（基准 300 + 50） |
 | 木盾 | def +6 | `guard_damage_reduce=.25` | 正式格挡倍率乘 `.75` |
 | 铁盾 | def +24 | `guard_damage_reduce=.40`、`parry_window_ms=150` | 正式格挡倍率乘 `.60`；第一件窗口效果覆盖基础 |
-| 疾速戒指 | focus +3 | 无 | 专注提高，AP 与 SP 都回复更快 |
+| 疾速戒指 | focus +3 | 无 | 专注提高，SP 回复更快 |
 | 布甲 | def +3 | 无 | `game_config.js` → `content.items.wooden_armor` |
 | 铁甲 | def +20 | 无 | `game_config.js` → `content.items.iron_armor` |
 | 智慧之环 | insight +10 | 无 | 提高心眼；窗口倍率由 `gameConfig.progression.insight` 控制 |
 | 刺客短刃 | atk +14 | `chargeOffsetMs=-20`、`crit_chance=.20` | 蓄力阈值 280ms；暴击率另行累加 |
 | 荆棘甲 | def +10 | `guard_thorns=.5` | 格挡成功时反射 raw 的 50%，再过攻击者 DEF |
-| 战意戒指 | 无 | `ap_max_bonus=1` | AP 上限基础 5→6 |
+| 战意戒指 | 无 | `guard_bar_bonus=.25` | 格挡条上限 100→125（初版，原行动力上限 +1 已作废） |
 
 效果注册表还定义了 `spatial_move_speed`、`spatial_turn_speed`、`charge_move_speed`、`charge_turn_speed` 四种运动效果（`core/effects.js:L13-L28`），但当前 `content.items` 没有装备实例使用它们；它们只有在以后加入 item effect 后才会进入 `player.getSpatialMotion()`（`core/player.js:L62-L68`）。
 
-装备的 per-item timing 效果不是相加：按 `left → right → armor → accessory`，第一件带该 type 的装备胜出；crit/thorns/AP 上限等效果则分别累加（`core/player.js:L22-L57`）。PVP 公平模式完全不读取这些养成效果；养成模式才将其映射到本地 profile。
+装备的 per-item timing 效果不是相加：按 `left → right → armor → accessory`，第一件带该 type 的装备胜出；crit/thorns/格挡条上限等效果则分别累加（`core/player.js:L22-L57`）。PVP 公平模式完全不读取这些养成效果；养成模式才将其映射到本地 profile。
 
 ## 8. 设计边界
 
-- PVP 当前协议 v10 / rule v7，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
-- `comboDelayMs` 只读取首项；`ai.focus` 只改变 AP 回复。
-- 技能弹反消耗 3 SP，普通操作弹反消耗 .5 AP，两者独立。
+- PVP 当前协议 v10 / rule v8，L 墙场地 570×630、共享相机 350×390；空间拼刀待实现。
+- `comboDelayMs` 只读取首项；`ai.focus` 只改变敌人隐藏 AP 的回复。
+- 技能弹反消耗 3 SP，普通操作弹反扣格挡条，两者独立。
 - 冲刺预警为窄路径提示，实际扫掠半宽为 dash.width + enemy.radius，接触判定再计入 player.radius。
 
 ## 9. 2026-09-13 实施覆盖（以本节覆盖前文冲突描述）
@@ -296,7 +310,7 @@ PVP 建局时两边从满 HP、满 AP 开始，`skillPoints=0`（`pvp/spatial_du
 | 项目 | 当前实现 |
 |---|---|
 | 心眼 | 使用 `insight` 属性；通过 `getInsight()` / `getParryWindowMultiplier()` 作为弹反窗口钩子，当前为 `max(.5, 1 + (心眼-10)×.03)`，数值可后续单独调整 |
-| 专注 | 使用 `focus` 属性；通过 `getFocus()` 同时影响 AP 和 SP 回复。基础 AP 为 2000ms/点，SP 为 3000ms/点，因此 SP 默认慢 1.5 倍 |
+| 专注 | 使用 `focus` 属性；通过 `getFocus()` 只影响 SP 回复（3000ms/点）。玩家 AP 已于 2026-09-30 取消 |
 | SP | 战斗模拟时间按小数进度回复，上限 3；暂停、局外和结束不增长；移除命中/弹反整点奖励；PVE 跨战斗保留小数，PVP 客机不自行生成可消费 SP |
 | 移速 | `motion.move` 与 `spatial_move_speed` 已是独立移动倍率钩子；目前没有装备实例使用该词条，未把专注混入移动速度 |
 | 武器蓄力起点 | 基准 `resources.chargeThresholdMs=300ms` 加武器自己的 `chargeOffsetMs`，再按 `chargeThresholdRangeMs={min:200,max:450}` 夹紧（`core/combat_rules.js` 的 `weaponChargeThresholdMs()`）：木剑 `0`→300ms、铁剑 `+50`→350ms、刺客短刃 `-20`→280ms。离散的 light/heavy/basic 模板已移除，新增武器只需一个数字；强化只作用于 atk/def，不会改变该阈值，profile 仍统一使用 `chargeThresholdMs`，三把武器数值未变所以协议/规则版本不需要升级 |

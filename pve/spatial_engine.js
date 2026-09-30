@@ -5,14 +5,14 @@ const spatialEngine = (() => {
     const S = spatialCombat;
     function validate(C) {
         const positive = v => Number.isFinite(v) && v > 0;
-        if (![C.width, C.height, C.fullCharge, C.apMax].every(positive)) throw new Error('Invalid arena or combat limits');
+        if (![C.width, C.height, C.fullCharge, C.guardMax ?? gameConfig.guardBar.max].every(positive)) throw new Error('Invalid arena or combat limits');
         if (C.walls && (!Array.isArray(C.walls) || C.walls.some(w => !w || ![w.x, w.y, w.width, w.height].every(Number.isFinite) ||
             w.width <= 0 || w.height <= 0 || w.x < 0 || w.y < 0 || w.x + w.width > C.width || w.y + w.height > C.height))) throw new Error('Invalid arena walls');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
         if (![C.playerTurn ?? gameConfig.training.playerTurn, C.chargeMoveMultiplier ?? gameConfig.training.chargeMoveMultiplier, C.chargeTurnMultiplier ?? gameConfig.training.chargeTurnMultiplier, C.guardMoveMultiplier ?? gameConfig.training.guardMoveMultiplier, C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         validateCombo(C.combo);
         if (!nonnegative(C.atk)) throw new Error('Invalid attack');
-        if (![C.guardStartup, C.parryWindow, C.apRegen, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage, C.parryCost].every(nonnegative) ||
+        if (![C.guardStartup, C.parryWindow, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage].every(nonnegative) ||
             !positive(C.moveRamp) || !positive(C.stagger.threshold) || !nonnegative(C.stagger.duration)) throw new Error('Invalid combat parameters');
         if (C.formal && !C.pvp && !C.solo && (!C.actions?.length || ![C.critChance, C.guardThorns, C.enemyApRegen].every(nonnegative) ||
             !positive(C.enemyApMax) || !nonnegative(C.chargeThreshold) || C.fullCharge < C.chargeThreshold + gameConfig.damage.fullChargeAfterThreshold - 1e-9)) throw new Error('Invalid profile');
@@ -60,12 +60,13 @@ const spatialEngine = (() => {
         // validating a caller's config never moves their actors -- b.player and
         // b.enemy below are the authoritative post-separation positions.
         if (!C.solo && !S.separate(C.player, C.enemy, C, C.walls || [])) throw new Error('Overlapping spawns');
+        C.guardMax ??= gameConfig.guardBar.max;
         C.skills = spatialData.skillRules(C.skillMode || (C.pvp ? 'fair' : 'pve'), C.skillOverrides || {});
         return {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
             skillPoints: Math.max(0, Math.min(C.skillPointMax ?? gameConfig.training.skillPointMax, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
-            player: { ...C.player, ap: C.apMax, phase: 'idle', timer: 0, charge: 0, chain: null },
+            player: { ...C.player, guardBar: C.guardMax, guardLocked: false, phase: 'idle', timer: 0, charge: 0, chain: null },
             enemy: C.solo ? null : { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
             controls: { ...gameConfig.controls, ...C.controls },
             move: null, action: null, guard: null, skill: null, queuedCommand: null, motionBuffs: [], events: [], inputVersion: 0, actionInputVersion: 0,
@@ -80,7 +81,7 @@ const spatialEngine = (() => {
         const C = b.config;
         if (!canAct(b) || !command) return false;
         const p = b.player;
-        if (command.type === 'charge' && p.phase === 'idle' && p.ap >= gameConfig.resources.attackApCost && b.action?.mode === 'charge') {
+        if (command.type === 'charge' && p.phase === 'idle' && b.action?.mode === 'charge') {
             p.phase = 'charging'; p.charge = Math.min(C.fullCharge, b.time - b.action.start);
             p.chargeUpdatedAt = b.time;
             if (b.buffs.instantCharge) { p.charge = C.fullCharge; b.buffs.instantCharge = false; }
@@ -129,9 +130,8 @@ const spatialEngine = (() => {
             b.action.queued = false;
             if (b.action.mode === 'charge' && !dispatch(b, { type: 'charge' })) b.action.mode = 'blocked';
         } else if (q.type === 'guard' && b.guard === q.gesture) {
-            b.guard.queued = false;
-            if (p.ap >= gameConfig.resources.guardRequiredAp) { p.phase = 'guard_start'; p.timer = b.config.guardStartup; }
-            else { b.guard = null; emit(b, 'ap_insufficient'); }
+            if (p.guardLocked) { b.guard = null; emit(b, 'guard_locked'); }
+            else raiseGuard(b);
         } else if (q.type === 'tap') attack(b, derive(b, 'tap', q.at));
         else if (q.type === 'skill') emit(b, 'skill_ready', { kind: q.kind });
         else if (q.type === 'heavy') {
@@ -201,7 +201,6 @@ const spatialEngine = (() => {
         if (locked(b)) { b.action.queued = true; b.queuedCommand = { type: 'input', gesture: b.action }; }
         else if (!dispatch(b, command)) {
             b.action = null; b.move.mode = 'move'; b.move.suppressTap = true;
-            emit(b, 'ap_insufficient');
         }
     }
     function press(b, channel, cx = 0, cy = 0) {
@@ -220,14 +219,49 @@ const spatialEngine = (() => {
             b.move = combatGestures.begin(b.time, 0, 0);
             b.move.suppressTap = !!(b.guard || b.skill); return true;
         }
-        if (b.guard || (p.phase !== 'idle' && !locked(b)) || (!locked(b) && p.ap < gameConfig.resources.guardRequiredAp)) return false;
-        // Guard replaces a queued charge, but active charging must be released first.
+        if (b.guard || !['idle', 'charging', 'attack', 'swing', 'recover', 'stunned'].includes(p.phase)) return false;
+        if (p.guardLocked) { emit(b, 'guard_locked'); return false; }
+        // Guard is the one input that interrupts: it drops a charge (active or
+        // queued) and cuts a recovery. Windup and swing always finish, so a
+        // guard pressed there waits for the swing's end; a stun is waited out.
         if (b.action) b.action.mode = 'blocked';
+        if (p.phase === 'charging') { p.phase = 'idle'; p.charge = 0; }
         if (b.move) b.move.suppressTap = true;
         b.guard = { dx: 0, dy: 0, cx, cy };
-        if (locked(b)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
-        p.phase = 'guard_start'; p.timer = b.config.guardStartup;
+        if (['attack', 'swing', 'stunned'].includes(p.phase)) { b.guard.queued = true; b.queuedCommand = { type: 'guard', gesture: b.guard }; return true; }
+        raiseGuard(b);
         return true;
+    }
+    function raiseGuard(b) {
+        const p = b.player;
+        b.queuedCommand = null; b.guard.queued = false; p.chain = null;
+        p.phase = 'guard_start'; p.timer = b.config.guardStartup;
+        spendGuard(b, gameConfig.guardBar.raiseCost);
+    }
+    // Every guard cost goes through here. An empty bar drops the guard and
+    // locks it until the bar refills to unlockRatio.
+    function spendGuard(b, amount) {
+        const p = b.player;
+        p.guardBar = Math.max(0, p.guardBar - amount);
+        if (p.guardBar > 1e-9) return;
+        p.guardBar = 0; p.guardLocked = true;
+        if (['guard_start', 'guard'].includes(p.phase)) p.phase = 'idle';
+        if (b.queuedCommand?.type === 'guard') b.queuedCommand = null;
+        b.guard = null;
+        emit(b, 'guard_broken');
+    }
+    // Cost of defending one hit: `raw` is before DEF and block reduction; a
+    // perfect parry pays parryCostRatio of what blocking it would.
+    function guardCost(b, raw, parry) {
+        const G = gameConfig.guardBar;
+        return raw / b.player.maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
+    }
+    function tickGuardBar(b, dt) {
+        const p = b.player, G = gameConfig.guardBar, max = b.config.guardMax;
+        if (['guard_start', 'guard'].includes(p.phase)) { spendGuard(b, G.holdDrain * dt); return; }
+        if (p.guardBar >= max) return;
+        p.guardBar = Math.min(max, p.guardBar + max / G.refillSeconds * dt);
+        if (p.guardLocked && p.guardBar >= max * G.unlockRatio - 1e-9) { p.guardLocked = false; emit(b, 'guard_ready'); }
     }
     function drag(b, channel, dx, dy, cx = dx, cy = dy) {
         if (!canAct(b) || ![dx, dy, cx, cy].every(Number.isFinite)) return;
@@ -253,8 +287,6 @@ const spatialEngine = (() => {
     // origin and facing are fixed here; nothing during the move changes them.
     function attack(b, id) {
         const C = b.config, p = b.player, m = moveOf(b, id);
-        if (p.ap < gameConfig.resources.attackApCost) { emit(b, 'ap_insufficient'); p.phase = 'idle'; p.charge = 0; p.chain = null; return; }
-        p.ap -= gameConfig.resources.attackApCost;
         const charged = m.chargeRatio != null;
         p.attack = {
             move: id, shape: charged ? heavyShape(b) : { kind: 'sector', range: m.range, arc: m.arc }, sweep: m.sweep,
@@ -402,12 +434,11 @@ const spatialEngine = (() => {
             b.stats.dodges++; emit(b, 'miss', { side: 'enemy' }); return;
         }
         const front = Math.abs(S.angleDelta(S.facing(p, e), p.facing)) <= Math.PI / 2;
-        const guarding = p.phase === 'guard' && front && p.ap >= gameConfig.resources.guardRequiredAp;
+        const guarding = p.phase === 'guard' && front;
         const auto = b.buffs.autoParry > 0 && !guarding;
         if (auto || guarding) {
             const parry = auto || b.time - p.guardReadyAt <= C.parryWindow;
             if (auto) b.buffs.autoParry--;
-            if (!auto) p.ap = Math.max(0, p.ap - (parry ? C.parryCost : gameConfig.resources.blockApCost));
             if (parry) {
                 const counter = C.formal ? defended(C.parryDamage, C.enemy.def) : C.parryDamage;
                 b.stats.parries++; damage(b, 'enemy', counter);
@@ -421,10 +452,12 @@ const spatialEngine = (() => {
                     damage(b, 'enemy', reflected); emit(b, 'thorns', { damage: reflected });
                 }
             }
+            // Paid after the hit is settled: the block that empties the bar still counts.
+            if (!auto) spendGuard(b, guardCost(b, raw, parry));
         } else {
             damage(b, 'player', incoming);
             cancelInputs(b, true); p.phase = 'stunned'; p.timer = C.hitStun; p.chain = null;
-            emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.ap >= gameConfig.resources.guardRequiredAp });
+            emit(b, 'hit', { side: 'enemy', damage: incoming, rear: !front && p.phase === 'guard' });
         }
     }
     function tickPlayer(b, dt, onSwing = resolveSwing) {
@@ -456,10 +489,12 @@ const spatialEngine = (() => {
                 p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn') * (C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier));
             }
         }
-        if (['idle', 'recover', 'stunned'].includes(p.phase)) p.ap = Math.min(C.apMax, p.ap + dt * C.apRegen * b.apRateMult);
+        tickGuardBar(b, dt);
         // Solo walking must not bank skill points: they belong to a fight, and
         // accruing them on the way there would start every encounter at max SP.
         if (!C.solo) tickSkillPoints(b, dt);
+        // A guard pressed during the windup or swing goes up as soon as the swing ends.
+        if (p.phase === 'recover' && b.queuedCommand?.type === 'guard' && b.guard === b.queuedCommand.gesture) raiseGuard(b);
         if (p.phase === 'swing') swingStep(b, dt, onSwing);
         else if (p.timer > 0 || p.phase === 'attack') {
             p.timer = Math.max(0, p.timer - dt);
@@ -508,9 +543,9 @@ const spatialEngine = (() => {
                 const a = S.facing(e, p);
                 S.move(e, Math.cos(a) * C.ai.speed, Math.sin(a) * C.ai.speed, dt, C, p);
             }
-            if (e.timer === 0 && d < C.ai.attackDistance && (!C.formal || e.ap >= gameConfig.resources.attackApCost)) {
+            if (e.timer === 0 && d < C.ai.attackDistance && (!C.formal || e.ap >= gameConfig.enemyDefaults.attackApCost)) {
                 e.attack = C.actions ? C.actions[e.sequence++ % C.actions.length] : e.sequence++ % 3 === 2 ? C.stomp : C.sweep;
-                if (C.formal) e.ap -= gameConfig.resources.attackApCost;
+                if (C.formal) e.ap -= gameConfig.enemyDefaults.attackApCost;
                 e.phase = 'windup'; e.timer = e.attack.windup;
                 e.facing = S.facing(e, p);
             }
@@ -609,5 +644,5 @@ const spatialEngine = (() => {
         b.motionBuffs = b.motionBuffs.filter(buff => buff.until > b.time);
         tickPlayer(b, dt, onSwing);
     }
-    return { advanceActor, finishSwing, pose, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
+    return { advanceActor, finishSwing, pose, spendGuard, guardCost, defended, heavyShape, setMotionBuff, queueSkill, useSkill, validate, heal, environment, settle: finish, dispatch, drainEvents, config: C, create, start, pause, press, drag, release, cancelInputs, step, armed };
 })();

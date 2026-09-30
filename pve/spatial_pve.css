@@ -63,10 +63,10 @@
 :is(#view-adventure, #view-pvp-battle) :is(#adv-s-clock, #pvp-s-clock) { color: var(--muted); font-variant-numeric: tabular-nums; }
 :is(#view-adventure, #view-pvp-battle) .legend { display: none; }
 :is(#view-adventure, #view-pvp-battle) .feedback { position: absolute; bottom: calc(var(--bottom) + 214px); left: 50%; transform: translateX(-50%); width: min(340px, calc(100% - 24px)); pointer-events: none; text-shadow: 0 1px 5px #000; }
-:is(#view-adventure, #view-pvp-battle) .ap-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
-:is(#view-adventure, #view-pvp-battle) :is(#adv-s-ap, #pvp-s-ap) { display: flex; flex-wrap: wrap; gap: 3px; max-width: 140px; }
-:is(#view-adventure, #view-pvp-battle) :is(#adv-s-ap, #pvp-s-ap) i { width: 13px; height: 4px; border-radius: 2px; background: #3c5157; }
-:is(#view-adventure, #view-pvp-battle) :is(#adv-s-ap, #pvp-s-ap) i.full { background: var(--gold); }
+:is(#view-adventure, #view-pvp-battle) .guard-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); }
+:is(#view-adventure, #view-pvp-battle) .guard-bar { width: 96px; height: 5px; border-radius: 3px; background: #3c5157; overflow: hidden; }
+:is(#view-adventure, #view-pvp-battle) .guard-bar i { display: block; height: 100%; width: 100%; background: #8dbdef; transition: background .2s; }
+:is(#view-adventure, #view-pvp-battle) .guard-bar.locked i { background: #c9705f; }
 :is(#view-adventure, #view-pvp-battle) :is(#adv-s-player-state, #pvp-s-player-state) { margin-left: auto; color: var(--cyan); }
 :is(#view-adventure, #view-pvp-battle) .charge-track { height: 3px; background: #26363980; margin-top: 6px; border-radius: 3px; overflow: hidden; }
 :is(#view-adventure, #view-pvp-battle) :is(#adv-s-charge-fill, #pvp-s-charge-fill) { height: 100%; width: 0; background: var(--gold); }

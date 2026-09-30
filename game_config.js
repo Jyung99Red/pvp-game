@@ -28,8 +28,7 @@ const gameConfig = (() => {
         // 2. Formal PVE/PVP resource rules and damage coefficients.
         resources: {
             focusBaseline: 10, minFocus: 0.1,
-            apMax: 5, apRecoveryMs: 2000, spRecoveryMs: 3000,
-            attackApCost: 1, guardRequiredAp: 1, blockApCost: 1,
+            spRecoveryMs: 3000, // Focus only drives SP; attacks cost no resource.
             // Charge-damage start (ms) = chargeThresholdMs + the equipped
             // weapon's own chargeOffsetMs, clamped to the range below. A weapon
             // without chargeOffsetMs behaves as offset 0. Positive = the damage
@@ -39,6 +38,14 @@ const gameConfig = (() => {
             chargeThresholdRangeMs: { min: 200, max: 450 },
             parryWindowMs: 200,
         },
+        // Guard bar (first version), shared by PVE and PVP; units are bar points.
+        // Only guarding spends it. blockCostScale: a blocked hit costs
+        // raw / maxHp * blockCostScale * max, raw being the hit before DEF and
+        // block reduction, so a hit worth half the defender's max HP empties a
+        // full bar. After emptying, guard stays locked until the bar refills
+        // to unlockRatio. Equipment can raise `max`; costs stay on the base max.
+        guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 2, parryCostRatio: 0.5,
+            refillSeconds: 3, unlockRatio: 0.4 },
         damage: {
             // Damage = max(1, round(raw * (1 - DEF / (DEF + defenseConstant)))).
             // DEF equal to defenseConstant halves incoming raw damage.
@@ -78,13 +85,11 @@ const gameConfig = (() => {
             enemy: { x: 180, y: 160, radius: 23, facing: Math.PI / 2, hp: 360, maxHp: 360 },
             ai: { initialDelay: 0.8, delay: 0.45, speed: 47, stopDistance: 88, attackDistance: 150, turn: 3, trackingTurn: 1.6 },
             stagger: { threshold: 3, duration: 1.5, parry: 1 }, // Moves carry their own stagger points.
-            apRegen: 0.7, // Training AP/second; formal rates come from focus.
             moveRamp: 32, // CSS pixels beyond the dead zone to reach full speed.
             hitStun: 0.35, // Shared hit stun duration.
             blockMultiplier: 0.25, parryDamage: 10, // Training only; formal values use damage coefficients.
-            parryCost: 0.5, // Shared AP cost for manual parry; the skill costs SP instead.
             guardStartup: 0.16, // Shared delay before guard becomes active.
-            parryWindow: 0.18, apMax: 5, // Training defaults; formal profiles override both.
+            parryWindow: 0.18, // Training default; formal profiles override it.
             skillPointMax: 3, // SP cap shared by training, PVE and PVP.
             spRegen: 1 / 3, // Training SP/second; formal rates come from focus.
             atk: 60, // Training attack; move damage = atk * move ratio. Formal profiles use the stat.
@@ -145,7 +150,7 @@ const gameConfig = (() => {
             ]
         },
         fairProfile: {
-            level: 1, maxHp: 120, atk: 30, def: 8, focus: 10, insight: 10, apMax: 5,
+            level: 1, maxHp: 120, atk: 30, def: 8, focus: 10, insight: 10, guardBarBonus: 0,
             critChance: 0, guardThorns: 0, chargeThresholdMs: 300, parryWindowBaseMs: 180,
             judgmentMultiplier: 1, guardDamageMultiplier: 1,
             motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 }
@@ -171,7 +176,9 @@ const gameConfig = (() => {
             // Bosses never do: `progress.defeatedBosses` is what keeps them down.
             monsterRespawnSeconds: 60
         },
-        enemyDefaults: { apMax: 5, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
+        // Enemies keep a hidden AP pool that paces how often they attack:
+        // each attack costs attackApCost, and focus scales apRecoveryMs.
+        enemyDefaults: { apMax: 5, apRecoveryMs: 2000, attackApCost: 1, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
             enrageThreshold: 0, enrageAtkMult: 1.3, enrageSpdMult: 1.2 },
         enemyTiming: { windupBonus: 0.10, recoveryBonus: 0.15, active: 0.16 },
         arenaEffects: {
@@ -264,7 +271,7 @@ const gameConfig = (() => {
                     slots: ['accessory'],
                     stats: { atk: 0, def: 0, focus: 3 },
                     effects: [],
-                    desc: "提升专注，使行动力与技能点回复加快"
+                    desc: "提升专注，使技能点回复加快"
                 },
                 wooden_armor: {
                     id: 'wooden_armor', name: "布甲", type: "armor", icon: "👕",
@@ -306,8 +313,8 @@ const gameConfig = (() => {
                     id: 'vigor_ring', name: "战意戒指", type: "accessory", icon: "🔥",
                     slots: ['accessory'],
                     stats: { atk: 0, def: 0 },
-                    effects: [{ type: 'ap_max_bonus', value: 1 }],
-                    desc: "行动力上限提升 1 点"
+                    effects: [{ type: 'guard_bar_bonus', value: 0.25 }],
+                    desc: "格挡条上限提升 25%"
                 }
             },
 
@@ -452,7 +459,7 @@ const gameConfig = (() => {
                     // Arena effect: 30s in the abyss surges -- BOTH sides' AP
                     // recharges 2x, the whole fight shifts up-tempo
                     arena: [{ key: 'ap_surge',
-                              logText: '🌀 深渊涌动！双方行动力恢复加速' }]
+                              logText: '🌀 深渊涌动！敌人出招更加频繁' }]
                 }
             },
 

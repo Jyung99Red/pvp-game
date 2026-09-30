@@ -10,10 +10,10 @@ const combatRules = Object.freeze({
         return Math.min(range.max, Math.max(range.min, Math.round(R.chargeThresholdMs + offset)));
     },
     parryWindowMs: gameConfig.resources.parryWindowMs,
-    apMax: gameConfig.resources.apMax,
-    apRecoveryMs(focus) {
+    // Enemies only: their hidden AP paces attacks. Players have no AP.
+    enemyApRecoveryMs(focus) {
         const R = gameConfig.resources;
-        return R.apRecoveryMs * (R.focusBaseline / Math.max(R.minFocus, focus || R.focusBaseline));
+        return gameConfig.enemyDefaults.apRecoveryMs * (R.focusBaseline / Math.max(R.minFocus, focus || R.focusBaseline));
     },
     spRecoveryMs(focus) {
         const R = gameConfig.resources;

@@ -60,10 +60,10 @@ h1 { font-size: 26px; margin: 12px 0; font-weight: 650; }
     position: absolute; z-index: 3; left: 0; right: 0;
     bottom: max(6px, env(safe-area-inset-bottom));
 }
-.ap-row { display: flex; align-items: center; gap: 9px; font-size: 10px; color: var(--muted); }
-#ap { display: flex; gap: 4px; }
-#ap i { width: 16px; height: 5px; border-radius: 2px; background: #304045; }
-#ap i.full { background: var(--gold); }
+.guard-row { display: flex; align-items: center; gap: 9px; font-size: 10px; color: var(--muted); }
+.guard-bar { width: 96px; height: 5px; border-radius: 3px; background: #304045; overflow: hidden; }
+.guard-bar i { display: block; height: 100%; width: 100%; background: #8dbdef; transition: background .2s; }
+.guard-bar.locked i { background: #c9705f; }
 #player-state { margin-left: auto; color: var(--cyan); }
 .charge-track { height: 3px; background: #263639; margin-top: 9px; border-radius: 3px; overflow: hidden; }
 #charge-fill { height: 100%; width: 0; background: var(--gold); }

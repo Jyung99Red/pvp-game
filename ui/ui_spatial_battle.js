@@ -12,7 +12,6 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     const layer = options.layer || null;
     const pads = { move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
     const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
-    let apDots = [];
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
     // The config is swapped per mode in a merged region session (walking preset,
@@ -45,16 +44,11 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         viewWidth = Math.max(1, (width - worldInset * 2) / zoom);
         viewHeight = Math.max(1, Math.max(1, height - worldTop - worldBottom) / zoom);
     }
-    function buildApDots() {
-        apDots.forEach(dot => dot.remove());
-        apDots = Array.from({ length: C.apMax }, () => $('ap').appendChild(document.createElement('i')));
-    }
     function fitWindow() {
         viewWidth = Math.min(C.width, C.camera?.width || C.width);
         viewHeight = Math.min(C.height, C.camera?.height || C.height);
         syncWindow();
     }
-    buildApDots();
     fitWindow();
     let camera = null;
     let hintVisible = false, presentationDt = 0;
@@ -177,16 +171,18 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             }
             if (e.type === 'strike') effects.push({ ...e, color: e.side === 'player' ? '#81e6d9' : '#f27365', life: .24 });
             const messages = {
-                ap_insufficient: '行动力不足，走位等待恢复',
+                guard_broken: '格挡条耗尽！恢复到四成前无法举盾',
+                guard_locked: '格挡条恢复中 · 先走位拉开',
+                guard_ready: '格挡条已恢复，可以举盾',
                 dash_started: '冲刺！横向躲开或及时弹反',
                 attack_started: `${moveName(e.move)}${e.heavy ? ' · 刀扫过时命中' : ''}`,
-                charge_cancelled: '已取消蓄力 · 未消耗行动力',
+                charge_cancelled: '已取消蓄力',
                 stagger: '失衡！抓住空档打重击',
                 hit: e.side === 'player' ? `${e.crit ? '暴击！' : ''}${moveName(e.move)}命中 −${e.damage}` : `受击 −${e.damage}${e.rear ? ' · 留意防御朝向' : ''}`,
                 miss: e.side === 'player' ? (e.blocked ? '攻击被墙挡住' : '挥空 · 再靠近一点，留意朝向') : '走位避开！现在可以反击',
                 parry: `精准防御！反击 −${e.damage} · 失衡 +1`,
                 thorns: `荆棘反伤 −${e.damage}`, enrage: '狂暴！攻击更猛烈，注意起手', combo: '连段！准备接下一招',
-                block: `格挡 −${e.damage} · 消耗 1 行动力`
+                block: `格挡 −${e.damage}`
             };
             if (C.pvp) {
                 const who = e.side === 'player' ? '你' : '对手';
@@ -512,7 +508,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         // so advertising one would be a lie. The region adapter rewrites this
         // into the interact prompt when a building is in reach.
         text('move-label', g?.mode === 'charge' ? (L.armed(g) ? (g.queued ? '已排队 · 重击' : '松手 · 重击') : '原位松手取消') : battle.move?.mode === 'move' ? (['attack', 'swing', 'recover', 'stunned'].includes(battle.player.phase) ? '收招后移动' : '移动中') : C.solo ? '移动' : '移动 / 攻击');
-        text('guard-label', battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
+        text('guard-label', battle.player.guardLocked ? '格挡恢复中' : battle.guard?.queued ? '收招后防御' : fullscreen ? (battle.guard ? '拖动转向' : '防御') : battle.guard ? '拖动调整朝向' : '防御 / 转向');
     }
     function render(snapshot, events = [], frameDt = 0) {
         battle = snapshot;
@@ -546,8 +542,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             text('enemy-state', !enemyVisible ? '已失去视野' : e.phase === 'windup' ? `${enemyWindupName} · ${e.timer <= e.attack.lock ? '方向锁定！' : '准备中'}` : e.phase === 'dash' ? '直线冲刺 · 横向躲避' : e.phase === 'recover' ? '收招空档 · 可以反击' : e.phase === 'stagger' ? '失衡！重击机会' : e.phase === 'active' ? '攻击生效' : '接近中 · 留意距离');
             if (C.pvp && enemyVisible) text('enemy-state', `对手 · ${{ idle: '待机 / 移动', charging: '蓄力中', attack: '出招', swing: '挥刀', recover: '收招', guard_start: '举盾中', guard: '防御中', stunned: '硬直' }[e.phase] || e.phase}`);
         }
-        apDots.forEach((dot, i) => { dot.className = p.ap >= i + 1 ? 'full' : ''; });
-        $('ap').setAttribute('aria-label', `行动力 ${p.ap.toFixed(1)} / ${C.apMax}`);
+        const bar = $('guard-bar'), max = C.guardMax || gameConfig.guardBar.max;
+        bar.querySelector('i').style.width = `${S.clamp(p.guardBar / max, 0, 1) * 100}%`;
+        bar.classList.toggle('locked', !!p.guardLocked);
+        bar.setAttribute('aria-label', `格挡条 ${Math.round(p.guardBar)} / ${Math.round(max)}${p.guardLocked ? ' · 恢复中' : ''}`);
         const current = moveName(p.attack?.move);
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
@@ -573,12 +571,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     // does not move at the swap, so the transition is continuous by construction.
     function useConfig(next) {
         if (!next || next === C) return;
-        const previousApMax = C.apMax;
         C = next;
         zoom = C.camera?.zoom || 0;
         fitWindow();
-        if (C.apMax !== previousApMax) buildApDots();
         resize();
     }
-    return { render, refresh: resize, useConfig, destroy() { abort.abort(); observer.disconnect(); apDots.forEach(dot => dot.remove()); } };
+    return { render, refresh: resize, useConfig, destroy() { abort.abort(); observer.disconnect(); } };
 } };

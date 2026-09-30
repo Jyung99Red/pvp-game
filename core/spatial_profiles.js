@@ -10,20 +10,20 @@ const spatialProfiles = (() => {
             judgmentMultiplier: player.getJudgmentMultiplier(), guardDamageMultiplier: player.getGuardDamageMultiplier(),
             chargeThresholdMs: player.getChargeThresholdMs(), parryWindowBaseMs: player.getParryWindowBaseMs(),
             critChance: player.getCritChance(), guardThorns: player.getGuardThorns(),
-            apMax: player.getApMax(), motion: player.getSpatialMotion() };
+            guardBarBonus: player.getGuardBarBonus(), motion: player.getSpatialMotion() };
     }
     function normalize(p) {
         if (!p || typeof p !== 'object') throw new Error('缺少对战属性');
         const source = { ...p };
         const ranges = { level: [1, 100000], maxHp: [1, 1e9], atk: [0, 1e9], def: [0, 1e9], focus: [.1, 1e6], insight: [0, 1e6],
             judgmentMultiplier: [0, 100], guardDamageMultiplier: [0, 100], chargeThresholdMs: [0, 1900],
-            parryWindowBaseMs: [0, 10000], critChance: [0, 1], guardThorns: [0, 100], apMax: [1, 100] };
+            parryWindowBaseMs: [0, 10000], critChance: [0, 1], guardThorns: [0, 100], guardBarBonus: [0, 10] };
         const out = {};
         for (const [key, [min, max]] of Object.entries(ranges)) {
             if (!Number.isFinite(source[key]) || source[key] < min || source[key] > max) throw new Error('无效对战属性: ' + key);
             out[key] = source[key];
         }
-        out.apMax = Math.floor(out.apMax); out.motion = {};
+        out.motion = {};
         for (const key of ['move', 'turn', 'chargeMove', 'chargeTurn']) {
             const v = p.motion?.[key] ?? 1;
             if (!Number.isFinite(v) || v < 0 || v > 100) throw new Error('无效移动属性');
@@ -36,7 +36,7 @@ const spatialProfiles = (() => {
         try {
             const n = normalize(p), f = fair();
             return ['level', 'maxHp', 'atk', 'def', 'focus', 'insight', 'judgmentMultiplier', 'guardDamageMultiplier',
-                'chargeThresholdMs', 'parryWindowBaseMs', 'critChance', 'guardThorns', 'apMax'].every(key => n[key] === f[key]) &&
+                'chargeThresholdMs', 'parryWindowBaseMs', 'critChance', 'guardThorns', 'guardBarBonus'].every(key => n[key] === f[key]) &&
                 ['move', 'turn', 'chargeMove', 'chargeTurn'].every(key => n.motion[key] === f.motion[key]);
         } catch (_) { return false; }
     }
@@ -47,10 +47,9 @@ const spatialProfiles = (() => {
         const clamp = spatialCombat.clamp;
         C.motion = { ...stats.motion };
         Object.assign(C.player, { maxHp: stats.maxHp, hp: clamp(hp, 0, stats.maxHp), def: stats.def });
-        C.apMax = Math.max(1, Math.floor(stats.apMax));
-        // Focus scales both resources using their separately configured base times.
+        C.guardMax = gameConfig.guardBar.max * (1 + stats.guardBarBonus);
+        // Focus only drives SP recovery; attacks cost nothing.
         const focus = Math.max(gameConfig.resources.minFocus, stats.focus);
-        C.apRegen = 1000 / combatRules.apRecoveryMs(focus);
         C.spRegen = 1000 / combatRules.spRecoveryMs(focus);
         // Damage grows after the weapon threshold for the configured duration.
         // Geometry still uses the complete charge duration.

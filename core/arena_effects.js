@@ -56,13 +56,13 @@ const arenaEffects = (() => {
 
     // ── Built-in effects ─────────────────────────────────────────────────
 
-    // AP surge: past atMs, BOTH sides recover AP apRateMult times faster --
-    // the whole fight shifts up-tempo. Announce log fires once on the
-    // transition frame.
+    // AP surge: past atMs, the enemy's hidden AP recovers apRateMult times
+    // faster, so it attacks more often (players have no AP any more). Announce
+    // log fires once on the transition frame.
     register('ap_surge', {
         defaults: {
             ...gameConfig.arenaEffects.ap_surge,
-            logText: '🌀 战场涌动！双方行动力恢复加速'
+            logText: '🌀 战场涌动！敌人出招更加频繁'
         },
         tick(inst, arena, ctx, dt, emit) {
             if (arena.elapsedMs < inst.opts.atMs) return;

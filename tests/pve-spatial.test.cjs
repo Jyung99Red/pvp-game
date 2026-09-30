@@ -58,7 +58,7 @@ test('charged slash has .45 windup, .12 swing and .60 recovery before held movem
  seconds(t,.1); assert.ok(b.player.x>x); assert.equal(b.stats.attacks,1);
 });
 
-test('every configured enemy validates; profiles apply enhancement, defense, timing, crit and AP',()=>{
+test('every configured enemy validates; profiles apply enhancement, defense, timing, crit and guard bar',()=>{
  const t=setup();
  for(const id of Object.keys(t.content.enemies)) t.spatialEngine.create(t.pveProfiles.create(id,t.content.enemies[id]));
  const before=t.pveProfiles.create('goblin',t.content.enemies.goblin);
@@ -66,7 +66,8 @@ test('every configured enemy validates; profiles apply enhancement, defense, tim
  const after=t.pveProfiles.create('goblin',t.content.enemies.goblin);
   assert.ok(after.atk>before.atk); assert.equal(after.chargeThreshold,.35);
  assert.equal(after.player.def,t.player.getStats().def); assert.equal(after.critChance,t.player.getCritChance());
- assert.equal(after.apMax,t.player.getApMax()); assert.equal(after.blockMultiplier,.4*t.player.getGuardDamageMultiplier());
+ assert.equal(after.guardMax,100); assert.equal(after.blockMultiplier,.4*t.player.getGuardDamageMultiplier());
+ t.state.player.equip.accessory='vigor_ring'; assert.equal(t.pveProfiles.create('goblin',t.content.enemies.goblin).guardMax,125);
  after.actions[0].range=1; assert.notEqual(t.pveProfiles.create('goblin',t.content.enemies.goblin).actions[0].range,1);
  assert.throws(()=>t.pveProfiles.create('missing',t.content.enemies.goblin));
  after.player.x=-1; assert.throws(()=>t.spatialEngine.create(after));
@@ -112,7 +113,7 @@ test('simulation owns regen; paused battle has no HP or time drift; a retired fi
  assert.ok(t.state.player.currentHp - walk <= 1, 'the spring must not reach past the base');
 });
 
-test('all four skills retain costs; full charge awaits swipe, cancellation spends no AP',()=>{
+test('all four skills retain costs; full charge awaits swipe and is spent once',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
  b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,1);
  b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,1);
@@ -120,16 +121,16 @@ test('all four skills retain costs; full charge awaits swipe, cancellation spend
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
  L.release(e,'move'); b.skillPoints=2; t.pveLogic.useSkill('full'); assert.equal(b.skillPoints,0);
  L.press(e,'move'); seconds(t,.3); assert.equal(b.player.charge,2.3); assert.equal(e.stats.attacks,0);
- L.release(e,'move'); assert.equal(b.player.ap,e.config.apMax); assert.equal(b.buffs.instantCharge,false);
+ L.release(e,'move'); assert.equal(b.buffs.instantCharge,false);
  b.skillPoints=3; t.pveLogic.useSkill('parry'); assert.equal(b.buffs.autoParry,1); assert.equal(b.skillPoints,0);
 });
 
-test('auto parry checks spatial reach and protects from the rear without spending AP',()=>{
+test('auto parry checks spatial reach and protects from the rear, even with the guard bar locked',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); const b=t.state.pveBattle,e=b.spatial;
  b.buffs.autoParry=1; b.enemy.phase='windup'; b.enemy.timer=.01; b.enemy.attack={kind:'circle',range:10,damage:20,active:.1,recovery:1};
  t.pveLogic.advance(.01); assert.equal(b.buffs.autoParry,1);
- b.enemy.phase='windup'; b.enemy.timer=.01; b.enemy.attack.range=300; b.player.phase='charging'; b.player.charge=0; b.player.chargeUpdatedAt=e.time; e.action={mode:'charge',start:e.time,dx:0,dy:0}; b.player.ap=0;
- t.pveLogic.advance(.01); assert.equal(b.buffs.autoParry,0); assert.equal(b.player.hp,b.player.maxHp); assert.equal(b.player.ap,0); assert.equal(b.player.phase,'charging');
+ b.enemy.phase='windup'; b.enemy.timer=.01; b.enemy.attack.range=300; b.player.phase='charging'; b.player.charge=0; b.player.chargeUpdatedAt=e.time; e.action={mode:'charge',start:e.time,dx:0,dy:0}; b.player.guardBar=0; b.player.guardLocked=true;
+ t.pveLogic.advance(.01); assert.equal(b.buffs.autoParry,0); assert.equal(b.player.hp,b.player.maxHp); assert.equal(b.player.guardLocked,true); assert.equal(b.player.phase,'charging');
 });
 
 test('thorns killing both sides is defeat; attacks cannot double-hit after settlement',()=>{
@@ -140,12 +141,12 @@ test('thorns killing both sides is defeat; attacks cannot double-hit after settl
  const exp=t.state.inventory.exp; t.pveLogic.advance(.1); assert.equal(t.state.inventory.exp,exp);
 });
 
-test('30/60/120 FPS share simulation output and arena AP surge timing',()=>{
+test('30/60/120 FPS share simulation output and arena AP surge timing on the enemy',()=>{
  const results=[];
  for(const fps of [30,60,120]) {
   const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle;
-  b.player.ap=0; b.arena=t.arenaEffects.create([{key:'ap_surge',atMs:1000,apRateMult:2}]);
-  seconds(t,3,fps); results.push([b.player.ap,b.spatial.time,b.arena.elapsedMs]);
+  b.enemy.ap=0; b.player.guardBar=0; b.arena=t.arenaEffects.create([{key:'ap_surge',atMs:1000,apRateMult:2}]);
+  seconds(t,3,fps); results.push([b.enemy.ap,b.player.guardBar,b.spatial.time,b.arena.elapsedMs]);
  }
  assert.deepEqual(results[0],results[1]); assert.deepEqual(results[1],results[2]); assert.ok(results[0][0]>2);
 });
@@ -184,7 +185,7 @@ test('crit changes actual damage and equipment threshold changes heavy yield wit
  assert.ok(crit.crit); assert.ok(crit.damage>normal.damage); assert.ok(normal.damage>slow.damage);
 });
 
-test('boss enrage, explicit combo recovery and AP caps are active in the shared engine',()=>{
+test('boss enrage, explicit combo recovery, enemy AP and guard bar caps are active in the shared engine',()=>{
  const t=setup(), C=t.pveProfiles.create('elder_dragon',t.content.enemies.elder_dragon);
  C.ai.comboChance=1;
  const b=t.spatialEngine.create(C,()=>0); t.spatialEngine.start(b);
@@ -192,16 +193,16 @@ test('boss enrage, explicit combo recovery and AP caps are active in the shared 
  t.spatialEngine.step(b,.01);
  assert.equal(b.enemy.enraged,true); assert.equal(b.enemy.comboCount,1); assert.equal(b.enemy.timer,C.ai.comboDelay);
  const events=t.spatialEngine.drainEvents(b); assert.ok(events.some(e=>e.type==='enrage')); assert.ok(events.some(e=>e.type==='combo'));
- b.apRateMult=1000; b.enemy.phase='recover'; b.enemy.timer=100; b.player.ap=C.apMax-.1;
- t.spatialEngine.step(b,.01); assert.equal(b.player.ap,C.apMax); assert.ok(b.enemy.ap<=C.enemyApMax);
+ b.apRateMult=1000; b.enemy.phase='recover'; b.enemy.timer=100; b.enemy.ap=C.enemyApMax-.1; b.player.guardBar=C.guardMax-.1;
+ t.spatialEngine.step(b,.01); assert.equal(b.enemy.ap,C.enemyApMax); assert.equal(b.player.guardBar,C.guardMax);
 });
 
-test('focus drives AP and slower time-based SP recovery without hit rewards',()=>{
+test('focus drives time-based SP recovery without hit rewards',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle;
- b.player.ap=0; seconds(t,2.9); assert.equal(b.skillPoints,0); assert.ok(b.player.ap>1.4 && b.player.ap<1.6);
+ seconds(t,2.9); assert.equal(b.skillPoints,0);
  seconds(t,.2); assert.equal(b.skillPoints,1); assert.ok(b.skillProgress<.1);
  t.state.player.baseStats.focus=20; const faster=t.pveProfiles.create('goblin',t.content.enemies.goblin);
- assert.equal(faster.apRegen,1); assert.equal(faster.spRegen,2/3);
+ assert.equal(faster.apRegen,undefined); assert.equal(faster.spRegen,2/3);
 });
 
 test('wolf dash locks direction, travels a real path and hits at most once',()=>{

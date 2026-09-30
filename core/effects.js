@@ -43,7 +43,7 @@ const EFFECT_REGISTRY = {
     guard_thorns: {
         label(value) { return `<span class="effect-tag effect-buff">🌵 格挡反伤 ${value*100}%</span>`; }
     },
-    ap_max_bonus: {
-        label(value) { return `<span class="effect-tag effect-passive">⭐ 行动力上限 +${value}</span>`; }
+    guard_bar_bonus: {
+        label(value) { return `<span class="effect-tag effect-passive">⭐ 格挡条上限 +${Math.round(value * 100)}%</span>`; }
     }
 };

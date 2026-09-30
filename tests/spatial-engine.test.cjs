@@ -80,10 +80,10 @@ function incoming(b, timer = .1) {
     b.player.x = 180; b.player.y = 255;
     b.enemy.phase = 'windup'; b.enemy.attack = L.config.sweep; b.enemy.timer = timer;
 }
-test('tap attacks at the same position and spends exactly one AP', () => {
+test('tap attacks at the same position and costs no resource', () => {
     const b = setup(), { x, y } = b.player;
     L.press(b, 'move'); advance(b, .08); L.release(b, 'move');
-    assert.equal(b.stats.attacks, 1); assert.equal(b.player.ap, 4);
+    assert.equal(b.stats.attacks, 1); assert.equal(b.player.guardBar, b.config.guardMax);
     assert.equal(b.player.x, x); assert.equal(b.player.y, y);
 });
 test('upward movement starts immediately and release never attacks, even after a long hold', () => {
@@ -94,14 +94,14 @@ test('upward movement starts immediately and release never attacks, even after a
     assert.equal(b.stats.attacks, 0); assert.equal(b.player.charge, 0);
     const y = b.player.y; advance(b, .2); assert.equal(b.player.y, y);
 });
-test('charged hold is immobile, never auto-fires, and release in place cancels without AP cost', () => {
+test('charged hold is immobile, never auto-fires, and release in place cancels', () => {
     const b = setup(); L.press(b, 'move'); advance(b, 2);
     assert.equal(b.player.phase, 'charging'); assert.equal(b.player.charge, L.config.fullCharge);
     assert.equal(b.stats.attacks, 0);
     assert.equal(b.player.x, 180); assert.equal(b.player.y, 275);
     L.release(b, 'move');
     assert.equal(b.stats.attacks, 0); assert.equal(b.stats.cancels, 1);
-    assert.equal(b.player.ap, 5); assert.equal(b.player.phase, 'idle');
+    assert.equal(b.player.phase, 'idle');
 });
 test('charged drag moves at 60 percent; release attacks and returning to origin cancels', () => {
     const b = setup(); L.press(b, 'move'); advance(b, 2);
@@ -246,12 +246,12 @@ test('pose reports phase, progress and a blade that crosses the whole arc', () =
     assert.equal(L.pose(b.player, b.config).phase, 'recover');
 });
 
-test('semantic commands cannot bypass charge, AP, pause or finished state', () => {
+test('semantic commands cannot bypass charge, pause or finished state', () => {
     const b = setup();
     assert.equal(L.dispatch(b, { type: 'heavy' }), false);
     assert.equal(L.press(b, 'action'), false);
-    b.player.ap = 0; assert.equal(L.press(b, 'move'), true); advance(b, .25);
-    assert.equal(b.action, null); assert.equal(b.player.phase, 'idle');
+    assert.equal(L.press(b, 'move'), true); advance(b, .25);
+    assert.equal(b.player.phase, 'charging');
     L.pause(b); assert.equal(L.dispatch(b, { type: 'light' }), false);
     assert.equal(b.stats.attacks, 0);
 });
@@ -306,7 +306,10 @@ test('pointer adapter owns each channel, cancels lost capture and removes listen
     assert.equal(move.style['--gesture-x'], '50px'); assert.equal(move.style['--gesture-y'], '55px');
     assert.equal(b.action.cx, 60); assert.equal(b.action.cy, 0);
     guard.fire('pointerdown', 2); move.fire('pointerdown', 3);
-    assert.equal(move.held.size, 1); assert.equal(guard.held.size, 0);
+    // Guard is the one input that interrupts a charge: it drops it and raises the shield.
+    assert.equal(move.held.size, 1); assert.equal(guard.held.size, 1);
+    assert.equal(b.player.phase, 'guard_start'); assert.equal(b.action.mode, 'blocked');
+    guard.fire('pointerup', 2);
     move.fire('pointercancel', 1);
     assert.equal(move.style['--gesture-x'], undefined);
     assert.equal(b.stats.attacks, 0);
@@ -420,16 +423,58 @@ test('guard and skill gestures suppress pending taps and never arm a latent char
     }
 });
 
-test('combined release cancellation, AP failure and optional center release have no ghost attacks', () => {
+test('combined release cancellation, guard over a charge and optional center release have no ghost attacks', () => {
     for (const cancel of [b => L.release(b, 'move', true), b => L.pause(b)]) {
         const b = setup(); L.press(b, 'move'); advance(b, .3); L.drag(b, 'move', 60, 0);
         cancel(b); assert.equal(b.action, null); assert.equal(b.move, null); assert.equal(b.stats.attacks, 0);
     }
-    const b = setup(); b.player.ap = 0; L.press(b, 'move'); advance(b, .3);
-    assert.equal(b.action, null); advance(b, 2); L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
+    const b = setup(); L.press(b, 'move'); advance(b, .3); assert.equal(b.player.phase, 'charging');
+    assert.equal(L.press(b, 'guard'), true); assert.equal(b.player.phase, 'guard_start'); assert.equal(b.player.charge, 0);
+    advance(b, .5); L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
     const c = setup(); c.controls.cancelAtCenter = false;
     L.press(c, 'move'); advance(c, .3); L.release(c, 'move');
     assert.equal(c.player.attack.heavy, true); assert.equal(c.stats.attacks, 1);
+});
+
+// Guard bar: only guarding spends it; an empty bar locks the guard.
+const G = vm.runInContext('gameConfig.guardBar', context);
+test('raising costs a little, holding drains, and a block costs more than a perfect parry of the same hit', () => {
+    const b = setup(); L.press(b, 'guard');
+    assert.equal(b.player.guardBar, 100 - G.raiseCost);
+    advance(b, .5); assert.ok(Math.abs(b.player.guardBar - (100 - G.raiseCost - G.holdDrain * .5)) < 1e-6);
+    const cost = raw => raw / 120 * G.blockCostScale * G.max;
+    const block = setup(); L.press(block, 'guard'); advance(block, .6); incoming(block, .01);
+    const before = block.player.guardBar; advance(block, .01);
+    assert.equal(block.stats.blocks, 1); assert.ok(Math.abs(before - block.player.guardBar - cost(25) - G.holdDrain * .01) < 1e-6);
+    const parry = setup(); L.press(parry, 'guard'); advance(parry, .18); incoming(parry, .01);
+    const ready = parry.player.guardBar; advance(parry, .01);
+    assert.equal(parry.stats.parries, 1); assert.ok(Math.abs(ready - parry.player.guardBar - cost(25) * G.parryCostRatio - G.holdDrain * .01) < 1e-6);
+    L.release(parry, 'guard'); const low = parry.player.guardBar; advance(parry, .3);
+    assert.ok(Math.abs(parry.player.guardBar - low - 100 / G.refillSeconds * .3) < 1e-6, 'the bar refills only with the guard down');
+});
+test('an empty bar drops the guard and locks it until the bar is back to the unlock ratio', () => {
+    const b = setup(); b.player.guardBar = 15; L.press(b, 'guard');
+    for (let i = 0; i < 100 && !b.player.guardLocked; i++) L.step(b, .01);
+    assert.ok(Math.abs(b.time - (15 - G.raiseCost) / G.holdDrain) < .011, 'the hold drains the last 5 points in .5s');
+    assert.equal(b.player.guardLocked, true); assert.equal(b.player.phase, 'idle'); assert.equal(b.guard, null);
+    assert.ok(L.drainEvents(b).some(e => e.type === 'guard_broken'));
+    L.release(b, 'guard'); assert.equal(L.press(b, 'guard'), false, 'no guard, so no perfect parry either');
+    advance(b, G.refillSeconds * G.unlockRatio - .05); assert.equal(b.player.guardLocked, true);
+    advance(b, .06); assert.equal(b.player.guardLocked, false); assert.equal(L.press(b, 'guard'), true);
+    // The block that empties the bar still counts.
+    const c = setup(); L.press(c, 'guard'); advance(c, .6); c.player.guardBar = 5; incoming(c, .01); advance(c, .01);
+    assert.equal(c.stats.blocks, 1); assert.equal(c.player.hp, 114); assert.equal(c.player.guardLocked, true);
+});
+test('guard cuts a recovery at once, waits out windup and swing, and drops a charge', () => {
+    const b = setup(); tap(b); advance(b, .25); assert.equal(b.player.phase, 'recover');
+    L.press(b, 'guard'); assert.equal(b.player.phase, 'guard_start'); assert.equal(b.player.chain, null);
+    const c = setup(); tap(c); advance(c, .05); assert.equal(c.player.phase, 'attack');
+    L.press(c, 'guard'); assert.equal(c.player.phase, 'attack'); assert.equal(c.queuedCommand.type, 'guard');
+    let swingEnded = null;
+    for (let i = 0; i < 30 && c.player.phase !== 'guard_start'; i++) { L.step(c, .01); if (c.player.phase === 'recover') swingEnded ??= c.time; }
+    assert.equal(c.player.phase, 'guard_start'); assert.equal(c.stats.attacks, 1);
+    const d = setup(); L.press(d, 'move'); advance(d, .5); L.press(d, 'guard');
+    assert.equal(d.player.phase, 'guard_start'); L.release(d, 'move'); advance(d, 1); assert.equal(d.stats.attacks, 0);
 });
 
 test('replacing a queued charge restores ordinary movement and turning without another attack', () => {
