@@ -11,8 +11,8 @@ fetch-loaded HTML partials. Serve over http (`file://` breaks `fetch`):
 - `pvp/` PVP engine, network, room flow, battle UI
 - `index.html`, `style.css`, `partials/`, `icons/` stay at root (fetch paths are document-relative)
 
-`SYSTEMS.md` holds the module map, current state, combat rules and settled
-decisions. Read it before changing behaviour; update it when that changes.
+The code, `game_config.js` and the tests are the description of current
+behaviour. Design in progress lives in `docs/tasks/` (Chinese).
 This file only changes when project setup changes.
 
 ## Rules
@@ -23,4 +23,4 @@ This file only changes when project setup changes.
   asserts, update the test and say why.
 - New script or partial: register it in `client-assets.json`; a partial also
   needs `#mount-<id>` in `index.html`.
-- Code comments, `AGENTS.md`, `SYSTEMS.md` in English; `README.md` and UI text in Chinese.
+- Code comments and `AGENTS.md` in English; `README.md` and UI text in Chinese.

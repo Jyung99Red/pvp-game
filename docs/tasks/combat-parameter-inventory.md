@@ -195,7 +195,7 @@ Combo 在 active 结束转入恢复阶段时选择，不要求该招命中；每
 | 深渊领主 `ap_surge` | `atMs=30000`、`apRateMult=2` | 30s 后双方 AP 回复 ×2，过渡帧播报一次，`core/arena_effects.js` |
 | PVE arena 结算 | — | 只在 `pve_logic` 驱动；环境伤害与同一 10ms 步中的攻击一起结算，双方同时死亡判玩家败北；当前 PVP 不使用 arena |
 | 金币 | `adventure.goldPerExp=.6` | `goldReward=round(exp×.6)`，胜利当场入账；没有 run 结算，死亡也不清空已得金币（`pve/pve_logic.js` 的 `_onVictory`） |
-| 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。战斗/区域结构见 `SYSTEMS.md` |
+| 区域刷新 | `adventure.monsterRespawnSeconds=60` | 被打死的区域怪 60 秒后回岗位重生；Boss 不重生。 |
 
 ## 6. PVP 固定规则（当前 v10 / rule v6）
 

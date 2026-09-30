@@ -35,8 +35,6 @@ python -m http.server 8422
 - 右侧四向技能：上治疗、右疾速、下满蓄、左弹反。
 - “中心松手取消”和“自动朝向怪物”可在战斗设置中调整。
 
-更完整的手势、技能和数值说明见 [战斗操作与调参](pve/COMBAT_CONTROLS.md)。
-
 ## 测试
 
 运行完整的战斗与启动回归（Node 自己展开通配符，加测试文件不用改这行）：
@@ -58,6 +56,6 @@ partials/   启动时挂载的页面片段
 tests/      启动、共享引擎、PVE 与 PVP 回归测试
 ```
 
-现行的模块职责、当前状态、战斗规则和已定决策都在 [SYSTEMS.md](SYSTEMS.md)（英文）——**改代码时只更新那一个文件**，`AGENTS.md` 保持固定。PVP 的空间设计记录见 [PVP 空间战斗](pvp/SPATIAL_MIGRATION.md)。
+进行中的设计笔记在 `docs/tasks/`。
 
 新增或删除脚本、样式及正式页面 partial 时，需要同步更新 `client-assets.json`。所有脚本按清单顺序作为全局经典脚本执行。
