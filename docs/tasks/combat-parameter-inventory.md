@@ -277,7 +277,8 @@ PVP 建局时两边从满 HP、满格挡条开始，`skillPoints=0`（`pvp/spati
 | 主机模拟 | 固定 `.01s`；主机 ready 后运行权威 duel | `pvp/pvp_logic.js:L98-L112` |
 | 主机快照 | 距上次发送达到 `50ms` 后，在显示循环中发送；目标约20Hz，受帧率影响 | `pvp/pvp_logic.js:L122-L125` |
 | 客机心跳 | 距上次发送达到 `250ms` 后，在显示循环中发送；受帧率影响 | `pvp/pvp_logic.js:L122-L125` |
-| 客机预测 | 只推进本地 actor；HP、胜负保持快照权威 | `pvp/spatial_duel.js:L174-L186` |
+| 客机预测 | 只推进本地 actor；HP、胜负保持快照权威。预测走同一套连段时序（派生点、停顿、蓄势），但不判定命中，挥完静默收招，strike/miss 以主机事件为准；举盾扣条与按住消耗由预测推进，挡击扣条以快照为准 | `pvp/spatial_duel.js` 的 `predict` |
+| 快照内容 | `player` 带连段节点与窗口（`chain`）、当前招式与挥动进度（`attack.progress/hit`）、格挡条（`guardBar/guardLocked`）；`move` 带连段长按（`mode:'hold'`、`derived`）；`queuedCommand` 带缓冲的轻点／长按。`validSnapshot` 逐项校验招式 ID、阶段、进度与格挡条范围 | `pvp/spatial_duel.js` |
 | 中断 | hidden、超过约 5s 未收到消息、disconnect/abort 会终止对局 | `pvp/pvp_logic.js:L113-L127,L246-L251` |
 
 ## 7. 装备与强化对战输入（当前已消费的效果）

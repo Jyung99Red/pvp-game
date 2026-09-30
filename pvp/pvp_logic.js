@@ -40,7 +40,7 @@ const pvpLogic = (() => {
             if (b.role === 'guest' && e.id != null && predictedPresentation.has(key)) {
                 predictedPresentation.delete(key); continue;
             }
-            if (b.role === 'guest' && e.id == null && ['attack_started', 'charge_cancelled', 'skill_used'].includes(e.type)) {
+            if (b.role === 'guest' && e.id == null && ['attack_started', 'charge_cancelled', 'skill_used', 'guard_broken', 'guard_locked', 'guard_ready', 'pause_ready'].includes(e.type)) {
                 predictedPresentation.set(key, at);
             }
             presentation.push(e);

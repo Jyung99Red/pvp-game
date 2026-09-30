@@ -177,6 +177,46 @@ test('combined charge survives snapshot replay and both sides release along thei
   assert.equal(t.D.input(restored,side,{type:'press',channel:'action',values:[0,0]}),false);
  }
 });
+// Combo state rides the snapshot: chain node and window, swing progress, a
+// buffered next input, a poised hold and the guard bar all restore exactly.
+const comboScript=[
+ [0,0,{type:'press',channel:'move',values:[0,0]}],[0,0,{type:'release',channel:'move',cancelled:false}],
+ [.2,0,{type:'press',channel:'move',values:[0,0]}],[.2,0,{type:'release',channel:'move',cancelled:false}],
+ [.3,1,{type:'press',channel:'guard',values:[0,0]}],[.9,1,{type:'release',channel:'guard',cancelled:false}],
+ [1.1,0,{type:'press',channel:'move',values:[0,0]}],[1.5,0,{type:'drag',channel:'move',values:[40,-10,40,-10]}],
+ [1.7,0,{type:'release',channel:'move',cancelled:false}]
+];
+function play(t,d,from,until){
+ for(let n=from;n<until;n++){ for(const [at,side,command] of comboScript) if(Math.round(at*100)===n) t.D.input(d,side,command); t.D.step(d,.01); }
+}
+test('a combo snapshot restores mid-swing, with a buffered tap, in guard and mid-poise, then plays out identically',()=>{
+ const whole=setup({atk:20,maxHp:500});close(whole);play(whole,whole.d,0,260);
+ const a=whole.d.sides[0];
+ assert.equal(a.stats.attacks,3,'slash, backslash, then the hold move');
+ for(const cut of [15,25,35,140,180]){
+  const t=setup({atk:20,maxHp:500});close(t);play(t,t.d,0,cut);
+  const snap=t.D.snapshot(t.d);assert.equal(t.D.validSnapshot(t.d,snap),true,`cut ${cut}`);
+  const restored=t.D.create(t.d.profiles,()=>.99);t.D.restore(restored,snap);
+  play(t,restored,cut,260);
+  assert.equal(JSON.stringify(t.D.snapshot(restored)),JSON.stringify(t.D.snapshot(whole.d)),`cut at step ${cut}`);
+ }
+ assert.equal(whole.d.sides[0].player.attack.move,'cleave');
+});
+test('snapshot validation rejects broken combo and guard-bar state',()=>{
+ const t=setup({atk:20,maxHp:500});close(t);play(t,t.d,0,140);
+ const snap=t.D.snapshot(t.d);assert.equal(snap.sides[0].player.phase,'poise');assert.equal(t.D.validSnapshot(t.d,snap),true);
+ const bad=[s=>{s.sides[0].move.derived='nope';},s=>{s.sides[0].player.chain={move:'nope',at:0};},
+  s=>{s.sides[1].player.guardBar=1e6;},s=>{s.sides[1].player.guardLocked='yes';},s=>{s.sides[0].player.phase='dance';}];
+ for(const corrupt of bad){const c=JSON.parse(JSON.stringify(snap));corrupt(c);assert.equal(t.D.validSnapshot(t.d,c),false);}
+});
+test('guest prediction walks the same combo timing as the host but never judges a hit',()=>{
+ const t=setup();close(t);const g=t.d.sides[1],hp=t.d.sides[0].player.hp;
+ const tap=()=>{t.D.predictInput(t.d,1,{type:'press',channel:'move',values:[0,0]});t.D.predictInput(t.d,1,{type:'release',channel:'move',cancelled:false});};
+ tap();for(let i=0;i<20;i++)t.D.predict(t.d,1,.01);
+ assert.equal(g.player.phase,'recover');tap();for(let i=0;i<14;i++)t.D.predict(t.d,1,.01);
+ assert.equal(g.player.attack.move,'backslash');assert.equal(t.d.sides[0].player.hp,hp);
+ assert.equal(t.d.events.filter(e=>e.type==='miss'||e.type==='strike').length,0,'the host reports strikes, not the guest');
+});
 test('SP caps, thorns double death, and bounded auto-face are symmetric',()=>{
  const t=setup({maxHp:20,atk:100,def:0,guardThorns:1});close(t);guard(t,1);step(t,.5);
  t.d.sides[1].player.hp=10;light(t,0);step(t,.2);assert.equal(t.d.result,'draw');
@@ -280,6 +320,16 @@ test('two clients handshake/count down; local movement predicts before delivery;
  const before=h.state.pvpBattle.self.hp;
  h.logic.receiveMessage({msg:'duel_input',version:h.logic.VERSION,battleId:h.logic.getCurrentBattleId(),seq:3,command:{type:'teleport',hp:0,x:0}});
  assert.equal(h.state.pvpBattle.self.hp,before);
+});
+test('a guest combo over the network reaches the same move on host and guest',()=>{
+ const p=pair(),[h,g]=p.peers;
+ const tap=()=>{g.logic.input(command('press','move',[0,0]));g.logic.input(command('release','move'));};
+ tap();for(let n=0;n<20;n++)p.frame();
+ tap();for(let n=0;n<25;n++)p.frame();
+ assert.equal(h.state.pvpBattle.duel.sides[1].player.attack.move,'backslash');
+ assert.equal(g.state.pvpBattle.self.attack.move,'backslash');
+ for(let n=0;n<100;n++)p.frame();
+ assert.equal(h.state.pvpBattle.duel.sides[1].stats.attacks,2);assert.equal(g.state.pvpBattle.self.phase,'idle');
 });
 test('duplicate/wrong-session input and out-of-order snapshots cannot rewind state',()=>{
  const p=pair(),[h,g]=p.peers;
