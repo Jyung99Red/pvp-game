@@ -39,7 +39,8 @@ const pveProfiles = (() => {
         C.player.x += arena.spawnOffsetX; C.player.y += arena.spawnOffsetY;
         C.enemy.x += arena.spawnOffsetX; C.enemy.y += arena.spawnOffsetY;
         spatialProfiles.apply(C, stats, state.player.currentHp);
-        Object.assign(C.enemy, { maxHp: enemyData.hp, hp: enemyData.hp, def: enemyData.def });
+        const hp = Math.round(enemyData.hp * gameConfig.balance.hpScale);
+        Object.assign(C.enemy, { maxHp: hp, hp, def: enemyData.def });
         C.enemyApMax = Math.max(1, ai.apMax ?? defaults.apMax);
         C.enemyApRegen = 1000 / combatRules.enemyApRecoveryMs(ai.focus ?? defaults.focus);
         C.actions = moves[enemyId].map((move, i) => ({ ...move, label: enemyData.acts?.[`act${i + 1}`]?.name || '攻击', damage: Math.max(1, Math.round(enemyData.atk * move.multiplier)) }));

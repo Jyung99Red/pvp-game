@@ -88,8 +88,10 @@ const player = {
         };
     },
 
+    // Earned base stats stay in the save unscaled; max HP is scaled here.
     getStats() {
         const stats = { ...state.player.baseStats };
+        stats.maxHp = Math.round(stats.maxHp * gameConfig.balance.hpScale);
         Object.values(state.player.equip).forEach(id => {
             if (!id) return;
             const item = content.items[id];

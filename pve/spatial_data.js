@@ -33,5 +33,8 @@ const spatialData = (() => {
         }
         return rules;
     }
-    return { baseCombatPreset: freeze({ ...gameConfig.training, combo }), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera: gameConfig.camera, pvpArena: gameConfig.pvpArena, skillRules };
+    // Every max HP goes through balance.hpScale, the base preset's included.
+    const scale = body => ({ ...body, hp: Math.round(body.hp * gameConfig.balance.hpScale), maxHp: Math.round(body.maxHp * gameConfig.balance.hpScale) });
+    const base = { ...gameConfig.combatBase, player: scale(gameConfig.combatBase.player), enemy: scale(gameConfig.combatBase.enemy), combo };
+    return { baseCombatPreset: freeze(base), enemyMoves: freeze(moves), skills: freeze(skillDefinitions), skillCosts: Object.freeze(skillCosts), camera: gameConfig.camera, pvpArena: gameConfig.pvpArena, skillRules };
 })();

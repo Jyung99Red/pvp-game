@@ -38,7 +38,7 @@ test('weapon thresholds keep two seconds of damage growth and independent PVP ch
 test('fair profile uses the shared rules, closer camera and independent enlarged arena',()=>{
  const t=context(), fair=t.spatialProfiles.fair(), d=t.spatialDuel.create([fair,fair]);
  const [a,b]=d.sides;
- assert.equal(fair.level,1); assert.equal(fair.maxHp,120); assert.equal(fair.atk,30); assert.equal(fair.def,8);
+ assert.equal(fair.level,1); assert.equal(fair.maxHp,360); assert.equal(fair.atk,30); assert.equal(fair.def,8);
  assert.equal(a.config.width,570); assert.equal(a.config.height,630);
  assert.equal(a.config.camera.width,350); assert.equal(a.config.camera.height,390);
  assert.deepEqual([a.player.x,a.player.y],[285,405]); assert.deepEqual([b.player.x,b.player.y],[285,225]);
@@ -99,10 +99,10 @@ test('guard, rear hit and parry work identically for host and guest; the guard b
  for(const defender of [0,1]) for(const mode of ['parry','block','rear']) {
   const t=setup({atk:100,maxHp:500,def:0});close(t);guard(t,defender);step(t,mode==='parry'?.17:.5);
   const b=t.d.sides[defender],a=t.d.sides[1-defender];if(mode==='rear')b.player.facing+=Math.PI;
-  // Cost = raw 30 / maxHp 500 * scale 2 * 100 = 12 for a block, half for a parry; the hold drains too.
+  // Cost = raw 30 / maxHp 500 * scale 6 * 100 = 36 for a block, half for a parry; the hold drains too.
   const bar=b.player.guardBar, drain=b.player.phase==='guard_start'||b.player.phase==='guard'?2:0; light(t,1-defender);step(t,.2);
-  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(Math.abs(bar-b.player.guardBar-6-drain)<.11);assert.equal(b.skillPoints,0);assert.equal(a.player.guardBar,a.config.guardMax);}
-  else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.ok(Math.abs(bar-b.player.guardBar-12-drain)<.11);}
+  if(mode==='parry'){assert.equal(b.player.hp,500);assert.ok(a.player.hp<500);assert.ok(Math.abs(bar-b.player.guardBar-18-drain)<.11);assert.equal(b.skillPoints,0);assert.equal(a.player.guardBar,a.config.guardMax);}
+  else if(mode==='block'){assert.ok(b.player.hp<500);assert.ok(b.player.hp>470);assert.ok(Math.abs(bar-b.player.guardBar-36-drain)<.11);}
   else {assert.equal(b.player.phase,'stunned');assert.equal(b.player.hp,470);assert.equal(b.action,null);}
  }
 });

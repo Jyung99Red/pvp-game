@@ -14,6 +14,7 @@
       "core/player.js",
       "core/tick.js",
       "ui/fx.js",
+      "ui/sfx.js",
       "core/combat_rules.js",
       "core/arena_effects.js",
       "ui/icons.js",
@@ -42,23 +43,6 @@
       "adventure",
       "pvp-room",
       "pvp-battle"
-    ]
-  },
-  "training": {
-    "styles": [
-      "pve/training.css",
-      "pve/combat_controls.css"
-    ],
-    "scripts": [
-      "game_config.js",
-      "core/spatial_combat.js",
-      "core/combat_gestures.js",
-      "pve/spatial_data.js",
-      "pve/spatial_engine.js",
-      "core/combat_settings.js",
-      "ui/combat_input.js",
-      "ui/ui_spatial_battle.js",
-      "pve/training.js"
     ]
   }
 }

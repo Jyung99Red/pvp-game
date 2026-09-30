@@ -103,9 +103,9 @@ test('C boss unlocks D once and never becomes a valid encounter again',()=>{
 test('simulation owns regen; paused battle has no HP or time drift; a retired fight gives it back',()=>{
  const t=setup(); t.state.base.buildings.hotSpring=2; t.state.player.currentHp=50; t.pveLogic.enterDungeon(); quiet(t);
  t.tick.loop(); t.tick.loop(); assert.equal(t.state.player.currentHp,50);
- seconds(t,2); assert.equal(t.state.player.currentHp,53);
+ seconds(t,2); assert.equal(t.state.player.currentHp,59);
  t.pveLogic.pause(); const time=t.state.pveBattle.spatial.time;
- t.tick.loop(); seconds(t,2); assert.equal(t.state.player.currentHp,53); assert.equal(t.state.pveBattle.spatial.time,time);
+ t.tick.loop(); seconds(t,2); assert.equal(t.state.player.currentHp,59); assert.equal(t.state.pveBattle.spatial.time,time);
  // A victory retires the fight by itself, so the tick owns regen again -- and
  // the hot spring is a BASE facility: out in the field it heals nothing, which
  // is exactly the status this leaves behind.
@@ -113,12 +113,12 @@ test('simulation owns regen; paused battle has no HP or time drift; a retired fi
  assert.equal(t.state.pveBattle.active,false); assert.equal(t.state.world.status,'exploring');
  const walk=t.state.player.currentHp;
  t.tick.loop(); t.tick.loop();
- assert.ok(t.state.player.currentHp - walk <= 1, 'the spring must not reach past the base');
+ assert.ok(t.state.player.currentHp - walk <= 3, 'only passive regen (1 x hpScale 3), the spring must not reach past the base');
 });
 
 test('all four skills retain costs; a charge always fires and full charge is spent once',()=>{
  const t=setup(); t.pveLogic.enterDungeon(); quiet(t); const b=t.state.pveBattle,e=b.spatial,L=t.spatialEngine;
- b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,60); assert.equal(t.state.player.currentHp,60); assert.equal(b.skillPoints,1);
+ b.player.hp=30; b.skillPoints=3; t.pveLogic.useSkill('heal'); assert.equal(b.player.hp,120); assert.equal(t.state.player.currentHp,120); assert.equal(b.skillPoints,1);
  b.skillPoints=3; t.pveLogic.useSkill('haste'); assert.equal(b.skillPoints,1);
  L.press(e,'move'); seconds(t,.75); assert.ok(b.player.charge>.5); const q=b.player.charge;
  b.buffs.chargeHasteUntil=e.time; seconds(t,.1); assert.ok(b.player.charge>q);
@@ -253,9 +253,9 @@ test('diagonal dash stops at wall and boundary contact without sliding',()=>{
 test('refreshing a defeat save returns alive at base without granting rewards',()=>{
  const t=setup(),key='idle_rpg_save_v2'; t.state.player.currentHp=0; t.save.save();
  const fresh=setup(); fresh.storage.set(key,t.storage.get(key)); fresh.save.load();
- assert.equal(fresh.state.player.currentHp,10); assert.equal(fresh.state.world.status,'base');
+ assert.equal(fresh.state.player.currentHp,30); assert.equal(fresh.state.world.status,'base');
  assert.equal(fresh.state.resources.gold,0); assert.equal(fresh.state.inventory.exp,0);
- fresh.pveLogic.enterDungeon(); assert.equal(fresh.state.pveBattle.player.hp,10);
+ fresh.pveLogic.enterDungeon(); assert.equal(fresh.state.pveBattle.player.hp,30);
 });
 
 test('full-HP heal never spends SP or replaces a queued action; parry requires 3 SP',()=>{
@@ -279,7 +279,7 @@ test('queued heal charges only at execution and cancels for free if HP becomes f
   if(fillBeforeExecution)b.player.hp=b.player.maxHp;
   seconds(t,.5);
   assert.equal(b.skillPoints,fillBeforeExecution?3:1);
-  assert.equal(b.player.hp,fillBeforeExecution?b.player.maxHp:80);
+  assert.equal(b.player.hp,fillBeforeExecution?b.player.maxHp:140);
  }
 });
 

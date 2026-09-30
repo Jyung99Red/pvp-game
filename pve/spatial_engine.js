@@ -9,7 +9,7 @@ const spatialEngine = (() => {
         if (C.walls && (!Array.isArray(C.walls) || C.walls.some(w => !w || ![w.x, w.y, w.width, w.height].every(Number.isFinite) ||
             w.width <= 0 || w.height <= 0 || w.x < 0 || w.y < 0 || w.x + w.width > C.width || w.y + w.height > C.height))) throw new Error('Invalid arena walls');
         const nonnegative = v => Number.isFinite(v) && v >= 0;
-        if (![C.playerTurn ?? gameConfig.training.playerTurn, C.chargeMoveMultiplier ?? gameConfig.training.chargeMoveMultiplier, C.chargeTurnMultiplier ?? gameConfig.training.chargeTurnMultiplier, C.guardMoveMultiplier ?? gameConfig.training.guardMoveMultiplier, C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
+        if (![C.playerTurn ?? gameConfig.combatBase.playerTurn, C.chargeMoveMultiplier ?? gameConfig.combatBase.chargeMoveMultiplier, C.chargeTurnMultiplier ?? gameConfig.combatBase.chargeTurnMultiplier, C.guardMoveMultiplier ?? gameConfig.combatBase.guardMoveMultiplier, C.guardTurnMultiplier ?? gameConfig.combatBase.guardTurnMultiplier, ...Object.values(C.motion || {})].every(nonnegative)) throw new Error('Invalid motion modifiers');
         validateCombo(C.combo);
         if (!nonnegative(C.atk)) throw new Error('Invalid attack');
         if (![C.guardStartup, C.parryWindow, C.spRegen, C.skillPointMax, C.hitStun, C.playerSpeed, C.blockMultiplier, C.parryDamage].every(nonnegative) ||
@@ -65,7 +65,7 @@ const spatialEngine = (() => {
         return {
             config: C, random, buffs: { chargeHasteUntil: 0, instantCharge: false, autoParry: 0 }, apRateMult: 1,
             time: 0, elapsed: 0, running: false, started: false, result: null,
-            skillPoints: Math.max(0, Math.min(C.skillPointMax ?? gameConfig.training.skillPointMax, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
+            skillPoints: Math.max(0, Math.min(C.skillPointMax ?? gameConfig.combatBase.skillPointMax, C.skillPoints ?? 0)), skillProgress: C.skillProgress ?? 0,
             player: { ...C.player, guardBar: C.guardMax, guardLocked: false, phase: 'idle', timer: 0, charge: 0, chain: null },
             enemy: C.solo ? null : { ...C.enemy, phase: 'approach', timer: C.ai.initialDelay, sequence: 0, stagger: 0 },
             controls: { ...gameConfig.controls, ...C.controls },
@@ -184,7 +184,7 @@ const spatialEngine = (() => {
         const C = b.config, p = b.player, len = Math.hypot(dx, dy);
         const deadZone = combatGestures.config.deadZone;
         if (len <= deadZone) return;
-        const slow = charging ? (C.chargeMoveMultiplier ?? gameConfig.training.chargeMoveMultiplier) * motion(b, 'chargeMove') : ['guard_start', 'guard'].includes(p.phase) ? (C.guardMoveMultiplier ?? gameConfig.training.guardMoveMultiplier) : 1;
+        const slow = charging ? (C.chargeMoveMultiplier ?? gameConfig.combatBase.chargeMoveMultiplier) * motion(b, 'chargeMove') : ['guard_start', 'guard'].includes(p.phase) ? (C.guardMoveMultiplier ?? gameConfig.combatBase.guardMoveMultiplier) : 1;
         const speed = C.playerSpeed * motion(b, 'move') * slow * Math.min(1, (len - deadZone) / C.moveRamp);
         S.move(p, dx / len * speed, dy / len * speed, dt, C, b.enemy);
     }
@@ -542,11 +542,11 @@ const spatialEngine = (() => {
         if (p.phase === 'idle') {
             if (b.move?.mode === 'move' && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
                 p.chain = null; // actually walking away ends the combo
-                p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
-            } else if (b.controls.autoFace && b.enemy) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
+                p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.combatBase.playerTurn) * motion(b, 'turn'));
+            } else if (b.controls.autoFace && b.enemy) p.facing = S.turn(p.facing, S.facing(p, b.enemy), dt * (C.playerTurn ?? gameConfig.combatBase.playerTurn) * motion(b, 'turn'));
         } else if (p.phase === 'charging') {
             if (g && Math.hypot(g.cx, g.cy) > combatGestures.config.deadZone) {
-                p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? gameConfig.training.chargeTurnMultiplier) * motion(b, 'chargeTurn'));
+                p.facing = S.turn(p.facing, Math.atan2(g.cy, g.cx), dt * (C.playerTurn ?? gameConfig.combatBase.playerTurn) * motion(b, 'turn') * (C.chargeTurnMultiplier ?? gameConfig.combatBase.chargeTurnMultiplier) * motion(b, 'chargeTurn'));
             }
             p.charge = Math.min(C.fullCharge, p.charge + (b.time - p.chargeUpdatedAt) *
                 (b.time <= b.buffs.chargeHasteUntil ? (C.skills?.haste?.chargeRate ?? gameConfig.skills.haste.chargeRate) : 1));
@@ -555,11 +555,11 @@ const spatialEngine = (() => {
             // Inside a combo a drag only turns; the next move goes where the
             // fighter faces the moment it starts.
             if (b.move && Math.hypot(b.move.dx, b.move.dy) > combatGestures.config.deadZone) {
-                p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn'));
+                p.facing = S.turn(p.facing, Math.atan2(b.move.dy, b.move.dx), dt * (C.playerTurn ?? gameConfig.combatBase.playerTurn) * motion(b, 'turn'));
             }
         } else if (['guard_start', 'guard'].includes(p.phase)) {
             if (b.guard && Math.hypot(b.guard.cx, b.guard.cy) > combatGestures.config.deadZone) {
-                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * (C.playerTurn ?? gameConfig.training.playerTurn) * motion(b, 'turn') * (C.guardTurnMultiplier ?? gameConfig.training.guardTurnMultiplier));
+                p.facing = S.turn(p.facing, Math.atan2(b.guard.cy, b.guard.cx), dt * (C.playerTurn ?? gameConfig.combatBase.playerTurn) * motion(b, 'turn') * (C.guardTurnMultiplier ?? gameConfig.combatBase.guardTurnMultiplier));
             }
         }
     }
@@ -573,7 +573,10 @@ const spatialEngine = (() => {
             if (p.phase === 'recover' && deriveNow(b)) return;
             if (p.timer === 0) {
                 if (p.phase === 'guard_start') { p.phase = 'guard'; p.guardReadyAt = b.time; }
-                else if (p.phase === 'attack') { p.phase = 'swing'; p.timer = moveOf(b, p.attack.move).swing; }
+                else if (p.phase === 'attack') {
+                    p.phase = 'swing'; p.timer = moveOf(b, p.attack.move).swing;
+                    emit(b, 'swing_started', { side: 'player', move: p.attack.move, heavy: p.attack.heavy });
+                }
                 else if (['recover', 'stunned'].includes(p.phase)) { p.phase = 'idle'; flushQueue(b); }
             }
         }
@@ -704,7 +707,7 @@ const spatialEngine = (() => {
         return true;
     }
     function tickSkillPoints(b, dt) {
-        const C = b.config, p = b.player, max = C.skillPointMax ?? gameConfig.training.skillPointMax;
+        const C = b.config, p = b.player, max = C.skillPointMax ?? gameConfig.combatBase.skillPointMax;
         if (!Number.isFinite(C.spRegen) || C.spRegen <= 0 || max <= 0 || p.hp <= 0 || b.skillPoints >= max) return;
         b.skillProgress = Math.max(0, b.skillProgress || 0) + dt * C.spRegen;
         while (b.skillProgress >= 1 - 1e-9 && b.skillPoints < max) {

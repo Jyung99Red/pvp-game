@@ -14,7 +14,7 @@ const pveLogic = (() => {
     const _bossDefeated = enemyId => !!state.progress.defeatedBosses[enemyId];
     const _exitOpen = exit => !exit.requiresBoss || _bossDefeated(exit.requiresBoss);
     // Region a IS the base. The status is what grants full hot-spring regen,
-    // what lets `startEncounter` fire, and what gates the training page.
+    // what lets `startEncounter` fire, and what gates the training post.
     const _statusFor = id => id === 'a' ? 'base' : 'exploring';
     // adventure_world is absent from the scene-less dev/test harness, where the
     // legacy arena stands in and there is no region to hand back to.
@@ -39,8 +39,19 @@ const pveLogic = (() => {
         return dropped;
     }
 
+    // A training fight ends either way without rewards or death: HP was never
+    // written back, so the region resumes exactly as it was.
+    function _endTraining(outcome) {
+        const b = state.pveBattle;
+        if (b.settled) return;
+        b.settled = true;
+        const s = b.spatial.stats;
+        adventureWorld.notice(`训练结束 · ${outcome} · 用时 ${Math.floor(b.spatial.elapsed)} 秒 · 命中 ${s.hits}/${s.attacks} · 格挡 ${s.blocks} · 弹反 ${s.parries}`, 8);
+        _returnToRegion();
+    }
     function _onVictory() {
         const b = state.pveBattle;
+        if (b.training) { _endTraining('木桩已击倒'); return; }
         if (b.settled) return;
         b.settled = true;
         const eData = b.enemyData;
@@ -72,6 +83,7 @@ const pveLogic = (() => {
 
     function _onDefeat() {
         const b = state.pveBattle;
+        if (b.training) { _endTraining('被击倒'); return; }
         if (b.settled) return;
         b.settled = true;
         fx.log.death();
@@ -138,7 +150,7 @@ const pveLogic = (() => {
     }
     function _sync() {
         const b = state.pveBattle;
-        state.player.currentHp = b.player.hp;
+        if (!b.training) state.player.currentHp = b.player.hp;
         // Keep the old outer mirror usable for callers/tests while the engine
         // owns the fractional clock during normal simulation.
         const externallyChanged = b._skillPointsMirror != null && b.skillPoints !== b._skillPointsMirror;
@@ -203,8 +215,8 @@ const pveLogic = (() => {
                 const recovery = gameConfig.progression.recovery;
                 if (b.regenElapsed >= 1 - 1e-9) {
                     b.regenElapsed -= 1; b.regenTicks++;
-                    spatialEngine.heal(engine, (b.regenTicks % recovery.passiveEveryTicks === 0 ? recovery.passiveHp : 0) +
-                        Math.max(0, (state.base.buildings.hotSpring || 0) - recovery.hotSpringCombatPenalty));
+                    spatialEngine.heal(engine, ((b.regenTicks % recovery.passiveEveryTicks === 0 ? recovery.passiveHp : 0) +
+                        Math.max(0, (state.base.buildings.hotSpring || 0) - recovery.hotSpringCombatPenalty)) * gameConfig.balance.hpScale);
                 }
             }
             _sync(); _processEvents();
@@ -226,20 +238,20 @@ const pveLogic = (() => {
         advance((now - _lastTime) / 1000); _lastTime = now;
         if (b.spatial.running) _rAF = requestAnimationFrame(_loop);
     }
-    function _beginFight(enemyId, region, isBoss, mapEntityId = null) {
+    function _beginFight(enemyId, region, isBoss, mapEntityId = null, training = false) {
         _stopLoop(); _displayEvents = []; _pendingDefeat = false;
         const skillPoints = 0, skillProgress = 0;
         const eData = { ...content.enemies[enemyId] };
         // A live region scene fights in region space at the monster's own
         // position; with no scene (the dev shortcut and its headless tests) the
-        // legacy arena stands in unchanged.
-        const enlisted = _hasField() ? adventureWorld.enlist(enemyId, mapEntityId) : null;
+        // legacy arena stands in unchanged. Training always needs the scene.
+        const enlisted = training ? adventureWorld.enlistTraining(enemyId) : _hasField() ? adventureWorld.enlist(enemyId, mapEntityId) : null;
         const engine = spatialEngine.create(enlisted ? enlisted.config : pveProfiles.create(enemyId, eData), _random);
         engine.skillPoints = skillPoints; engine.skillProgress = skillProgress;
         state.pveBattle = {
             battleId: ++_nextId, spatial: engine, active: true, settled: false, ended: false,
             player: engine.player, enemy: engine.enemy, buffs: engine.buffs,
-            enemyId, enemyData: eData, regionId: region.id, region, isBoss, mapEntityId, skillPoints, skillProgress,
+            enemyId, enemyData: eData, regionId: region.id, region, isBoss, mapEntityId, skillPoints, skillProgress, training,
             arena: arenaEffects.create(eData.arena), log: [], regenElapsed: 0, regenTicks: state.time.tick,
             _skillPointsMirror: skillPoints,
             // Leash disengage data. Left at 0 on the legacy arena, which is what
@@ -354,7 +366,7 @@ const pveLogic = (() => {
                 }
                 case 'storage': ui.openInventoryModal(); return true;
                 case 'build': ui.openBuildingModal(); return true;
-                case 'training': ui.enterTraining(); return true;
+                case 'training': return this.startTraining();
                 default: return false;
             }
         },
@@ -366,6 +378,16 @@ const pveLogic = (() => {
             const allowed = isBoss ? !_bossDefeated(enemyId) : region.encounters?.includes(enemyId);
             if (!allowed || !content.enemies[enemyId]) return false;
             _beginFight(enemyId, region, isBoss, mapEntityId);
+            return true;
+        },
+        // The base's training post: a formal fight against a dummy, with the
+        // same move table, parameters and equipment -- but no rewards and no
+        // death. The combo tree is shown while it runs.
+        startTraining() {
+            if (state.world.status !== 'base' || state.pveBattle?.active || !_hasField()) return false;
+            const enemyId = gameConfig.adventure.trainingEnemyId;
+            if (!content.enemies[enemyId]) return false;
+            _beginFight(enemyId, _currentRegion(), false, null, true);
             return true;
         },
         startRandomEncounter() {

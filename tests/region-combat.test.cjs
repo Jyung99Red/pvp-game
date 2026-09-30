@@ -221,6 +221,31 @@ test('the hot spring restores the walker and the body the region carries', () =>
     assert.equal(scene.field.player.hp, scene.field.player.maxHp);
 });
 
+test('the training post is a real fight with no rewards and no death, and hands the base back', () => {
+    for (const outcome of ['victory', 'defeat']) {
+        const t = setup({ region: 'a' });
+        vm.runInContext(`state.world.status = 'base'`, t.c);
+        const scene = t.adventureWorld.scene(), post = scene.structures.find(item => item.kind === 'training');
+        t.state.player.currentHp = 50;
+        const exp = t.state.inventory.exp, gold = t.state.resources.gold;
+        scene.player.x = post.x; scene.player.y = post.y - 30;
+        t.frames(1);
+        assert.equal(scene.interaction?.kind, 'training');
+        assert.equal(t.pveLogic.interact(), true);
+        const b = t.state.pveBattle;
+        assert.equal(b.training, true); assert.equal(b.enemyId, vm.runInContext('gameConfig.adventure.trainingEnemyId', t.c));
+        assert.equal(b.spatial.config.training, true, 'the view shows the combo tree for it');
+        assert.equal(b.player.hp, b.player.maxHp, 'practice starts at full HP');
+        assert.deepEqual(Object.keys(b.spatial.config.combo.moves), Object.keys(vm.runInContext('spatialData.baseCombatPreset.combo.moves', t.c)), 'the same move table');
+        if (outcome === 'victory') b.enemy.hp = 0; else b.player.hp = 0;
+        t.pveLogic.advance(.01);
+        assert.equal(b.ended, true); assert.equal(t.state.world.status, 'base');
+        assert.equal(t.state.player.currentHp, 50, 'HP is never written back');
+        assert.equal(t.state.inventory.exp, exp); assert.equal(t.state.resources.gold, gold);
+        assert.match(scene.notice, /训练结束/);
+    }
+});
+
 test('an unbuilt facility opens the build panel instead of its own', () => {
     const t = setup({ region: 'a' });
     const scene = t.adventureWorld.scene();

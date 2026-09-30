@@ -38,7 +38,7 @@ const tick = {
         // 3. Passive recovery shares its cadence with the formal PVE loop.
         const recovery = gameConfig.progression.recovery;
         if (allowRegen && state.time.tick % recovery.passiveEveryTicks === 0 && state.player.currentHp > 0 && state.player.currentHp < player.getStats().maxHp) {
-            player.heal(recovery.passiveHp);
+            player.heal(recovery.passiveHp * gameConfig.balance.hpScale);
         }
 
         // --- 4. Hot spring healing check ---
@@ -51,7 +51,7 @@ const tick = {
                 healAmt = hotSpringLv - recovery.hotSpringCombatPenalty;
             }
             if (healAmt > 0) {
-                player.heal(healAmt);
+                player.heal(healAmt * gameConfig.balance.hpScale);
             }
         }
         

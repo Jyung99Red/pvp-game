@@ -11,7 +11,7 @@ for (const file of ['game_config.js', 'core/spatial_combat.js', 'core/combat_ges
 const L = vm.runInContext('spatialEngine', context);
 const S = vm.runInContext('spatialCombat', context);
 
-test('shared view mounts on training Document and formal Element roots, and redraws after resize', () => {
+test('shared view mounts on Document and formal Element roots, and redraws after resize', () => {
     for (const formal of [false, true]) {
         let resized, draws = 0, disconnected = false;
         const rotations = [];
@@ -41,7 +41,7 @@ test('shared view mounts on training Document and formal Element roots, and redr
         const { view, battle } = vm.runInContext('({view: uiSpatialBattle.create(root), battle: spatialEngine.create()})', c);
         view.render(battle);
         assert.equal(draws, 1); resized(); assert.equal(draws, 2);
-        assert.equal(root.querySelector('[id="player-hp"]').textContent, '120 / 120');
+        assert.equal(root.querySelector('[id="player-hp"]').textContent, '360 / 360');
         battle.player.phase = 'guard_start'; battle.player.timer = battle.config.guardStartup / 2;
         const saved = JSON.stringify(battle);
         view.render(battle, [], .016);
@@ -147,25 +147,25 @@ test('geometry covers front, back, radial edges and circular reach', () => {
 test('one attack damages once, misses outside range, and light hits do not interrupt windup', () => {
     const b = setup(); incoming(b, 1);
     L.press(b, 'move'); L.release(b, 'move'); advance(b, .2);
-    assert.equal(b.enemy.hp, 342); assert.equal(b.enemy.phase, 'windup');
-    advance(b, .2); assert.equal(b.enemy.hp, 342);
+    assert.equal(b.enemy.hp, 1062); assert.equal(b.enemy.phase, 'windup');
+    advance(b, .2); assert.equal(b.enemy.hp, 1062);
     const c = setup(); c.enemy.y = 50;
     L.press(c, 'move'); L.release(c, 'move'); advance(c, .2);
-    assert.equal(c.enemy.hp, 360); assert.equal(c.stats.misses, 1);
+    assert.equal(c.enemy.hp, 1080); assert.equal(c.stats.misses, 1);
 });
 test('front guard, rear hit and precise guard produce different outcomes', () => {
     const b = setup(); L.press(b, 'guard'); advance(b, .6); incoming(b); advance(b, .2);
-    assert.equal(b.stats.blocks, 1); assert.equal(b.player.hp, 114);
-    advance(b, .3); assert.equal(b.player.hp, 114);
+    assert.equal(b.stats.blocks, 1); assert.equal(b.player.hp, 354);
+    advance(b, .3); assert.equal(b.player.hp, 354);
     const c = setup(); L.press(c, 'guard'); advance(c, .6); incoming(c); c.player.facing = Math.PI / 2;
-    advance(c, .2); assert.equal(c.stats.blocks, 0); assert.equal(c.player.hp, 95);
+    advance(c, .2); assert.equal(c.stats.blocks, 0); assert.equal(c.player.hp, 335);
     const d = setup(); L.press(d, 'guard'); advance(d, .18); incoming(d, .05); advance(d, .1);
-    assert.equal(d.stats.parries, 1); assert.equal(d.player.hp, 120); assert.equal(d.enemy.hp, 350);
+    assert.equal(d.stats.parries, 1); assert.equal(d.player.hp, 360); assert.equal(d.enemy.hp, 1070);
 });
 test('locked windup stops tracking, and moving outside its sector avoids damage', () => {
     const b = setup(); incoming(b, .3); const facing = b.enemy.facing;
     b.player.x = 70; b.player.y = 170; advance(b, .4);
-    assert.equal(b.enemy.facing, facing); assert.equal(b.player.hp, 120); assert.equal(b.stats.dodges, 1);
+    assert.equal(b.enemy.facing, facing); assert.equal(b.player.hp, 360); assert.equal(b.stats.dodges, 1);
 });
 test('a lethal player hit ends the fight before a pending enemy hit can execute', () => {
     // The slash lands mid-swing (~.15s); the enemy's windup would end at .3s.
@@ -231,7 +231,7 @@ test('the blade hits whoever stands on its starting side first, once per move', 
     const left = hitAt(-1), right = hitAt(1);
     assert.ok(left != null && right != null && left < right, `left ${left} right ${right}`);
     const b = setup(); b.enemy.y = b.player.y - 60; tap(b); advance(b, .6);
-    assert.equal(b.stats.hits, 1); assert.equal(b.enemy.hp, 360 - 18);
+    assert.equal(b.stats.hits, 1); assert.equal(b.enemy.hp, 1080 - 18);
 });
 test('a fast swing cannot skip a target between two steps', () => {
     const b = setup(); b.player.chain = { move: 'backslash', at: 0 }; b.time = .5;
@@ -371,7 +371,7 @@ test('hit invalidates right input and instances do not share mutable fighter sta
     L.press(b, 'move'); const version = b.actionInputVersion; advance(b, .2);
     assert.ok(b.actionInputVersion > version); assert.equal(b.action, null); assert.equal(b.guard, null);
     L.release(b, 'move'); assert.equal(b.stats.attacks, 0);
-    assert.equal(other.player.hp, 120); assert.equal(other.events.length, 0);
+    assert.equal(other.player.hp, 360); assert.equal(other.events.length, 0);
     assert.equal(Object.isFrozen(L.config.combo.moves.charged), true);
 });
 
@@ -541,7 +541,7 @@ test('raising costs a little, holding drains, and a block costs more than a perf
     const b = setup(); L.press(b, 'guard');
     assert.equal(b.player.guardBar, 100 - G.raiseCost);
     advance(b, .5); assert.ok(Math.abs(b.player.guardBar - (100 - G.raiseCost - G.holdDrain * .5)) < 1e-6);
-    const cost = raw => raw / 120 * G.blockCostScale * G.max;
+    const cost = raw => raw / 360 * G.blockCostScale * G.max;
     const block = setup(); L.press(block, 'guard'); advance(block, .6); incoming(block, .01);
     const before = block.player.guardBar; advance(block, .01);
     assert.equal(block.stats.blocks, 1); assert.ok(Math.abs(before - block.player.guardBar - cost(25) - G.holdDrain * .01) < 1e-6);
@@ -562,7 +562,7 @@ test('an empty bar drops the guard and locks it until the bar is back to the unl
     advance(b, .06); assert.equal(b.player.guardLocked, false); assert.equal(L.press(b, 'guard'), true);
     // The block that empties the bar still counts.
     const c = setup(); L.press(c, 'guard'); advance(c, .6); c.player.guardBar = 5; incoming(c, .01); advance(c, .01);
-    assert.equal(c.stats.blocks, 1); assert.equal(c.player.hp, 114); assert.equal(c.player.guardLocked, true);
+    assert.equal(c.stats.blocks, 1); assert.equal(c.player.hp, 354); assert.equal(c.player.guardLocked, true);
 });
 test('guard cuts a recovery at once, waits out windup and swing, and drops a charge', () => {
     const b = setup(); tap(b); advance(b, .25); assert.equal(b.player.phase, 'recover');

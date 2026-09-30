@@ -352,6 +352,22 @@ const adventureWorld = (() => {
             for (const other of scene.monsters) if (other.phase === 'chase') other.phase = 'return';
             return { config: C, home: { ...monster.home }, leash: monster.leash, alertRange: monster.alertRange };
         },
+        // The base's training post: the same formal fight a region monster
+        // gives, against a dummy set down a few steps in front of the player.
+        // The `training` flag is what makes the fight reward-free and deathless
+        // (pveLogic) and shows the combo tree (the shared view).
+        enlistTraining(enemyId) {
+            const def = region();
+            if (!scene || !def || !content.enemies[enemyId]) return null;
+            const C = pveProfiles.enemy(def, enemyId, content.enemies[enemyId], { radius: MONSTER_RADIUS });
+            const p = scene.player, facing = p.facing || 0, gap = 90;
+            C.training = true;
+            Object.assign(C.player, { x: p.x, y: p.y, facing, hp: C.player.maxHp });
+            C.enemy.x = clamp(p.x + Math.cos(facing) * gap, MONSTER_RADIUS, def.map.width - MONSTER_RADIUS);
+            C.enemy.y = clamp(p.y + Math.sin(facing) * gap, MONSTER_RADIUS, def.map.height - MONSTER_RADIUS);
+            C.enemy.facing = Math.atan2(p.y - C.enemy.y, p.x - C.enemy.x);
+            return { config: C, home: null, leash: 0, alertRange: 0 };
+        },
         // Hand the region back after a fight. On victory the monster is already
         // gone via completeEncounter; on a disengage it walks home from wherever
         // the fight actually left it rather than teleporting.

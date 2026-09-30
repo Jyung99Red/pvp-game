@@ -1,4 +1,4 @@
-// Operation preferences are shared by training and PVE, separate from progression saves.
+// Operation preferences are shared by PVE and PVP, separate from progression saves.
 const combatSettings = (() => {
     const defaults = gameConfig.controls;
     const key = 'pvp-game-combat-controls-v1';

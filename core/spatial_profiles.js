@@ -31,7 +31,7 @@ const spatialProfiles = (() => {
         }
         return out;
     }
-    function fair() { return normalize({ ...FAIR_PROFILE, motion: { ...FAIR_PROFILE.motion } }); }
+    function fair() { return normalize({ ...FAIR_PROFILE, maxHp: Math.round(FAIR_PROFILE.maxHp * gameConfig.balance.hpScale), motion: { ...FAIR_PROFILE.motion } }); }
     function isFair(p) {
         try {
             const n = normalize(p), f = fair();

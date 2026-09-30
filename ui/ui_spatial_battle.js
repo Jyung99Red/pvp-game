@@ -11,6 +11,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     const canvas = options.canvasId ? root.querySelector(`[id="${options.canvasId}"]`) : $('arena'), ctx = canvas.getContext('2d');
     const layer = options.layer || null;
     const pads = { move: $('move-pad'), guard: $('guard-pad'), skill: $('skill-pad') };
+    if (typeof sfx !== 'undefined') sfx.attach(root);
     const nodes = Object.fromEntries(['player-hp', 'enemy-hp', 'player-meter', 'enemy-meter', 'enemy-state', 'player-state', 'clock', 'notice', 'charge-fill', 'move-label', 'guard-label', 'skill-label', 'battle-log'].map(id => [id, $(id)]));
     const fullscreen = root.classList?.contains('spatial-fullscreen') || false;
     let width = 360, height = 400, worldTop = 25, worldBottom = 19, worldInset = 6;
@@ -21,7 +22,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     // `zoom` (world units per CSS pixel) pins the scale and DERIVES the visible
     // window from it, so walking and fighting share one world-to-screen mapping
     // and starting a fight cannot zoom. Without it the window is a fixed size
-    // fitted into the canvas, which is what PVP and training still do.
+    // fitted into the canvas, which is what PVP still does.
     // A region config also owns its window insets, because the world layer paints
     // exactly the derived window and would otherwise leave a bare frame around it.
     let zoom = C.camera?.zoom || 0;
@@ -88,7 +89,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     // faction mapping, never a camera rotation.
     function viewportLayout() {
         const availableHeight = Math.max(1, height - worldTop - worldBottom);
-        // Zoom mode pins the scale; the fit branch is what PVP and training use.
+        // Zoom mode pins the scale; the fit branch is what PVP uses.
         // syncWindow derived the window from this same zoom, so in normal cases
         // the fit would already agree -- do not "simplify" this away: it is what
         // keeps a degenerate canvas (insets wider than the element, which clamps
@@ -158,12 +159,51 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     const observer = new ResizeObserver(resize); observer.observe(canvas);
     let notice = '拖动移动 · 短按出招，按节奏连段 · 原位长按蓄力', effects = [], lastTime = 0, logs = [];
     const moveName = id => C.combo?.moves?.[id]?.view?.name || '攻击';
+    // Every move's input sequence, read off the tree once per combo table:
+    // { slash: 'T', backslash: 'T T', thrust: 'T T - T', ... } plus its stage.
+    const INPUT_LABEL = { tap: 'T', hold: 'H', pause: '- T' };
+    let pathsFor = null, paths = {};
+    function comboPaths() {
+        if (pathsFor === C.combo) return paths;
+        pathsFor = C.combo; paths = {};
+        const visit = (id, seq, stage) => {
+            if (!C.combo?.moves?.[id] || paths[id]) return;
+            paths[id] = { seq: seq.join(' '), stage };
+            for (const [input, next] of Object.entries(C.combo.moves[id].next || {})) visit(next, [...seq, INPUT_LABEL[input]], stage + 1);
+        };
+        for (const [input, id] of Object.entries(C.combo?.root || {})) visit(id, [INPUT_LABEL[input]], 1);
+        return paths;
+    }
+    const stageName = id => comboPaths()[id] ? `第 ${comboPaths()[id].stage} 段 · ${moveName(id)}` : moveName(id);
+    // Training post only: the whole tree, the move under way and what may follow it.
+    let treeKey = '';
+    function comboTree() {
+        const node = $('combo-tree');
+        if (!node) return;
+        node.hidden = !C.training;
+        if (!C.training) return;
+        const p = battle.player, list = comboPaths();
+        const current = ['attack', 'swing', 'recover', 'poise'].includes(p.phase) ? (p.phase === 'poise' ? battle.move?.derived : p.attack?.move) : null;
+        const from = p.phase === 'recover' ? p.attack?.move : p.phase === 'idle' ? p.chain?.move : null;
+        const next = new Set(Object.values(C.combo.moves[from]?.next || {}));
+        const key = `${current}|${[...next].join(',')}`;
+        if (key === treeKey) return;
+        treeKey = key;
+        node.innerHTML = Object.entries(list).map(([id, { seq }]) =>
+            `<span class="${id === current ? 'current' : next.has(id) ? 'next' : ''}"><b>${seq}</b>${moveName(id)}</span>`).join('');
+    }
     const hitFlashes = { player: 0, enemy: 0 };
+    // Presentation-only screen shake, in world units; kept small on purpose.
+    const SHAKE = { hit: 2.5, parry: 3, block: 1.2 }, SHAKE_TIME = .14;
+    let shake = 0, shakeAmp = 0;
     function consume(events) {
         const dt = Math.max(0, battle.time - lastTime); lastTime = battle.time;
         effects.forEach(e => e.life -= dt); effects = effects.filter(e => e.life > 0);
         for (const side of ['player', 'enemy']) hitFlashes[side] = Math.max(0, hitFlashes[side] - dt);
+        shake = Math.max(0, shake - dt);
         for (const e of events) {
+            if (typeof sfx !== 'undefined') sfx.play(e);
+            if (SHAKE[e.type]) { shakeAmp = Math.max(shake > 0 ? shakeAmp : 0, SHAKE[e.type]); shake = SHAKE_TIME; }
             if (e.type === 'hp_changed' && e.hp < e.previous) {
                 hitFlashes[e.side] = .28;
                 if (e.side === 'enemy' || C.pvp) effects.push({ type: 'impact', x: e.x ?? battle[e.side].x, y: e.y ?? battle[e.side].y,
@@ -249,8 +289,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
     }
     function fighter(body, enemy) {
         const stunned = (!enemy || C.pvp) && body.phase === 'stunned';
-        const flash = stunned ? .75 : hitFlashes[enemy ? 'enemy' : 'player'] / .28;
-        const flashColor = stunned ? [255, 157, 45] : [255, 58, 70];
+        // The first instant of a hit reads white (it lines up with the hitstop), then red.
+        const fresh = hitFlashes[enemy ? 'enemy' : 'player'] > .22;
+        const flash = fresh ? .85 : stunned ? .75 : hitFlashes[enemy ? 'enemy' : 'player'] / .28;
+        const flashColor = fresh ? [255, 255, 255] : stunned ? [255, 157, 45] : [255, 58, 70];
         const tint = color => {
             if (!flash) return color;
             const rgb = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
@@ -426,6 +468,10 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         ctx.beginPath(); ctx.rect(0, 0, viewWidth, viewHeight); ctx.clip();
         if (C.reverseView) { ctx.translate(viewWidth, viewHeight); ctx.rotate(Math.PI); }
         if (camera) ctx.translate(viewWidth / 2 - camera.x, viewHeight / 2 - camera.y);
+        if (shake > 0) {
+            const k = shake / SHAKE_TIME * shakeAmp;
+            ctx.translate(Math.sin(battle.time * 97) * k, Math.cos(battle.time * 83) * k);
+        }
         if (layer) layer.world(ctx, { camera, viewWidth, viewHeight, scale });
         else {
             ctx.fillStyle = '#192a2d'; ctx.fillRect(0, 0, C.width, C.height);
@@ -543,7 +589,7 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
             const skill = skillDefinition(node.dataset.skill);
             node.textContent = `${skill.name} · ${skill.cost ?? ''}`.replace(/ · $/, '');
         }
-        draw(); controls();
+        draw(); controls(); comboTree();
         const p = battle.player, e = battle.enemy;
         text('battle-log', logs.join('\n'));
         text('player-hp', `${p.hp} / ${p.maxHp}`);
@@ -561,9 +607,9 @@ const uiSpatialBattle = { create(root, initialConfig = spatialData.baseCombatPre
         bar.querySelector('i').style.width = `${S.clamp(p.guardBar / max, 0, 1) * 100}%`;
         bar.classList.toggle('locked', !!p.guardLocked);
         bar.setAttribute('aria-label', `格挡条 ${Math.round(p.guardBar)} / ${Math.round(max)}${p.guardLocked ? ' · 恢复中' : ''}`);
-        const current = moveName(p.attack?.move);
+        const current = stageName(p.attack?.move);
         const phases = { idle: battle.move?.mode === 'move' ? '移动' : '待机', charging: '蓄力中 · 拖动走位转向', attack: `${current} · 前摇`, swing: current, recover: battle.queuedCommand ? `${current} · 收招 · 下一招已缓冲` : `${current} · 收招`,
-            poise: `${moveName(battle.move?.derived)} · 蓄势 · 松手出招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
+            poise: `${stageName(battle.move?.derived)} · 蓄势 · 松手出招`, guard_start: '举盾中', guard: '防御中 · 拖动盾键转向', stunned: '受击硬直' };
         text('player-state', phases[p.phase]);
         const t = Math.floor(battle.elapsed);
         text('clock', `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);

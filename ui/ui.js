@@ -15,7 +15,7 @@ const ui = {
 
         // `save` keeps the region but not the status, so a reload while out in
         // the world would otherwise come back labelled 'base' -- which grants
-        // base-rate regen in a danger region, lets the training page be entered
+        // base-rate regen in a danger region, lets the training post be used
         // from anywhere, and silently blocks every region encounter.
         state.world.status = state.progress.currentRegionId === 'a' ? 'base' : 'exploring';
 
@@ -109,12 +109,6 @@ const ui = {
     closeInventoryModal() { this.closePanel('inventory-overlay'); },
     openBuildingModal() { this.updateBuildingList(); this.openPanel('building-overlay'); },
     closeBuildingModal() { this.closePanel('building-overlay'); },
-
-    enterTraining() {
-        if (state.world.status !== 'base' || (state.pvpBattle && state.pvpBattle.active) || pvpNet.role) return;
-        save.save();
-        location.href = 'training.html';
-    },
 
     switchTab(tabId) {
         // A fight runs inside the region view, so there is no battle tab to escape

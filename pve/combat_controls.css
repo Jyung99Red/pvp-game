@@ -1,4 +1,4 @@
-/* Shared HUD and controls for training, PVE and PVP. */
+/* Shared HUD and controls for PVE and PVP. `.training` is the shared HUD class, kept from the old training page. */
 .training { position: relative; --control-size: 76px; --control-gap: 12px; }
 .training .pad.no-center-cancel .cancel-zone,
 :is(#view-adventure, #view-pvp-battle) .pad.no-center-cancel .cancel-zone { display: none; }

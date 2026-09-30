@@ -67,6 +67,14 @@
 :is(#view-adventure, #view-pvp-battle) .guard-bar { width: 96px; height: 5px; border-radius: 3px; background: #3c5157; overflow: hidden; }
 :is(#view-adventure, #view-pvp-battle) .guard-bar i { display: block; height: 100%; width: 100%; background: #8dbdef; transition: background .2s; }
 :is(#view-adventure, #view-pvp-battle) .guard-bar.locked i { background: #c9705f; }
+#view-adventure .combo-tree { display: flex; flex-wrap: wrap; gap: 3px 4px; margin: 4px 0 2px; font-size: 10px; }
+#view-adventure .combo-tree[hidden] { display: none; }
+#view-adventure .combo-tree span { padding: 1px 6px; border: 1px solid #3c5157; border-radius: 8px; color: #93aaa6; white-space: nowrap; }
+#view-adventure .combo-tree span b { margin-right: 4px; color: #6f8a86; font-weight: 600; }
+#view-adventure .combo-tree span.next { border-color: #81e6d9; color: #d7fff7; }
+#view-adventure .combo-tree span.next b { color: #81e6d9; }
+#view-adventure .combo-tree span.current { border-color: #efc181; background: #efc18126; color: #fff4cb; }
+#view-adventure .combo-tree span.current b { color: #efc181; }
 :is(#view-adventure, #view-pvp-battle) :is(#adv-s-player-state, #pvp-s-player-state) { margin-left: auto; color: var(--cyan); }
 :is(#view-adventure, #view-pvp-battle) .charge-track { height: 3px; background: #26363980; margin-top: 6px; border-radius: 3px; overflow: hidden; }
 :is(#view-adventure, #view-pvp-battle) :is(#adv-s-charge-fill, #pvp-s-charge-fill) { height: 100%; width: 0; background: var(--gold); }

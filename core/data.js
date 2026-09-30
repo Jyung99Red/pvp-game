@@ -14,7 +14,7 @@ const state = {
     player: {
         level: 1,
         baseStats: { ...gameConfig.progression.baseStats },
-        currentHp: gameConfig.progression.baseStats.maxHp,
+        currentHp: Math.round(gameConfig.progression.baseStats.maxHp * gameConfig.balance.hpScale),
         equip: { ...gameConfig.progression.startingEquipment }
     },
     // Persistent authored-world progress. Region location, discoveries and

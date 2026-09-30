@@ -1,11 +1,11 @@
-// Game tuning entry point. Loaded before both the game and training scripts.
+// Game tuning entry point. Loaded first by the game.
 // Edit values here, then reload the page / start a new battle to apply them.
 // All comments are English; player-facing names and descriptions stay Chinese.
 // Times use seconds unless the field ends in Ms. Positions/ranges use world units;
 // speeds use world units/second, angles use radians unless explicitly noted.
 // Ratios use 0..1 (0.30 = 30%); multipliers use 1 as the unchanged value.
-// The training section also supplies shared movement, action timing and SP limits.
-// Formal profiles override training damage, resource rates and character stats.
+// combatBase supplies shared movement, timing and SP limits to every mode;
+// formal profiles override its damage, resource rates and character stats.
 // Simulation steps, network limits, collision precision and CSS remain in their owners.
 // Existing saves retain earned base stats. Equipment values apply on reload.
 // PVP balance changes require a RULE_VERSION bump in pvp/pvp_logic.js.
@@ -25,6 +25,14 @@ const gameConfig = (() => {
             recovery: { passiveEveryTicks: 2, passiveHp: 1, hotSpringCombatPenalty: 1, reviveHpRatio: 0.10 },
         },
 
+        // 1b. Combo-era balance. Without AP a fighter can keep combo-ing:
+        // measured sustained output is ~.62-.77 ATK/s for the tap/hold chains
+        // against ~.15 (light every 2s) to ~.36 (optimal charged play) before.
+        // Every max HP -- player, monsters, PVP fair profile -- and every flat
+        // HP regen is multiplied by hpScale, applied where stats are derived so
+        // existing saves scale too. Enemy damage is unchanged.
+        balance: { hpScale: 3 },
+
         // 2. Formal PVE/PVP resource rules and damage coefficients.
         resources: {
             focusBaseline: 10, minFocus: 0.1,
@@ -41,10 +49,11 @@ const gameConfig = (() => {
         // Guard bar (first version), shared by PVE and PVP; units are bar points.
         // Only guarding spends it. blockCostScale: a blocked hit costs
         // raw / maxHp * blockCostScale * max, raw being the hit before DEF and
-        // block reduction, so a hit worth half the defender's max HP empties a
-        // full bar. After emptying, guard stays locked until the bar refills
-        // to unlockRatio. Equipment can raise `max`; costs stay on the base max.
-        guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 2, parryCostRatio: 0.5,
+        // block reduction. 6 = 2 x balance.hpScale: a hit worth a sixth of the
+        // scaled max HP (half of the pre-scale one) empties a full bar. After
+        // emptying, guard stays locked until the bar refills to unlockRatio.
+        // Equipment can raise `max`; costs stay on the base max.
+        guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5,
             refillSeconds: 3, unlockRatio: 0.4 },
         // Impact, simulation side (first version). On contact both fighters'
         // timers hold still for `hitstop` seconds, then the one struck (the
@@ -77,11 +86,15 @@ const gameConfig = (() => {
         // Both PVP modes use fair skill rules; character stats remain mode-specific.
         skillOverrides: { pve: {}, fair: {} },
 
-        // 5. Training baseline, also copied before formal mode overrides.
-        // Formal profiles replace HP/DEF, AP/SP recovery, damage and charge limits.
-        training: {
+        // 5. Combat base preset shared by every mode (PVE fights, the base's
+        // training post, PVP). Formal profiles copy it, then replace HP/DEF,
+        // SP recovery, ATK and charge limits. The fixed values below that are
+        // replaced (fullCharge, blockMultiplier, parryDamage, parryWindow,
+        // spRegen, atk, HP) only stand for a profile-less preset, as the
+        // engine tests use.
+        combatBase: {
             width: 360, height: 400,
-            fullCharge: 1.6, // Training only; formal charge duration comes from damage/resources.
+            fullCharge: 1.6, // Profile-less only; formal charge duration comes from damage/resources.
             playerSpeed: 115, // Base movement speed shared by all modes.
             playerTurn: 8, chargeMoveMultiplier: 0.6, chargeTurnMultiplier: 0.65,
             guardMoveMultiplier: 0.3, guardTurnMultiplier: 0.5,
@@ -92,12 +105,12 @@ const gameConfig = (() => {
             stagger: { threshold: 3, duration: 1.5, parry: 1 }, // Moves carry their own stagger points.
             moveRamp: 32, // CSS pixels beyond the dead zone to reach full speed.
             hitStun: 0.35, // Shared hit stun duration.
-            blockMultiplier: 0.25, parryDamage: 10, // Training only; formal values use damage coefficients.
+            blockMultiplier: 0.25, parryDamage: 10, // Profile-less only; formal values use damage coefficients.
             guardStartup: 0.16, // Shared delay before guard becomes active.
-            parryWindow: 0.18, // Training default; formal profiles override it.
-            skillPointMax: 3, // SP cap shared by training, PVE and PVP.
-            spRegen: 1 / 3, // Training SP/second; formal rates come from focus.
-            atk: 60, // Training attack; move damage = atk * move ratio. Formal profiles use the stat.
+            parryWindow: 0.18, // Profile-less default; formal profiles override it.
+            skillPointMax: 3, // SP cap shared by PVE and PVP.
+            spRegen: 1 / 3, // Profile-less SP/second; formal rates come from focus.
+            atk: 60, // Profile-less attack; move damage = atk * move ratio. Formal profiles use the stat.
             sweep: { kind: 'sector', range: 145, arc: Math.PI * 0.64, windup: 1.35, lock: 0.45, active: 0.16, recovery: 1.3, damage: 25 },
             stomp: { kind: 'circle', range: 110, windup: 1.5, lock: 0.55, active: 0.16, recovery: 1.45, damage: 30 }
         },
@@ -166,10 +179,10 @@ const gameConfig = (() => {
         // Region-session camera. `zoom` is world units per CSS pixel; 1 keeps the
         // overworld at its historic 1:1 scale. The SAME number feeds the fight as
         // well, which is what stops starting combat from causing a zoom jump --
-        // the fixed-window `camera` preset above is what PVP and training use.
+        // the fixed-window `camera` preset above is what PVP uses.
         // top/bottom/inset are the window insets in CSS pixels. They are 0 here
         // because the region layer paints exactly the derived window and the HUD
-        // floats over it; the PVE/PVP/training views keep their own insets.
+        // floats over it; the PVP view keeps its own insets.
         adventure: {
             goldPerExp: 0.60,
             camera: { zoom: 1, top: 0, bottom: 0, inset: 0, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 },
@@ -179,7 +192,9 @@ const gameConfig = (() => {
             structureRange: 56, structureRelease: 68,
             // A defeated region monster comes back this long after it fell.
             // Bosses never do: `progress.defeatedBosses` is what keeps them down.
-            monsterRespawnSeconds: 60
+            monsterRespawnSeconds: 60,
+            // The base's training post fights this enemy, reward-free and deathless.
+            trainingEnemyId: 'test_combat'
         },
         // Enemies keep a hidden AP pool that paces how often they attack:
         // each attack costs attackApCost, and focus scales apRecoveryMs.
@@ -497,7 +512,7 @@ const gameConfig = (() => {
                             { id: 'a-smithy',    kind: 'smithy',    label: '铁匠铺',     x: 640,  y: 210 },
                             { id: 'a-shop',      kind: 'shop',      label: '商店',       x: 640,  y: 520 },
                             { id: 'a-storage',   kind: 'storage',   label: '仓库',       x: 300,  y: 780 },
-                            { id: 'a-training',  kind: 'training',  label: '走位训练场', x: 920,  y: 720 },
+                            { id: 'a-training',  kind: 'training',  label: '训练场',     x: 920,  y: 720 },
                             { id: 'a-build',     kind: 'build',     label: '建设管理',   x: 1000, y: 240 }
                         ]
                     },
