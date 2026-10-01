@@ -1,11 +1,17 @@
-// The player as a fighter: the move tree on A and B (pre-input, derive
-// points, the pause line, the opening charge), the offhand (a shield for
-// now), being struck, and moving between all of that. Rules carried over
-// from the 2D version (tag v1-2d, pve/spatial_engine.js) with the input
-// layer of controls-landscape-concept.md 4: A and B are separate keys, A or
-// B start their move the moment they are pressed.
+// A fighter: the move tree on A and B (pre-input, derive points, the pause
+// line, the opening charge), the offhand (a shield for now), being struck,
+// and moving between all of that. Rules carried over from the 2D version
+// (tag v1-2d, pve/spatial_engine.js) with the input layer of
+// controls-landscape-concept.md 4: A and B are separate keys, A or B start
+// their move the moment they are pressed. Every rule takes the fighter it
+// applies to: PVE has one (sim.player), a duel two (sim.fighters).
 //
-// State on sim.player:
+// State on a fighter:
+//   id, side   who it is ('player'; a duel's 'host' and 'guest'); events
+//          carry it as `side`
+//   input  its five controls: { move: { x, y }, buttons: { a, b, offhand,
+//          interact: { held, presses } } }
+//   stats  attacks, hits, misses, blocks, parries, hurt, kills
 //   act    the move under way: { move, phase: windup|charge|swing|recover,
 //          t (seconds into the phase), facing, pressAt, share, stepTotal,
 //          hit: [ids], from: { move, t } | null }
@@ -17,40 +23,53 @@
 //   guard  { state: down|raising|up, t, readyAt, bar, locked, queued }
 //   stun, freeze (hitstop), push (knockback), bPress: { at, held, upAt }
 //   down, downT  fallen (HP emptied where nobody is `endless`), and since when
+//
+// Swings are settled once every fighter has moved (`settle`): each is
+// sampled against everyone as they stand after the step, and only then are
+// the hits applied, so two fighters cutting each other in the same step
+// both land, whoever is ticked first.
 const fighterKit = (() => {
+    const BUTTONS = Object.freeze(['a', 'b', 'offhand', 'interact']);
     const K = () => gameConfig.combo, F = () => gameConfig.combat;
     const moveOf = id => gameConfig.combo.moves[id];
-    const emit = (sim, type, data) => combatKit.emit(sim, type, { side: 'player', ...data });
+    const emit = (sim, p, type, data) => combatKit.emit(sim, type, { side: p.id, ...data });
     const approach = (value, target, rate) => target > value ? Math.min(target, value + rate) : Math.max(target, value - rate);
+    const heavyOf = m => m.knockback > 0 || m.stagger > 0;
 
     // `endless`: an emptied HP bar refills (training) instead of falling.
-    function init(p, { endless = true } = {}) {
-        const S = F().fighters.player;
+    // `stats` (optional) overrides the fighter's HP, ATK and DEF.
+    function init(p, { id = 'player', endless = true, stats = F().fighters.player } = {}) {
+        const buttons = {};
+        for (const b of BUTTONS) buttons[b] = { held: false, presses: 0 };
         return Object.assign(p, {
-            id: 'player', side: 'player', hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, endless,
+            id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
+            input: { move: { x: 0, y: 0 }, buttons },
+            stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
             act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
         });
     }
-    // Everyone the player can hit: the training dummy and living monsters.
-    function foes(sim) {
+    // Everyone a fighter can hit: the training dummy, living monsters, and
+    // the other fighters still standing.
+    function foes(sim, p) {
         const out = sim.dummy ? [sim.dummy] : [];
         for (const m of sim.monsters) if (monsterKit.living(m)) out.push(m);
+        for (const f of sim.fighters) if (f !== p && !f.down) out.push(f);
         return out;
     }
     const obstacles = foes;
-    // The player's body as judged now.
-    function solve(sim) {
-        const p = sim.player, rig = sim.rigs.player;
+    // The fighter's body as judged now.
+    function solve(sim, p) {
+        const rig = sim.rigs.player;
         return rigKit.solve(rig, playerAnim.pose(rig, p), space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
     }
-    function hurtboxes(sim) { return combatKit.hurtboxes(sim.rigs.player, solve(sim)); }
-    // Foes further than this from the player are not tested against a swing.
+    function hurtboxes(sim, p) { return combatKit.hurtboxes(sim.rigs.player, solve(sim, p)); }
+    // Foes further than this from the fighter are not tested against a swing.
     const REACH = 240;
 
     // ---- the move tree ----
-    function chainOpen(sim, at) {
-        const c = sim.player.chain;
+    function chainOpen(p, at) {
+        const c = p.chain;
         return !!c && at - c.at <= moveOf(c.move).recovery + K().windowAfterRecovery + 1e-9;
     }
     // The move an input pressed at `at` starts. The node is the move under
@@ -58,11 +77,10 @@ const fighterKit = (() => {
     // while its window is open. An A past the pause line takes the node's
     // pause move; a node without one treats it as an ordinary A. An input
     // with no entry starts over from the root.
-    function derive(sim, input, at) {
-        const p = sim.player;
+    function derive(p, input, at) {
         let node = null, paused = false;
         if (p.act && (p.act.phase === 'windup' || p.act.phase === 'swing')) node = p.act.move;
-        else if (chainOpen(sim, at)) {
+        else if (chainOpen(p, at)) {
             node = p.chain.move;
             paused = input === 'a' && at - p.chain.at >= moveOf(node).recovery + K().pauseAfterRecovery - 1e-9;
         }
@@ -70,8 +88,8 @@ const fighterKit = (() => {
         const id = paused ? next.pause ?? next.a : next[input];
         return id ? { id, derived: true, paused: paused && !!next.pause } : { id: K().root[input], derived: false, paused: false };
     }
-    function startMove(sim, input, at) {
-        const p = sim.player, d = derive(sim, input, at), prev = p.act;
+    function startMove(sim, p, input, at) {
+        const d = derive(p, input, at), prev = p.act;
         p.act = {
             move: d.id, phase: 'windup', t: 0, facing: p.facing, pressAt: at, share: 0, stepTotal: moveOf(d.id).step, hit: [],
             from: prev && prev.phase === 'recover' ? { move: prev.move, t: prev.t } : null
@@ -80,91 +98,111 @@ const fighterKit = (() => {
         p.chain = null; p.buffer = null;
         // Attacking stands the body still: a run is over.
         p.runBlend = 0; p.moveTime = 0;
-        sim.stats.attacks++;
-        emit(sim, 'attack', { move: d.id });
+        p.stats.attacks++;
+        emit(sim, p, 'attack', { move: d.id });
     }
-    function pressAttack(sim, input) {
-        const p = sim.player;
+    function pressAttack(sim, p, input) {
         // Shield up (or going up): A and B do nothing.
         if (p.guard.state !== 'down' || p.guard.queued) return false;
         if (p.act?.phase === 'charge') return false;
         // Pre-input: kept, never dropped; only the latest counts, and it runs
         // at the derive point, so pressing early never makes a move faster.
         if (p.act || p.stun > 0 || p.freeze > 0) { p.buffer = { input, at: sim.time, age: 0 }; return true; }
-        startMove(sim, input, sim.time);
+        startMove(sim, p, input, sim.time);
         return true;
     }
-    // Charge held so far for the move started by the B press at `pressAt`.
-    function chargeOf(sim, act) {
-        const b = sim.player.bPress, C = F().charge;
+    // Charge held so far for the move started by the B press at `act.pressAt`.
+    function chargeOf(sim, p, act) {
+        const b = p.bPress, C = F().charge;
         if (!b || b.at !== act.pressAt) return 0;
         return Math.min(C.full, (b.held ? sim.time : b.upAt) - b.at);
     }
     // `charged`: the swing comes out of a held charge. Let go before the
     // windup was over, it is the minimum charge (controls-landscape 4.2).
-    function beginSwing(sim, charged = false) {
-        const p = sim.player, a = p.act, m = moveOf(a.move), C = F().charge;
+    function beginSwing(sim, p, charged = false) {
+        const a = p.act, m = moveOf(a.move), C = F().charge;
         if (m.charge) {
-            a.share = charged ? Math.min(1, Math.max(0, (chargeOf(sim, a) - C.threshold) / (C.full - C.threshold))) : 0;
+            a.share = charged ? Math.min(1, Math.max(0, (chargeOf(sim, p, a) - C.threshold) / (C.full - C.threshold))) : 0;
             a.stepTotal = m.step + (m.chargeStep || 0) * a.share;
         }
         // A charge can turn; the cut goes where the body faces now.
         a.facing = p.facing;
         a.phase = 'swing'; a.t = 0;
-        emit(sim, 'swing', { move: a.move, heavy: m.knockback > 0 || m.stagger > 0 });
+        emit(sim, p, 'swing', { move: a.move, heavy: heavyOf(m) });
     }
-    function endSwing(sim) {
-        const p = sim.player, a = p.act;
-        if (!a.hit.length) { sim.stats.misses++; emit(sim, 'miss', { move: a.move }); }
+    // `quiet`: a predicted swing (a duel's guest) ends without a verdict.
+    function endSwing(sim, p, quiet = false) {
+        const a = p.act;
+        if (!a.hit.length && !quiet) { p.stats.misses++; emit(sim, p, 'miss', { move: a.move }); }
         a.phase = 'recover'; a.t = 0;
         p.chain = { move: a.move, at: sim.time, cued: false };
     }
-    // The player's body at swing progress u, for sampling the sweep.
-    function solveAt(sim, x0, y0, x1, y1, u0, u1) {
-        const p = sim.player, rig = sim.rigs.player, a = p.act, m = moveOf(a.move);
+    // The fighter's body at swing progress u, for sampling the sweep.
+    function solveAt(sim, p, a, x0, y0, x1, y1, u0, u1) {
+        const rig = sim.rigs.player, m = moveOf(a.move);
         return u => {
             const k = u1 > u0 ? (u - u0) / (u1 - u0) : 1;
             const body = { ...p, act: { ...a, t: u * m.swing } };
             return rigKit.solve(rig, playerAnim.pose(rig, body), space.toBlocks(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, p.h), space.yawOf(a.facing));
         };
     }
-    function swingStep(sim, dt) {
-        const p = sim.player, a = p.act, m = moveOf(a.move);
+    // Swings advanced this step, waiting for `settle`.
+    const sweeps = [];
+    function swingStep(sim, p, dt) {
+        const a = p.act, m = moveOf(a.move);
         const u0 = a.t / m.swing;
         a.t = Math.min(m.swing, a.t + dt);
         const u1 = a.t / m.swing;
         // The lunge: forward along the locked facing, easing out.
         const lunge = u => a.stepTotal * (1 - (1 - u) * (1 - u));
         const x0 = p.x, y0 = p.y, want = lunge(u1) - lunge(u0);
-        if (want > 0) terrainKit.moveCircle(sim.terrain, p, Math.cos(a.facing) * want, Math.sin(a.facing) * want, obstacles(sim));
-        // Each foe within reach is hit at most once by a move, and never
-        // across a wall.
-        const targets = foes(sim).filter(f => !a.hit.includes(f.id) && Math.hypot(f.x - p.x, f.y - p.y) <= REACH && terrainKit.lineClear(sim.terrain, p.x, p.y, f.x, f.y))
-            .map(f => ({ id: f.id, foe: f, boxes: combatKit.kitOf(f).hurtboxes(sim, f) }));
-        if (targets.length) {
-            for (const hit of combatKit.contacts(sim.rigs.player, solveAt(sim, x0, y0, p.x, p.y, u0, u1), u0, u1, targets)) {
-                land(sim, hit, targets.find(t => t.id === hit.id).foe);
-            }
-        }
-        if (a.t >= m.swing - 1e-9) endSwing(sim);
+        if (want > 0) terrainKit.moveCircle(sim.terrain, p, Math.cos(a.facing) * want, Math.sin(a.facing) * want, obstacles(sim, p));
+        sweeps.push({ p, a, x0, y0, x1: p.x, y1: p.y, u0, u1, done: a.t >= m.swing - 1e-9 });
     }
-    function land(sim, hit, foe) {
-        const p = sim.player, a = p.act, m = moveOf(a.move);
-        a.hit.push(hit.id);
-        const amount = combatKit.defended(p.atk * (m.ratio + (m.chargeRatio || 0) * a.share), foe.def);
-        sim.stats.hits++;
-        emit(sim, 'hit', { target: foe.id, move: a.move, damage: amount, heavy: m.knockback > 0 || m.stagger > 0, at: hit.point });
-        combatKit.kitOf(foe).struck(sim, foe, { amount, stagger: m.stagger });
+    // Judge every swing of this step against everyone as they stand now,
+    // then apply what landed. Each foe within reach is hit at most once by
+    // a move, and never across a wall. With `judge` false (a duel's guest
+    // predicting) swings pass through: the host decides every hit.
+    function settle(sim, judge = true) {
+        const list = sweeps.splice(0), landed = [];
+        if (judge) {
+            for (const s of list) {
+                const { p, a } = s;
+                if (p.act !== a) continue;
+                const targets = foes(sim, p).filter(f => !a.hit.includes(f.id) && Math.hypot(f.x - p.x, f.y - p.y) <= REACH && terrainKit.lineClear(sim.terrain, p.x, p.y, f.x, f.y))
+                    .map(f => ({ id: f.id, foe: f, boxes: combatKit.kitOf(f).hurtboxes(sim, f) }));
+                if (!targets.length) continue;
+                for (const hit of combatKit.contacts(sim.rigs.player, solveAt(sim, p, a, s.x0, s.y0, s.x1, s.y1, s.u0, s.u1), s.u0, s.u1, targets)) {
+                    a.hit.push(hit.id);
+                    landed.push({ p, a, hit, foe: targets.find(t => t.id === hit.id).foe });
+                }
+            }
+            for (const l of landed) land(sim, l);
+        }
+        for (const s of list) if (s.done && s.p.act === s.a) endSwing(sim, s.p, !judge);
+    }
+    function land(sim, { p, a, hit, foe }) {
+        const m = moveOf(a.move), raw = p.atk * (m.ratio + (m.chargeRatio || 0) * a.share), heavy = heavyOf(m);
+        // Another fighter has a shield and stun of its own (a duel): only a
+        // heavy move breaks its combo (3d-migration-concept.md 5).
+        if (foe.kind === 'fighter') {
+            combatKit.strike(sim, foe, p, raw, hit.point, { move: a.move, heavy, stun: heavy, knockback: m.knockback });
+            return;
+        }
+        const amount = combatKit.defended(raw, foe.def);
+        p.stats.hits++;
+        emit(sim, p, 'hit', { source: p.id, target: foe.id, move: a.move, damage: amount, heavy, at: hit.point });
+        combatKit.kitOf(foe).struck(sim, foe, { amount, stagger: m.stagger, by: p });
         combatKit.impact(sim, foe, p, 'hit', m.knockback);
     }
 
     // ---- the offhand: what the key does depends on what is carried ----
-    function raise(sim) {
-        const p = sim.player, g = p.guard;
+    function raise(sim, p) {
+        const g = p.guard;
         g.queued = false; g.state = 'raising'; g.t = 0;
         p.chain = null; p.combo = []; p.buffer = null;
         p.runBlend = 0; p.moveTime = 0;
-        emit(sim, 'guard_raise');
+        emit(sim, p, 'guard_raise');
         combatKit.spendGuard(sim, p, F().guardBar.raiseCost);
     }
     const OFFHAND = {
@@ -172,23 +210,23 @@ const fighterKit = (() => {
             // It drops a charge at once. Any other move plays out whole --
             // windup, swing and recovery (user, 2026-10-01) -- and the
             // shield goes up as it ends; a stun is waited out the same way.
-            press(sim) {
-                const p = sim.player, g = p.guard;
-                if (g.locked) { emit(sim, 'guard_locked'); return false; }
+            press(sim, p) {
+                const g = p.guard;
+                if (g.locked) { emit(sim, p, 'guard_locked'); return false; }
                 if (g.state !== 'down' || g.queued) return false;
-                if (p.act?.phase === 'charge') { p.act = null; emit(sim, 'charge_dropped'); }
+                if (p.act?.phase === 'charge') { p.act = null; emit(sim, p, 'charge_dropped'); }
                 p.buffer = null;
                 if (p.act || p.stun > 0) { g.queued = true; return true; }
-                raise(sim);
+                raise(sim, p);
                 return true;
             },
-            release(sim) {
-                const g = sim.player.guard;
+            release(sim, p) {
+                const g = p.guard;
                 g.queued = false;
-                if (g.state !== 'down') { g.state = 'down'; emit(sim, 'guard_lower'); }
+                if (g.state !== 'down') { g.state = 'down'; emit(sim, p, 'guard_lower'); }
             },
-            tick(sim, dt) {
-                const p = sim.player, g = p.guard;
+            tick(sim, p, dt) {
+                const g = p.guard;
                 if (g.state === 'raising') {
                     g.t += dt;
                     if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
@@ -198,47 +236,49 @@ const fighterKit = (() => {
     };
     const offhandOf = p => OFFHAND[p.loadout.offhand] || null;
 
-    function press(sim, button) {
-        const p = sim.player;
+    function press(sim, p, button) {
         if (p.down) return false;
         if (button === 'b') p.bPress = { at: sim.time, held: true, upAt: null };
-        if (button === 'a' || button === 'b') return pressAttack(sim, button);
-        if (button === 'offhand') { const o = offhandOf(p); return o ? o.press(sim) : false; }
+        if (button === 'a' || button === 'b') return pressAttack(sim, p, button);
+        if (button === 'offhand') { const o = offhandOf(p); return o ? o.press(sim, p) : false; }
         return true; // interact: nothing to interact with yet
     }
-    function release(sim, button) {
-        const p = sim.player;
+    function release(sim, p, button) {
         if (p.down) return;
         if (button === 'b' && p.bPress?.held) {
             p.bPress.held = false; p.bPress.upAt = sim.time;
             // Letting go of a charge cuts.
-            if (p.act?.phase === 'charge' && p.act.pressAt === p.bPress.at) beginSwing(sim, true);
+            if (p.act?.phase === 'charge' && p.act.pressAt === p.bPress.at) beginSwing(sim, p, true);
         }
-        if (button === 'offhand') offhandOf(p)?.release(sim);
+        if (button === 'offhand') offhandOf(p)?.release(sim, p);
     }
 
-    // ---- being struck (called by combatKit.strikePlayer) ----
-    // The HP bar emptied where the player can lose: down for good.
-    function fall(sim) {
-        const p = sim.player;
+    // ---- being struck (combatKit.strike, or a parry thrown back) ----
+    // The HP bar emptied where the fighter can lose: down for good.
+    function fall(sim, p) {
         if (p.down) return;
         Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0 });
         p.guard.state = 'down'; p.guard.queued = false;
-        emit(sim, 'down');
+        emit(sim, p, 'down');
     }
-    function struck(sim) {
-        const p = sim.player;
+    // A blow that got through: `amount` HP, and with `stun` the combo is
+    // broken and the controls freeze for combat.hitStun.
+    function struck(sim, p, { amount, stun = true }) {
+        combatKit.damage(sim, p, amount);
+        p.stats.hurt++;
+        if (p.hp === 0) { fall(sim, p); return; }
+        if (!stun) return;
         p.act = null; p.chain = null; p.combo = [];
         if (p.guard.state !== 'down') p.guard.state = 'down';
         // Still holding the shield key: it goes back up once the stun is over.
-        p.guard.queued = sim.input.buttons.offhand.held && !!offhandOf(p) && !p.guard.locked;
+        p.guard.queued = p.input.buttons.offhand.held && !!offhandOf(p) && !p.guard.locked;
         p.stun = F().hitStun;
         p.runBlend = 0; p.moveTime = 0;
     }
 
     // ---- moving ----
-    function motion(sim, dt) {
-        const P = gameConfig.player, p = sim.player, mv = sim.input.move, mag = Math.hypot(mv.x, mv.y), a = p.act;
+    function motion(sim, p, dt) {
+        const P = gameConfig.player, mv = p.input.move, mag = Math.hypot(mv.x, mv.y), a = p.act;
         const guarding = p.guard.state !== 'down', charging = a?.phase === 'charge';
         let striding = false;
         p.speed = 0;
@@ -248,7 +288,7 @@ const fighterKit = (() => {
             else if (charging) { speed *= F().charge.moveMultiplier; turn *= F().charge.turnMultiplier; }
             else speed *= 1 + (P.runMultiplier - 1) * p.runBlend;
             const x0 = p.x, y0 = p.y;
-            terrainKit.moveCircle(sim.terrain, p, mv.x / mag * speed * dt, mv.y / mag * speed * dt, obstacles(sim));
+            terrainKit.moveCircle(sim.terrain, p, mv.x / mag * speed * dt, mv.y / mag * speed * dt, obstacles(sim, p));
             const moved = Math.hypot(p.x - x0, p.y - y0);
             p.gait += moved / playerAnim.cycleLength(sim.rigs.player, p.runBlend);
             p.speed = moved / dt;
@@ -267,8 +307,8 @@ const fighterKit = (() => {
         p.runBlend = approach(p.runBlend, p.moveTime >= P.runAfter - 1e-9 ? 1 : 0, dt / P.runRampSeconds);
     }
 
-    function tick(sim, dt) {
-        const p = sim.player, B = gameConfig.animation.blendSeconds;
+    function tick(sim, p, dt) {
+        const B = gameConfig.animation.blendSeconds;
         if (p.down) { p.downT += dt; p.speed = 0; blends(p, dt, B); return; }
         // The guard bar runs on under the hitstop.
         combatKit.tickGuardBar(sim, p, dt);
@@ -277,39 +317,38 @@ const fighterKit = (() => {
         // an opening charge waiting for its turn, not a stale press.
         const b = p.buffer;
         if (b && (b.age += dt) > K().bufferSeconds + 1e-9 && !(b.input === 'b' && p.bPress?.held && p.bPress.at === b.at)) p.buffer = null;
-        if (p.push) combatKit.tickPush(sim, p, dt, obstacles(sim));
+        if (p.push) combatKit.tickPush(sim, p, dt, obstacles(sim, p));
         if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
-        free(sim);
-        offhandOf(p)?.tick(sim, dt);
-        motion(sim, dt);
-        tickAct(sim, dt);
-        free(sim);
+        free(sim, p);
+        offhandOf(p)?.tick(sim, p, dt);
+        motion(sim, p, dt);
+        tickAct(sim, p, dt);
+        free(sim, p);
         // Crossing the pause line of a node that has a pause move is cued once.
         const c = p.chain;
         if (c && !p.act) {
             const m = moveOf(c.move);
-            if (!chainOpen(sim, sim.time)) { p.chain = null; p.combo = []; }
+            if (!chainOpen(p, sim.time)) { p.chain = null; p.combo = []; }
             else if (m.next?.pause && !c.cued && sim.time - c.at >= m.recovery + K().pauseAfterRecovery - 1e-9) {
-                c.cued = true; emit(sim, 'pause_ready', { move: m.next.pause });
+                c.cued = true; emit(sim, p, 'pause_ready', { move: m.next.pause });
             }
         }
         blends(p, dt, B);
     }
     // Free again (a move over, a stun over, a hitstop over) with something
     // waiting: a queued shield goes up, else a buffered input runs.
-    function free(sim) {
-        const p = sim.player;
+    function free(sim, p) {
         if (p.act || p.stun > 0) return;
-        if (p.guard.queued) raise(sim);
-        else if (p.buffer && p.guard.state === 'down') { const w = p.buffer; startMove(sim, w.input, w.at); }
+        if (p.guard.queued) raise(sim, p);
+        else if (p.buffer && p.guard.state === 'down') { const w = p.buffer; startMove(sim, p, w.input, w.at); }
     }
     function blends(p, dt, B) {
         p.moveBlend = approach(p.moveBlend, p.speed > 1e-6 ? 1 : 0, dt / B);
         const up = p.guard.state !== 'down';
         p.guardBlend = approach(p.guardBlend, up ? 1 : 0, dt / (up ? F().guard.startup : B));
     }
-    function tickAct(sim, dt) {
-        const p = sim.player, a = p.act;
+    function tickAct(sim, p, dt) {
+        const a = p.act;
         if (!a) return;
         const m = moveOf(a.move);
         if (a.phase === 'windup') {
@@ -318,23 +357,23 @@ const fighterKit = (() => {
             // Still holding the B that started a charging move: charge -- unless
             // the shield was pressed meanwhile, which drops the charge.
             if (m.charge && p.bPress?.held && p.bPress.at === a.pressAt) {
-                if (p.guard.queued) { p.act = null; emit(sim, 'charge_dropped'); raise(sim); return; }
-                a.phase = 'charge'; a.t = 0; emit(sim, 'charge'); return;
+                if (p.guard.queued) { p.act = null; emit(sim, p, 'charge_dropped'); raise(sim, p); return; }
+                a.phase = 'charge'; a.t = 0; emit(sim, p, 'charge'); return;
             }
-            beginSwing(sim);
+            beginSwing(sim, p);
         } else if (a.phase === 'charge') {
             a.t += dt;
         } else if (a.phase === 'swing') {
-            swingStep(sim, dt);
+            swingStep(sim, p, dt);
         } else {
             a.t += dt;
             // At the derive point a buffered input cuts the recovery short.
-            if (m.derive != null && a.t >= m.derive - 1e-9 && p.buffer) { const b = p.buffer; startMove(sim, b.input, b.at); return; }
+            if (m.derive != null && a.t >= m.derive - 1e-9 && p.buffer) { const b = p.buffer; startMove(sim, p, b.input, b.at); return; }
             if (a.t >= m.recovery - 1e-9) {
                 p.act = null;
-                if (p.buffer) { const b = p.buffer; startMove(sim, b.input, b.at); }
+                if (p.buffer) { const b = p.buffer; startMove(sim, p, b.input, b.at); }
             }
         }
     }
-    return { init, press, release, tick, struck, fall, foes, solve, hurtboxes, derive, chargeOf, OFFHAND };
+    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, OFFHAND };
 })();

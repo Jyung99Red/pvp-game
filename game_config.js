@@ -194,10 +194,12 @@ const gameConfig = (() => {
 
         // 9. Maps. One character per block: `.` grass, `:` path, `1`-`9`
         // stone wall of that many blocks, `T` tree, `@` grass where the
-        // player starts, `D` grass with the training dummy on it (facing
-        // `dummyFacing`, radians), `g` a goblin's home, `w` a wolf's.
+        // player starts (a duel: the host on the first, the guest on the
+        // second, in reading order), `D` grass with the training dummy on it
+        // (facing `dummyFacing`, radians), `g` a goblin's home, `w` a wolf's.
         // Rows run north (screen top) to south. `training`: nobody falls
         // there (an emptied HP bar refills); elsewhere the player can lose.
+        // `duel`: the map is for PVP only.
         maps: {
             field: {
                 name: '野外',
@@ -251,7 +253,51 @@ const gameConfig = (() => {
                     '..................................',
                     '..................................'
                 ]
+            },
+            // The PVP arena (rebuild-plan.md M4): 20 x 11 blocks inside a
+            // wall, the same seen from either spawn (point symmetric). Walls
+            // inside and to the south are 2 high, so they hide a fighter
+            // without hiding one standing behind them from the camera.
+            arena: {
+                name: '竞技场', duel: true,
+                rows: [
+                    '.T.TT.......TTT....T.....T..',
+                    '.T.T............T..TT......T',
+                    '.T.......TT.....T.T.....T...',
+                    '...3333333333333333333333...',
+                    '...3....................3...',
+                    '...3.1......1........1..3...',
+                    '.T.3....222..22..22.....3.T.',
+                    '...3....2....22..2......3.T.',
+                    '.T.3........::::........3...',
+                    '.T.3.::@::::::::::::@::.3.T.',
+                    '.T.3........::::........3.T.',
+                    '...3......2..22....2....3.T.',
+                    '.T.3.....22..22..222....3.T.',
+                    '...3..1........1......1.3...',
+                    '.T.3....................3.T.',
+                    '...2222222222222222222222...',
+                    '............................',
+                    '............................',
+                    '............................',
+                    '............................'
+                ]
             }
+        },
+
+        // 10. PVP (rebuild-plan.md M4): one phone hosts and runs the duel,
+        // the other sends its controls and draws the host's snapshots,
+        // predicting its own moves in between. countdown: seconds from both
+        // being ready to the fight. snapshotSeconds: host to guest state;
+        // heartbeatSeconds: guest to host when it has nothing else to say;
+        // timeoutSeconds: nothing heard for this long and the connection
+        // counts as lost. replaySeconds: how far past a snapshot the guest
+        // predicts at most; latencySeconds: cap on its one-way estimate.
+        // historyEvents: events the host keeps until the guest has them.
+        // connectSeconds: how long finding the other phone may take.
+        pvp: {
+            countdown: 3, snapshotSeconds: 0.05, heartbeatSeconds: 0.25, timeoutSeconds: 5,
+            replaySeconds: 0.25, latencySeconds: 0.15, historyEvents: 128, connectSeconds: 12
         }
     });
 })();

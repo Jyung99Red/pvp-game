@@ -1,8 +1,9 @@
 // Drawn-only feedback (combat-combo-concept.md, hit feel step 1): blade
-// trail, block debris, hit flash, a small camera shake, stagger stars, the
+// trails, block debris, hit flash, a small camera shake, stagger stars, the
 // charge glow, the pause-line cue, a fallen monster's burst and an enraged
 // one's red glow. Reads simulation events and solved rigs; never writes the
-// simulation. Kept low-key on purpose.
+// simulation. Kept low-key on purpose. `selfId` is the fighter this phone
+// plays: its hits and hurts shake the camera, its pause line is cued.
 const renderEffects = (() => {
     const TRAIL_N = 40, TRAIL_AGE = 0.11, MAXP = 120;
 
@@ -40,32 +41,40 @@ const renderEffects = (() => {
             parts.instanceMatrix.needsUpdate = true;
         }
 
-        // ---- blade trail: a ribbon through recent blade positions ----
-        const trailGeo = new T.BufferGeometry();
-        trailGeo.setAttribute('position', new T.BufferAttribute(new Float32Array(TRAIL_N * 6), 3));
-        trailGeo.setAttribute('color', new T.BufferAttribute(new Float32Array(TRAIL_N * 8), 4));
-        const index = [];
-        for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-        trailGeo.setIndex(index);
-        const trail = new T.Mesh(trailGeo, new T.MeshBasicMaterial({ vertexColors: true, transparent: true, side: T.DoubleSide, depthWrite: false }));
-        trail.frustumCulled = false; scene.add(trail);
-        const samples = [];
+        // ---- blade trails: a ribbon through recent blade positions, one
+        // per fighter ----
+        const trailMaterial = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, side: T.DoubleSide, depthWrite: false });
+        const trails = new Map();
         let clock = 0;
-        function sampleBlade(rig, solved, heavy) {
-            const i = rig.parts.findIndex(p => p.kind === 'weapon'), half = rig.parts[i].size[2] / 2, m = solved.parts[i];
-            samples.push({ b: math3d.transformPoint(m, [0, 0, -half]), t: math3d.transformPoint(m, [0, 0, half]), at: clock, heavy });
-            if (samples.length > TRAIL_N) samples.shift();
+        function trailOf(id) {
+            if (trails.has(id)) return trails.get(id);
+            const geo = new T.BufferGeometry();
+            geo.setAttribute('position', new T.BufferAttribute(new Float32Array(TRAIL_N * 6), 3));
+            geo.setAttribute('color', new T.BufferAttribute(new Float32Array(TRAIL_N * 8), 4));
+            const index = [];
+            for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+            geo.setIndex(index); geo.setDrawRange(0, 0);
+            const mesh = new T.Mesh(geo, trailMaterial);
+            mesh.frustumCulled = false; scene.add(mesh);
+            const trail = { geo, mesh, samples: [] };
+            trails.set(id, trail);
+            return trail;
         }
-        function drawTrail() {
+        function sampleBlade(trail, rig, solved, heavy) {
+            const i = rig.parts.findIndex(p => p.kind === 'weapon'), half = rig.parts[i].size[2] / 2, m = solved.parts[i];
+            trail.samples.push({ b: math3d.transformPoint(m, [0, 0, -half]), t: math3d.transformPoint(m, [0, 0, half]), at: clock, heavy });
+            if (trail.samples.length > TRAIL_N) trail.samples.shift();
+        }
+        function drawTrail({ geo, samples }) {
             while (samples.length && clock - samples[0].at > TRAIL_AGE) samples.shift();
-            const pos = trailGeo.attributes.position.array, c = trailGeo.attributes.color.array;
+            const pos = geo.attributes.position.array, c = geo.attributes.color.array;
             samples.forEach((s, i) => {
                 pos.set([...s.b, ...s.t], i * 6);
                 const a = 0.6 * (1 - (clock - s.at) / TRAIL_AGE), rgb = s.heavy ? [1, 0.82, 0.45] : [1, 1, 1];
                 c.set([...rgb, a * 0.1, ...rgb, a], i * 8);
             });
-            trailGeo.attributes.position.needsUpdate = true; trailGeo.attributes.color.needsUpdate = true;
-            trailGeo.setDrawRange(0, Math.max(0, samples.length - 1) * 6);
+            geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+            geo.setDrawRange(0, Math.max(0, samples.length - 1) * 6);
         }
 
         // ---- stagger stars, one ring per reeling foe ----
@@ -87,33 +96,47 @@ const renderEffects = (() => {
         const flash = new Map(); // id -> seconds left
         const FALLEN = { goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'] };
         let shake = 0, cue = 0;
-        function onEvents(events) {
+        function onEvents(events, selfId = 'player') {
             for (const e of events) {
-                if (e.type === 'hit' && e.side === 'player') {
+                if (e.type === 'hit' && e.target === selfId) {
+                    flash.set(selfId, 0.12); burst(e.at, 6, ['#ffffff', '#e8b4a0'], 1.4, 2.4, 0.06);
+                    if (e.heavy) shake = Math.max(shake, 0.1);
+                } else if (e.type === 'hit') {
                     flash.set(e.target, 0.12);
-                    if (e.heavy) { burst(e.at, 12, ['#ffffff', '#ffd27a', '#f2b544'], 2, 3.8, 0.08); shake = Math.max(shake, 0.12); }
+                    if (e.heavy) { burst(e.at, 12, ['#ffffff', '#ffd27a', '#f2b544'], 2, 3.8, 0.08); if (e.source === selfId) shake = Math.max(shake, 0.12); }
                     else burst(e.at, 7, ['#ffffff', '#f4f1e6', '#d9dee3'], 1.5, 2.8, 0.06);
-                } else if (e.type === 'hit' && e.target === 'player') {
-                    flash.set('player', 0.12); burst(e.at, 6, ['#ffffff', '#e8b4a0'], 1.4, 2.4, 0.06);
                 } else if (e.type === 'block') burst(e.at, 5, ['#d9dee3', '#9aa2aa'], 1.2, 2.2, 0.05);
                 else if (e.type === 'parry') { burst(e.at, 12, ['#fff3b0', '#ffd84a', '#ffffff'], 2, 3.6, 0.07); flash.set(e.target, 0.12); shake = Math.max(shake, 0.1); }
                 else if (e.type === 'defeated') burst(e.at, 14, FALLEN[e.kind] || ['#ffffff'], 1.2, 2.6, 0.08);
                 else if (e.type === 'enrage') burst(e.at, 8, ['#ff6a4a', '#d9473f'], 1, 2, 0.06);
-                else if (e.type === 'pause_ready') cue = 0.14;
+                else if (e.type === 'pause_ready' && e.side === selfId) cue = 0.14;
             }
         }
         const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24');
-        // Per frame. `view`: the player's rig, solved rig, blade and
-        // materials; `foes`: [{ body, view: { materials }, top, shown }].
+        // Per frame. `view`: { selfId, playerRig, fighters: [{ id, body,
+        // solved, blade, materials }] (those drawn), foes: [{ body, view:
+        // { materials }, top, shown }] }.
         function update(dt, sim, view) {
             clock += dt;
             tickParts(dt);
-            const p = sim.player, a = p.act;
-            if (a?.phase === 'swing') sampleBlade(view.playerRig, view.playerSolved, gameConfig.combo.moves[a.move].knockback > 0);
-            drawTrail();
             for (const [id, left] of flash) flash.set(id, Math.max(0, left - dt));
             const lit = id => (flash.get(id) || 0) / 0.12;
-            for (const m of view.playerMaterials) m.emissive.copy(red).multiplyScalar(0.7 * lit('player'));
+            cue = Math.max(0, cue - dt);
+            const drawn = new Set();
+            for (const f of view.fighters) {
+                const a = f.body.act, trail = trailOf(f.id);
+                drawn.add(f.id);
+                if (a?.phase === 'swing') sampleBlade(trail, view.playerRig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
+                drawTrail(trail); trail.mesh.visible = true;
+                for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));
+                // The blade glows gold while charging, flashes white on the pause line.
+                const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, f.body, a) / gameConfig.combat.charge.full) : 0;
+                if (f.blade) {
+                    if (cue > 0 && f.id === view.selfId) f.blade.emissive.copy(white).multiplyScalar(0.9);
+                    else f.blade.emissive.copy(gold).multiplyScalar(0.9 * charge);
+                }
+            }
+            for (const [id, trail] of trails) if (!drawn.has(id)) { trail.samples.length = 0; trail.mesh.visible = false; }
             const reeling = new Set();
             for (const foe of view.foes) {
                 const k = lit(foe.body.id), angry = foe.body.enraged && foe.body.phase !== 'dead' ? 0.1 + 0.06 * Math.sin(clock * 7) : 0;
@@ -128,13 +151,6 @@ const renderEffects = (() => {
                 }
             }
             for (const [id, ring] of starRings) if (!reeling.has(id)) ring.visible = false;
-            // The blade glows gold while charging, flashes white on the pause line.
-            cue = Math.max(0, cue - dt);
-            const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, a) / gameConfig.combat.charge.full) : 0;
-            if (view.blade) {
-                if (cue > 0) view.blade.emissive.copy(white).multiplyScalar(0.9);
-                else view.blade.emissive.copy(gold).multiplyScalar(0.9 * charge);
-            }
             shake = Math.max(0, shake - dt);
         }
         // Camera jitter for this frame, in blocks.

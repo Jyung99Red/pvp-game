@@ -1,14 +1,15 @@
 // Fighting rules every fighter shares: damage, impact (hitstop and
-// knockback), the guard bar, a foe's blow meeting the player, and the hit
+// knockback), the guard bar, a blow meeting a fighter, and the hit
 // test itself. A hit is a weapon box touching a body box
 // (3d-migration-concept.md 4.1): the attacker's swing is sampled at
 // sub-steps between simulation steps so a fast blade cannot pass through a
 // thin limb.
 const combatKit = (() => {
     const C = () => gameConfig.combat;
-    // The rules of a foe the player fights: the training dummy or a monster.
-    // Each kit has solve, hurtboxes and struck(sim, body, { amount, stagger }).
-    const kitOf = body => body.kind === 'dummy' ? dummyKit : monsterKit;
+    // The rules of whoever is struck: a fighter, the training dummy or a
+    // monster. Each kit has hurtboxes(sim, body) and struck(sim, body,
+    // { amount, stagger, by }).
+    const kitOf = body => body.kind === 'fighter' ? fighterKit : body.kind === 'dummy' ? dummyKit : monsterKit;
 
     function defended(raw, def = 0) {
         return Math.max(1, Math.round(raw * (1 - def / (def + C().damage.defenseConstant))));
@@ -63,37 +64,38 @@ const combatKit = (() => {
         if (g.locked && g.bar >= G.max * G.unlockRatio - 1e-9) { g.locked = false; emit(sim, 'guard_ready', { side: body.side }); }
     }
 
-    // ---- a foe's blow meets the player: shield, perfect parry, or a hit ----
+    // ---- a blow meets a fighter: shield, perfect parry, or a hit ----
     // `raw` is the blow before DEF; `point` (blocks) is only for effects.
-    function strikePlayer(sim, attacker, raw, point, move) {
-        const p = sim.player, G = C().guard;
-        if (p.guard.state === 'up' && inFront(p, attacker)) {
-            const parry = sim.time - p.guard.readyAt <= G.parryWindow + 1e-9;
+    // blow: { move, heavy, stun (a hit breaks the combo), knockback (how far
+    // a hit pushes) }. A foe's blow always stuns and pushes the standard
+    // distance; a fighter's own move says (fighterKit, a duel).
+    function strike(sim, victim, attacker, raw, point, { move, heavy = false, stun = true, knockback = C().impact.knockback.hit } = {}) {
+        const v = victim, G = C().guard, fighter = attacker.kind === 'fighter';
+        if (v.guard.state === 'up' && inFront(v, attacker)) {
+            const parry = sim.time - v.guard.readyAt <= G.parryWindow + 1e-9;
             if (parry) {
-                const counter = defended(p.atk * C().damage.parryAtkRatio, attacker.def);
-                sim.stats.parries++;
-                emit(sim, 'parry', { side: 'player', target: attacker.id, damage: counter, at: point });
-                kitOf(attacker).struck(sim, attacker, { amount: counter, stagger: C().stagger.parry });
-                impact(sim, attacker, p, 'parry');
+                const counter = defended(v.atk * C().damage.parryAtkRatio, attacker.def);
+                v.stats.parries++;
+                emit(sim, 'parry', { side: v.side, target: attacker.id, damage: counter, at: point });
+                kitOf(attacker).struck(sim, attacker, { amount: counter, stagger: C().stagger.parry, by: v });
+                if (!(fighter && attacker.down)) impact(sim, attacker, v, 'parry');
             } else {
-                const amount = Math.round(defended(raw, p.def) * C().damage.blockMultiplier);
-                damage(sim, p, amount);
-                sim.stats.blocks++;
-                emit(sim, 'block', { side: 'player', source: attacker.id, damage: amount, at: point });
-                impact(sim, p, attacker, 'block');
+                const amount = Math.round(defended(raw, v.def) * C().damage.blockMultiplier);
+                damage(sim, v, amount);
+                v.stats.blocks++;
+                emit(sim, 'block', { side: v.side, source: attacker.id, damage: amount, at: point });
+                impact(sim, v, attacker, 'block');
             }
             // Paid after the hit is settled: the block that empties the bar still counts.
-            spendGuard(sim, p, guardCost(raw, p.maxHp, parry));
-            if (p.hp === 0) fighterKit.fall(sim);
+            spendGuard(sim, v, guardCost(raw, v.maxHp, parry));
+            if (v.hp === 0) fighterKit.fall(sim, v);
             return;
         }
-        const amount = defended(raw, p.def);
-        damage(sim, p, amount);
-        sim.stats.hurt++;
-        emit(sim, 'hit', { side: attacker.side, source: attacker.id, target: 'player', move, damage: amount, at: point });
-        if (p.hp === 0) { fighterKit.fall(sim); return; }
-        fighterKit.struck(sim);
-        impact(sim, p, attacker, 'hit');
+        const amount = defended(raw, v.def);
+        if (fighter) attacker.stats.hits++;
+        emit(sim, 'hit', { side: attacker.side, source: attacker.id, target: v.id, move, damage: amount, heavy, at: point });
+        fighterKit.struck(sim, v, { amount, stun });
+        if (!v.down) impact(sim, v, attacker, 'hit', stun ? knockback : 0);
     }
 
     // ---- hit test ----
@@ -151,5 +153,5 @@ const combatKit = (() => {
         const toward = Math.atan2(from.y - body.y, from.x - body.x);
         return Math.abs(space.wrapAngle(toward - body.facing)) <= C().guard.frontAngle + 1e-9;
     }
-    return { kitOf, defended, emit, damage, impact, tickPush, guardCost, spendGuard, tickGuardBar, strikePlayer, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
+    return { kitOf, defended, emit, damage, impact, tickPush, guardCost, spendGuard, tickGuardBar, strike, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
 })();

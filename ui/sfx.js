@@ -55,14 +55,18 @@ const sfx = (() => {
         enrage: () => { tone('sawtooth', 120, 95, 0.32, 0.045); hiss(500, 300, 0.25, 0.03, 0.8); },
         fallen: () => { tone('triangle', 170, 55, 0.3, 0.14); hiss(700, 200, 0.18, 0.05, 0.7); },
         win: () => { tone('sine', 660, 660, 0.16, 0.06); tone('sine', 880, 880, 0.26, 0.06, 0.14); },
+        draw: () => { tone('sine', 520, 520, 0.2, 0.05); tone('sine', 520, 500, 0.3, 0.05, 0.18); },
+        countdown: last => tone('sine', last ? 990 : 660, last ? 990 : 660, last ? 0.22 : 0.09, 0.05),
         lose: () => { tone('triangle', 330, 300, 0.2, 0.06); tone('triangle', 220, 180, 0.4, 0.06, 0.18); }
     };
-    // Simulation events carry who they belong to (`side`).
-    function play(e) {
+    // Simulation events carry who they belong to (`side`); `selfId` is the
+    // fighter this phone plays. A duel's result says who won; `outcome`
+    // turns that into this phone's 'win', 'lose' or 'draw'.
+    function play(e, selfId = 'player', outcome = null) {
         if (!enabled || !ctx || ctx.state !== 'running') return;
-        const own = e.side === 'player';
+        const own = e.side === selfId;
         if (e.type === 'swing') (own ? sounds.swing(e.heavy) : sounds.enemySwing());
-        else if (e.type === 'hit') (own ? sounds.hit : sounds.hurt)();
+        else if (e.type === 'hit') (e.target === selfId ? sounds.hurt : sounds.hit)();
         else if (e.type === 'block') sounds.block();
         else if (e.type === 'parry') sounds.parry();
         else if (e.type === 'guard_broken' && own) sounds.guardBroken();
@@ -70,7 +74,9 @@ const sfx = (() => {
         else if (e.type === 'alert') sounds.alert();
         else if (e.type === 'enrage') sounds.enrage();
         else if (e.type === 'defeated') sounds.fallen();
-        else if (e.type === 'result') sounds[e.outcome]?.();
+        else if (e.type === 'result') sounds[e.outcome || outcome]?.();
     }
-    return { play, isEnabled: () => enabled };
+    // A beat of the duel's countdown; `last` is the start itself.
+    function tick(last = false) { if (enabled && ctx && ctx.state === 'running') sounds.countdown(last); }
+    return { play, tick, isEnabled: () => enabled };
 })();

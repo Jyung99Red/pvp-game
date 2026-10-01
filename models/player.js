@@ -56,6 +56,9 @@ const playerModel = (() => {
             waist: { bone: 'pelvis', at: [0.28, 0.06, 0] },
             head: { bone: 'head', at: [0, 0.5, 0] }
         },
+        // Colour swaps by role: in a duel each phone draws its own fighter
+        // as usual and the other one as the rival.
+        looks: { rival: { tunic: 'rivalTunic', tunicTrim: 'rivalTrim' } },
         // Animation layers (3d-migration-concept.md 12.1): legs walk while
         // the upper body holds a shield or attacks.
         layers: {

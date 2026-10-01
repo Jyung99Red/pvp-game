@@ -27,13 +27,17 @@
       "core/monster.js",
       "core/sim.js",
       "core/loop.js",
+      "core/duel.js",
       "core/controls.js",
       "render/textures.js",
       "render/effects.js",
       "render/world_view.js",
+      "vendor/peerjs/peerjs.min.js",
+      "net/link.js",
       "ui/sfx.js",
       "ui/hud.js",
       "ui/input.js",
+      "ui/room.js",
       "ui/app.js"
     ],
     "partials": [

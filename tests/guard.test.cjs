@@ -133,7 +133,7 @@ test('with the shield up A and B do nothing; the offhand key needs something in 
     const empty = setup({ loadout: { main: 'sword', offhand: null } }); empty.dummy.wait = 1e9;
     press(empty, 'offhand'); step(empty, 0.3);
     assert.equal(empty.player.guard.state, 'down'); assert.equal(empty.player.guard.bar, G.max);
-    assert.equal(fighterKit.OFFHAND.shield.press.length, 1);
+    assert.equal(fighterKit.OFFHAND.shield.press.length, 2, 'press(sim, fighter)');
 });
 
 test('training is deathless: a fall refills the player', () => {

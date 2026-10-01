@@ -2,7 +2,8 @@
 // as a landscape phone. Boots without console errors, draws the world, lays
 // out the controls, covers portrait with the rotate hint, two real touch
 // points (stick + A) drive the simulation together, and a field fight runs
-// to its result panel, from where the menu switches maps.
+// to its result panel, from where the menu switches maps. Two pages of one
+// browser play a whole duel over ?link=local (rebuild-plan.md M4).
 //
 // Skipped when Playwright is not available. It is looked up as
 // PLAYWRIGHT_MODULE (a path), then `playwright`, `playwright-core`, then the
@@ -47,13 +48,17 @@ before(async () => {
 });
 after(async () => { await browser?.close(); server?.close(); });
 
-async function openPhone(width, height, query = '?map=clearing') {
-    const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+async function openPage(context, query) {
     const page = await context.newPage(), errors = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(base + query, { waitUntil: 'load' });
     await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
+    return { page, errors };
+}
+async function openPhone(width, height, query = '?map=clearing') {
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const { page, errors } = await openPage(context, query);
     // Freeze real time: the test steps the simulation itself.
     await page.evaluate(() => window.game.pause(true));
     return { context, page, errors };
@@ -282,6 +287,66 @@ test('the field: monsters drawn, a fight to the result panel, the menu switches 
         assert.deepEqual(memory[2], memory[0]);
         assert.deepEqual(memory[3], memory[1]);
         assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
+test('two phones in one browser (?link=local): a room code, a duel to a result, a rematch, then one leaves', { timeout: 300000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+    try {
+        const A = await openPage(context, '?link=local&map=clearing'), B = await openPage(context, '?link=local&map=clearing');
+        const text = (page, sel) => page.evaluate(s => document.querySelector(s).textContent, sel);
+        // A creates a room; B types its code on the keypad and joins.
+        await A.page.click('[data-menu]'); await A.page.click('[data-action="duel"]');
+        assert.equal(await text(A.page, '[data-room-title]'), '联机对战');
+        await A.page.click('[data-room-action="host"]');
+        await A.page.waitForFunction(() => document.querySelector('[data-room-status]').textContent.includes('等待'), null, { timeout: 20000 });
+        const code = await A.page.evaluate(() => [...document.querySelectorAll('[data-room-code] i')].map(i => i.textContent).join(''));
+        assert.match(code, /^\d{4}$/);
+        await shot(A.page, 'room-host');
+        await B.page.click('[data-menu]'); await B.page.click('[data-action="duel"]'); await B.page.click('[data-room-action="join"]');
+        assert.equal(await B.page.evaluate(() => document.querySelector('[data-room-action="connect"]').disabled), true);
+        for (const d of code) await B.page.click(`[data-key="${d}"]`);
+        await shot(B.page, 'room-join');
+        await B.page.click('[data-room-action="connect"]');
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel?.phase === 'countdown' || window.game.duel?.phase === 'fight', null, { timeout: 30000 });
+        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.duel.selfId, window.game.room.isOpen()]), ['arena', 'host', false]);
+        assert.deepEqual(await B.page.evaluate(() => [window.game.map, window.game.duel.selfId, window.game.duel.battle]), ['arena', 'guest', await A.page.evaluate(() => window.game.duel.battle)]);
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'fight', null, { timeout: 30000 });
+        // The rival behind the north pillar is not drawn, and has no bar or arrow; in sight it is.
+        const seen = await A.page.evaluate(() => {
+            const g = window.game, [h, r] = g.sim.fighters, look = () => { g.view.render(g.sim, 0.016); return g.view.seen('guest'); };
+            Object.assign(h, { x: 500, y: 260 }); Object.assign(r, { x: 620, y: 260 });
+            const hidden = look();
+            Object.assign(r, { x: 500, y: 380 });
+            return { hidden, shown: look() };
+        });
+        assert.deepEqual(seen, { hidden: false, shown: true });
+        // A knock-out: the host cuts the guest down; one result on each phone.
+        await A.page.evaluate(() => {
+            const [h, r] = window.game.sim.fighters;
+            Object.assign(h, { x: 500, y: 380, facing: 0 }); Object.assign(r, { x: 560, y: 380, facing: Math.PI, hp: 1 });
+        });
+        await A.page.keyboard.press('KeyJ');
+        await A.page.waitForFunction(() => window.game.panel === 'duelResult', null, { timeout: 60000 });
+        await B.page.waitForFunction(() => window.game.panel === 'duelResult', null, { timeout: 60000 });
+        assert.equal(await text(A.page, '[data-panel-title]'), '胜利');
+        assert.equal(await text(B.page, '[data-panel-title]'), '失败');
+        await shot(A.page, 'duel-win'); await shot(B.page, 'duel-lose');
+        // A rematch: B asks, A sees it and agrees; both count down again.
+        await B.page.click('[data-action="rematch"]');
+        await A.page.waitForFunction(() => document.querySelector('[data-panel-note]').textContent.includes('对方想再来一局'), null, { timeout: 30000 });
+        await A.page.click('[data-action="rematch"]');
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.panel === null && ['countdown', 'fight'].includes(window.game.duel?.phase) && window.game.sim.fighters.every(f => f.hp === f.maxHp), null, { timeout: 30000 });
+        // A leaves from the menu: back to the field; B is told.
+        await A.page.click('[data-menu]');
+        assert.equal(await text(A.page, '[data-panel-title]'), '对战中');
+        await A.page.click('[data-action="leave"]');
+        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel]), ['field', null, null]);
+        await B.page.waitForFunction(() => window.game.panel === 'duelEnded', null, { timeout: 30000 });
+        assert.match(await text(B.page, '[data-panel-note]'), /对方离开了房间/);
+        await shot(B.page, 'duel-ended');
+        assert.deepEqual(A.errors, []); assert.deepEqual(B.errors, []);
     } finally { await context.close(); }
 });
 

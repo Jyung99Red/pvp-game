@@ -1,12 +1,12 @@
 // Loads the game's classic scripts into one vm context, in manifest order,
-// and hands back their globals. Browser-only scripts (render/, ui/) are left
-// out unless asked for.
+// and hands back their globals. Browser-only scripts (render/, ui/, net/,
+// vendor/) are left out unless asked for.
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const manifest = () => JSON.parse(read('client-assets.json'));
 
-function load({ include = file => !/^(render|ui)\//.test(file), globals = {} } = {}) {
+function load({ include = file => !/^(render|ui|net|vendor)\//.test(file), globals = {} } = {}) {
     const context = vm.createContext({ console, Math, ...globals });
     const files = manifest().game.scripts.filter(include);
     for (const file of files) vm.runInContext(read(file), context, { filename: file });

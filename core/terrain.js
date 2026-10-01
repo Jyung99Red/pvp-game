@@ -13,8 +13,8 @@ const terrainKit = (() => {
         const height = rows.length, width = rows[0]?.length || 0;
         if (!height || rows.some(r => r.length !== width)) throw new Error('Map rows must be non-empty and equal in length');
         const kind = new Uint8Array(width * height), level = new Uint8Array(width * height);
-        let spawn = null, dummy = null;
-        const monsters = [];
+        let dummy = null;
+        const monsters = [], spawns = [];
         rows.forEach((row, r) => [...row].forEach((ch, c) => {
             const i = r * width + c;
             if (ch === '.' || ch === '@' || ch === 'D' || MONSTERS[ch]) kind[i] = KIND.grass;
@@ -22,18 +22,16 @@ const terrainKit = (() => {
             else if (ch === 'T') { kind[i] = KIND.tree; level[i] = TREE_HEIGHT; }
             else if (ch >= '1' && ch <= '9') { kind[i] = KIND.stone; level[i] = Number(ch); }
             else throw new Error(`Unknown map cell "${ch}" at ${c},${r}`);
-            if (ch === '@') {
-                if (spawn) throw new Error('A map has one spawn');
-                spawn = { col: c, row: r };
-            }
+            if (ch === '@') spawns.push({ col: c, row: r });
             if (ch === 'D') {
                 if (dummy) throw new Error('A map has at most one training dummy');
                 dummy = { col: c, row: r };
             }
             if (MONSTERS[ch]) monsters.push({ kind: MONSTERS[ch], col: c, row: r });
         }));
-        if (!spawn) throw new Error('A map needs a spawn (@)');
-        return { width, height, unit, kind, level, spawn, dummy, monsters };
+        if (!spawns.length) throw new Error('A map needs a spawn (@)');
+        // `spawn` is the first; a duel uses the first two, in reading order.
+        return { width, height, unit, kind, level, spawn: spawns[0], spawns, dummy, monsters };
     }
     const inside = (t, c, r) => c >= 0 && r >= 0 && c < t.width && r < t.height;
     function kindAt(t, c, r) { return inside(t, c, r) ? t.kind[r * t.width + c] : KIND.stone; }
@@ -98,6 +96,17 @@ const terrainKit = (() => {
         }
         return true;
     }
+    // Can a fighter standing at one point see one at the other? Only blocks
+    // at least `eye` high (or trees) are in the way: a knee-high stone hides
+    // nobody, though a blow across it still does not land (lineClear).
+    function sightClear(t, x0, y0, x1, y1, eye = 2) {
+        const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (t.unit / 8)));
+        for (let i = 1; i < n; i++) {
+            const c = Math.floor((x0 + (x1 - x0) * i / n) / t.unit), r = Math.floor((y0 + (y1 - y0) * i / n) / t.unit);
+            if (solidAt(t, c, r) && (!inside(t, c, r) || levelAt(t, c, r) >= eye)) return false;
+        }
+        return true;
+    }
     // Move a circle body by (dx, dy), sliding along walls and round corners
     // and around other bodies (`obstacles`: circles { x, y, radius }).
     // Sub-steps keep every step under half the radius, so thin corners
@@ -109,5 +118,5 @@ const terrainKit = (() => {
             pushOut(t, body, obstacles);
         }
     }
-    return { KIND, TREE_HEIGHT, MONSTERS, fromRows, kindAt, levelAt, solidAt, cellCentre, blocked, lineClear, moveCircle };
+    return { KIND, TREE_HEIGHT, MONSTERS, fromRows, kindAt, levelAt, solidAt, cellCentre, blocked, lineClear, sightClear, moveCircle };
 })();

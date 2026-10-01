@@ -371,7 +371,7 @@ test('a whole fight: every monster down is a win; a fallen player is a loss and 
     const training = W.create();
     assert.equal(training.player.endless, true);
 });
-const fighterFoes = sim => g.fighterKit.foes(sim).map(f => f.id);
+const fighterFoes = sim => g.fighterKit.foes(sim, sim.player).map(f => f.id);
 
 test('the same inputs give the same field fight, and it survives a JSON round trip (PVP snapshots)', () => {
     const script = { 0: ['move', 1, 0.2], 150: ['press', 'a'], 152: ['release', 'a'], 300: ['press', 'b'], 340: ['release', 'b'] };
@@ -386,11 +386,11 @@ test('the same inputs give the same field fight, and it survives a JSON round tr
         }
         return sim;
     };
-    const strip = ({ terrain, rigs, events, ...rest }) => JSON.stringify(rest);
+    const strip = sim => JSON.stringify(W.snapshot(sim));
     const a = play();
     assert.equal(strip(a), strip(play()));
     assert.ok(a.monsters[0].phase !== 'patrol', 'the goblin joined in');
-    const { terrain, rigs, ...state } = a, copy = { ...JSON.parse(JSON.stringify(state)), terrain, rigs };
+    const copy = W.restore(W.create({ map: gameConfig.maps.field }), JSON.parse(strip(a)));
     for (const s of [a, copy]) { tap(s); step(s, 3); }
     assert.equal(strip(copy), strip(a));
 });

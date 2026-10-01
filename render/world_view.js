@@ -6,7 +6,9 @@
 const worldView = (() => {
     const UP = [0, 1, 0];
 
-    function create(canvas, sim) {
+    // opts.selfId: the fighter this phone plays (the camera follows it; in a
+    // duel the other one is drawn as the rival).
+    function create(canvas, sim, opts = {}) {
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
@@ -17,17 +19,16 @@ const worldView = (() => {
         const mapSize = small ? C.graphics.shadowMapSmall : C.graphics.shadowMapLarge;
         let world = null;
 
-        function load(next) {
+        function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
-            world = build(T, next, camera, mapSize);
+            world = build(T, next, camera, mapSize, selfId);
         }
-        load(sim);
-        // `body` is the player as shown: by default the simulation's own, or
-        // a blend between two steps (ui/app.js); `bodies` likewise for the
-        // monsters, by id. `events` are the simulation events since the last
-        // frame.
-        function render(current, frameSeconds, body = current.player, events = [], bodies = null) {
-            world.render(current, frameSeconds, body, events, bodies);
+        load(sim, opts);
+        // `bodies`: fighters and monsters as shown, by id -- a blend between
+        // two steps (ui/app.js); anyone missing is drawn as simulated.
+        // `events` are the simulation events since the last frame.
+        function render(current, frameSeconds, { bodies = null, events = [] } = {}) {
+            world.render(current, frameSeconds, bodies, events);
             renderer.render(world.scene, camera);
         }
         function resize(width, height) {
@@ -47,12 +48,15 @@ const worldView = (() => {
             load, render, resize, project, renderer, camera,
             info: () => renderer.info.render,
             get scene() { return world.scene; },
-            get playerRig() { return world.playerRig; }
+            get playerRig() { return world.playerRig; },
+            // Was fighter `id` drawn last frame? (In a duel the rival behind
+            // a wall is not.)
+            seen: id => world.seen.has(id)
         };
     }
 
     // ---- one world: scene, terrain, characters, effects ----
-    function build(T, sim, camera, mapSize) {
+    function build(T, sim, camera, mapSize, selfId) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
         const scene = new T.Scene(), sky = new T.Color(P.sky);
         scene.background = sky;
@@ -142,9 +146,9 @@ const worldView = (() => {
             scene.add(skirt);
         }
         // Flowers and tufts on open grass: tiny boxes, never textured. None
-        // where the player or a monster starts.
+        // where a fighter or a monster starts.
         {
-            const items = [], clear = [t.spawn, ...t.monsters];
+            const items = [], clear = [...t.spawns, ...t.monsters];
             for (let i = 0; i < t.width * t.height * 0.18; i++) {
                 const x = rnd() * t.width, z = rnd() * t.height, c = Math.floor(x), r = Math.floor(z);
                 if (terrainKit.kindAt(t, c, r) !== K.grass || clear.some(s => Math.hypot(c - s.col, r - s.row) < 2)) continue;
@@ -176,20 +180,22 @@ const worldView = (() => {
         // body boxes in cyan, weapon boxes (grown by combat.weaponPad) red.
         const showBoxes = /[?&]boxes(=|&|$)/.test(window.location.search);
         const pad = C.combat.weaponPad / U, colour = new T.Color();
-        function character(rig, apart = () => false) {
+        // `look` swaps palette colours by name (playerModel.looks).
+        function character(rig, apart = () => false, look = {}) {
             const material = new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true });
             const pos = [], nor = [], uv = [], col = [], skin = [], weight = [], index = [], bones = [], boned = [], loose = [], lines = [];
             rig.parts.forEach((part, i) => {
-                if (!P[part.color]) throw new Error(`Unknown palette colour ${part.color}`);
+                const name = look[part.color] || part.color;
+                if (!P[name]) throw new Error(`Unknown palette colour ${name}`);
                 const g = boxGeo(...part.size);
                 if (apart(part)) {
-                    const mesh = new T.Mesh(g, new T.MeshLambertMaterial({ color: P[part.color], map: tx.grain }));
+                    const mesh = new T.Mesh(g, new T.MeshLambertMaterial({ color: P[name], map: tx.grain }));
                     mesh.matrixAutoUpdate = false; mesh.castShadow = true; mesh.receiveShadow = true;
                     scene.add(mesh); loose.push({ i, mesh });
                 } else {
                     const base = pos.length / 3, bone = bones.length;
                     bones.push(new T.Bone()); boned.push(i);
-                    colour.set(P[part.color]);
+                    colour.set(P[name]);
                     pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array); uv.push(...g.attributes.uv.array);
                     for (let k = 0; k < g.attributes.position.count; k++) { col.push(colour.r, colour.g, colour.b); skin.push(bone, 0, 0, 0); weight.push(1, 0, 0, 0); }
                     for (const k of g.index.array) index.push(base + k);
@@ -232,11 +238,14 @@ const worldView = (() => {
                 show(visible) { mesh.visible = visible; for (const l of loose) l.mesh.visible = visible; for (const l of lines) l.line.visible = visible; }
             };
         }
-        const p0 = sim.player, playerRig = sim.rigs.player;
-        const player = character(playerRig, part => part.kind === 'weapon');
+        const playerRig = sim.rigs.player;
+        // Every fighter: this phone's own as modelled, any other as the rival.
+        const fighters = new Map(sim.fighters.map(f => [f.id, {
+            view: character(playerRig, part => part.kind === 'weapon', f.id === selfId ? {} : playerModel.looks.rival),
+            lastFacing: f.facing, lean: 0
+        }]));
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
         const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: character(sim.rigs.monsters[m.kind]), warning: null }]));
-
         // ---- range warnings: the swept outline of a monster's move on the
         // ground (core/monster.js reach), fading in through its windup ----
         const warnShapes = new Map();
@@ -265,8 +274,41 @@ const worldView = (() => {
             } else w.material.opacity = 0.44 * (1 - Math.min(1, m.t / mv.swing));
         }
 
+        // ---- a duel: ground this fighter cannot see is shaded, as far as
+        // `SHADE_FAR` blocks; walls at least eye high cast it ----
+        const SHADE_RAYS = 240, SHADE_FAR = 30;
+        const shade = sim.duel ? (() => {
+            const geo = new T.BufferGeometry(), pos = new Float32Array(SHADE_RAYS * 18);
+            geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+            const mesh = new T.Mesh(geo, new T.MeshBasicMaterial({ color: '#05070d', transparent: true, opacity: 0.55, depthWrite: false, side: T.DoubleSide }));
+            mesh.frustumCulled = false; mesh.renderOrder = 1;
+            scene.add(mesh);
+            const t = sim.terrain, reach = [];
+            // As terrainKit.sightClear: blocks at least eye high, and the world's edge.
+            const blocks = (c, r) => terrainKit.solidAt(t, c, r) && (terrainKit.levelAt(t, c, r) >= 2 || c < 0 || r < 0 || c >= t.width || r >= t.height);
+            let lastX = NaN, lastZ = NaN;
+            // Recast only when the fighter has moved.
+            return (x, z) => {
+                if (Math.abs(x - lastX) < 0.01 && Math.abs(z - lastZ) < 0.01) return;
+                lastX = x; lastZ = z;
+                for (let i = 0; i < SHADE_RAYS; i++) {
+                    const a = i / SHADE_RAYS * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
+                    let d = 0;
+                    while (d < SHADE_FAR && !blocks(Math.floor(x + dx * d), Math.floor(z + dz * d))) d += 0.125;
+                    reach[i] = Math.min(d, SHADE_FAR);
+                }
+                for (let i = 0; i < SHADE_RAYS; i++) {
+                    const j = (i + 1) % SHADE_RAYS, a0 = i / SHADE_RAYS * Math.PI * 2, a1 = j / SHADE_RAYS * Math.PI * 2;
+                    const p = (d, a) => [x + Math.cos(a) * d, 0.02, z + Math.sin(a) * d];
+                    pos.set([...p(reach[i], a0), ...p(SHADE_FAR, a0), ...p(SHADE_FAR, a1), ...p(reach[i], a0), ...p(SHADE_FAR, a1), ...p(reach[j], a1)], i * 18);
+                }
+                geo.attributes.position.needsUpdate = true;
+            };
+        })() : null;
+
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
-        let lastFacing = p0.facing, lean = 0, clock = 0;
+        let clock = 0;
+        const seen = new Set();
 
         function placeCamera(x, y, z) {
             const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * fit, cp = Math.cos(cam.pitch);
@@ -274,22 +316,37 @@ const worldView = (() => {
             camera.position.set(tx0 + Math.sin(cam.yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(cam.yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
         }
-        function render(current, frameSeconds, body, events, bodies) {
-            const p = body, dt = Math.max(1e-3, frameSeconds);
+        function render(current, frameSeconds, bodies, events) {
+            const dt = Math.max(1e-3, frameSeconds);
             clock += frameSeconds;
-            const omega = space.wrapAngle(p.facing - lastFacing) / dt;
-            lastFacing = p.facing;
-            const leanTarget = Math.max(-0.12, Math.min(0.12, 0.015 * omega)) * p.moveBlend;
-            lean += (leanTarget - lean) * Math.min(1, frameSeconds * 10);
-            const pose = playerAnim.present(playerAnim.pose(playerRig, p), p, { time: clock, lean });
-            const at = space.toBlocks(p.x, p.y, p.h), solved = rigKit.solve(playerRig, pose, at, space.yawOf(p.facing));
-            player.place(solved);
+            const shownOf = body => bodies?.get(body.id) || body;
+            const me = shownOf(current.fighters.find(f => f.id === selfId) || current.fighters[0]);
+            // In a duel the rival is drawn only while this fighter can see it.
+            seen.clear();
+            const drawn = [];
+            for (const f of current.fighters) {
+                const entry = fighters.get(f.id);
+                if (!entry) continue;
+                const p = shownOf(f);
+                const visible = f.id === selfId || !current.duel || terrainKit.sightClear(current.terrain, me.x, me.y, p.x, p.y);
+                entry.view.show(visible);
+                if (!visible) continue;
+                seen.add(f.id);
+                const omega = space.wrapAngle(p.facing - entry.lastFacing) / dt;
+                entry.lastFacing = p.facing;
+                const leanTarget = Math.max(-0.12, Math.min(0.12, 0.015 * omega)) * p.moveBlend;
+                entry.lean += (leanTarget - entry.lean) * Math.min(1, frameSeconds * 10);
+                const pose = playerAnim.present(playerAnim.pose(playerRig, p), p, { time: clock, lean: entry.lean });
+                const solved = rigKit.solve(playerRig, pose, space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
+                entry.view.place(solved);
+                drawn.push({ id: f.id, body: f, shown: p, solved, blade: entry.view.blade, materials: entry.view.materials });
+            }
             const foes = [];
             if (dummyView && current.dummy) { dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
             for (const m of current.monsters) {
                 const entry = monsters.get(m.id);
                 if (!entry) continue;
-                const shown = bodies?.get(m.id) || m, rig = current.rigs.monsters[m.kind];
+                const shown = shownOf(m), rig = current.rigs.monsters[m.kind];
                 // A fallen monster lies a while, then sinks into the ground.
                 const sink = m.phase === 'dead' ? Math.max(0, m.t - C.monsters.corpseSeconds) * 0.5 : 0;
                 entry.view.show(sink < 1.2);
@@ -301,8 +358,10 @@ const worldView = (() => {
                 warn(entry, m);
                 foes.push({ body: m, view: entry.view, top: m.kind === 'wolf' ? 1.25 : 1.65, shown });
             }
-            effects.onEvents(events);
-            effects.update(frameSeconds, current, { playerRig, playerSolved: solved, blade: player.blade, playerMaterials: player.materials, foes });
+            effects.onEvents(events, selfId);
+            effects.update(frameSeconds, current, { selfId, playerRig, fighters: drawn, foes });
+            const at = space.toBlocks(me.x, me.y, me.h);
+            if (shade) shade(at[0], at[2]);
             placeCamera(at[0], at[1], at[2]);
             placeSun(at[0], at[1], at[2]);
         }
@@ -319,7 +378,7 @@ const worldView = (() => {
             // The shadow map is the light's own render target.
             sun.dispose();
         }
-        return { scene, render, dispose, playerRig };
+        return { scene, render, dispose, playerRig, seen };
     }
     return { create };
 })();

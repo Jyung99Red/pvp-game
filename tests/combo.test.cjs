@@ -254,10 +254,8 @@ test('the same inputs give the same fight', () => {
 test('a fight survives a JSON round trip mid-swing and plays on the same (PVP snapshots)', () => {
     const sim = setup({ near: true }); sim.dummy.wait = 0.2;
     press(sim, 'a'); release(sim, 'a'); step(sim, 0.13); press(sim, 'b');
-    const { terrain, rigs, ...state } = sim;
-    const copy = { ...JSON.parse(JSON.stringify(state)), terrain, rigs };
+    const copy = W.restore(W.create(), JSON.parse(JSON.stringify(W.snapshot(sim))));
     for (const s of [sim, copy]) { step(s, 0.6); release(s, 'b'); step(s, 1.5); }
-    const strip = ({ terrain, rigs, events, ...rest }) => JSON.stringify(rest);
-    assert.equal(strip(copy), strip(sim));
+    assert.equal(JSON.stringify(W.snapshot(copy)), JSON.stringify(W.snapshot(sim)));
     assert.ok(sim.stats.hits >= 2);
 });

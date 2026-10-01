@@ -2,7 +2,7 @@
 // turns or gets pushed (combat-combo-concept.md 13). While the player is
 // within engageRange it attacks its moves in turn; its club hits by the same
 // box test as the player's sword, and the blow is settled by
-// combatKit.strikePlayer. Hits on it stagger it like any fighter.
+// combatKit.strike. Hits on it stagger it like any fighter.
 //
 // sim.dummy: { id, kind, x, y, h, facing, radius, hp, maxHp, atk, def, anchored,
 //   phase: idle|windup|swing|recover|reel, t, move (index), seq, wait,
@@ -63,12 +63,12 @@ const dummyKit = (() => {
         const u0 = d.t / move.swing;
         d.t = Math.min(move.swing, d.t + dt);
         const u1 = d.t / move.swing;
-        const p = sim.player;
-        if (!d.struck && !p.down && terrainKit.lineClear(sim.terrain, d.x, d.y, p.x, p.y)) {
-            const target = { id: 'player', boxes: fighterKit.hurtboxes(sim) };
+        const p = worldSim.nearestFighter(sim, d);
+        if (!d.struck && p && terrainKit.lineClear(sim.terrain, d.x, d.y, p.x, p.y)) {
+            const target = { id: p.id, boxes: fighterKit.hurtboxes(sim, p) };
             const solveAt = u => rigKit.solve(sim.rigs.dummy, pose({ ...d, t: u * move.swing }), space.toBlocks(d.x, d.y, d.h), space.yawOf(d.facing));
             const hit = combatKit.sweep(sim.rigs.dummy, solveAt, u0, u1, [target]);
-            if (hit) { d.struck = true; combatKit.strikePlayer(sim, d, d.atk * move.ratio, hit.point, move.id); }
+            if (hit) { d.struck = true; combatKit.strike(sim, p, d, d.atk * move.ratio, hit.point, { move: move.id }); }
         }
         if (d.phase === 'swing' && d.t >= move.swing - 1e-9) { d.phase = 'recover'; d.t = 0; }
     }
@@ -77,11 +77,11 @@ const dummyKit = (() => {
         if (!d) return;
         if (d.flinch > 0) d.flinch = Math.max(0, d.flinch - dt);
         if (d.freeze > 0) { d.freeze = Math.max(0, d.freeze - dt); return; }
-        if (d.push) combatKit.tickPush(sim, d, dt, [sim.player]);
-        const S = D(), p = sim.player;
+        if (d.push) combatKit.tickPush(sim, d, dt, sim.fighters);
+        const S = D(), p = worldSim.nearestFighter(sim, d);
         if (d.phase === 'idle') {
             d.wait = Math.max(0, d.wait - dt);
-            if (d.wait === 0 && Math.hypot(p.x - d.x, p.y - d.y) <= S.engageRange) {
+            if (d.wait === 0 && p && Math.hypot(p.x - d.x, p.y - d.y) <= S.engageRange) {
                 d.move = d.seq++ % S.moves.length; d.phase = 'windup'; d.t = 0; d.struck = false;
                 emit(sim, 'windup', { move: S.moves[d.move].id });
             }

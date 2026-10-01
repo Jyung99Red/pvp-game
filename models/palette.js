@@ -5,6 +5,7 @@ const palette = Object.freeze({
     // characters
     skin: '#e2b48b', hair: '#5a3a24', eye: '#2a2d38',
     tunic: '#3d6db3', tunicTrim: '#e9e4d6', pants: '#4a3a2c', boots: '#33261c',
+    rivalTunic: '#b8443a', rivalTrim: '#f0d9a8',
     belt: '#5b3b22', leather: '#7a5233', gold: '#d8b04a',
     // equipment
     steel: '#dfe5ec', steelDark: '#9aa2aa', wood: '#8a5a2e', woodDark: '#6b4423',

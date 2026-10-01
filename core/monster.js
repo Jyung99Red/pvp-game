@@ -125,11 +125,11 @@ const monsterKit = (() => {
         return [...lower.slice(0, -1), ...upper.slice(0, -1)];
     }
 
-    // ---- being hit (combatKit.kitOf) ----
-    function struck(sim, m, { amount, stagger: points = 0 }) {
+    // ---- being hit (combatKit.kitOf); `by` is the fighter who struck ----
+    function struck(sim, m, { amount, stagger: points = 0, by = null }) {
         if (!living(m)) return;
         combatKit.damage(sim, m, amount);
-        if (m.hp <= 0) { defeat(sim, m); return; }
+        if (m.hp <= 0) { defeat(sim, m, by); return; }
         const S = configOf(m.kind);
         m.flinch = S.flinchSeconds;
         if (!m.enraged && S.enrage && m.hp <= m.maxHp * S.enrage.threshold + 1e-9) { m.enraged = true; emit(sim, m, 'enrage', { at: chest(m) }); }
@@ -146,19 +146,19 @@ const monsterKit = (() => {
             emit(sim, m, 'stagger');
         }
     }
-    function defeat(sim, m) {
+    function defeat(sim, m, by) {
         m.phase = 'dead'; m.t = 0; m.stagger = 0; m.flinch = 0; m.hp = 0;
-        sim.stats.kills++;
+        if (by?.stats) by.stats.kills++;
         emit(sim, m, 'defeated', { at: chest(m) });
     }
     // About the middle of the body, in blocks, for effects.
     function chest(m) { const at = space.toBlocks(m.x, m.y, m.h); return [at[0], at[1] + 0.6, at[2]]; }
 
     // ---- moving ----
-    // Bodies a monster cannot walk through: the player (unless fallen),
-    // the training dummy, the other living monsters.
+    // Bodies a monster cannot walk through: fighters (unless fallen), the
+    // training dummy, the other living monsters.
     function obstacles(sim, m) {
-        const out = sim.player.down ? [] : [sim.player];
+        const out = sim.fighters.filter(f => !f.down);
         if (sim.dummy) out.push(sim.dummy);
         for (const o of sim.monsters) if (o !== m && living(o)) out.push(o);
         return out;
@@ -176,8 +176,9 @@ const monsterKit = (() => {
     }
 
     // ---- the AI, on the monster's own clock (dt is already times tempo) ----
+    // It minds the nearest fighter still standing (in PVE, the player).
     function think(sim, m, dt) {
-        const S = configOf(m.kind), p = sim.player, d = distance(m, p), alive = !p.down;
+        const S = configOf(m.kind), p = worldSim.nearestFighter(sim, m) || sim.fighters[0], d = distance(m, p), alive = !p.down;
         const next = m.seq % S.moves.length;
         switch (m.phase) {
             case 'patrol': {
@@ -236,17 +237,17 @@ const monsterKit = (() => {
         const u1 = m.t / move.swing;
         const x0 = m.x, y0 = m.y, want = m.stopped ? 0 : lunge(move, u1) - lunge(move, u0);
         if (want > 0) terrainKit.moveCircle(sim.terrain, m, Math.cos(m.facing) * want, Math.sin(m.facing) * want, obstacles(sim, m));
-        const p = sim.player;
-        if (!m.struck && !p.down && terrainKit.lineClear(sim.terrain, m.x, m.y, p.x, p.y)) {
+        const p = worldSim.nearestFighter(sim, m);
+        if (!m.struck && p && terrainKit.lineClear(sim.terrain, m.x, m.y, p.x, p.y)) {
             const x1 = m.x, y1 = m.y;
             const at = u => {
                 const k = u1 > u0 ? (u - u0) / (u1 - u0) : 1;
                 return rigKit.solve(r, pose(r, { ...m, t: u * move.swing }), space.toBlocks(x0 + (x1 - x0) * k, y0 + (y1 - y0) * k, m.h), space.yawOf(m.facing));
             };
-            const hit = combatKit.sweep(r, at, u0, u1, [{ id: 'player', boxes: fighterKit.hurtboxes(sim) }], striking(move));
+            const hit = combatKit.sweep(r, at, u0, u1, [{ id: p.id, boxes: fighterKit.hurtboxes(sim, p) }], striking(move));
             if (hit) {
                 m.struck = true; m.stopped = true;
-                combatKit.strikePlayer(sim, m, m.atk * move.ratio * (m.enraged ? S.enrage.atk : 1), hit.point, move.id);
+                combatKit.strike(sim, p, m, m.atk * move.ratio * (m.enraged ? S.enrage.atk : 1), hit.point, { move: move.id });
             }
         }
         if (m.phase === 'swing' && m.t >= move.swing - 1e-9) { m.phase = 'recover'; m.t = 0; }
