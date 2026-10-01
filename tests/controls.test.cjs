@@ -55,8 +55,11 @@ test('controls fit every common landscape phone without overlapping', () => {
         const cluster = ['a', 'b', 'offhand'].map(id => b[id]);
         const height = Math.max(...cluster.map(c => c.y + c.r)) - Math.min(...cluster.map(c => c.y - c.r));
         assert.ok(height <= 200, `${name}: right cluster ${height}px tall`);
-        // Only interact is on the stick's side, above where the stick rests.
+        // The stick zone is a small bottom-left patch around where the stick rests.
         for (const c of cluster) assert.ok(c.x - c.r > stickZone.x1, `${name}: right buttons stay off the stick zone`);
+        assert.ok(stickZone.x0 === 0 && stickZone.y1 === h, `${name}: the zone reaches the screen's corner`);
+        assert.ok(stickZone.x1 <= w * 0.45 && stickZone.y1 - stickZone.y0 <= h * 0.6, `${name}: zone ${JSON.stringify(stickZone)} is small`);
+        assert.ok(stickRest.x <= stickZone.x1 - 40 && stickRest.y >= stickZone.y0 + 40, `${name}: the resting stick sits inside the zone`);
         assert.ok(b.interact.x < stickZone.x1 && b.interact.y + b.interact.r < stickRest.y - I.stickRadius, name);
         assert.ok(stickRest.x - I.stickRadius > (insets.left || 0), `${name}: resting stick inside the safe area`);
     }

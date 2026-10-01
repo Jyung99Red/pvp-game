@@ -143,7 +143,7 @@ const worldView = (() => {
             });
         }
         const p0 = sim.player;
-        const playerRig = rigKit.build(playerModel, { scale: C.models.playerScale, equipment: equipmentModels.forLoadout(p0.loadout) });
+        const playerRig = sim.rigs.player;
         const playerMeshes = rigMeshes(playerRig);
         let lastFacing = p0.facing, lean = 0, clock = 0;
 

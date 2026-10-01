@@ -16,9 +16,13 @@ const gameConfig = (() => {
         world: { unitsPerBlock: 40 },
 
         // 2. The main character on foot.
-        // speed: world units/second at full stick. turnRate: radians/second
-        // while turning towards the stick. radius: wall collision.
-        player: { speed: 115, turnRate: 8, radius: 12 },
+        // speed: walking, world units/second at full stick. turnRate:
+        // radians/second while turning towards the stick. radius: wall
+        // collision. Running: after `runAfter` seconds of unbroken walking
+        // with the stick pushed at least `runStick` of the way, speed eases up
+        // to speed * runMultiplier over runRampSeconds, and back down the same
+        // way once the walk is broken (stick eased off or released, a wall).
+        player: { speed: 115, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 2.2, runRampSeconds: 0.3, runStick: 0.9 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -55,8 +59,9 @@ const gameConfig = (() => {
         // 8. Button layout (controls-landscape-concept.md 3). Each button's
         // centre is `x` from its `side` edge and `y` from the bottom edge,
         // both inside the safe area; `size` is the diameter. The stick
-        // appears wherever the left `zone` share of the screen is pressed
-        // and rests faintly at (restX, restY) from the bottom-left.
+        // appears wherever the bottom-left zone (zoneWidth x zoneHeight from
+        // the safe area's corner, out to the screen edges) is pressed, and
+        // rests faintly at (restX, restY) from the bottom-left.
         controlsLayout: {
             minGap: 10,
             buttons: {
@@ -65,7 +70,7 @@ const gameConfig = (() => {
                 offhand: { side: 'right', x: 176, y: 56, size: 72 },
                 interact: { side: 'left', x: 64, y: 196, size: 56 }
             },
-            stick: { zone: 0.5, restX: 120, restY: 96 }
+            stick: { zoneWidth: 250, zoneHeight: 190, restX: 120, restY: 96 }
         },
 
         // 9. Maps. One character per block: `.` grass, `:` path, `1`-`9`

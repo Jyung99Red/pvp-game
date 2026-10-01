@@ -34,8 +34,9 @@ html, body {
 }
 .hud-perf:empty { display: none; }
 
-/* Stick: pressing anywhere in the zone puts the stick there. */
-.stick-zone { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; z-index: 1; touch-action: none; }
+/* Stick: pressing anywhere in the bottom-left zone puts the stick there.
+   ui/input.js sizes the zone from game_config.js. */
+.stick-zone { position: absolute; left: 0; bottom: 0; width: 250px; height: 190px; z-index: 1; touch-action: none; }
 .stick {
     --r: 52px; --x: 0px; --y: 0px;
     position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none;

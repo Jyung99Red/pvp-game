@@ -28,7 +28,7 @@ const controlsKit = (() => {
         return {
             buttons,
             stickRest: { x: inset.left + L.stick.restX, y: height - inset.bottom - L.stick.restY },
-            stickZone: { x0: 0, x1: width * L.stick.zone }
+            stickZone: { x0: 0, x1: inset.left + L.stick.zoneWidth, y0: height - inset.bottom - L.stick.zoneHeight, y1: height }
         };
     }
     // Problems with a layout: overlaps closer than minGap, buttons off the

@@ -32,12 +32,12 @@ const app = (() => {
         }
         // Drawing blends the state before the last step into the current one
         // (drawn only; every rule reads the simulation itself).
-        const KEYS = ['x', 'y', 'h', 'facing', 'walk', 'moveBlend'], copy = p => Object.fromEntries(KEYS.map(k => [k, p[k]]));
+        const LERP = ['x', 'y', 'h', 'gait', 'moveBlend', 'runBlend'], copy = p => Object.fromEntries([...LERP, 'facing'].map(k => [k, p[k]]));
         let before = copy(sim.player);
         const loop = simLoop.create(dt => { before = copy(sim.player); worldSim.step(sim, dt); });
         function shown(alpha) {
             const p = sim.player, out = { ...p };
-            for (const k of ['x', 'y', 'h', 'walk', 'moveBlend']) out[k] = before[k] + (p[k] - before[k]) * alpha;
+            for (const k of LERP) out[k] = before[k] + (p[k] - before[k]) * alpha;
             out.facing = space.lerpAngle(before.facing, p.facing, alpha);
             return out;
         }

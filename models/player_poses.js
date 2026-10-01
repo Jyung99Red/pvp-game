@@ -24,6 +24,18 @@ const playerPoses = Object.freeze({
             { chest: { rx: 0.06 } }
         ]
     },
+    // Running: the same layout as the walk, with longer strides, knees
+    // driven high, a forward lean and pumping arms.
+    run: {
+        legs: [
+            { pelvis: { ry: 0.1 }, thighR: { rx: -0.85 }, shinR: { rx: 0.25 }, thighL: { rx: 0.65 }, shinL: { rx: 0.95 } },
+            { thighR: { rx: -0.25 }, shinR: { rx: 0.55 }, thighL: { rx: -0.95 }, shinL: { rx: 1.55 } }
+        ],
+        arms: [
+            { chest: { rx: 0.22, ry: -0.12 }, upperArmR: { rx: 0.5 }, forearmR: { rx: -0.35 }, upperArmL: { rx: -0.55 }, forearmL: { rx: -0.45 } },
+            { chest: { rx: 0.22 } }
+        ]
+    },
     // Breathing while idle; drawn only, never part of a hit test.
     breath: { rate: 2.2, chest: 0.012, head: -0.008, arms: 0.02 }
 });

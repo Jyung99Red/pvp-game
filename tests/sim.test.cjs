@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, simLoop, terrainKit, space, gameConfig } = load();
+const { worldSim: W, simLoop, terrainKit, space, gameConfig, playerAnim } = load();
 const plain = value => JSON.parse(JSON.stringify(value));
 const SPEED = gameConfig.player.speed, U = gameConfig.world.unitsPerBlock;
 
@@ -35,7 +35,7 @@ test('full stick walks at player.speed; a half-pushed stick at half speed', () =
     W.command(sim, { type: 'move', x: 1, y: 0 });
     loop.run(1);
     assert.ok(Math.abs(p.x - x0 - SPEED) < 1e-6, `moved ${p.x - x0}`);
-    assert.ok(Math.abs(p.walk - SPEED) < 1e-6);
+    assert.ok(Math.abs(p.gait - SPEED / playerAnim.cycleLength(sim.rigs.player, 0)) < 1e-6, 'the gait advances by distance over the stride');
     const y0 = p.y;
     W.command(sim, { type: 'move', x: 0, y: -0.5 });
     loop.run(0.5);
@@ -112,6 +112,52 @@ test('a block corner is walked round, not snagged on', () => {
     assert.ok(Math.abs(body.y - (2 * U - 12)) < 1e-6 && Math.abs(body.x - 2.5 * U) < 1e-9);
 });
 
+test('two seconds of unbroken walking turn into a run at runMultiplier', () => {
+    const P = gameConfig.player, { sim, loop, p } = running();
+    p.y += 3 * U; // room to run east and west along row 11
+    W.command(sim, { type: 'move', x: 1, y: 0 });
+    loop.run(P.runAfter - 0.05);
+    assert.ok(p.runBlend === 0 && Math.abs(p.speed - P.speed) < 1e-6, 'still walking just before runAfter');
+    loop.run(0.05 + P.runRampSeconds / 2);
+    assert.ok(p.runBlend > 0.3 && p.runBlend < 0.7 && p.speed > P.speed * 1.2 && p.speed < P.speed * P.runMultiplier, `easing up: ${p.speed}`);
+    loop.run(P.runRampSeconds);
+    assert.equal(p.runBlend, 1);
+    assert.ok(Math.abs(p.speed - P.speed * P.runMultiplier) < 1e-6, `running at ${p.speed}`);
+    // Easing the stick off below runStick breaks the run: back down to a walk.
+    W.command(sim, { type: 'move', x: -0.6, y: 0 });
+    loop.run(P.runRampSeconds + 0.01);
+    assert.ok(p.runBlend === 0 && p.moveTime === 0 && Math.abs(p.speed - P.speed * 0.6) < 1e-6);
+});
+
+test('a gentle push never runs; a stop or a wall starts the count again', () => {
+    const P = gameConfig.player;
+    {
+        const { sim, loop, p } = running();
+        p.y += 3 * U;
+        W.command(sim, { type: 'move', x: 0.85, y: 0 });
+        loop.run(P.runAfter + 1);
+        assert.equal(p.runBlend, 0);
+    }
+    {
+        const { sim, loop, p } = running();
+        p.y += 3 * U;
+        W.command(sim, { type: 'move', x: 1, y: 0 });
+        loop.run(P.runAfter - 0.5);
+        W.command(sim, { type: 'move', x: 0, y: 0 });
+        loop.run(0.01);
+        W.command(sim, { type: 'move', x: -1, y: 0 });
+        loop.run(P.runAfter - 0.1);
+        assert.equal(p.runBlend, 0, 'letting go for one step resets the count');
+    }
+    {
+        const { sim, loop, p } = running();
+        W.command(sim, { type: 'move', x: 0, y: -1 }); // into the north wall
+        loop.run(P.runAfter + 2);
+        assert.equal(p.runBlend, 0, 'pushing into a wall is not walking');
+        assert.equal(p.moveTime, 0);
+    }
+});
+
 test('walk blend eases in and out over animation.blendSeconds', () => {
     const { sim, loop, p } = running(), b = gameConfig.animation.blendSeconds;
     W.command(sim, { type: 'move', x: 1, y: 0 });
@@ -133,7 +179,7 @@ test('the same commands give the same world', () => {
             for (const [at, cmd] of script) if (at === tick) W.command(sim, cmd);
             W.step(sim, simLoop.STEP);
         }
-        const { terrain, ...rest } = sim;
+        const { terrain, rigs, ...rest } = sim;
         return JSON.stringify(rest);
     };
     assert.equal(play(), play());

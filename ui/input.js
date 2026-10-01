@@ -128,7 +128,8 @@ const inputLayer = (() => {
                 if (!el) continue;
                 Object.assign(el.style, { left: `${b.x - b.r}px`, top: `${b.y - b.r}px`, width: `${b.size}px`, height: `${b.size}px` });
             }
-            zone.style.width = `${L.stickZone.x1 - L.stickZone.x0}px`;
+            const z = L.stickZone;
+            Object.assign(zone.style, { left: `${z.x0}px`, top: `${z.y0}px`, width: `${z.x1 - z.x0}px`, height: `${z.y1 - z.y0}px` });
             stick.style.setProperty('--r', `${C.stickRadius}px`);
             rest = L.stickRest;
             if (!stickActive()) restStick();

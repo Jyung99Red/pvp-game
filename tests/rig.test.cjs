@@ -38,20 +38,20 @@ test('the main character has the 14 bones of 3d-migration-concept.md 12.1', () =
 });
 
 test('scale follows the prototype: about 1.9 blocks tall, standing on the ground', () => {
-    const solved = R.solve(rig, playerAnim.pose(rig, { walk: 0, moveBlend: 0 }));
+    const solved = R.solve(rig, playerAnim.pose(rig, { gait: 0, moveBlend: 0 }));
     const head = find(p => p.kind === 'body' && rig.bones[p.bone].name === 'head');
     const headTop = Math.max(...cornersOf(solved, head).map(c => c[1]));
     assert.ok(headTop > 1.8 && headTop < 1.95, `head top ${headTop}`);
     assert.ok(top(solved) < 2.05, `overall ${top(solved)}`);
     assert.ok(Math.abs(lowestBody(solved)) < 1e-9);
     const big = R.build(playerModel, { scale: 2, equipment });
-    const bigSolved = R.solve(big, playerAnim.pose(big, { walk: 0, moveBlend: 0 }));
+    const bigSolved = R.solve(big, playerAnim.pose(big, { gait: 0, moveBlend: 0 }));
     const bigTop = Math.max(...big.parts.map((p, i) => Math.max(...M.corners(M.obb(bigSolved.parts[i], p.size.map(v => v / 2))).map(c => c[1]))));
     assert.ok(Math.abs(bigTop - 2 * top(solved)) < 1e-6, 'scale multiplies every size');
 });
 
 test('the model faces +z with its right hand on -x; facing maps to yaw in one place', () => {
-    const pose = playerAnim.pose(rig, { walk: 0, moveBlend: 0 });
+    const pose = playerAnim.pose(rig, { gait: 0, moveBlend: 0 });
     const eye = find(p => p.color === 'eye'), handR = rig.index.handR, handL = rig.index.handL;
     const rest = R.solve(rig, pose);
     assert.ok(rest.parts[eye][14] > 0.2, 'eyes on the +z face');
@@ -66,7 +66,7 @@ test('the model faces +z with its right hand on -x; facing maps to yaw in one pl
 });
 
 test('hurtboxes are the body only: not deco, not the sword, not the shield', () => {
-    const solved = R.solve(rig, playerAnim.pose(rig, { walk: 0, moveBlend: 0 }));
+    const solved = R.solve(rig, playerAnim.pose(rig, { gait: 0, moveBlend: 0 }));
     const hurt = R.boxes(rig, solved, ['body']).map(b => rig.parts[b.part]);
     assert.ok(hurt.length >= 15);
     assert.ok(hurt.every(p => p.kind === 'body' && p.owner === 'body'));
@@ -94,41 +94,45 @@ test('sparse poses: unnamed bones stay at rest; mirror, mix and add', () => {
     }
 });
 
-test('walking is a pure function of distance walked and blend, feet on the ground', () => {
-    const cycle = playerAnim.cycleLength(rig);
-    const at = (walk, moveBlend = 1) => R.solve(rig, playerAnim.pose(rig, { walk, moveBlend }));
+test('walking and running are pure functions of gait phase and blends, feet on the ground', () => {
+    const at = (gait, moveBlend = 1, runBlend = 0) => R.solve(rig, playerAnim.pose(rig, { gait, moveBlend, runBlend }));
     // Same state, separately built rig: the same pose. Nothing hidden in
     // the rig or in earlier calls feeds the result.
     const other = R.build(playerModel, { equipment: equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' }) });
-    at(3 * cycle / 7);
-    assert.equal(JSON.stringify(playerAnim.pose(other, { walk: 17.5, moveBlend: 0.4 })), JSON.stringify(playerAnim.pose(rig, { walk: 17.5, moveBlend: 0.4 })));
-    assert.notDeepEqual(Array.from(at(0).bones[rig.index.thighR]), Array.from(at(cycle / 4).bones[rig.index.thighR]));
+    at(3 / 7, 1, 1);
+    const body = { gait: 0.32, moveBlend: 0.4, runBlend: 0.7 };
+    assert.equal(JSON.stringify(playerAnim.pose(other, body)), JSON.stringify(playerAnim.pose(rig, body)));
+    assert.notDeepEqual(Array.from(at(0).bones[rig.index.thighR]), Array.from(at(0.25).bones[rig.index.thighR]));
+    assert.notDeepEqual(Array.from(at(0.1, 1, 0).bones[rig.index.thighR]), Array.from(at(0.1, 1, 1).bones[rig.index.thighR]));
     for (let i = 0; i <= 40; i++) {
-        for (const blend of [0, 0.5, 1]) {
-            const low = lowestBody(at(cycle * i / 40, blend));
-            assert.ok(Math.abs(low) < 1e-9, `phase ${i / 40} blend ${blend}: lowest body point ${low}`);
+        for (const moveBlend of [0, 0.5, 1]) for (const runBlend of [0, 0.5, 1]) {
+            const low = lowestBody(at(i / 40, moveBlend, runBlend));
+            assert.ok(Math.abs(low) < 1e-9, `phase ${i / 40} blends ${moveBlend}/${runBlend}: lowest body point ${low}`);
         }
     }
     // A full cycle returns to the same pose.
-    assert.ok(Array.from(at(0).parts[3]).every((v, k) => Math.abs(v - at(cycle).parts[3][k]) < 1e-9));
+    for (const run of [0, 1]) assert.ok(Array.from(at(0, 1, run).parts[3]).every((v, k) => Math.abs(v - at(1, 1, run).parts[3][k]) < 1e-9));
 });
 
-test('the stride matches the leg swing: the planted foot barely slides', () => {
-    const cycle = playerAnim.cycleLength(rig), unit = gameConfig.world.unitsPerBlock;
+test('the stride matches the leg swing: the planted foot barely slides, walking or running', () => {
+    const P = gameConfig.player, unit = gameConfig.world.unitsPerBlock;
     const foot = find(p => p.tag === 'foot' && rig.bones[p.bone].name === 'shinR');
-    const zs = [];
-    for (let f = 0; f <= 0.5 + 1e-9; f += 0.025) {
-        const s = R.solve(rig, playerAnim.pose(rig, { walk: f * cycle, moveBlend: 1 }));
-        zs.push(s.parts[foot][14] + f * cycle / unit); // body walks forward along +z
+    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.15, [3, 5]], [1, P.speed * P.runMultiplier, 0.25, [5, 7]]]) {
+        const cycle = playerAnim.cycleLength(rig, runBlend), zs = [];
+        for (let f = 0; f <= 0.4 + 1e-9; f += 0.025) {
+            const s = R.solve(rig, playerAnim.pose(rig, { gait: f, moveBlend: 1, runBlend }));
+            zs.push(s.parts[foot][14] + f * cycle / unit); // body moves forward along +z
+        }
+        const slide = Math.max(...zs) - Math.min(...zs);
+        assert.ok(slide < maxSlide, `run ${runBlend}: planted foot slides ${slide.toFixed(3)} blocks`);
+        const stepsPerSecond = 2 * speed / cycle;
+        assert.ok(stepsPerSecond > cadence[0] && stepsPerSecond < cadence[1], `run ${runBlend}: ${stepsPerSecond.toFixed(2)} steps a second at full speed`);
     }
-    const slide = Math.max(...zs) - Math.min(...zs);
-    assert.ok(slide < 0.15, `planted foot slides ${slide.toFixed(3)} blocks`);
-    const stepsPerSecond = 2 * gameConfig.player.speed / cycle;
-    assert.ok(stepsPerSecond > 3 && stepsPerSecond < 5, `${stepsPerSecond.toFixed(2)} steps a second at full speed`);
+    assert.ok(playerAnim.cycleLength(rig, 1) > playerAnim.cycleLength(rig, 0), 'running strides are longer');
 });
 
 test('drawn-only additions never change the judged pose', () => {
-    const body = { walk: 30, moveBlend: 0 }, judged = playerAnim.pose(rig, body);
+    const body = { gait: 0.3, moveBlend: 0 }, judged = playerAnim.pose(rig, body);
     const before = JSON.stringify(judged);
     const shown = playerAnim.present(judged, body, { time: 1.3, lean: 0.1 });
     assert.equal(JSON.stringify(judged), before);
