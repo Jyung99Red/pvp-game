@@ -1,0 +1,66 @@
+// Procedural combat sounds (Web Audio, no asset files), carried over from
+// the 2D version. Presentation only: the simulation never waits on or reads
+// anything here. Mobile browsers keep audio locked until the first touch,
+// so the context is created and resumed on the first pointer press.
+const sfx = (() => {
+    const key = 'pvp-game-sfx-v1';
+    let ctx = null, master = null, noise = null, enabled = true;
+    try { enabled = localStorage.getItem(key) !== 'off'; } catch (_) { /* Storage may be unavailable. */ }
+    function unlock() {
+        if (!enabled) return;
+        const Audio = window.AudioContext || window.webkitAudioContext;
+        if (!Audio) return;
+        if (!ctx) {
+            ctx = new Audio();
+            master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
+            // One shared second of white noise feeds every noisy sound.
+            noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+            const data = noise.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        }
+        if (ctx.state === 'suspended') ctx.resume();
+    }
+    window.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+    window.addEventListener('keydown', unlock, { capture: true, passive: true });
+    function envelope(gain, at, peak, length) {
+        gain.gain.setValueAtTime(0.0001, at);
+        gain.gain.exponentialRampToValueAtTime(peak, at + 0.006);
+        gain.gain.exponentialRampToValueAtTime(0.0001, at + length);
+    }
+    function tone(type, from, to, length, peak, delay = 0) {
+        const at = ctx.currentTime + delay, osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(from, at);
+        osc.frequency.exponentialRampToValueAtTime(to, at + length);
+        envelope(gain, at, peak, length);
+        osc.connect(gain).connect(master); osc.start(at); osc.stop(at + length + 0.02);
+    }
+    function hiss(from, to, length, peak, q = 1.2) {
+        const at = ctx.currentTime, source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+        source.buffer = noise; filter.type = 'bandpass'; filter.Q.value = q;
+        filter.frequency.setValueAtTime(from, at); filter.frequency.exponentialRampToValueAtTime(to, at + length);
+        envelope(gain, at, peak, length);
+        source.connect(filter).connect(gain).connect(master); source.start(at); source.stop(at + length + 0.02);
+    }
+    const sounds = {
+        swing: heavy => heavy ? hiss(900, 260, 0.16, 0.09, 0.9) : hiss(1800, 650, 0.09, 0.06),
+        enemySwing: () => hiss(700, 240, 0.14, 0.05, 0.9),
+        hit: () => { tone('sine', 150, 55, 0.1, 0.22); hiss(2600, 1200, 0.04, 0.07, 0.7); },
+        hurt: () => { tone('triangle', 120, 45, 0.14, 0.2); hiss(900, 400, 0.06, 0.06, 0.8); },
+        block: () => { tone('triangle', 520, 470, 0.12, 0.07); tone('square', 1040, 900, 0.06, 0.025); },
+        parry: () => { tone('sine', 1320, 1300, 0.26, 0.08); tone('sine', 1980, 1960, 0.18, 0.035, 0.01); },
+        guardBroken: () => tone('sawtooth', 320, 110, 0.26, 0.05),
+        cue: () => tone('sine', 880, 900, 0.08, 0.04)
+    };
+    // Simulation events carry who they belong to (`side`).
+    function play(e) {
+        if (!enabled || !ctx || ctx.state !== 'running') return;
+        const own = e.side === 'player';
+        if (e.type === 'swing') (own ? sounds.swing(e.heavy) : sounds.enemySwing());
+        else if (e.type === 'hit') (own ? sounds.hit : sounds.hurt)();
+        else if (e.type === 'block') sounds.block();
+        else if (e.type === 'parry') sounds.parry();
+        else if (e.type === 'guard_broken' && own) sounds.guardBroken();
+        else if (e.type === 'pause_ready' && own) sounds.cue();
+    }
+    return { play, isEnabled: () => enabled };
+})();

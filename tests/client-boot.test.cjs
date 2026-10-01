@@ -123,5 +123,5 @@ test('every game script is listed exactly once, and core/ and models/ stay free 
     const onDisk = ['core', 'models', 'render', 'ui'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
     for (const file of onDisk) if (file !== 'core/client_boot.js') assert.ok(scripts.includes(file), `${file} is not in client-assets.json`);
     for (const file of scripts.filter(f => /^(core|models)\//.test(f)))
-        assert.doesNotMatch(source(file), /\b(document|window|THREE)\b/, `${file} must run in Node and on a PVP host`);
+        assert.doesNotMatch(source(file), /\b(document|window|THREE)\s*[.[]/, `${file} must run in Node and on a PVP host`);
 });

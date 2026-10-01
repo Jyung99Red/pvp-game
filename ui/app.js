@@ -46,8 +46,8 @@ const app = (() => {
             press: button => worldSim.command(sim, { type: 'press', button }),
             release: button => worldSim.command(sim, { type: 'release', button })
         });
-        // M1: nothing to interact with yet, so the key stays dim; the
-        // offhand key greys out when nothing is carried there.
+        // Nothing to interact with yet, so that key stays dim; the offhand
+        // key greys out when nothing is carried there.
         root.querySelector('[data-button="interact"]').classList.add('idle');
         root.querySelector('[data-button="offhand"]').classList.toggle('disabled', !sim.player.loadout.offhand);
 
@@ -64,13 +64,20 @@ const app = (() => {
         fullscreenOnFirstTouch();
 
         const perf = root.querySelector('[data-perf]'), portrait = window.matchMedia('(orientation: portrait)');
+        const display = hud.attach(root);
+        let clock = 0;
         let last = performance.now(), frames = 0, perfTime = 0;
         function frame(now) {
             const seconds = Math.max(0, (now - last) / 1000);
             last = now;
             if (!paused) loop.advance(seconds);
+            clock += Math.min(seconds, simLoop.MAX_FRAME);
+            const events = worldSim.drain(sim);
+            for (const e of events) sfx.play(e);
+            display.events(events, clock);
+            display.update(sim, view, clock);
             // Portrait is covered by the rotate hint: skip drawing to save power.
-            if (view && !portrait.matches) view.render(sim, Math.min(seconds, simLoop.MAX_FRAME), shown(paused ? 1 : loop.alpha()));
+            if (view && !portrait.matches) view.render(sim, Math.min(seconds, simLoop.MAX_FRAME), shown(paused ? 1 : loop.alpha()), events);
             frames++; perfTime += seconds;
             if (perfTime >= 0.5) {
                 const info = view ? view.info() : { calls: 0, triangles: 0 };

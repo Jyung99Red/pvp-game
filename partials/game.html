@@ -2,6 +2,22 @@
     <canvas class="game-canvas" aria-label="游戏画面"></canvas>
     <div class="game-fallback" data-fallback role="alert" hidden></div>
     <div class="hud-perf" data-perf aria-live="off"></div>
+    <div class="hud-floats" data-hud="floats" aria-hidden="true"></div>
+    <div class="hud-top">
+        <div class="hud-self" aria-label="生命与格挡条">
+            <div class="bar bar-hp"><i data-hud="hp"></i></div>
+            <div class="bar bar-guard" data-hud="guard-bar"><i data-hud="guard"></i></div>
+        </div>
+        <div class="hud-combo" data-hud="combo" aria-live="off">
+            <div class="chips" data-hud="chips"></div>
+            <div class="move-name" data-hud="move"></div>
+        </div>
+        <div class="hud-target" data-hud="target" hidden>
+            <span class="target-name">训练木桩</span>
+            <div class="bar bar-target"><i data-hud="target-hp"></i></div>
+            <div class="pips" aria-label="失衡"><i data-hud="pip"></i><i data-hud="pip"></i><i data-hud="pip"></i></div>
+        </div>
+    </div>
 
     <div class="stick-zone" data-stick-zone></div>
     <div class="stick" data-stick aria-hidden="true"><div class="stick-knob" data-knob></div></div>

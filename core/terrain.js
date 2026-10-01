@@ -11,10 +11,10 @@ const terrainKit = (() => {
         const height = rows.length, width = rows[0]?.length || 0;
         if (!height || rows.some(r => r.length !== width)) throw new Error('Map rows must be non-empty and equal in length');
         const kind = new Uint8Array(width * height), level = new Uint8Array(width * height);
-        let spawn = null;
+        let spawn = null, dummy = null;
         rows.forEach((row, r) => [...row].forEach((ch, c) => {
             const i = r * width + c;
-            if (ch === '.' || ch === '@') kind[i] = KIND.grass;
+            if (ch === '.' || ch === '@' || ch === 'D') kind[i] = KIND.grass;
             else if (ch === ':') kind[i] = KIND.path;
             else if (ch === 'T') { kind[i] = KIND.tree; level[i] = TREE_HEIGHT; }
             else if (ch >= '1' && ch <= '9') { kind[i] = KIND.stone; level[i] = Number(ch); }
@@ -23,9 +23,13 @@ const terrainKit = (() => {
                 if (spawn) throw new Error('A map has one spawn');
                 spawn = { col: c, row: r };
             }
+            if (ch === 'D') {
+                if (dummy) throw new Error('A map has at most one training dummy');
+                dummy = { col: c, row: r };
+            }
         }));
         if (!spawn) throw new Error('A map needs a spawn (@)');
-        return { width, height, unit, kind, level, spawn };
+        return { width, height, unit, kind, level, spawn, dummy };
     }
     const inside = (t, c, r) => c >= 0 && r >= 0 && c < t.width && r < t.height;
     function kindAt(t, c, r) { return inside(t, c, r) ? t.kind[r * t.width + c] : KIND.stone; }
@@ -48,10 +52,17 @@ const terrainKit = (() => {
     // Push a circle out of every solid cell it overlaps, each time along the
     // line from the cell's nearest point: flat walls give a slide along them,
     // block corners a slide around them.
-    function pushOut(t, body) {
+    function pushOut(t, body, obstacles = []) {
         const u = t.unit, radius = body.radius;
         for (let pass = 0; pass < 4; pass++) {
             let moved = false;
+            // Other bodies are circles: step out along the line between centres.
+            for (const o of obstacles) {
+                const dx = body.x - o.x, dy = body.y - o.y, d = Math.hypot(dx, dy), gap = radius + o.radius;
+                if (d >= gap) continue;
+                if (d > 1e-9) { body.x += dx / d * (gap - d); body.y += dy / d * (gap - d); } else body.x += gap;
+                moved = true;
+            }
             for (let r = Math.floor((body.y - radius) / u); r <= Math.floor((body.y + radius) / u); r++) {
                 for (let c = Math.floor((body.x - radius) / u); c <= Math.floor((body.x + radius) / u); c++) {
                     if (!solidAt(t, c, r)) continue;
@@ -72,14 +83,15 @@ const terrainKit = (() => {
             if (!moved) return;
         }
     }
-    // Move a circle body by (dx, dy), sliding along walls and round corners.
+    // Move a circle body by (dx, dy), sliding along walls and round corners
+    // and around other bodies (`obstacles`: circles { x, y, radius }).
     // Sub-steps keep every step under half the radius, so thin corners
     // cannot be skipped.
-    function moveCircle(t, body, dx, dy) {
+    function moveCircle(t, body, dx, dy, obstacles = []) {
         const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (body.radius / 2)));
         for (let i = 0; i < steps; i++) {
             body.x += dx / steps; body.y += dy / steps;
-            pushOut(t, body);
+            pushOut(t, body, obstacles);
         }
     }
     return { KIND, TREE_HEIGHT, fromRows, kindAt, levelAt, solidAt, cellCentre, blocked, moveCircle };

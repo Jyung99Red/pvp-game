@@ -65,18 +65,20 @@ test('commands are validated; a long vector is clipped to full speed', () => {
     assert.equal(sim.input.buttons.a.presses, 1);
 });
 
-test('two thumbs: walking while A is held, then the offhand while walking', () => {
-    const { sim, loop, p } = running(), x0 = p.x;
+test('two thumbs: walking with the shield up, interact on top; A stands the walker still for the move', () => {
+    const { sim, loop, p } = running(), G = gameConfig.combat.guard, x0 = p.x;
     W.command(sim, { type: 'move', x: 1, y: 0 });
-    W.command(sim, { type: 'press', button: 'a' });
-    loop.run(0.5);
-    assert.ok(sim.input.buttons.a.held && p.x - x0 > SPEED * 0.49);
-    W.command(sim, { type: 'release', button: 'a' });
     W.command(sim, { type: 'press', button: 'offhand' });
     W.command(sim, { type: 'press', button: 'interact' });
     loop.run(0.5);
-    assert.ok(sim.input.buttons.offhand.held && sim.input.buttons.interact.held && !sim.input.buttons.a.held);
-    assert.ok(p.x - x0 > SPEED * 0.99);
+    assert.ok(sim.input.buttons.offhand.held && sim.input.buttons.interact.held);
+    assert.ok(Math.abs(p.x - x0 - SPEED * G.moveMultiplier * 0.5) < 1, `walked ${p.x - x0} with the shield up`);
+    W.command(sim, { type: 'release', button: 'offhand' });
+    W.command(sim, { type: 'press', button: 'a' });
+    const x1 = p.x;
+    loop.run(gameConfig.combo.moves.slash.windup);
+    assert.ok(p.x - x1 < 1e-9, 'the windup stands still');
+    assert.equal(sim.stats.attacks, 1);
 });
 
 test('walls stop the body and it slides along them', () => {

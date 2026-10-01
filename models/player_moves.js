@@ -1,0 +1,68 @@
+// Key poses of the main character's moves (sparse, see core/rig.js). Each
+// move has `a`, the pose at the end of its windup, and `b`, at the end of
+// its swing; the recovery eases back to the stance. Timing lives in
+// game_config.js (combo.moves). Keys are whole-body poses: a bone a key does
+// not name is at rest. Horizontal moves keep the blade between waist and
+// chest (3d-migration-concept.md 4.6); `rising` and `cleave` cut on the
+// diagonal (4.5). rx < 0 raises an arm forward; ry > 0 turns towards the
+// character's left (+x).
+const playerMoves = (() => {
+    // The shield arm, carried in front, unless a key says otherwise.
+    const shieldArm = { upperArmL: { rx: -0.35, ry: 0.2, rz: 0.15 }, forearmL: { rx: -0.6 } };
+    const key = pose => ({ ...shieldArm, ...pose });
+    const moves = {
+        // Right to left across the front.
+        slash: {
+            a: key({ chest: { ry: -0.3 }, upperArmR: { rx: -1.15, ry: -0.55 }, handR: { rx: 1.15 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
+            b: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.15, ry: 0.5 }, handR: { rx: 1.15 }, thighR: { rx: 0.35 }, shinR: { rx: 0.15 }, thighL: { rx: -0.4 }, shinL: { rx: 0.1 } })
+        },
+        // Left to right, back the other way.
+        backslash: {
+            a: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.1, ry: 0.55 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
+            b: key({ chest: { ry: -0.35 }, upperArmR: { rx: -1.1, ry: -0.6 }, handR: { rx: 1.1 }, thighR: { rx: -0.35 }, shinR: { rx: 0.1 }, thighL: { rx: 0.35 }, shinL: { rx: 0.15 } })
+        },
+        // About 210 degrees: body twist and arm together, centred on facing.
+        spin: {
+            a: key({ base: { ry: -0.55 }, pelvis: { py: -0.06 }, chest: { ry: -0.3 }, upperArmR: { rx: -1.15, ry: -1.0 }, handR: { rx: 1.15 }, thighR: { rx: 0.4 }, shinR: { rx: 0.25 }, thighL: { rx: -0.4 }, shinL: { rx: 0.2 } }),
+            b: key({ base: { ry: 0.55 }, pelvis: { py: -0.06 }, chest: { ry: 0.3 }, upperArmR: { rx: -1.15, ry: 1.0 }, handR: { rx: 1.15 }, thighR: { rx: 0.4 }, shinR: { rx: 0.25 }, thighL: { rx: -0.4 }, shinL: { rx: 0.2 } })
+        },
+        // Straight ahead.
+        thrust: {
+            a: key({ chest: { ry: -0.5, rx: -0.05 }, upperArmR: { rx: -0.35, ry: 0.35 }, forearmR: { rx: -1.3 }, handR: { rx: 1.5, ry: 0.3 }, upperArmL: { rx: -0.9, ry: 0.4 }, thighR: { rx: 0.5 }, shinR: { rx: 0.2 }, thighL: { rx: -0.25 }, shinL: { rx: 0.15 } }),
+            b: key({ chest: { ry: 0.25, rx: 0.15 }, upperArmR: { rx: -1.52, ry: 0.08 }, handR: { rx: 1.57 }, upperArmL: { rx: -0.2, ry: 0.3 }, thighR: { rx: 0.55 }, shinR: { rx: 0.2 }, thighL: { rx: -0.6 }, shinL: { rx: 0.3 } })
+        },
+        // Diagonal, low left to high right: picks up where the slash ended.
+        rising: {
+            a: key({ pelvis: { py: -0.08 }, chest: { rx: 0.25, ry: 0.45 }, upperArmR: { rx: -0.35, rz: 0.75 }, forearmR: { rx: -0.3 }, handR: { rx: 0.9 }, thighR: { rx: 0.45 }, shinR: { rx: 0.3 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
+            b: key({ chest: { rx: -0.2, ry: -0.35 }, upperArmR: { rx: -2.45, ry: -0.55 }, handR: { rx: 1.3 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.5 }, shinL: { rx: 0.1 } })
+        },
+        // Diagonal, high right to low left: picks up where the backslash ended.
+        cleave: {
+            a: key({ chest: { rx: -0.2, ry: -0.3 }, upperArmR: { rx: -3.05, ry: -0.5 }, handR: { rx: 1.15 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.5 }, shinL: { rx: 0.1 } }),
+            b: key({ pelvis: { py: -0.08 }, chest: { rx: 0.35, ry: 0.35 }, upperArmR: { rx: -0.6, ry: 0.65 }, handR: { rx: 1.45 }, thighR: { rx: 0.5 }, shinR: { rx: 0.3 }, thighL: { rx: -0.7 }, shinL: { rx: 0.25 } })
+        },
+        // The opening B: a wide right-to-left cut from a deep wind.
+        charged: {
+            a: key({ pelvis: { py: -0.1 }, chest: { ry: -0.7, rx: 0.1 }, upperArmR: { rx: -1.15, ry: -0.55 }, handR: { rx: 1.2 }, upperArmL: { rx: -1.0, ry: 0.9 }, thighR: { rx: 0.55 }, shinR: { rx: 0.3 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
+            b: key({ pelvis: { py: -0.05 }, chest: { ry: 0.45 }, upperArmR: { rx: -1.15, ry: 0.45 }, handR: { rx: 1.2 }, upperArmL: { rx: -0.4, ry: 0.1 }, thighR: { rx: 0.6 }, shinR: { rx: 0.3 }, thighL: { rx: -0.6 }, shinL: { rx: 0.2 } })
+        },
+        // After the charged cut: back left to right.
+        follow: {
+            a: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.1, ry: 0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
+            b: key({ chest: { ry: -0.3 }, upperArmR: { rx: -1.1, ry: -0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } })
+        }
+    };
+    return Object.freeze({
+        moves,
+        // Shield up: the left forearm across the front, the board facing
+        // forward; the sword arm drawn back. Upper body only: legs keep
+        // walking underneath.
+        guard: {
+            chest: { ry: 0.12 },
+            upperArmL: { rx: -1.25, ry: -0.95, rz: 0.1 }, forearmL: { rx: -0.35 }, handL: { ry: -0.3 },
+            upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
+        },
+        // Struck: thrown back; added on top, faded by the stun.
+        flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } }
+    });
+})();

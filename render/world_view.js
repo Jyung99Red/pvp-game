@@ -126,36 +126,51 @@ const worldView = (() => {
 
         // ---- characters ----
         // One mesh per box; its matrix is copied from the rig every frame.
-        const bodyMaterials = new Map();
-        const bodyMaterial = name => {
-            if (!bodyMaterials.has(name)) {
-                if (!P[name]) throw new Error(`Unknown palette colour ${name}`);
-                bodyMaterials.set(name, new T.MeshLambertMaterial({ color: P[name], map: tx.grain }));
-            }
-            return bodyMaterials.get(name);
-        };
+        // Each rig has its own materials, so a hit flashes only the one struck.
+        // With ?boxes in the address, hit boxes are outlined: body boxes in
+        // cyan, weapon boxes (grown by combat.weaponPad) in red.
+        const showBoxes = /[?&]boxes(=|&|$)/.test(window.location.search);
+        const pad = C.combat.weaponPad / C.world.unitsPerBlock;
         function rigMeshes(rig) {
-            return rig.parts.map(part => {
-                const mesh = new T.Mesh(boxGeo(...part.size), bodyMaterial(part.color));
+            const materials = new Map();
+            const material = name => {
+                if (!P[name]) throw new Error(`Unknown palette colour ${name}`);
+                if (!materials.has(name)) materials.set(name, new T.MeshLambertMaterial({ color: P[name], map: tx.grain }));
+                return materials.get(name);
+            };
+            const meshes = rig.parts.map(part => {
+                // The blade gets a material of its own to glow while charging.
+                const mat = part.kind === 'weapon' ? new T.MeshLambertMaterial({ color: P[part.color], map: tx.grain }) : material(part.color);
+                const mesh = new T.Mesh(boxGeo(...part.size), mat);
                 mesh.matrixAutoUpdate = false; mesh.castShadow = true; mesh.receiveShadow = true;
+                if (showBoxes && (part.kind === 'body' || part.kind === 'weapon')) {
+                    const line = new T.LineSegments(new T.EdgesGeometry(new T.BoxGeometry(...part.size)), new T.LineBasicMaterial({ color: part.kind === 'weapon' ? '#ff5d4f' : '#5ccfc4', depthTest: false, transparent: true }));
+                    if (part.kind === 'weapon') line.scale.set(...part.size.map(v => (v + 2 * pad) / v));
+                    line.renderOrder = 10;
+                    mesh.add(line);
+                }
                 scene.add(mesh);
                 return mesh;
             });
+            return { meshes, materials: [...materials.values(), ...meshes.filter((m, i) => rig.parts[i].kind === 'weapon').map(m => m.material)], blade: meshes.find((m, i) => rig.parts[i].kind === 'weapon')?.material };
         }
         const p0 = sim.player;
-        const playerRig = sim.rigs.player;
-        const playerMeshes = rigMeshes(playerRig);
+        const playerRig = sim.rigs.player, player = rigMeshes(playerRig);
+        const dummyRig = sim.rigs.dummy, dummyView = dummyRig ? rigMeshes(dummyRig) : null;
+        const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let lastFacing = p0.facing, lean = 0, clock = 0;
+        const place = (meshes, solved) => meshes.forEach((mesh, i) => { mesh.matrix.fromArray(solved.parts[i]); mesh.matrixWorldNeedsUpdate = true; });
 
         function placeCamera(x, y, z) {
             const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * fit, cp = Math.cos(cam.pitch);
-            const tx0 = x, ty0 = y + cam.lookHeight, tz0 = z;
+            const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
             camera.position.set(tx0 + Math.sin(cam.yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(cam.yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
         }
         // `body` is the player as shown: by default the simulation's own,
-        // or a blend between two steps (ui/app.js).
-        function render(sim, frameSeconds, body = sim.player) {
+        // or a blend between two steps (ui/app.js). `events` are the
+        // simulation events since the last frame.
+        function render(sim, frameSeconds, body = sim.player, events = []) {
             const p = body, dt = Math.max(1e-3, frameSeconds);
             clock += frameSeconds;
             const omega = space.wrapAngle(p.facing - lastFacing) / dt;
@@ -164,7 +179,10 @@ const worldView = (() => {
             lean += (leanTarget - lean) * Math.min(1, frameSeconds * 10);
             const pose = playerAnim.present(playerAnim.pose(playerRig, p), p, { time: clock, lean });
             const at = space.toBlocks(p.x, p.y, p.h), solved = rigKit.solve(playerRig, pose, at, space.yawOf(p.facing));
-            playerMeshes.forEach((mesh, i) => { mesh.matrix.fromArray(solved.parts[i]); mesh.matrixWorldNeedsUpdate = true; });
+            place(player.meshes, solved);
+            if (dummyView && sim.dummy) place(dummyView.meshes, dummyKit.solve(sim));
+            effects.onEvents(events);
+            effects.update(frameSeconds, sim, { playerRig, playerSolved: solved, blade: player.blade, materials: { player: player.materials, dummy: dummyView ? dummyView.materials : [] } });
             placeCamera(at[0], at[1], at[2]);
             placeSun(at[0], at[1], at[2]);
             renderer.render(scene, camera);
@@ -174,7 +192,15 @@ const worldView = (() => {
             renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
-        return { render, resize, info: () => renderer.info.render, renderer, scene, camera, playerRig };
+        // A point in blocks to CSS pixels on the canvas, or null behind the camera.
+        const projected = new T.Vector3();
+        function project(point) {
+            projected.set(point[0], point[1], point[2]).project(camera);
+            if (projected.z > 1) return null;
+            const r = renderer.domElement.getBoundingClientRect();
+            return { x: (projected.x + 1) / 2 * r.width, y: (1 - projected.y) / 2 * r.height };
+        }
+        return { render, resize, project, info: () => renderer.info.render, renderer, scene, camera, playerRig };
     }
     return { create };
 })();

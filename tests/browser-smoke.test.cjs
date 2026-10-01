@@ -102,40 +102,50 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
         }
         assert.equal(info.buttons.a.w, 84);
         assert.ok(info.interactIdle && !info.offhandDisabled);
+        // A real-time fight: the frame loop runs, J is A, the dummy swings back.
+        await page.evaluate(() => { const g = window.game, d = g.sim.dummy; g.sim.player.x = d.x - 60; g.sim.player.y = d.y; g.sim.player.facing = 0; g.pause(false); });
+        for (let i = 0; i < 3; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
+        await page.waitForTimeout(800);
+        const fight = await page.evaluate(() => { window.game.pause(true); return { ...window.game.sim.stats, hp: window.game.sim.dummy.hp }; });
+        assert.ok(fight.attacks >= 1 && fight.hits >= 1, `fight ${JSON.stringify(fight)}`);
+        await shot(page, 'fight');
+        assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });
 
-test('two thumbs: stick and A at once through real touch points', { timeout: 240000 }, async t => {
+test('two thumbs through real touch points: stick with the shield, then stick with A', { timeout: 240000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390);
     try {
         const at = await page.evaluate(() => {
+            window.game.sim.dummy.wait = 1e9; // keep the dummy out of it
             const c = el => { const r = document.querySelector(el).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
-            return { a: c('[data-button="a"]'), b: c('[data-button="b"]'), x0: window.game.sim.player.x };
+            return { a: c('[data-button="a"]'), b: c('[data-button="b"]'), shield: c('[data-button="offhand"]'), x0: window.game.sim.player.x };
         });
         const cdp = await context.newCDPSession(page);
         const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
-        const stick = { x: 160, y: 300, id: 1 }, a = { x: at.a.x, y: at.a.y, id: 2 }, b = { x: at.b.x, y: at.b.y, id: 3 };
+        const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const stick = { x: 160, y: 300, id: 1 }, shield = { x: at.shield.x, y: at.shield.y, id: 2 }, a = { x: at.a.x, y: at.a.y, id: 3 }, b = { x: at.b.x, y: at.b.y, id: 4 };
         await touch('touchStart', [stick]);
-        await touch('touchStart', [stick, a]);
-        await touch('touchMove', [{ ...stick, x: 220 }, a]);
+        await touch('touchStart', [stick, shield]);
+        await touch('touchMove', [{ ...stick, x: 220 }, shield]);
         // Moves are delivered with the next frame, which is slow here.
         await page.waitForFunction(() => window.game.sim.input.move.x > 0.99, null, { timeout: 10000 });
-        const during = await page.evaluate(() => ({ move: window.game.sim.input.move, a: window.game.sim.input.buttons.a.held, pointers: window.game.input.state().pointers }));
+        const during = await page.evaluate(() => ({ move: window.game.sim.input.move, shield: window.game.sim.player.guard.state, pointers: window.game.input.state().pointers }));
         assert.ok(during.move.x > 0.99 && Math.abs(during.move.y) < 1e-9, JSON.stringify(during));
-        assert.equal(during.a, true);
-        assert.deepEqual([...during.pointers].sort(), ['a', 'stick']);
+        assert.notEqual(during.shield, 'down');
+        assert.deepEqual([...during.pointers].sort(), ['offhand', 'stick']);
         // A third finger is ignored: two thumbs is the limit.
-        await touch('touchStart', [{ ...stick, x: 220 }, a, b]);
-        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await touch('touchStart', [{ ...stick, x: 220 }, shield, b]);
+        await frame();
         assert.equal(await page.evaluate(() => window.game.sim.input.buttons.b.held), false);
         const walked = await page.evaluate(() => { window.game.run(1); return window.game.sim.player.x; });
-        assert.ok(Math.abs(walked - at.x0 - 115) < 1e-6, `walked ${walked - at.x0}`);
+        assert.ok(Math.abs(walked - at.x0 - 115 * 0.3) < 1, `walked ${walked - at.x0} with the shield up`);
         await shot(page, 'two-thumbs');
         // A resize (going fullscreen does one) keeps the held stick alive.
         await page.setViewportSize({ width: 844, height: 380 });
         await page.waitForFunction(() => innerHeight === 380);
-        await touch('touchMove', [{ ...stick, x: 160, y: 240 }, a]);
+        await touch('touchMove', [{ ...stick, x: 160, y: 240 }, shield]);
         await page.waitForFunction(() => window.game.sim.input.move.y < -0.99, null, { timeout: 10000 }).catch(() => {});
         const afterResize = await page.evaluate(() => ({ move: window.game.sim.input.move, pointers: window.game.input.state().pointers }));
         assert.ok(afterResize.move.y < -0.99, `stick after resize: ${JSON.stringify(afterResize)}`);
@@ -147,19 +157,29 @@ test('two thumbs: stick and A at once through real touch points', { timeout: 240
             g.pause(true);
             return { walked: y0 - g.sim.player.y, seconds: (performance.now() - t0) / 1000 };
         });
-        assert.ok(real.walked > 5 && real.walked <= 115 * real.seconds + 1, `real-time walk ${JSON.stringify(real)} ${errors.join(" / ")}`);
+        assert.ok(real.walked > 1 && real.walked <= 115 * 0.3 * real.seconds + 1, `real-time walk ${JSON.stringify(real)} ${errors.join(' / ')}`);
         await touch('touchEnd', []);
         await page.waitForFunction(() => window.game.input.state().pointers.length === 0, null, { timeout: 10000 }).catch(() => {});
-        const released = await page.evaluate(() => ({ move: window.game.sim.input.move, a: window.game.sim.input.buttons.a, pointers: window.game.input.state().pointers }));
+        const released = await page.evaluate(() => ({ move: window.game.sim.input.move, shield: window.game.sim.player.guard.state, pointers: window.game.input.state().pointers }));
         assert.deepEqual(released.move, { x: 0, y: 0 });
-        assert.equal(released.a.held, false); assert.equal(released.a.presses, 1);
+        assert.equal(released.shield, 'down');
         assert.deepEqual(released.pointers, []);
+        // Stick and A: A starts its move at once and the body stands for it.
+        await touch('touchStart', [stick]);
+        await touch('touchMove', [{ ...stick, x: 220 }]);
+        await page.waitForFunction(() => window.game.sim.input.move.x > 0.99, null, { timeout: 10000 });
+        await touch('touchStart', [{ ...stick, x: 220 }, a]);
+        await page.waitForFunction(() => window.game.sim.player.act !== null, null, { timeout: 10000 });
+        assert.equal(await page.evaluate(() => window.game.sim.player.act.move), 'slash');
+        await touch('touchEnd', []);
+        await page.waitForFunction(() => window.game.input.state().pointers.length === 0, null, { timeout: 10000 }).catch(() => {});
+        await page.evaluate(() => window.game.run(1));
         // Desktop keys: D walks east, J is A.
         await page.keyboard.down('KeyD');
         assert.equal(await page.evaluate(() => window.game.sim.input.move.x), 1);
         await page.keyboard.up('KeyD');
         await page.keyboard.press('KeyJ');
-        assert.deepEqual(await page.evaluate(() => [window.game.sim.input.move.x, window.game.sim.input.buttons.a.presses]), [0, 2]);
+        assert.deepEqual(await page.evaluate(() => [window.game.sim.input.move.x, window.game.sim.input.buttons.a.presses, window.game.sim.stats.attacks]), [0, 2, 2]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

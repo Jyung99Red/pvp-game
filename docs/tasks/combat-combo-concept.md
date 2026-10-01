@@ -5,6 +5,7 @@
 `combat-parameter-inventory.md` 为准；实现时做的取舍见第 13 节。
 第 11 节的问题要靠试玩回答：已按第 12 节的暂定做法实现，试玩后再调。
 > 2026-10-01：输入层改为独立的 A、B 键，副手键和交互键，并放弃技能，见 `controls-landscape-concept.md`；招式表、时间轴、派生树、格挡条规则仍以本笔记为准。
+> 2026-10-01 重建 M2：规则搬进 `core/fighter.js`（玩家）和 `core/dummy.js`（训练木桩），命中改为骨骼判定；A 招不再给失衡（`3d-migration-concept.md` 第 5 节）。
 
 ## 1. 一句话
 
