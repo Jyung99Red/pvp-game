@@ -2,120 +2,126 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
 const source = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
+
+// node:vm cannot run a real dynamic import() without an experimental flag,
+// so the boot source is run with import( renamed to a stub the test owns.
 function harness(overrides = {}) {
-    const nodes = [], listeners = {}, timers = new Map(), requests = [];
-    const root = { dataset: {} }; let timerId = 0, initialized = 0, c;
-    const element = tag => ({ tag, dataset: {}, style: {}, textContent: '', isConnected: false,
+    const nodes = [], listeners = {}, timers = new Map(), requests = [], imports = [];
+    const root = { dataset: {} }; let timerId = 0, started = 0, c;
+    const element = tag => ({
+        tag, dataset: {}, style: {}, textContent: '', isConnected: false,
         remove() { this.isConnected = false; }, setAttribute() {}, addEventListener() {},
         appendChild(node) { node.isConnected = true; nodes.push(node); return node; }
     });
-    const document = { documentElement: root, currentScript: { dataset: { entry: 'game' } }, hidden: false,
+    const document = {
+        documentElement: root, currentScript: { dataset: { entry: 'game' } }, hidden: false, baseURI: 'http://game.test/',
         createElement: element, getElementById: id => nodes.find(n => n.id === id && n.isConnected),
-        addEventListener(type, fn) { listeners[type] = fn; }, head: element('head'), body: element('body') };
+        addEventListener(type, fn) { listeners[type] = fn; }, head: element('head'), body: element('body')
+    };
     document.head.appendChild = node => { node.isConnected = true; nodes.push(node); node.sheet = { cssRules: [{}, {}] }; return node; };
     document.body.appendChild = node => {
         node.isConnected = true; nodes.push(node);
         if (node.tag === 'script' && !node.src) vm.runInContext(node.textContent, c);
         return node;
     };
-    const responses = { 'client-assets.json': JSON.stringify({ game: { styles: ['style.css'], scripts: ['first.js','second.js','core/client_dependencies.js'] } }),
-        'style.css': 'body { color: red; }', 'first.js': 'var order = [1];', 'second.js': 'order.push(2);',
-        'core/client_dependencies.js': source('core/client_dependencies.js'), ...overrides.responses };
-    c = vm.createContext({ document, console: { error() {} }, AbortController, location: { reload() {} },
-        ui: { init() { initialized++; assert.deepEqual(Array.from(c.order), [1,2]); } },
-        window: { addEventListener(type, fn) { listeners[type] = fn; }, removeEventListener(type) { delete listeners[type]; } },
+    const manifest = overrides.manifest || { game: { modules: { THREE: 'vendor/three.js' }, styles: ['style.css'], scripts: ['first.js', 'second.js'] } };
+    const responses = {
+        'client-assets.json': JSON.stringify(manifest),
+        'style.css': 'body { color: red; }', 'first.js': 'var order = [typeof THREE === "object" ? THREE.REVISION : "missing"];', 'second.js': 'order.push(2);',
+        ...overrides.responses
+    };
+    c = vm.createContext({
+        document, console: { error() {} }, AbortController, URL, location: { reload() {} },
+        app: { start() { started++; } },
+        addEventListener(type, fn) { listeners[type] = fn; }, removeEventListener(type) { delete listeners[type]; },
         getComputedStyle: () => ({ getPropertyValue: key => !overrides.invalidStyles && nodes.some(n => n.isConnected && n.tag === 'style' && n.textContent.includes(key)) ? 'ready' : '' }),
-        setTimeout(fn) { timers.set(++timerId,fn); return timerId; }, clearTimeout(id) { timers.delete(id); },
+        setTimeout(fn) { timers.set(++timerId, fn); return timerId; }, clearTimeout(id) { timers.delete(id); },
         fetch: async (url, options) => {
-            requests.push({url,options});
-            if (overrides.fetch) { const value = await overrides.fetch(url, requests); if (value != null) return {ok:true,text:async()=>value}; }
+            requests.push({ url, options });
+            if (overrides.fetch) { const value = await overrides.fetch(url, requests); if (value != null) return { ok: true, text: async () => value }; }
             return { ok: true, text: async () => responses[url] };
+        },
+        __import: async url => {
+            imports.push(url);
+            if (overrides.importFails) throw new Error('network');
+            if (overrides.importStalls) return new Promise(() => {});
+            return { REVISION: '186' };
         }
     });
-    return { c, document, nodes, listeners, timers, requests, root, initialized: () => initialized,
-        run: () => vm.runInContext(source('core/client_boot.js'), c) };
+    // As in a browser, `window` is the global object itself.
+    vm.runInContext('globalThis.window = globalThis', c);
+    return {
+        c, document, nodes, listeners, timers, requests, imports, root, started: () => started,
+        run: () => vm.runInContext(source('core/client_boot.js').replace(/\bimport\(/g, '__import('), c)
+    };
 }
-test('local boot applies CSS and ordered scripts without requesting PeerJS', async () => {
-    const h=harness(); await h.run();
-    assert.equal(h.root.dataset.clientState,'ready'); assert.equal(h.initialized(),1);
-    assert.ok(h.requests.every(r=>r.options.cache==='no-store' && !r.url.startsWith('https:')));
-    assert.equal(h.nodes.filter(n=>n.src).length,0); assert.equal(h.timers.size,0);
+
+test('boot imports modules onto window before running the ordered scripts', async () => {
+    const h = harness(); await h.run();
+    assert.equal(h.root.dataset.clientState, 'ready'); assert.equal(h.started(), 1);
+    assert.deepEqual(h.imports, ['http://game.test/vendor/three.js']);
+    // Scripts see the module global, in manifest order.
+    assert.deepEqual(Array.from(vm.runInContext('order', h.c)), ['186', 2]);
+    assert.ok(h.requests.every(r => r.options.cache === 'no-store' && !r.url.startsWith('http')));
+    assert.equal(h.timers.size, 0);
+});
+test('a module that fails to import is retried once, then the game stays behind the retry panel', async () => {
+    const h = harness({ importFails: true }); await h.run();
+    assert.equal(h.imports.length, 2); assert.match(h.imports[1], /^http:\/\/game\.test\/vendor\/three\.js\?retry=\d+$/);
+    assert.equal(h.started(), 0); assert.equal(h.root.dataset.clientState, 'loading');
+    assert.match(h.document.getElementById('client-loading').textContent, /未能完整加载/);
+});
+test('a stalled module import times out instead of hanging on the loading screen', async () => {
+    const h = harness({ importStalls: true }), done = h.run();
+    for (let round = 0; round < 2; round++) {
+        await new Promise(resolve => setImmediate(resolve));
+        for (const [id, fn] of [...h.timers]) { h.timers.delete(id); fn(); }
+    }
+    await done;
+    assert.equal(h.imports.length, 2);
+    assert.equal(h.started(), 0);
+    assert.match(h.document.getElementById('client-loading').textContent, /未能完整加载/);
+});
+test('remote or malformed module entries are rejected', async () => {
+    for (const modules of [{ THREE: 'https://cdn.example/three.js' }, { THREE: '//cdn.example/three.js' }, { THREE: 'data:text/javascript,export default 1' }, { THREE: '/vendor/three.js' }, { 'not a name': 'vendor/three.js' }]) {
+        const h = harness({ manifest: { game: { modules, styles: ['style.css'], scripts: ['first.js'] } } }); await h.run();
+        assert.equal(h.started(), 0); assert.equal(h.imports.length, 0);
+    }
 });
 test('boot retries invalid CSS responses and keeps a persistent failure behind loading screen', async () => {
-    const h=harness({fetch:(url,requests)=>url==='style.css' && requests.filter(r=>r.url===url).length===1 ? '<html>upstream error</html>' : null});
-    await h.run(); assert.equal(h.initialized(),1); assert.equal(h.requests.filter(r=>r.url==='style.css').length,2);
-    const broken=harness({responses:{'style.css':''}}); await broken.run();
-    assert.equal(broken.initialized(),0); assert.equal(broken.root.dataset.clientState,'loading');
-    assert.match(broken.document.getElementById('client-loading').textContent,/未能完整加载/);
+    const h = harness({ fetch: (url, requests) => url === 'style.css' && requests.filter(r => r.url === url).length === 1 ? '<html>upstream error</html>' : null });
+    await h.run(); assert.equal(h.started(), 1); assert.equal(h.requests.filter(r => r.url === 'style.css').length, 2);
+    const broken = harness({ responses: { 'style.css': '' } }); await broken.run();
+    assert.equal(broken.started(), 0); assert.equal(broken.root.dataset.clientState, 'loading');
+    assert.match(broken.document.getElementById('client-loading').textContent, /未能完整加载/);
 });
-test('unapplied CSS blocks startup; pageshow restores missing styles without initializing twice',async()=>{
-    const bad=harness({invalidStyles:true}); await bad.run(); assert.equal(bad.initialized(),0);
-    const h=harness(); await h.run(); h.nodes.find(n=>n.tag==='style').remove();
+test('unapplied CSS blocks startup; pageshow restores missing styles without starting twice', async () => {
+    const bad = harness({ invalidStyles: true }); await bad.run(); assert.equal(bad.started(), 0);
+    const h = harness(); await h.run(); h.nodes.find(n => n.tag === 'style').remove();
     h.listeners.pageshow();
-    assert.equal(h.nodes.filter(n=>n.tag==='style' && n.isConnected).length,1); assert.equal(h.initialized(),1);
-});
-test('PeerJS is single-flight, times out cleanly and retries on the next request',async()=>{
-    const h=harness(); await h.run(); const deps=vm.runInContext('clientDependencies',h.c);
-    const first=deps.loadPeer(); assert.equal(deps.loadPeer(),first);
-    const rejected=assert.rejects(first,/超时/);
-    for(const fn of [...h.timers.values()])fn(); await rejected;
-    assert.equal(h.nodes.filter(n=>n.src && n.isConnected).length,0);
-    const retry=deps.loadPeer(); h.c.Peer=function Peer(){};
-    h.nodes.find(n=>n.src && n.isConnected).onload(); assert.equal(await retry,h.c.Peer);
-    assert.equal(h.timers.size,0);
-});
-test('cancelled room creation cannot resume after the optional dependency loads',async()=>{
-    let resolve; const h=harness();
-    h.c.clientDependencies={loadPeer:()=>new Promise(r=>resolve=r)};
-    h.c.Peer=function(){throw new Error('must not construct a cancelled peer')};
-    vm.runInContext(source('pvp/pvp_net.js'),h.c);
-    const net=vm.runInContext('pvpNet',h.c), started=net.hostRoom('123456');
-    net.close(); resolve(); await assert.rejects(started,/取消/); assert.equal(net.role,null);
+    assert.equal(h.nodes.filter(n => n.tag === 'style' && n.isConnected).length, 1); assert.equal(h.started(), 1);
 });
 
-test('room dependency failures return to a usable retry entry',async()=>{
-    const status={textContent:''}, steps=new Map();
-    const h=harness();
-    for(const id of ['pvp-step-entry','pvp-step-hosting','pvp-step-joining']) steps.set(id,{id,classList:{toggle(_,hidden){this.hidden=hidden}}});
-    h.c.document.querySelectorAll=selector=>selector==='.pvp-status-text'?[status]:selector==='.pvp-step'?[...steps.values()]:[];
-    h.c.document.querySelector=()=>({value:'fair'});
-    h.c.pvpLogic={MODES:{fair:{label:'公平'}},setMode:()=>!h.c.pvpNet.role};
-    h.c.pvpNet={role:null,on:{},async hostRoom(){this.role='host';throw new Error('联机组件超时')},close(){this.role=null}};
-    vm.runInContext(source('pvp/pvp_room.js'),h.c);
-    const room=vm.runInContext('pvpRoom',h.c); await room.hostRoom();
-    assert.equal(h.c.pvpNet.role,null); assert.equal(steps.get('pvp-step-entry').classList.hidden,false);
-    assert.match(status.textContent,/创建失败/); await room.hostRoom(); assert.equal(h.c.pvpNet.role,null);
-});
-
-// The other tests build a synthetic manifest, so nothing above would notice a
-// partial being dropped from one side only. `client_boot` mounts each listed
-// partial into `#mount-<id>` and throws when the div is absent, so a manifest
-// entry with no mount point is a hard boot failure -- and a mount point whose
-// partial was deleted leaves a silent hole. Check the real files agree.
-test('the manifest and the page agree on every partial, script and stylesheet',()=>{
-    const manifest=JSON.parse(source('client-assets.json')), page=source('index.html');
-    for(const id of manifest.game.partials){
-        assert.ok(fs.existsSync(path.join(__dirname,'..','partials',`${id}.html`)),`partials/${id}.html is listed but missing`);
-        assert.match(page,new RegExp(`id="mount-${id}"`),`index.html has no mount point for the "${id}" partial`);
+// The other tests build a synthetic manifest. `client_boot` mounts each
+// listed partial into `#mount-<id>` and throws when the div is absent, so
+// check the real files agree.
+test('the manifest and the page agree on every partial, module, script and stylesheet', () => {
+    const manifest = JSON.parse(source('client-assets.json')), page = source('index.html');
+    for (const id of manifest.game.partials) {
+        assert.ok(fs.existsSync(path.join(__dirname, '..', 'partials', `${id}.html`)), `partials/${id}.html is listed but missing`);
+        assert.match(page, new RegExp(`id="mount-${id}"`), `index.html has no mount point for the "${id}" partial`);
     }
-    for(const [,id] of page.matchAll(/id="mount-([^"]+)"/g))
-        assert.ok(manifest.game.partials.includes(id),`index.html mounts "${id}", which the manifest does not list`);
-    for(const file of [...manifest.game.styles,...manifest.game.scripts])
-        assert.ok(fs.existsSync(path.join(__dirname,'..',file)),`${file} is listed but missing`);
+    for (const [, id] of page.matchAll(/id="mount-([^"]+)"/g))
+        assert.ok(manifest.game.partials.includes(id), `index.html mounts "${id}", which the manifest does not list`);
+    for (const file of [...manifest.game.styles, ...manifest.game.scripts, ...Object.values(manifest.game.modules)])
+        assert.ok(fs.existsSync(path.join(__dirname, '..', file)), `${file} is listed but missing`);
+    assert.match(page, /viewport-fit=cover/, 'the page must reach under notches so safe-area insets apply');
 });
-
-test('rooms generate and accept exactly four digits',async()=>{
-    const status={textContent:''}, steps=new Map(), input={value:'12345'}; let hosted='';
-    const h=harness();
-    for(const id of ['pvp-step-entry','pvp-step-hosting','pvp-step-host-waiting','pvp-step-joining','pvp-step-joining-wait']) steps.set(id,{id,classList:{toggle(_,hidden){this.hidden=hidden}}});
-    h.c.document.querySelectorAll=selector=>selector==='.pvp-status-text'?[status]:selector==='.pvp-step'?[...steps.values()]:selector==='input[name="pvp-mode"]'?[]:[];
-    h.c.document.querySelector=()=>({value:'fair'});
-    h.c.document.getElementById=id=>id==='pvp-room-code-input'?input:null;
-    h.c.pvpLogic={MODES:{fair:{label:'公平'}},setMode:()=>true};
-    h.c.pvpNet={role:null,on:{},async hostRoom(code){hosted=code;this.role='host'},async joinRoom(){throw new Error('invalid code reached network')},close(){this.role=null}};
-    vm.runInContext('Math.random = () => 0',h.c);
-    vm.runInContext(source('pvp/pvp_room.js'),h.c);
-    const room=vm.runInContext('pvpRoom',h.c); await room.hostRoom();
-    assert.equal(hosted,'1000'); assert.match(hosted,/^\d{4}$/);
-    await room.joinRoom(); assert.match(status.textContent,/4 位房间号/);
+test('every game script is listed exactly once, and core/ and models/ stay free of the DOM and three.js', () => {
+    const manifest = JSON.parse(source('client-assets.json')), scripts = manifest.game.scripts;
+    assert.equal(new Set(scripts).size, scripts.length);
+    const onDisk = ['core', 'models', 'render', 'ui'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
+    for (const file of onDisk) if (file !== 'core/client_boot.js') assert.ok(scripts.includes(file), `${file} is not in client-assets.json`);
+    for (const file of scripts.filter(f => /^(core|models)\//.test(f)))
+        assert.doesNotMatch(source(file), /\b(document|window|THREE)\b/, `${file} must run in Node and on a PVP host`);
 });

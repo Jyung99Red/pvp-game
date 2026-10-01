@@ -1,4 +1,6 @@
-// Download and validate local assets before exposing the game. PVP loads separately.
+// Download and validate local assets before exposing the game. ES modules
+// listed under `modules` (three.js) are imported first and exposed as the
+// named globals; everything else stays a classic global script.
 const clientBoot = (() => {
     const root = document.documentElement;
     let styles = [], styleNodes = [], loaded = false;
@@ -34,6 +36,23 @@ const clientBoot = (() => {
             } finally { clearTimeout(timer); }
         }
     }
+    // A module cannot be fetched with an abort signal, so a stalled import
+    // is raced against a timer; the retry adds a query so a failure the
+    // browser remembers for that URL is not simply replayed.
+    async function importModule(path) {
+        const url = new URL(path, document.baseURI).href;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            let timer;
+            const stalled = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('超时')), 20000); });
+            try {
+                return await Promise.race([import(attempt ? `${url}?retry=${Date.now()}` : url), stalled]);
+            } catch (error) {
+                if (attempt === 1) throw new Error(`模块加载失败：${path}（${error.message}）`);
+            } finally { clearTimeout(timer); }
+        }
+    }
+    // Every asset is a document-relative path on this server.
+    const isLocal = path => typeof path === 'string' && path.length > 0 && !/^([a-z][\w+.-]*:|[/\\])/i.test(path);
     function stylesReady() {
         const computed = getComputedStyle(root);
         return styleNodes.length === styles.length && styleNodes.every((node, i) => {
@@ -62,12 +81,19 @@ const clientBoot = (() => {
         loadingPanel().textContent = '正在加载游戏…';
         try {
             const assets = JSON.parse(await read('client-assets.json'))[entry];
+            const modules = Object.entries(assets?.modules || {});
             if (!assets || !Array.isArray(assets.styles) || !assets.styles.length || !Array.isArray(assets.scripts) ||
-                ![...assets.styles, ...assets.scripts].every(path => typeof path === 'string' && !path.includes('://'))) {
+                ![...assets.styles, ...assets.scripts, ...modules.map(([, path]) => path)].every(isLocal) ||
+                !modules.every(([name]) => /^[A-Za-z_$][\w$]*$/.test(name))) {
                 throw new Error('本地资源清单无效');
             }
             const paths = [...assets.styles, ...assets.scripts, ...(assets.partials || []).map(id => `partials/${id}.html`)];
-            const sources = new Map(await Promise.all(paths.map(async path => [path, await read(path)])));
+            const [sources] = await Promise.all([
+                Promise.all(paths.map(async path => [path, await read(path)])).then(list => new Map(list)),
+                Promise.all(modules.map(async ([name, path]) => {
+                    window[name] = await importModule(path);
+                }))
+            ]);
             styles = assets.styles.map(path => [path, sources.get(path)]); installStyles();
             for (const id of assets.partials || []) {
                 const mount = document.getElementById(`mount-${id}`);
@@ -85,7 +111,7 @@ const clientBoot = (() => {
                 } finally { window.removeEventListener('error', onError); }
                 if (failure) throw failure;
             }
-            if (entry === 'game') ui.init();
+            if (entry === 'game') app.start();
             if (!stylesReady()) throw new Error('样式在初始化期间失效');
             loaded = true; root.dataset.clientState = 'ready'; loadingPanel().remove();
             window.addEventListener('pageshow', restoreStyles);

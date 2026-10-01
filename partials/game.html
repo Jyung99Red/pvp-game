@@ -1,0 +1,21 @@
+<main class="game" id="game">
+    <canvas class="game-canvas" aria-label="游戏画面"></canvas>
+    <div class="game-fallback" data-fallback role="alert" hidden></div>
+    <div class="hud-perf" data-perf aria-live="off"></div>
+
+    <div class="stick-zone" data-stick-zone></div>
+    <div class="stick" data-stick aria-hidden="true"><div class="stick-knob" data-knob></div></div>
+
+    <button type="button" class="ctl ctl-a" data-button="a" aria-label="A">A</button>
+    <button type="button" class="ctl ctl-b" data-button="b" aria-label="B">B</button>
+    <button type="button" class="ctl ctl-offhand" data-button="offhand" aria-label="副手">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
+    </button>
+    <button type="button" class="ctl ctl-interact" data-button="interact" aria-label="交互">交互</button>
+
+    <div class="rotate-hint" role="alert">
+        <div class="rotate-phone" aria-hidden="true"></div>
+        <p class="rotate-title">请把手机横过来</p>
+        <p class="rotate-note">游戏只支持横屏</p>
+    </div>
+</main>

@@ -1,634 +1,99 @@
-// Game tuning entry point. Loaded first by the game.
-// Edit values here, then reload the page / start a new battle to apply them.
-// All comments are English; player-facing names and descriptions stay Chinese.
-// Times use seconds unless the field ends in Ms. Positions/ranges use world units;
-// speeds use world units/second, angles use radians unless explicitly noted.
-// Ratios use 0..1 (0.30 = 30%); multipliers use 1 as the unchanged value.
-// combatBase supplies shared movement, timing and SP limits to every mode;
-// formal profiles override its damage, resource rates and character stats.
-// Simulation steps, network limits, collision precision and CSS remain in their owners.
-// Existing saves retain earned base stats. Equipment values apply on reload.
-// PVP balance changes require a RULE_VERSION bump in pvp/pvp_logic.js.
+// Every tunable number of the game, and nothing else. Units: world units
+// (40 to a block) for positions, distances and speeds; seconds for time;
+// radians for angles; CSS pixels for anything on the touch layer.
+// docs/tasks/combat-parameter-inventory.md mirrors this file.
 const gameConfig = (() => {
-    const config = {
-        // 1. Character growth, equipment enhancement and recovery.
-        progression: {
-            baseStats: { maxHp: 100, atk: 10, def: 3, focus: 10, insight: 10, luck: 5 },
-            startingEquipment: { left: 'wooden_sword', right: 'wooden_shield', armor: null, accessory: null },
-            levelStats: { maxHp: 20, atk: 3, def: 2, focus: 0.2, insight: 1 },
-            levelExpPerLevel: 100, // Required EXP = current level * this value.
-            buildingUpgrade: { baseGold: 50, levelExponent: 2 },
-            enhancement: { maxLevel: 5, statBonusPerLevel: 0.10, goldPerLevel: 100 },
-            insight: { baseline: 10, windowPerPoint: 0.03, minMultiplier: 0.5 },
-            critChancePerLuck: 0.01,
-            // Recovery runs once per second, including during active PVE.
-            recovery: { passiveEveryTicks: 2, passiveHp: 1, hotSpringCombatPenalty: 1, reviveHpRatio: 0.10 },
-        },
-
-        // 1b. Combo-era balance. Without AP a fighter can keep combo-ing:
-        // measured sustained output is ~.62-.77 ATK/s for the tap/hold chains
-        // against ~.15 (light every 2s) to ~.36 (optimal charged play) before.
-        // Every max HP -- player, monsters, PVP fair profile -- and every flat
-        // HP regen is multiplied by hpScale, applied where stats are derived so
-        // existing saves scale too. Enemy damage is unchanged.
-        balance: { hpScale: 3 },
-
-        // 2. Formal PVE/PVP resource rules and damage coefficients.
-        resources: {
-            focusBaseline: 10, minFocus: 0.1,
-            spRecoveryMs: 3000, // Focus only drives SP; attacks cost no resource.
-            // Charge-damage start (ms) = chargeThresholdMs + the equipped
-            // weapon's own chargeOffsetMs, clamped to the range below. A weapon
-            // without chargeOffsetMs behaves as offset 0. Positive = the damage
-            // ramp starts later ("heavier"); the +N is the only timing axis a
-            // weapon owns -- enhancement and other stats never change it.
-            chargeThresholdMs: 300,
-            chargeThresholdRangeMs: { min: 200, max: 450 },
-            parryWindowMs: 200,
-        },
-        // Guard bar (first version), shared by PVE and PVP; units are bar points.
-        // Only guarding spends it. blockCostScale: a blocked hit costs
-        // raw / maxHp * blockCostScale * max, raw being the hit before DEF and
-        // block reduction. 6 = 2 x balance.hpScale: a hit worth a sixth of the
-        // scaled max HP (half of the pre-scale one) empties a full bar. After
-        // emptying, guard stays locked until the bar refills to unlockRatio.
-        // Equipment can raise `max`; costs stay on the base max.
-        guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5,
-            refillSeconds: 3, unlockRatio: 0.4 },
-        // Impact, simulation side (first version). On contact both fighters'
-        // timers hold still for `hitstop` seconds, then the one struck (the
-        // attacker, for a parry) is pushed `knockback` world units away over
-        // knockbackSeconds, with normal collision. Keyed by outcome.
-        impact: { hitstop: { hit: 0.06, block: 0.04, parry: 0.08 }, knockback: { hit: 10, block: 5, parry: 8 }, knockbackSeconds: 0.12 },
-        damage: {
-            // Damage = max(1, round(raw * (1 - DEF / (DEF + defenseConstant)))).
-            // DEF equal to defenseConstant halves incoming raw damage.
-            defenseConstant: 17.5,
-            critMultiplier: 1.5,
-            parryAtkRatio: 0.50, // Move damage ratios live in the combo table.
-            blockMultiplier: 0.40, // Multiplied by equipment guard reduction.
-            fullChargeAfterThreshold: 2,
-            maxParryWindow: 1,
-        },
-
-        // 3. Touch input. Distances are CSS pixels; hysteresis is radians.
-        input: { deadZone: 12, holdSeconds: 0.25, cancelRadius: 24, skillDeadZone: 24, directionHysteresis: 0.12 },
-        controls: { cancelAtCenter: true, autoFace: false },
-
-        // 4. Skills shared by PVE and both PVP modes. Costs are SP.
-        skills: {
-            heal: { id: 'heal', name: '治疗', direction: 'up', cost: 2, healRatio: 0.3 },
-            haste: { id: 'haste', name: '疾速', direction: 'right', cost: 2, duration: 10, chargeRate: 1.5, moveMultiplier: 1.1, turnMultiplier: 1.05 },
-            full: { id: 'full', name: '满蓄', direction: 'down', cost: 2 },
-            parry: { id: 'parry', name: '弹反', direction: 'left', cost: 3 }
-        },
-        // Optional per-skill overrides: { pve: { heal: { healRatio: 0.4 } }, fair: {} }.
-        // Both PVP modes use fair skill rules; character stats remain mode-specific.
-        skillOverrides: { pve: {}, fair: {} },
-
-        // 5. Combat base preset shared by every mode (PVE fights, the base's
-        // training post, PVP). Formal profiles copy it, then replace HP/DEF,
-        // SP recovery, ATK and charge limits. The fixed values below that are
-        // replaced (fullCharge, blockMultiplier, parryDamage, parryWindow,
-        // spRegen, atk, HP) only stand for a profile-less preset, as the
-        // engine tests use.
-        combatBase: {
-            width: 360, height: 400,
-            fullCharge: 1.6, // Profile-less only; formal charge duration comes from damage/resources.
-            playerSpeed: 115, // Base movement speed shared by all modes.
-            playerTurn: 8, chargeMoveMultiplier: 0.6, chargeTurnMultiplier: 0.65,
-            guardMoveMultiplier: 0.3, guardTurnMultiplier: 0.5,
-            motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 },
-            player: { x: 180, y: 275, radius: 12, facing: -Math.PI / 2, hp: 120, maxHp: 120 },
-            enemy: { x: 180, y: 160, radius: 23, facing: Math.PI / 2, hp: 360, maxHp: 360 },
-            ai: { initialDelay: 0.8, delay: 0.45, speed: 47, stopDistance: 88, attackDistance: 150, turn: 3, trackingTurn: 1.6 },
-            stagger: { threshold: 3, duration: 1.5, parry: 1 }, // Moves carry their own stagger points.
-            moveRamp: 32, // CSS pixels beyond the dead zone to reach full speed.
-            hitStun: 0.35, // Shared hit stun duration.
-            blockMultiplier: 0.25, parryDamage: 10, // Profile-less only; formal values use damage coefficients.
-            guardStartup: 0.16, // Shared delay before guard becomes active.
-            parryWindow: 0.18, // Profile-less default; formal profiles override it.
-            skillPointMax: 3, // SP cap shared by PVE and PVP.
-            spRegen: 1 / 3, // Profile-less SP/second; formal rates come from focus.
-            atk: 60, // Profile-less attack; move damage = atk * move ratio. Formal profiles use the stat.
-            sweep: { kind: 'sector', range: 145, arc: Math.PI * 0.64, windup: 1.35, lock: 0.45, active: 0.16, recovery: 1.3, damage: 25 },
-            stomp: { kind: 'circle', range: 110, windup: 1.5, lock: 0.55, active: 0.16, recovery: 1.45, damage: 30 }
-        },
-
-        // 5b. Player move tree (first version, shared by every weapon).
-        // Each move is its own windup -> swing -> recovery. The blade sweeps the
-        // arc during `swing`; a target is hit when the blade passes its angle.
-        // `derive` is when, counted from the swing's end, a buffered next input
-        // cuts the recovery short; a finisher has none and plays out in full.
-        // Timing is fixed per move: no stat or equipment changes it.
-        // `arc` is a multiple of PI in this section only. `sweep` 1 starts on
-        // the left of facing and swings right; -1 swings back. `ratio` is damage
-        // per ATK, `stagger` is enemy stagger points. `next` maps the following
-        // input -- tap, hold, or a tap after a pause -- to the move it derives;
-        // an input with no entry starts over from `root`. `view` is presentation
-        // only and the simulation never reads it.
-        // pauseAfterRecovery: the pause line, seconds after recovery ends.
-        // windowAfterRecovery: the chain resets this long after recovery ends.
-        // bufferSeconds: a pre-input tap or hold that has not run within this
-        // long is dropped, so a stale mash cannot fire late; a new press
-        // replaces it at once. .4 covers a whole slash/backslash up to its
-        // derive point, hitstop included.
-        // poiseSeconds: a mid-combo hold poises (turn-only stance) and fires
-        // on release, or by itself once the stance has lasted this long.
-        combo: {
-            root: { tap: 'slash', hold: 'charged' },
-            pauseAfterRecovery: 0.20, windowAfterRecovery: 0.70, bufferSeconds: 0.40, poiseSeconds: 0.25,
-            moves: {
-                slash: { range: 69, arc: 0.52, sweep: 1, windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.30, stagger: 0,
-                    next: { tap: 'backslash', hold: 'rising' }, view: { name: '横扫', trail: 'light' } },
-                backslash: { range: 72, arc: 0.56, sweep: -1, windup: 0.10, swing: 0.08, recovery: 0.36, derive: 0.14, ratio: 0.32, stagger: 0,
-                    next: { tap: 'spin', hold: 'cleave', pause: 'thrust' }, view: { name: '回扫', trail: 'light' } },
-                spin: { range: 78, arc: 2, sweep: 1, windup: 0.16, swing: 0.18, recovery: 0.60, ratio: 0.55, stagger: 1,
-                    view: { name: '回旋斩', trail: 'heavy' } },
-                thrust: { range: 100, arc: 0.14, sweep: 1, windup: 0.12, swing: 0.06, recovery: 0.55, ratio: 0.60, stagger: 1,
-                    view: { name: '连刺', trail: 'thrust' } },
-                rising: { range: 85, arc: 0.50, sweep: -1, windup: 0.30, swing: 0.10, recovery: 0.60, ratio: 0.70, stagger: 1.5,
-                    view: { name: '上挑', trail: 'heavy' } },
-                cleave: { range: 95, arc: 0.30, sweep: 1, windup: 0.30, swing: 0.08, recovery: 0.65, ratio: 0.80, stagger: 1.5,
-                    view: { name: '下劈', trail: 'heavy' } },
-                // The opening hold. Its reach and arc grow with charge from
-                // minRange/minArc; damage = atk * (ratio + chargeRatio * charge share).
-                charged: { minRange: 60, range: 103, minArc: 0.28, arc: 0.68, sweep: 1, windup: 0.45, swing: 0.12, recovery: 0.60, derive: 0.25,
-                    ratio: 0.30, chargeRatio: 0.80, stagger: 1, next: { tap: 'follow' }, view: { name: '蓄力斩', trail: 'heavy' } },
-                follow: { range: 75, arc: 0.50, sweep: -1, windup: 0.10, swing: 0.08, recovery: 0.45, ratio: 0.40, stagger: 0.5,
-                    view: { name: '追斩', trail: 'light' } }
-            }
-        },
-
-        // 6. Camera and arenas. PVE spawn offsets preserve encounter distances.
-        camera: { width: 350, height: 390, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 },
-        pveArena: { width: 510, height: 566, spawnOffsetX: 75, spawnOffsetY: 83 },
-        pvpSpawnOffset: 90, // Each player starts this far from the arena center.
-        pvpArena: {
-            width: 570, height: 630, layoutId: 'pvp-l-v1', version: 1,
-            walls: [
-                { id: 'left-vertical', x: 135, y: 200, width: 24, height: 130 },
-                { id: 'left-horizontal', x: 135, y: 306, width: 110, height: 24 },
-                { id: 'right-vertical', x: 411, y: 300, width: 24, height: 130 },
-                { id: 'right-horizontal', x: 325, y: 300, width: 110, height: 24 }
-            ]
-        },
-        fairProfile: {
-            level: 1, maxHp: 120, atk: 30, def: 8, focus: 10, insight: 10, guardBarBonus: 0,
-            critChance: 0, guardThorns: 0, chargeThresholdMs: 300, parryWindowBaseMs: 180,
-            judgmentMultiplier: 1, guardDamageMultiplier: 1,
-            motion: { move: 1, turn: 1, chargeMove: 1, chargeTurn: 1 }
-        },
-
-        // 7. Adventure rewards and common enemy behavior. Area encounters use
-        // the authored enemy data directly; there is no floor scaling or run.
-        // Region-session camera. `zoom` is world units per CSS pixel; 1 keeps the
-        // overworld at its historic 1:1 scale. The SAME number feeds the fight as
-        // well, which is what stops starting combat from causing a zoom jump --
-        // the fixed-window `camera` preset above is what PVP uses.
-        // top/bottom/inset are the window insets in CSS pixels. They are 0 here
-        // because the region layer paints exactly the derived window and the HUD
-        // floats over it; the PVP view keeps its own insets.
-        adventure: {
-            goldPerExp: 0.60,
-            camera: { zoom: 1, top: 0, bottom: 0, inset: 0, followRate: 12, leadRate: 8, leadSeconds: 0.16, maxLead: 24 },
-            // How close the walker has to stand for a structure to become the
-            // interact target, and how much further out it may drift before the
-            // prompt drops it again (the gap is the anti-flicker hysteresis).
-            structureRange: 56, structureRelease: 68,
-            // A defeated region monster comes back this long after it fell.
-            // Bosses never do: `progress.defeatedBosses` is what keeps them down.
-            monsterRespawnSeconds: 60,
-            // The base's training post fights this enemy, reward-free and deathless.
-            trainingEnemyId: 'test_combat'
-        },
-        // Enemies keep a hidden AP pool that paces how often they attack:
-        // each attack costs attackApCost, and focus scales apRecoveryMs.
-        enemyDefaults: { apMax: 5, apRecoveryMs: 2000, attackApCost: 1, focus: 10, comboChance: 0, comboMax: 0, comboDelayMs: 200,
-            enrageThreshold: 0, enrageAtkMult: 1.3, enrageSpdMult: 1.2 },
-        enemyTiming: { windupBonus: 0.10, recoveryBonus: 0.15, active: 0.16 },
-        arenaEffects: {
-            ap_surge: { atMs: 30000, apRateMult: 2 },
-            burning_ground: { startMs: 20000, intervalMs: 3000, pct: 0.03 },
-        },
-
-        // 8. Enemy moves. arc is a multiple of PI in this section only.
-        // windup/recovery are base times; enemyTiming bonuses are added once.
-        // Dash width is the path half-width; body radius also affects collision.
-        enemyMoves: {
-            test_combat: [
-                { kind: 'sector', range: 90, arc: 0.6, windup: 1.2, lock: 0.4, recovery: 0.8, multiplier: 0.6 },
-                { kind: 'circle', range: 85, windup: 1.5, lock: 0.5, recovery: 1, multiplier: 1 }
-            ],
-            goblin: [
-                { kind: 'sector', range: 90, arc: 0.65, windup: 1.2, lock: 0.4, recovery: 0.7, multiplier: 0.6 },
-                { kind: 'sector', range: 120, arc: 0.4, windup: 1.5, lock: 0.5, recovery: 1, multiplier: 0.9 }
-            ],
-            wolf: [
-                { kind: 'sector', range: 85, arc: 0.45, windup: 0.95, lock: 0.3, recovery: 0.6, multiplier: 0.6 },
-                { kind: 'dash', windup: 1.05, lock: 0.35, recovery: 1.2, multiplier: 0.9, distance: 150, speed: 280, width: 18 }
-            ],
-            orc: [
-                { kind: 'sector', range: 115, arc: 0.65, windup: 1.35, lock: 0.45, recovery: 0.9, multiplier: 0.7 },
-                { kind: 'circle', range: 105, windup: 1.65, lock: 0.55, recovery: 1.2, multiplier: 1.1 }
-            ],
-            young_dragon: [
-                { kind: 'sector', range: 110, arc: 0.65, windup: 1.15, lock: 0.4, recovery: 0.8, multiplier: 0.7 },
-                { kind: 'sector', range: 170, arc: 0.4, windup: 1.65, lock: 0.55, recovery: 1.1, multiplier: 1.1 }
-            ],
-            skeleton_warrior: [
-                { kind: 'sector', range: 100, arc: 0.55, windup: 1.1, lock: 0.4, recovery: 0.8, multiplier: 0.7 },
-                { kind: 'sector', range: 135, arc: 0.7, windup: 1.5, lock: 0.5, recovery: 1, multiplier: 1.1 }
-            ],
-            shadow_assassin: [
-                { kind: 'sector', range: 100, arc: 0.35, windup: 0.8, lock: 0.3, recovery: 0.55, multiplier: 0.6 },
-                { kind: 'dash', windup: 0.55, lock: 0.25, recovery: 0.9, multiplier: 1.1, distance: 180, speed: 450, width: 12 }
-            ],
-            stone_golem: [
-                { kind: 'sector', range: 135, arc: 0.65, windup: 1.5, lock: 0.5, recovery: 1.1, multiplier: 0.7 },
-                { kind: 'circle', range: 120, windup: 1.8, lock: 0.65, recovery: 1.4, multiplier: 1.1 }
-            ],
-            elder_dragon: [
-                { kind: 'sector', range: 140, arc: 0.65, windup: 1.1, lock: 0.4, recovery: 0.85, multiplier: 0.7 },
-                { kind: 'sector', range: 185, arc: 0.5, windup: 1.65, lock: 0.55, recovery: 1.2, multiplier: 1.1 }
-            ],
-            abyss_lord: [
-                { kind: 'sector', range: 145, arc: 0.6, windup: 1.05, lock: 0.4, recovery: 0.8, multiplier: 0.7 },
-                { kind: 'circle', range: 130, windup: 1.6, lock: 0.55, recovery: 1.2, multiplier: 1.1 }
-            ]
-        },
-
-        // 9. Content catalog: equipment stats/effects, enemies, drops, recipes,
-        // regions, buildings and shop prices. IDs are stable save keys.
-        content: {
-            items: {
-                wooden_sword: {
-                    id: 'wooden_sword', name: "木剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
-                    chargeOffsetMs: 0, // 300ms baseline: the standard charge-damage start.
-                    slots: ['left', 'right'],
-                    stats: { atk: 8, def: 0 },
-                    effects: [],
-                    desc: "简陋木剑，无特殊效果"
-                },
-                iron_sword: {
-                    id: 'iron_sword', name: "铁剑", type: "weapon", icon: "🗡️", iconKey: 'weapon-atk',
-                    chargeOffsetMs: 50, // 300 + 50 = 350ms: the damage ramp starts later.
-                    slots: ['left', 'right'],
-                    stats: { atk: 22, def: 0 },
-                    effects: [],
-                    desc: "重型武器，蓄力增伤起点比标准武器晚约 50ms"
-                },
-                wooden_shield: {
-                    id: 'wooden_shield', name: "木盾", type: "shield", icon: "🛡️", iconKey: 'shield-def',
-                    slots: ['left', 'right'],
-                    stats: { atk: 0, def: 6 },
-                    effects: [{ type: 'guard_damage_reduce', value: 0.25 }],
-                    desc: "格挡成功时额外减伤 25%"
-                },
-                iron_shield: {
-                    id: 'iron_shield', name: "铁盾", type: "shield", icon: "🔰", iconKey: 'shield-def',
-                    slots: ['left', 'right'],
-                    stats: { atk: 0, def: 24 },
-                    effects: [{ type: 'guard_damage_reduce', value: 0.40 }, { type: 'parry_window_ms', value: 150 }],
-                    desc: "格挡减伤更强，但弹反判定窗口更严格"
-                },
-                swift_ring: {
-                    id: 'swift_ring', name: "疾速戒指", type: "accessory", icon: "💍",
-                    slots: ['accessory'],
-                    stats: { atk: 0, def: 0, focus: 3 },
-                    effects: [],
-                    desc: "提升专注，使技能点回复加快"
-                },
-                wooden_armor: {
-                    id: 'wooden_armor', name: "布甲", type: "armor", icon: "👕",
-                    slots: ['armor'],
-                    stats: { atk: 0, def: 3 },
-                    effects: [],
-                    desc: "简陋布制护甲，提供基础防御"
-                },
-                iron_armor: {
-                    id: 'iron_armor', name: "铁甲", type: "armor", icon: "🥋",
-                    slots: ['armor'],
-                    stats: { atk: 0, def: 20 },
-                    effects: [],
-                    desc: "坚实铁甲，大幅提升防御"
-                },
-                wisdom_ring: {
-                    id: 'wisdom_ring', name: "智慧之环", type: "accessory", icon: "🧿",
-                    slots: ['accessory'],
-                    stats: { atk: 0, def: 0, insight: 10 }, // +10 insight
-                    effects: [],
-                    desc: "提升心眼，延长弹反判定窗口"
-                },
-                assassin_dagger: {
-                    id: 'assassin_dagger', name: "刺客短刃", type: "weapon", icon: "🔪", iconKey: 'weapon-atk',
-                    chargeOffsetMs: -20, // 300 - 20 = 280ms: the damage ramp starts earlier.
-                    slots: ['left', 'right'],
-                    stats: { atk: 14, def: 0 },
-                    effects: [{ type: 'crit_chance', value: 0.20 }],
-                    desc: "轻型武器，蓄力增伤起点比标准武器早约 20ms，且易命中要害"
-                },
-                thorn_armor: {
-                    id: 'thorn_armor', name: "荆棘甲", type: "armor", icon: "🌵",
-                    slots: ['armor'],
-                    stats: { atk: 0, def: 10 },
-                    effects: [{ type: 'guard_thorns', value: 0.5 }],
-                    desc: "格挡成功时将一半原始伤害反弹给攻击者"
-                },
-                vigor_ring: {
-                    id: 'vigor_ring', name: "战意戒指", type: "accessory", icon: "🔥",
-                    slots: ['accessory'],
-                    stats: { atk: 0, def: 0 },
-                    effects: [{ type: 'guard_bar_bonus', value: 0.25 }],
-                    desc: "格挡条上限提升 25%"
-                }
-            },
-
-            materials: {
-                goblin_ear: { id: 'goblin_ear', name: "哥布林耳", icon: "👂" },
-                wolf_pelt: { id: 'wolf_pelt', name: "狼皮", icon: "🐺" },
-                orc_tooth: { id: 'orc_tooth', name: "兽人獠牙", icon: "🦷" },
-                dragon_scale: { id: 'dragon_scale', name: "龙鳞", icon: "🐉" },
-                dragon_fang: { id: 'dragon_fang', name: "龙牙", icon: "🦴" },
-                shadow_crystal: { id: 'shadow_crystal', name: "暗影结晶", icon: "🔮" }
-            },
-
-            recipes: {
-                iron_sword: { materials: { goblin_ear: 3, wolf_pelt: 1 } },
-                iron_shield: { materials: { orc_tooth: 3 } },
-                swift_ring: { materials: { wolf_pelt: 2, goblin_ear: 1 } },
-                wooden_armor: { materials: { goblin_ear: 2 } },
-                iron_armor: { materials: { orc_tooth: 2, wolf_pelt: 1 } },
-                wisdom_ring: { materials: { goblin_ear: 2, orc_tooth: 1 } },
-                assassin_dagger: { materials: { wolf_pelt: 2, shadow_crystal: 2 } },
-                thorn_armor: { materials: { orc_tooth: 2, shadow_crystal: 2, dragon_scale: 1 } },
-                vigor_ring: { materials: { shadow_crystal: 3, goblin_ear: 1 } }
-            },
-
-            // Enemy act names are display metadata; enemyMoves defines geometry and timings.
-            enemies: {
-                test_combat: {
-                    name: "测试木桩", hp: 200, atk: 5, def: 1, exp: 20,
-                    acts: {
-                        act1: { name: "快斩" },
-                        act2: { name: "重击" }
-                    },
-                    drops: []
-                },
-                goblin: {
-                    name: "哥布林", hp: 35, atk: 12, def: 3, exp: 20,
-                    iconKey: 'goblin',
-                    acts: {
-                        act1: { name: "乱挥" },
-                        act2: { name: "猛扑" }
-                    },
-                    drops: [{ id: 'goblin_ear', chance: 0.85, amount: [1, 2] }]
-                },
-                wolf: {
-                    name: "野狼", hp: 30, atk: 18, def: 2, exp: 15,
-                    acts: {
-                        act1: { name: "撕咬" },
-                        act2: { name: "扑击" }
-                    },
-                    drops: [{ id: 'wolf_pelt', chance: 0.90, amount: [1, 2] }]
-                },
-                orc: {
-                    name: "兽人苦工", hp: 50, atk: 25, def: 5, exp: 50,
-                    acts: {
-                        act1: { name: "挥锤" },
-                        act2: { name: "砸地" }
-                    },
-                    drops: [{ id: 'orc_tooth', chance: 0.75, amount: [1, 1] }]
-                },
-                young_dragon: {
-                    name: "幼龙", hp: 120, atk: 30, def: 6, exp: 120,
-                    acts: {
-                        act1: { name: "爪击" },
-                        act2: { name: "火焰吐息" }
-                    },
-                    drops: [{ id: 'dragon_scale', chance: 0.80, amount: [1, 2] }]
-                },
-                skeleton_warrior: {
-                    name: "骷髅武士", hp: 100, atk: 34, def: 9, exp: 80,
-                    acts: {
-                        act1: { name: "骨刃斩" },
-                        act2: { name: "碎骨击" }
-                    },
-                    drops: [
-                        { id: 'orc_tooth', chance: 0.40, amount: [1, 1] },
-                        { id: 'shadow_crystal', chance: 0.35, amount: [1, 1] }
-                    ]
-                },
-                shadow_assassin: {
-                    name: "暗影刺客", hp: 85, atk: 42, def: 7, exp: 100,
-                    acts: {
-                        act1: { name: "影袭" },
-                        act2: { name: "致命突刺" }
-                    },
-                    ai: { focus: 12 },
-                    drops: [{ id: 'shadow_crystal', chance: 0.60, amount: [1, 2] }]
-                },
-                stone_golem: {
-                    name: "岩石傀儡", hp: 250, atk: 30, def: 22, exp: 120,
-                    acts: {
-                        act1: { name: "岩拳" },
-                        act2: { name: "地裂" }
-                    },
-                    ai: { focus: 8 },
-                    drops: [
-                        { id: 'orc_tooth', chance: 0.60, amount: [1, 2] },
-                        { id: 'shadow_crystal', chance: 0.25, amount: [1, 1] }
-                    ]
-                },
-                // ── Bosses (referenced by a region's `boss`) ──
-                elder_dragon: {
-                    name: "古龙", hp: 500, atk: 55, def: 15, exp: 400,
-                    acts: {
-                        act1: { name: "龙爪斩" },
-                        act2: { name: "龙焰冲击" }
-                    },
-                    drops: [
-                        { id: 'dragon_scale', chance: 1.00, amount: [2, 4] },
-                        { id: 'dragon_fang', chance: 0.50, amount: [1, 1] }
-                    ],
-                    ai: {
-                        comboChance:     0.5,
-                        comboMax:        2,
-                        comboDelayMs:    [150, 300],
-                        enrageThreshold: 0.3,
-                        enrageAtkMult:   1.4,
-                        enrageSpdMult:   1.25
-                    },
-                    // Arena effect (arena_effects.js): dragon flame ignites the
-                    // ground 20s in -- both sides burn every 3s, stalling loses
-                    arena: [{ key: 'burning_ground',
-                              logText: '🔥 龙焰点燃了地面！双方持续受到灼烧' }]
-                },
-                abyss_lord: {
-                    name: "深渊领主", hp: 850, atk: 70, def: 20, exp: 700,
-                    acts: {
-                        act1: { name: "深渊爪" },
-                        act2: { name: "湮灭波动" }
-                    },
-                    drops: [
-                        { id: 'shadow_crystal', chance: 1.00, amount: [2, 3] },
-                        { id: 'dragon_fang', chance: 0.80, amount: [1, 2] }
-                    ],
-                    ai: {
-                        comboChance:     0.6,
-                        comboMax:        3,
-                        comboDelayMs:    [120, 260],
-                        enrageThreshold: 0.4,
-                        enrageAtkMult:   1.5,
-                        enrageSpdMult:   1.3
-                    },
-                    // Arena effect: 30s in the abyss surges -- BOTH sides' AP
-                    // recharges 2x, the whole fight shifts up-tempo
-                    arena: [{ key: 'ap_surge',
-                              logText: '🌀 深渊涌动！敌人出招更加频繁' }]
-                }
-            },
-
-            // Authored adventure graph. Exits are independent of encounters:
-            // crossing an exit never requires clearing nearby enemies or an
-            // interaction. `portal` is the physical exit trigger in the
-            // overworld renderer.
-            //
-            // `portal.angle` (radians, 0 = +x) is the gate's own facing -- its
-            // `in`, the direction it leads. It is drawn as an arrow at the gate's
-            // mouth, and a return trip emerges on the far side of the gate leading
-            // back, facing the reverse of that gate's angle. Omit it and the gate
-            // is assumed to lead out of the region.
-            // `playerSpawn.facing` (radians) is the heading a fresh spawn starts
-            // with. Both fields are optional.
-            regions: {
-                a: {
-                    id: 'a', name: '曙光据点', kind: 'safe',
-                    desc: '安全的主基地，可整备并前往晨雾原野。',
-                    // The base IS this region: no monsters, and every facility is a
-                    // structure the walker stands next to and interacts with.
-                    // `kind` is what pveLogic.interact dispatches on; `radius`
-                    // defaults to adventure.structureRange. Keep every structure
-                    // clear of a portal -- a gate chevron is found by its drawn
-                    // geometry in tests, and an overlapping marker confuses it.
-                    map: {
-                        width: 1200, height: 900, playerSpawn: { x: 260, y: 610 },
-                        structures: [
-                            { id: 'a-hotspring', kind: 'hotSpring', label: '温泉',       x: 300,  y: 300 },
-                            { id: 'a-smithy',    kind: 'smithy',    label: '铁匠铺',     x: 640,  y: 210 },
-                            { id: 'a-shop',      kind: 'shop',      label: '商店',       x: 640,  y: 520 },
-                            { id: 'a-storage',   kind: 'storage',   label: '仓库',       x: 300,  y: 780 },
-                            // The dummy is anchored beside the post, level with it and facing
-                            // west toward a player arriving from the spawn: side by side keeps
-                            // the fight in the band between the HUD and the pads on a phone,
-                            // off the map edge, and well clear of the east gate.
-                            { id: 'a-training',  kind: 'training',  label: '训练场',     x: 920,  y: 560,
-                              dummy: { x: 1000, y: 580, facing: Math.PI } },
-                            { id: 'a-build',     kind: 'build',     label: '建设管理',   x: 1000, y: 240 }
-                        ]
-                    },
-                    exits: [
-                        { to: 'b', label: '北门 · 晨雾原野', portal: { x: 1120, y: 450, angle: 0 } },
-                        // Fast travel out of the base, unlocked by the dragon. Each
-                        // of these needs a matching return gate in its target (a
-                        // one-way pair is rejected by the region tests), and the
-                        // return landing at the far side of the gate must clear the
-                        // 52px exit trigger -- hence the two portals being spaced
-                        // apart on the south edge. Region a's own back-gates sit far
-                        // from both, so an arrival cannot bounce straight back out.
-                        { to: 'c', label: '南侧山道 · 熔岩巢穴', requiresBoss: 'elder_dragon', portal: { x: 1080, y: 800, angle: Math.PI / 2 } },
-                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 880, y: 810, angle: Math.PI / 2 } }
-                    ],
-                    encounters: []
-                },
-                b: {
-                    id: 'b', name: '晨雾原野', kind: 'field',
-                    desc: '开阔的野外区域。可绕开敌人，沿东侧山道进入熔岩巢穴。',
-                    map: {
-                        width: 2200, height: 1400, playerSpawn: { x: 150, y: 720 },
-                        monsters: [
-                            { id: 'b-goblin-1', enemyId: 'goblin', x: 590, y: 380, patrolRadius: 80, alertRange: 150, encounterRange: 52, speed: 54, leash: 260 },
-                            { id: 'b-wolf-1', enemyId: 'wolf', x: 1090, y: 820, patrolRadius: 110, alertRange: 180, encounterRange: 50, speed: 78, leash: 300 },
-                            { id: 'b-orc-1', enemyId: 'orc', x: 1490, y: 470, patrolRadius: 65, alertRange: 135, encounterRange: 55, speed: 44, leash: 240 }
-                        ]
-                    },
-                    exits: [
-                        { to: 'a', label: '南门 · 曙光据点', portal: { x: 80, y: 480, angle: Math.PI } },
-                        { to: 'c', label: '东侧山道 · 熔岩巢穴', portal: { x: 1840, y: 530, angle: 0 } }
-                    ],
-                    encounters: ['goblin', 'wolf', 'orc']
-                },
-                c: {
-                    id: 'c', name: '熔岩巢穴', kind: 'danger',
-                    desc: '龙巢深处由远古巨龙把守。击败它后，深渊边境入口才会打开。',
-                    map: {
-                        width: 2200, height: 1400, playerSpawn: { x: 150, y: 760 },
-                        monsters: [
-                            { id: 'c-drake-1', enemyId: 'young_dragon', x: 830, y: 710, patrolRadius: 100, alertRange: 165, encounterRange: 58, speed: 62, leash: 280 },
-                            { id: 'c-elder-dragon', enemyId: 'elder_dragon', x: 1770, y: 260, patrolRadius: 0, alertRange: 245, encounterRange: 68, speed: 42, leash: 330, boss: true }
-                        ]
-                    },
-                    exits: [
-                        { to: 'b', label: '西侧山道 · 晨雾原野', portal: { x: 120, y: 530, angle: Math.PI } },
-                        { to: 'd', label: '深渊裂隙 · 深渊边境', requiresBoss: 'elder_dragon', portal: { x: 1960, y: 470, angle: 0 } },
-                        // Straight home. Placed against the south edge, far from
-                        // both the drake and the boss, so arriving back here is
-                        // never inside an aggro ring.
-                        { to: 'a', label: '回城传送门 · 曙光据点', portal: { x: 200, y: 1250, angle: Math.PI / 2 } }
-                    ],
-                    encounters: ['young_dragon'],
-                    boss: { enemyId: 'elder_dragon', unlocks: ['d'] }
-                },
-                d: {
-                    id: 'd', name: '深渊边境', kind: 'danger',
-                    desc: '巨龙败亡后才显现的裂隙彼端。',
-                    map: {
-                        width: 2400, height: 1600, playerSpawn: { x: 170, y: 790 },
-                        monsters: [
-                            { id: 'd-skeleton-1', enemyId: 'skeleton_warrior', x: 720, y: 530, patrolRadius: 85, alertRange: 150, encounterRange: 55, speed: 52, leash: 260 },
-                            { id: 'd-shadow-1', enemyId: 'shadow_assassin', x: 1310, y: 860, patrolRadius: 125, alertRange: 205, encounterRange: 48, speed: 92, leash: 340 },
-                            { id: 'd-golem-1', enemyId: 'stone_golem', x: 1860, y: 450, patrolRadius: 45, alertRange: 135, encounterRange: 70, speed: 38, leash: 250 }
-                        ]
-                    },
-                    exits: [
-                        { to: 'c', label: '裂隙回程 · 熔岩巢穴', portal: { x: 120, y: 470, angle: Math.PI } },
-                        { to: 'a', label: '回城传送门 · 曙光据点', portal: { x: 190, y: 1380, angle: Math.PI / 2 } }
-                    ],
-                    encounters: ['skeleton_warrior', 'shadow_assassin', 'stone_golem']
-                }
-            },
-
-            buildings: {
-                hotSpring: { name: "温泉", baseProduce: {} },
-                smithy:    { name: "铁匠铺", baseProduce: {} },
-                shop:      { name: "商店", baseProduce: {} }
-            },
-
-            // Shop: spend gold to buy materials directly (gold now comes from
-            // combat, not a production building) -- placeholder prices.
-            shopPrices: {
-                goblin_ear:     15,
-                wolf_pelt:      20,
-                orc_tooth:      25,
-                dragon_scale:   60,
-                dragon_fang:    120,
-                shadow_crystal: 90
-            },
-
-            slotMeta: {
-                left: { label: "武器", hint: "武器/盾牌" },
-                right: { label: "副手", hint: "武器/盾牌" },
-                armor: { label: "护甲", hint: "护甲" },
-                accessory: { label: "饰品", hint: "饰品" }
-            }
-        },
-    };
-    // Templates are immutable; state and battle adapters create their own copies.
-    function freeze(value) {
-        for (const child of Object.values(value)) {
-            if (child && typeof child === 'object') freeze(child);
+    const freeze = value => {
+        if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+            Object.values(value).forEach(freeze);
+            Object.freeze(value);
         }
-        return Object.freeze(value);
-    }
-    return freeze(config);
+        return value;
+    };
+    return freeze({
+        // 1. Scale. A block is 40 world units; the simulation keeps world
+        // units so distances read the same as in the 2D version.
+        world: { unitsPerBlock: 40 },
+
+        // 2. The main character on foot.
+        // speed: world units/second at full stick. turnRate: radians/second
+        // while turning towards the stick. radius: wall collision.
+        player: { speed: 115, turnRate: 8, radius: 12 },
+
+        // 3. Animation. blendSeconds: idle <-> walk cross-fade.
+        animation: { blendSeconds: 0.1 },
+
+        // 4. Sizes that will decide hits (3d-migration-concept.md 4.3). The
+        // body boxes themselves are model data in models/; these scale it.
+        // playerScale multiplies the whole character; swordBladeLength is in
+        // blocks.
+        models: { playerScale: 1, swordBladeLength: 0.92 },
+
+        // 5. Fixed oblique camera (3d-migration-concept.md 7). yaw 0 keeps
+        // screen-up on -z; pitch is the angle down from the horizon;
+        // distance and lookHeight are blocks; fov is vertical, in degrees.
+        camera: { yaw: 0, pitch: 0.96, distance: 10.5, fov: 34, lookHeight: 0.8 },
+
+        // 6. Rendering cost. Shadow map size by screen class (short side
+        // under 700 CSS px is small); shadowExtent is the half-width in
+        // blocks of the shadowed area around the player.
+        graphics: { pixelRatioMax: 2, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 12 },
+
+        // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
+        // below which nothing moves, and beyond which speed reaches full
+        // over `ramp` more pixels. stickRadius: knob travel. maxTouches:
+        // two thumbs (controls-landscape-concept.md 4.5).
+        input: {
+            deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2,
+            keys: {
+                up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
+                left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
+                a: ['KeyJ'], b: ['KeyK'], offhand: ['KeyL'], interact: ['KeyE']
+            }
+        },
+
+        // 8. Button layout (controls-landscape-concept.md 3). Each button's
+        // centre is `x` from its `side` edge and `y` from the bottom edge,
+        // both inside the safe area; `size` is the diameter. The stick
+        // appears wherever the left `zone` share of the screen is pressed
+        // and rests faintly at (restX, restY) from the bottom-left.
+        controlsLayout: {
+            minGap: 10,
+            buttons: {
+                a: { side: 'right', x: 78, y: 72, size: 84 },
+                b: { side: 'right', x: 70, y: 162, size: 72 },
+                offhand: { side: 'right', x: 176, y: 56, size: 72 },
+                interact: { side: 'left', x: 64, y: 196, size: 56 }
+            },
+            stick: { zone: 0.5, restX: 120, restY: 96 }
+        },
+
+        // 9. Maps. One character per block: `.` grass, `:` path, `1`-`9`
+        // stone wall of that many blocks, `T` tree, `@` grass where the
+        // player starts. Rows run north (screen top) to south.
+        maps: {
+            clearing: {
+                rows: [
+                    '..T....T....T......T....T.....T...',
+                    'T....T....T....T.T....T....T......',
+                    '..T...T.T...T.....T..T...T.T..T.T.',
+                    '.T..22221222222122222222122222..T.',
+                    '.T..2.....................:..2....',
+                    '....1.....................:..2.T..',
+                    '..T.2...1.................:..1....',
+                    '....1.....................:..2..T.',
+                    '.T..2.............@......::..1....',
+                    '....1..................::....2.T..',
+                    '..T.2...............:::......1....',
+                    '....1.........1....::........2..T.',
+                    '.T..2..............:.........1....',
+                    '....1..............:.........2.T..',
+                    '....21111211112111112111121112..T.',
+                    '..................................',
+                    '..................................',
+                    '..................................'
+                ]
+            }
+        }
+    });
 })();
