@@ -106,7 +106,9 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
         // A real-time fight: the frame loop runs, J is A, the dummy swings back.
         await page.evaluate(() => { const g = window.game, d = g.sim.dummy; g.sim.player.x = d.x - 60; g.sim.player.y = d.y; g.sim.player.facing = 0; g.pause(false); });
         for (let i = 0; i < 3; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
-        await page.waitForTimeout(800);
+        // Software rendering can leave most of a second between frames, and
+        // a frame runs at most MAX_FRAME of simulation: wait for the hit.
+        await page.waitForFunction(() => window.game.sim.stats.hits >= 1, null, { timeout: 15000 }).catch(() => {});
         const fight = await page.evaluate(() => { window.game.pause(true); return { ...window.game.sim.stats, hp: window.game.sim.dummy.hp }; });
         assert.ok(fight.attacks >= 1 && fight.hits >= 1, `fight ${JSON.stringify(fight)}`);
         await shot(page, 'fight');
@@ -151,10 +153,14 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         const afterResize = await page.evaluate(() => ({ move: window.game.sim.input.move, pointers: window.game.input.state().pointers }));
         assert.ok(afterResize.move.y < -0.99, `stick after resize: ${JSON.stringify(afterResize)}`);
         // Real time: unpaused, the frame loop walks the body on its own.
+        // Frames can be most of a second apart here, so after the clock has
+        // run, wait for two more frames: the game's own frame comes first.
         const real = await page.evaluate(async () => {
             const g = window.game, y0 = g.sim.player.y, t0 = performance.now();
+            const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
             g.pause(false);
             await new Promise(resolve => setTimeout(resolve, 600));
+            await frame(); await frame();
             g.pause(true);
             return { walked: y0 - g.sim.player.y, seconds: (performance.now() - t0) / 1000 };
         });
