@@ -172,7 +172,8 @@ test('inside a combo the stick only turns; still pushed when the recovery ends, 
     const { x, y } = sim.player; W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, 0.1);
     assert.equal(phase(sim), 'recover:slash');
     assert.ok(Math.abs(sim.player.x - x) < 1e-9 && Math.abs(sim.player.y - y) < 1e-9, 'no walking in the recovery');
-    assert.ok(sim.player.facing > -Math.PI / 2 + 0.5, 'but the stick turned the fighter');
+    assert.ok(Math.abs(sim.player.facing - (-Math.PI / 2 + gameConfig.player.turnRate * K.recoveryTurnMultiplier * 0.1)) < 1e-6,
+        'but the stick turned the fighter, at the slower combo rate');
     step(sim, 0.3); assert.equal(phase(sim), 'idle'); assert.ok(sim.player.x > x); assert.equal(sim.player.chain, null);
     // Turn, then A: the next move goes the new way.
     const c = setup(); c.player.facing = -Math.PI / 2; tap(c); until(c, 'recover:slash');

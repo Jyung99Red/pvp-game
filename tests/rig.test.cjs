@@ -131,6 +131,18 @@ test('the stride matches the leg swing: the planted foot barely slides, walking 
     assert.ok(playerAnim.cycleLength(rig, 1) > playerAnim.cycleLength(rig, 0), 'running strides are longer');
 });
 
+test('walking while charging moves the legs under the held charge', () => {
+    const act = { move: 'charged', phase: 'charge', t: 0.3, from: null };
+    const at = (gait, moveBlend) => R.solve(rig, playerAnim.pose(rig, { gait, moveBlend, runBlend: 0, act, guardBlend: 0, stun: 0 }));
+    const thigh = s => Array.from(s.bones[rig.index.thighR]);
+    assert.deepEqual(thigh(at(0, 0)), thigh(at(0.25, 0)), 'standing still, the charge pose holds');
+    assert.notDeepEqual(thigh(at(0, 1)), thigh(at(0.25, 1)), 'walking, the legs step');
+    // The upper body keeps the charge exactly; only the legs (and hips) walk.
+    const upper = (gait, moveBlend) => JSON.stringify(R.pick(playerAnim.pose(rig, { gait, moveBlend, runBlend: 0, act, guardBlend: 0, stun: 0 }), playerModel.layers.upper), (k, v) => typeof v === 'number' ? Math.round(v * 1e9) / 1e9 : v);
+    for (const g of [0, 0.1, 0.4, 0.7]) assert.equal(upper(g, 1), upper(0, 0), `gait ${g}: arms and chest hold the charge`);
+    for (const g of [0, 0.2, 0.5, 0.8]) assert.ok(Math.abs(lowestBody(at(g, 1))) < 1e-9, 'feet on the ground');
+});
+
 test('drawn-only additions never change the judged pose', () => {
     const body = { gait: 0.3, moveBlend: 0 }, judged = playerAnim.pose(rig, body);
     const before = JSON.stringify(judged);

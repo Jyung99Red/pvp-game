@@ -82,10 +82,11 @@ const gameConfig = (() => {
         // pauseAfterRecovery: the pause line after a recovery ends;
         // windowAfterRecovery: the chain resets this long after;
         // bufferSeconds: an input pressed ahead that has not run within this
-        // long is dropped.
+        // long is dropped. recoveryTurnMultiplier: in a recovery the stick
+        // only turns the body, at this share of player.turnRate.
         combo: {
             root: { a: 'slash', b: 'charged' },
-            pauseAfterRecovery: 0.2, windowAfterRecovery: 0.7, bufferSeconds: 0.4,
+            pauseAfterRecovery: 0.2, windowAfterRecovery: 0.7, bufferSeconds: 0.4, recoveryTurnMultiplier: 0.5,
             moves: {
                 slash: { name: '横扫', windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.30, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
                 backslash: { name: '回扫', windup: 0.10, swing: 0.08, recovery: 0.36, derive: 0.14, ratio: 0.32, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },

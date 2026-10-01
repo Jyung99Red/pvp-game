@@ -232,9 +232,9 @@ const fighterKit = (() => {
             // walking (no shield, no charge), and really getting somewhere.
             striding = !guarding && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
         } else if (mag > 1e-6 && a?.phase === 'recover') {
-            // Inside a combo the stick only turns; the next move goes where
-            // the fighter faces the moment it starts.
-            p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), P.turnRate * dt);
+            // Inside a combo the stick only turns, and slower; the next move
+            // goes where the fighter faces the moment it starts.
+            p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), P.turnRate * K().recoveryTurnMultiplier * dt);
         }
         p.moveTime = striding ? p.moveTime + dt : 0;
         p.runBlend = approach(p.runBlend, p.moveTime >= P.runAfter - 1e-9 ? 1 : 0, dt / P.runRampSeconds);

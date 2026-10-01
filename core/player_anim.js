@@ -76,7 +76,14 @@ const playerAnim = (() => {
         if (act) {
             // Out of a walk the move cross-fades in; out of a move it does not need to.
             const w = act.from || act.phase !== 'windup' ? 1 : clamp01(act.t / BLEND());
-            pose = rigKit.mix(pose, movePose(act), w);
+            let moving = movePose(act);
+            // Charging may walk: the legs walk under the held charge, like
+            // under a raised shield.
+            if (act.phase === 'charge') {
+                const lower = playerModel.layers.lower;
+                moving = { ...moving, ...rigKit.mix(rigKit.pick(moving, lower), rigKit.pick(pose, lower), body.moveBlend) };
+            }
+            pose = rigKit.mix(pose, moving, w);
         }
         if (body.guardBlend > 0) {
             const raised = { ...rigKit.pick(pose, playerModel.layers.lower), ...playerMoves.guard };
