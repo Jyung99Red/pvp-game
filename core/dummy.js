@@ -1,10 +1,10 @@
 // The training dummy: anchored where the map puts it, it never walks,
 // turns or gets pushed (combat-combo-concept.md 13). While the player is
 // within engageRange it attacks its moves in turn; its club hits by the same
-// box test as the player's sword, and a hit is guarded, parried or taken
-// here. Hits on it stagger it like any fighter.
+// box test as the player's sword, and the blow is settled by
+// combatKit.strikePlayer. Hits on it stagger it like any fighter.
 //
-// sim.dummy: { x, y, h, facing, radius, hp, maxHp, atk, def, anchored,
+// sim.dummy: { id, kind, x, y, h, facing, radius, hp, maxHp, atk, def, anchored,
 //   phase: idle|windup|swing|recover|reel, t, move (index), seq, wait,
 //   struck (this swing already hit), stagger (points), flinch, freeze }
 const dummyKit = (() => {
@@ -20,7 +20,7 @@ const dummyKit = (() => {
         if (!terrain.dummy) return null;
         const at = terrainKit.cellCentre(terrain, terrain.dummy.col, terrain.dummy.row), S = D();
         return {
-            side: 'dummy', x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing, radius: S.radius,
+            id: 'dummy', kind: 'dummy', side: 'dummy', x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing, radius: S.radius,
             hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, anchored: true, endless: true,
             phase: 'idle', t: 0, move: 0, seq: 0, wait: S.firstDelay, struck: false, stagger: 0, flinch: 0, freeze: 0, push: null
         };
@@ -51,47 +51,24 @@ const dummyKit = (() => {
             emit(sim, 'stagger');
         }
     }
-    // The club met the player: shield, perfect parry, or a hit.
-    function resolve(sim, point) {
-        const d = sim.dummy, p = sim.player, move = D().moves[d.move], G = F().guard;
-        const raw = d.atk * move.ratio, guarding = p.guard.state === 'up' && combatKit.inFront(p, d);
-        if (guarding) {
-            const parry = sim.time - p.guard.readyAt <= G.parryWindow + 1e-9;
-            if (parry) {
-                const counter = combatKit.defended(p.atk * F().damage.parryAtkRatio, d.def);
-                combatKit.damage(sim, d, counter);
-                sim.stats.parries++;
-                combatKit.emit(sim, 'parry', { side: 'player', damage: counter, at: point });
-                stagger(sim, F().stagger.parry);
-                combatKit.impact(sim, d, p, 'parry');
-            } else {
-                const amount = Math.round(combatKit.defended(raw, p.def) * F().damage.blockMultiplier);
-                combatKit.damage(sim, p, amount);
-                sim.stats.blocks++;
-                combatKit.emit(sim, 'block', { side: 'player', damage: amount, at: point });
-                combatKit.impact(sim, p, d, 'block');
-            }
-            // Paid after the hit is settled: the block that empties the bar still counts.
-            combatKit.spendGuard(sim, p, combatKit.guardCost(raw, p.maxHp, parry));
-            return;
-        }
-        const amount = combatKit.defended(raw, p.def);
-        combatKit.damage(sim, p, amount);
-        sim.stats.hurt++;
-        emit(sim, 'hit', { target: 'player', move: move.id, damage: amount, at: point });
-        fighterKit.struck(sim);
-        combatKit.impact(sim, p, d, 'hit');
+    // A blow landed on it (combatKit.kitOf): it jolts back and may reel.
+    function struck(sim, d, { amount, stagger: points = 0 }) {
+        combatKit.damage(sim, d, amount);
+        d.flinch = D().flinchSeconds;
+        if (points > 0) stagger(sim, points);
     }
+    function hurtboxes(sim, d = sim.dummy) { return combatKit.hurtboxes(sim.rigs.dummy, solve(sim, d)); }
     function swingStep(sim, dt) {
         const d = sim.dummy, move = D().moves[d.move];
         const u0 = d.t / move.swing;
         d.t = Math.min(move.swing, d.t + dt);
         const u1 = d.t / move.swing;
-        if (!d.struck) {
-            const p = sim.player, target = { id: 'player', boxes: combatKit.hurtboxes(sim.rigs.player, rigKit.solve(sim.rigs.player, playerAnim.pose(sim.rigs.player, p), space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing))) };
+        const p = sim.player;
+        if (!d.struck && !p.down && terrainKit.lineClear(sim.terrain, d.x, d.y, p.x, p.y)) {
+            const target = { id: 'player', boxes: fighterKit.hurtboxes(sim) };
             const solveAt = u => rigKit.solve(sim.rigs.dummy, pose({ ...d, t: u * move.swing }), space.toBlocks(d.x, d.y, d.h), space.yawOf(d.facing));
             const hit = combatKit.sweep(sim.rigs.dummy, solveAt, u0, u1, [target]);
-            if (hit) { d.struck = true; resolve(sim, hit.point); }
+            if (hit) { d.struck = true; combatKit.strikePlayer(sim, d, d.atk * move.ratio, hit.point, move.id); }
         }
         if (d.phase === 'swing' && d.t >= move.swing - 1e-9) { d.phase = 'recover'; d.t = 0; }
     }
@@ -120,5 +97,5 @@ const dummyKit = (() => {
             if (d.t >= F().stagger.duration - 1e-9) { d.phase = 'idle'; d.t = 0; d.wait = S.delay; emit(sim, 'recovered'); }
         }
     }
-    return { rig, create, pose, solve, stagger, tick };
+    return { rig, create, pose, solve, hurtboxes, struck, stagger, tick };
 })();

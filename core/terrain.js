@@ -6,15 +6,18 @@ const terrainKit = (() => {
     const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3 });
     const SOLID = new Set([KIND.stone, KIND.tree]);
     const TREE_HEIGHT = 4;
+    // Map letters that put a monster's home on a grass block.
+    const MONSTERS = Object.freeze({ g: 'goblin', w: 'wolf' });
 
     function fromRows(rows, unit = gameConfig.world.unitsPerBlock) {
         const height = rows.length, width = rows[0]?.length || 0;
         if (!height || rows.some(r => r.length !== width)) throw new Error('Map rows must be non-empty and equal in length');
         const kind = new Uint8Array(width * height), level = new Uint8Array(width * height);
         let spawn = null, dummy = null;
+        const monsters = [];
         rows.forEach((row, r) => [...row].forEach((ch, c) => {
             const i = r * width + c;
-            if (ch === '.' || ch === '@' || ch === 'D') kind[i] = KIND.grass;
+            if (ch === '.' || ch === '@' || ch === 'D' || MONSTERS[ch]) kind[i] = KIND.grass;
             else if (ch === ':') kind[i] = KIND.path;
             else if (ch === 'T') { kind[i] = KIND.tree; level[i] = TREE_HEIGHT; }
             else if (ch >= '1' && ch <= '9') { kind[i] = KIND.stone; level[i] = Number(ch); }
@@ -27,9 +30,10 @@ const terrainKit = (() => {
                 if (dummy) throw new Error('A map has at most one training dummy');
                 dummy = { col: c, row: r };
             }
+            if (MONSTERS[ch]) monsters.push({ kind: MONSTERS[ch], col: c, row: r });
         }));
         if (!spawn) throw new Error('A map needs a spawn (@)');
-        return { width, height, unit, kind, level, spawn, dummy };
+        return { width, height, unit, kind, level, spawn, dummy, monsters };
     }
     const inside = (t, c, r) => c >= 0 && r >= 0 && c < t.width && r < t.height;
     function kindAt(t, c, r) { return inside(t, c, r) ? t.kind[r * t.width + c] : KIND.stone; }
@@ -83,6 +87,17 @@ const terrainKit = (() => {
             if (!moved) return;
         }
     }
+    // Is the straight line between two ground points free of solid blocks?
+    // Sampled every eighth of a block; heights are not considered (a blow
+    // across any wall does not land: 3d-migration-concept.md 10, item 4).
+    function lineClear(t, x0, y0, x1, y1) {
+        const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (t.unit / 8)));
+        for (let i = 1; i < n; i++) {
+            const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+            if (solidAt(t, Math.floor(x / t.unit), Math.floor(y / t.unit))) return false;
+        }
+        return true;
+    }
     // Move a circle body by (dx, dy), sliding along walls and round corners
     // and around other bodies (`obstacles`: circles { x, y, radius }).
     // Sub-steps keep every step under half the radius, so thin corners
@@ -94,5 +109,5 @@ const terrainKit = (() => {
             pushOut(t, body, obstacles);
         }
     }
-    return { KIND, TREE_HEIGHT, fromRows, kindAt, levelAt, solidAt, cellCentre, blocked, moveCircle };
+    return { KIND, TREE_HEIGHT, MONSTERS, fromRows, kindAt, levelAt, solidAt, cellCentre, blocked, lineClear, moveCircle };
 })();

@@ -1,10 +1,14 @@
 // Fighting rules every fighter shares: damage, impact (hitstop and
-// knockback), the guard bar, and the hit test itself. A hit is a weapon box
-// touching a body box (3d-migration-concept.md 4.1): the attacker's swing is
-// sampled at sub-steps between simulation steps so a fast blade cannot pass
-// through a thin limb.
+// knockback), the guard bar, a foe's blow meeting the player, and the hit
+// test itself. A hit is a weapon box touching a body box
+// (3d-migration-concept.md 4.1): the attacker's swing is sampled at
+// sub-steps between simulation steps so a fast blade cannot pass through a
+// thin limb.
 const combatKit = (() => {
     const C = () => gameConfig.combat;
+    // The rules of a foe the player fights: the training dummy or a monster.
+    // Each kit has solve, hurtboxes and struck(sim, body, { amount, stagger }).
+    const kitOf = body => body.kind === 'dummy' ? dummyKit : monsterKit;
 
     function defended(raw, def = 0) {
         return Math.max(1, Math.round(raw * (1 - def / (def + C().damage.defenseConstant))));
@@ -59,19 +63,54 @@ const combatKit = (() => {
         if (g.locked && g.bar >= G.max * G.unlockRatio - 1e-9) { g.locked = false; emit(sim, 'guard_ready', { side: body.side }); }
     }
 
+    // ---- a foe's blow meets the player: shield, perfect parry, or a hit ----
+    // `raw` is the blow before DEF; `point` (blocks) is only for effects.
+    function strikePlayer(sim, attacker, raw, point, move) {
+        const p = sim.player, G = C().guard;
+        if (p.guard.state === 'up' && inFront(p, attacker)) {
+            const parry = sim.time - p.guard.readyAt <= G.parryWindow + 1e-9;
+            if (parry) {
+                const counter = defended(p.atk * C().damage.parryAtkRatio, attacker.def);
+                sim.stats.parries++;
+                emit(sim, 'parry', { side: 'player', target: attacker.id, damage: counter, at: point });
+                kitOf(attacker).struck(sim, attacker, { amount: counter, stagger: C().stagger.parry });
+                impact(sim, attacker, p, 'parry');
+            } else {
+                const amount = Math.round(defended(raw, p.def) * C().damage.blockMultiplier);
+                damage(sim, p, amount);
+                sim.stats.blocks++;
+                emit(sim, 'block', { side: 'player', source: attacker.id, damage: amount, at: point });
+                impact(sim, p, attacker, 'block');
+            }
+            // Paid after the hit is settled: the block that empties the bar still counts.
+            spendGuard(sim, p, guardCost(raw, p.maxHp, parry));
+            if (p.hp === 0) fighterKit.fall(sim);
+            return;
+        }
+        const amount = defended(raw, p.def);
+        damage(sim, p, amount);
+        sim.stats.hurt++;
+        emit(sim, 'hit', { side: attacker.side, source: attacker.id, target: 'player', move, damage: amount, at: point });
+        if (p.hp === 0) { fighterKit.fall(sim); return; }
+        fighterKit.struck(sim);
+        impact(sim, p, attacker, 'hit');
+    }
+
     // ---- hit test ----
     const UNIT = () => gameConfig.world.unitsPerBlock;
     // Body boxes of a fighter as it stands now.
     function hurtboxes(rig, solved) { return rigKit.boxes(rig, solved, ['body']).map(b => b.box); }
-    // Weapon boxes, grown by `pad` blocks on every side.
-    function weaponBoxes(rig, solved, pad) {
-        return rigKit.boxes(rig, solved, ['weapon']).map(({ box }) => ({ ...box, h: box.h.map(v => v + pad) }));
+    // Boxes that strike, grown by `pad` blocks on every side: weapon boxes,
+    // or for a ram (the wolf's leap) the body itself.
+    function attackBoxes(rig, solved, kinds = ['weapon'], pad = 0) {
+        return rigKit.boxes(rig, solved, kinds).map(({ box }) => ({ ...box, h: box.h.map(v => v + pad) }));
     }
+    function weaponBoxes(rig, solved, pad) { return attackBoxes(rig, solved, ['weapon'], pad); }
     const thinnest = boxes => Math.min(...boxes.map(b => 2 * Math.min(...b.h)));
-    // How far the weapon's corners travel between two solved states.
-    function travel(rig, s0, s1) {
+    // How far the striking boxes' corners travel between two solved states.
+    function travel(rig, s0, s1, kinds) {
         let far = 0;
-        const w0 = weaponBoxes(rig, s0, 0), w1 = weaponBoxes(rig, s1, 0);
+        const w0 = attackBoxes(rig, s0, kinds), w1 = attackBoxes(rig, s1, kinds);
         w0.forEach((box, i) => {
             const c0 = math3d.corners(box), c1 = math3d.corners(w1[i]);
             c0.forEach((p, k) => { far = Math.max(far, math3d.length(math3d.sub(p, c1[k]))); });
@@ -80,27 +119,37 @@ const combatKit = (() => {
     }
     // Sample the attacker's swing from progress u0 to u1. `solveAt(u)` gives
     // the attacker's solved rig at progress u; targets are { id, boxes }
-    // (body boxes, already solved). Returns the first contact, or null.
-    function sweep(rig, solveAt, u0, u1, targets) {
-        if (!targets.length || !(u1 > u0)) return null;
-        const pad = C().weaponPad / UNIT();
+    // (body boxes, already solved). Returns the first contact with each
+    // target touched, in the order touched: [{ id, point, u }].
+    // opts.kinds: which boxes strike (weapon by default); opts.pad: how much
+    // they grow (combat.weaponPad by default).
+    function contacts(rig, solveAt, u0, u1, targets, { kinds = ['weapon'], pad = C().weaponPad / UNIT() } = {}) {
+        const found = [];
+        if (!targets.length || !(u1 > u0)) return found;
         const first = solveAt(u0), last = solveAt(u1);
-        const n = math3d.substeps(travel(rig, first, last), Math.min(...targets.map(t => thinnest(t.boxes))));
-        for (let k = 1; k <= n; k++) {
-            const solved = k === n ? last : solveAt(u0 + (u1 - u0) * k / n);
-            for (const weapon of weaponBoxes(rig, solved, pad)) {
-                for (const target of targets) {
+        const n = math3d.substeps(travel(rig, first, last, kinds), Math.min(...targets.map(t => thinnest(t.boxes))));
+        const left = new Set(targets.map(t => t.id));
+        for (let k = 1; k <= n && left.size; k++) {
+            const solved = k === n ? last : solveAt(u0 + (u1 - u0) * k / n), strikers = attackBoxes(rig, solved, kinds, pad);
+            for (const target of targets) {
+                if (!left.has(target.id)) continue;
+                for (const weapon of strikers) {
                     const box = target.boxes.find(b => math3d.overlap(weapon, b));
-                    if (box) return { id: target.id, point: weapon.c.map((v, i) => (v + box.c[i]) / 2), u: u0 + (u1 - u0) * k / n };
+                    if (!box) continue;
+                    found.push({ id: target.id, point: weapon.c.map((v, i) => (v + box.c[i]) / 2), u: u0 + (u1 - u0) * k / n });
+                    left.delete(target.id);
+                    break;
                 }
             }
         }
-        return null;
+        return found;
     }
+    // The first contact of all, or null.
+    function sweep(rig, solveAt, u0, u1, targets, opts) { return contacts(rig, solveAt, u0, u1, targets, opts)[0] || null; }
     // Is `from` within the guard's front arc of `body`?
     function inFront(body, from) {
         const toward = Math.atan2(from.y - body.y, from.x - body.x);
         return Math.abs(space.wrapAngle(toward - body.facing)) <= C().guard.frontAngle + 1e-9;
     }
-    return { defended, emit, damage, impact, tickPush, guardCost, spendGuard, tickGuardBar, hurtboxes, weaponBoxes, sweep, inFront };
+    return { kitOf, defended, emit, damage, impact, tickPush, guardCost, spendGuard, tickGuardBar, strikePlayer, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
 })();

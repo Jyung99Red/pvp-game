@@ -2,8 +2,10 @@
 // five controls (move stick, A, B, offhand, interact) and nothing about the
 // screen. Every value is serialisable except `terrain` and `rigs`, which are
 // shared data derived from the map and the models. The player's rules are
-// in core/fighter.js, the training dummy's in core/dummy.js; `events` is
-// what happened, for sounds and effects to read and drain.
+// in core/fighter.js, the training dummy's in core/dummy.js, the monsters'
+// in core/monster.js; `events` is what happened, for sounds and effects to
+// read and drain. `result` is null until the fight is decided: { outcome:
+// 'win' (every monster down) | 'lose' (the player down), at }.
 const worldSim = (() => {
     const BUTTONS = Object.freeze(['a', 'b', 'offhand', 'interact']);
 
@@ -14,8 +16,11 @@ const worldSim = (() => {
         const buttons = {};
         for (const b of BUTTONS) buttons[b] = { held: false, presses: 0 };
         const dummy = dummyKit.create(terrain, map.dummyFacing ?? Math.PI);
+        const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i));
+        const kinds = [...new Set(monsters.map(m => m.kind))];
         return {
-            time: 0, tick: 0, terrain, rigs: { player: rig, dummy: dummy ? dummyKit.rig() : null },
+            time: 0, tick: 0, terrain, map: map.name || '',
+            rigs: { player: rig, dummy: dummy ? dummyKit.rig() : null, monsters: Object.fromEntries(kinds.map(k => [k, monsterKit.rig(k)])) },
             player: fighterKit.init({
                 x: at.x, y: at.y, h: space.groundHeight(at.x, at.y),
                 facing: Math.PI / 2, radius: gameConfig.player.radius,
@@ -23,11 +28,11 @@ const worldSim = (() => {
                 // unbroken walking, which turns into a run.
                 speed: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
                 loadout: { ...loadout }
-            }),
-            dummy,
+            }, { endless: !!map.training }),
+            dummy, monsters,
             input: { move: { x: 0, y: 0 }, buttons },
-            events: [],
-            stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0 }
+            events: [], result: null,
+            stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 }
         };
     }
 
@@ -63,8 +68,13 @@ const worldSim = (() => {
         sim.time += dt; sim.tick++;
         fighterKit.tick(sim, dt);
         dummyKit.tick(sim, dt);
+        monsterKit.tick(sim, dt);
         const p = sim.player;
         p.h = space.groundHeight(p.x, p.y);
+        if (!sim.result) {
+            const outcome = p.down ? 'lose' : sim.monsters.length && !sim.monsters.some(monsterKit.living) ? 'win' : null;
+            if (outcome) { sim.result = { outcome, at: sim.time }; combatKit.emit(sim, 'result', { outcome }); }
+        }
     }
     // Take the events since the last call.
     function drain(sim) { return sim.events.splice(0); }

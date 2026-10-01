@@ -39,7 +39,7 @@ html, body {
 .hud-top {
     position: absolute; z-index: 3; pointer-events: none; left: 0; right: 0;
     top: calc(env(safe-area-inset-top, 0px) + 8px);
-    padding-inline: calc(env(safe-area-inset-left, 0px) + 12px) calc(env(safe-area-inset-right, 0px) + 12px);
+    padding-inline: calc(env(safe-area-inset-left, 0px) + 56px) calc(env(safe-area-inset-right, 0px) + 12px);
     display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: 12px;
 }
 .hud-self { display: grid; gap: 4px; width: min(220px, 100%); }
@@ -51,7 +51,57 @@ html, body {
 .bar-guard.locked i { background: #8a8f96; }
 .hud-target { justify-self: end; display: grid; gap: 4px; width: min(200px, 100%); justify-items: end; }
 .hud-target[hidden] { display: none; }
-.target-name { font-size: 12px; line-height: 1; color: var(--fg); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.target-name { font-size: 12px; line-height: 1; color: var(--fg); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); display: flex; gap: 6px; align-items: center; }
+.target-name b { font-weight: 400; }
+.target-rage { font-style: normal; font-size: 11px; padding: 1px 4px; border-radius: 3px; background: #c8433a; color: #fff; text-shadow: none; }
+.target-rage[hidden] { display: none; }
+.hud-goal { font-size: 12px; line-height: 1.2; color: var(--fg); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); margin-top: 2px; }
+.hud-goal[hidden] { display: none; }
+
+/* Over each monster in a fight: a small HP bar, and "!" as it notices. */
+.hud-mobs { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.mob { position: absolute; left: 0; top: 0; width: 40px; display: grid; justify-items: center; gap: 2px; }
+.mob[hidden] { display: none; }
+.mob-bar { width: 100%; height: 4px; border-radius: 2px; background: rgba(14, 18, 23, 0.6); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); overflow: hidden; }
+.mob-bar i { display: block; height: 100%; width: 100%; background: #e05a4f; }
+.mob.enraged .mob-bar i { background: #ff3a24; }
+.mob-alert { font: 800 20px/1 var(--font); color: #ffd84a; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.mob-alert[hidden] { display: none; }
+
+/* The menu key, top left; the pause and result panel. */
+.hud-menu {
+    position: absolute; z-index: 4; margin: 0; padding: 0; box-sizing: border-box;
+    left: calc(env(safe-area-inset-left, 0px) + 10px); top: calc(env(safe-area-inset-top, 0px) + 6px);
+    width: 36px; height: 36px; border-radius: 8px; display: flex; gap: 5px; align-items: center; justify-content: center;
+    border: 2px solid var(--ctl-line); background: var(--ctl-fill); cursor: pointer; touch-action: manipulation;
+}
+.hud-menu i { display: block; width: 4px; height: 14px; border-radius: 1px; background: var(--fg); }
+.hud-menu:focus { outline: none; }
+.hud-menu:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panel { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px; background: rgba(10, 13, 17, 0.55); }
+.panel[hidden] { display: none; }
+.panel-card {
+    min-width: min(320px, 100%); max-width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box;
+    padding: 16px 20px; border-radius: 10px; background: rgba(20, 25, 31, 0.94); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+    display: grid; gap: 10px; text-align: center;
+}
+.panel-title { margin: 0; font-size: 22px; }
+.panel.win .panel-title { color: var(--accent); }
+.panel.lose .panel-title { color: #ff8a7a; }
+.panel-note { margin: 0; font-size: 13px; color: var(--muted); }
+.panel-note:empty { display: none; }
+.panel-stats { margin: 0; display: grid; grid-template-columns: repeat(3, auto); gap: 4px 16px; justify-content: center; font-size: 13px; }
+.panel-stats:empty { display: none; }
+.panel-stats div { display: flex; gap: 6px; }
+.panel-stats dt { color: var(--muted); }
+.panel-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+.panel-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.panel-actions button {
+    min-width: 96px; min-height: 40px; padding: 0 14px; border-radius: 8px; font: 500 15px/1 var(--font);
+    border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08); color: var(--fg); cursor: pointer;
+}
+.panel-actions button.primary { border-color: var(--accent); background: var(--accent); color: #1d1606; }
+.panel-actions button[hidden] { display: none; }
 .bar-target { width: 100%; }
 .bar-target i { background: #e05a4f; left: auto; right: 0; }
 .pips { display: flex; gap: 3px; }

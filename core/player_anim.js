@@ -69,7 +69,7 @@ const playerAnim = (() => {
     }
 
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
-    // fighter { act, guardBlend, stun }.
+    // fighter { act, guardBlend, stun, down, downT }.
     function pose(rig, body) {
         let pose = locomotion(body);
         const act = body.act;
@@ -89,6 +89,7 @@ const playerAnim = (() => {
             const raised = { ...rigKit.pick(pose, playerModel.layers.lower), ...playerMoves.guard };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }
+        if (body.down) pose = rigKit.mix(pose, playerMoves.down, easeOut(clamp01(body.downT / 0.5)));
         if (body.stun > 0) {
             // Thrown back over the first fifth of the stun, then easing back.
             const left = clamp01(body.stun / gameConfig.combat.hitStun), k = left > 0.8 ? (1 - left) / 0.2 : left / 0.8;
@@ -98,7 +99,7 @@ const playerAnim = (() => {
     }
     // Drawn-only additions. `look` = { time, lean } (lean in radians).
     function present(judged, body, look) {
-        const B = playerPoses.breath, s = Math.sin(look.time * B.rate) * (1 - body.moveBlend) * (body.act ? 0 : 1);
+        const B = playerPoses.breath, s = Math.sin(look.time * B.rate) * (1 - body.moveBlend) * (body.act || body.down ? 0 : 1);
         const shake = body.act?.phase === 'charge' ? Math.sin(look.time * 70) * 0.012 : 0;
         return rigKit.add(judged, {
             base: { rz: look.lean || 0 },

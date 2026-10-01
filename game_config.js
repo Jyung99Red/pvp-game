@@ -112,6 +112,46 @@ const gameConfig = (() => {
             ]
         },
 
+        // 4e. Monsters (rebuild-plan.md M3), on the old minimal AI (tag
+        // v1-2d): patrol from waypoint to waypoint patrolRadius round home
+        // at patrolSpeed, resting patrolRest at each; notice the player
+        // within alertRange and stand alert for alertSeconds; chase at
+        // `speed`, turning at turnRate; attack the moves in turn, `delay`
+        // apart (firstDelay before the first). A move starts once the
+        // player is within its reach, which comes from its key poses
+        // (core/monster.js), never from here; the chase stops at standOff
+        // of that reach. During a windup the body keeps turning to the
+        // player at trackTurn until `lock` seconds before the swing. Past
+        // `leash` from home with the player out of alertRange it walks back
+        // home. At enrage.threshold of its HP it enrages for good: damage
+        // times enrage.atk, its whole clock times enrage.tempo. HP is the
+        // old value times the old hpScale 3, and so is ATK, to keep the old
+        // danger (combat-combo-concept.md 13). Moves: seconds; ratio per
+        // ATK; step: world units lunged during the swing; ram: the body
+        // itself is the weapon (the wolf's leap). corpseSeconds: a fallen
+        // monster lies this long, then sinks away.
+        monsters: {
+            corpseSeconds: 2.5,
+            goblin: {
+                name: '哥布林', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
+                patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
+                firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
+                moves: [
+                    { id: 'flail', name: '乱挥', windup: 1.3, lock: 0.4, swing: 0.16, recovery: 0.85, ratio: 0.6, step: 8 },
+                    { id: 'pounce', name: '猛扑', windup: 1.6, lock: 0.5, swing: 0.2, recovery: 1.15, ratio: 0.9, step: 36 }
+                ]
+            },
+            wolf: {
+                name: '野狼', maxHp: 90, atk: 54, def: 2, radius: 16, speed: 78, turnRate: 3, trackTurn: 1.6,
+                patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
+                firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
+                moves: [
+                    { id: 'bite', name: '撕咬', windup: 1.05, lock: 0.3, swing: 0.14, recovery: 0.75, ratio: 0.6, step: 14 },
+                    { id: 'leap', name: '扑击', windup: 1.15, lock: 0.35, swing: 0.54, recovery: 1.35, ratio: 0.9, step: 150, ram: true }
+                ]
+            }
+        },
+
         // 5. Fixed oblique camera (3d-migration-concept.md 7). yaw 0 keeps
         // screen-up on -z; pitch is the angle down from the horizon;
         // distance and lookHeight are blocks; fov is vertical, in degrees.
@@ -155,9 +195,41 @@ const gameConfig = (() => {
         // 9. Maps. One character per block: `.` grass, `:` path, `1`-`9`
         // stone wall of that many blocks, `T` tree, `@` grass where the
         // player starts, `D` grass with the training dummy on it (facing
-        // `dummyFacing`, radians). Rows run north (screen top) to south.
+        // `dummyFacing`, radians), `g` a goblin's home, `w` a wolf's.
+        // Rows run north (screen top) to south. `training`: nobody falls
+        // there (an emptied HP bar refills); elsewhere the player can lose.
         maps: {
+            field: {
+                name: '野外',
+                rows: [
+                    '........T....T..T..............TTT...TT.',
+                    '...T..TT.......T.TTT.T.....TT.T.T.......',
+                    '.....T.............T..........T.....T.T.',
+                    '...2212222122221222212222122221222211...',
+                    '.T.1................................2...',
+                    '.T.2......................11........2.T.',
+                    '...2........11......................1...',
+                    '...2.........................w......2...',
+                    '...1.............g..................2...',
+                    '.T.2...................11...........1...',
+                    '...2..........::::::::...........1..2.T.',
+                    '...2........:::::::::::............:2...',
+                    '...1...@...::::......::::........:::1...',
+                    '...2.....::::.........::::......::::2...',
+                    '...2::::::::............::::::::::..2...',
+                    '.T.2::::::.....1.........::::::::...1.T.',
+                    '...1...............g...........w....2...',
+                    '...2.......1.............11.........2...',
+                    '...2................................1...',
+                    '.T.2................................2.T.',
+                    '...1121111211112111121111211112111122...',
+                    '........................................',
+                    '........................................',
+                    '........................................'
+                ]
+            },
             clearing: {
+                name: '训练场', training: true,
                 dummyFacing: Math.PI,
                 rows: [
                     '..T....T....T......T....T.....T...',

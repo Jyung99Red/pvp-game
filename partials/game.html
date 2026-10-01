@@ -2,18 +2,20 @@
     <canvas class="game-canvas" aria-label="游戏画面"></canvas>
     <div class="game-fallback" data-fallback role="alert" hidden></div>
     <div class="hud-perf" data-perf aria-live="off"></div>
+    <div class="hud-mobs" data-hud="mobs" aria-hidden="true"></div>
     <div class="hud-floats" data-hud="floats" aria-hidden="true"></div>
     <div class="hud-top">
         <div class="hud-self" aria-label="生命与格挡条">
             <div class="bar bar-hp"><i data-hud="hp"></i></div>
             <div class="bar bar-guard" data-hud="guard-bar"><i data-hud="guard"></i></div>
+            <div class="hud-goal" data-hud="goal" hidden></div>
         </div>
         <div class="hud-combo" data-hud="combo" aria-live="off">
             <div class="chips" data-hud="chips"></div>
             <div class="move-name" data-hud="move"></div>
         </div>
         <div class="hud-target" data-hud="target" hidden>
-            <span class="target-name">训练木桩</span>
+            <span class="target-name"><b data-hud="target-name">训练木桩</b><em class="target-rage" data-hud="rage" hidden>狂暴</em></span>
             <div class="bar bar-target"><i data-hud="target-hp"></i></div>
             <div class="pips" aria-label="失衡"><i data-hud="pip"></i><i data-hud="pip"></i><i data-hud="pip"></i></div>
         </div>
@@ -28,6 +30,21 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
     </button>
     <button type="button" class="ctl ctl-interact" data-button="interact" aria-label="交互">交互</button>
+    <button type="button" class="hud-menu" data-menu aria-label="菜单"><i></i><i></i></button>
+
+    <div class="panel" data-panel hidden>
+        <div class="panel-card" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+            <h2 class="panel-title" id="panel-title" data-panel-title>暂停</h2>
+            <p class="panel-note" data-panel-note></p>
+            <dl class="panel-stats" data-panel-stats></dl>
+            <div class="panel-actions">
+                <button type="button" data-action="resume">继续</button>
+                <button type="button" data-action="restart">重新开始</button>
+                <button type="button" data-action="field">去野外</button>
+                <button type="button" data-action="clearing">去训练场</button>
+            </div>
+        </div>
+    </div>
 
     <div class="rotate-hint" role="alert">
         <div class="rotate-phone" aria-hidden="true"></div>

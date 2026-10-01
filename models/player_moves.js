@@ -63,6 +63,8 @@ const playerMoves = (() => {
             upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
         // Struck: thrown back; added on top, faded by the stun.
-        flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } }
+        flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } },
+        // Fallen: on the back, arms flung out.
+        down: { base: { rx: -1.45 }, chest: { rx: -0.1 }, head: { rx: -0.25 }, upperArmR: { rx: -0.3, rz: -1.1 }, forearmR: { rx: -0.3 }, upperArmL: { rx: -0.3, rz: 1.1 }, forearmL: { rx: -0.3 }, thighR: { rx: -0.25 }, shinR: { rx: 0.4 }, thighL: { rx: 0.1 }, shinL: { rx: 0.2 } }
     });
 })();

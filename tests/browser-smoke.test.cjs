@@ -1,7 +1,8 @@
 // Browser smoke test (rebuild-plan.md 5): the real page in headless Chromium
 // as a landscape phone. Boots without console errors, draws the world, lays
-// out the controls, covers portrait with the rotate hint, and two real
-// touch points (stick + A) drive the simulation together.
+// out the controls, covers portrait with the rotate hint, two real touch
+// points (stick + A) drive the simulation together, and a field fight runs
+// to its result panel, from where the menu switches maps.
 //
 // Skipped when Playwright is not available. It is looked up as
 // PLAYWRIGHT_MODULE (a path), then `playwright`, `playwright-core`, then the
@@ -46,12 +47,12 @@ before(async () => {
 });
 after(async () => { await browser?.close(); server?.close(); });
 
-async function openPhone(width, height) {
+async function openPhone(width, height, query = '?map=clearing') {
     const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
     const page = await context.newPage(), errors = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));
-    await page.goto(base, { waitUntil: 'load' });
+    await page.goto(base + query, { waitUntil: 'load' });
     await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
     // Freeze real time: the test steps the simulation itself.
     await page.evaluate(() => window.game.pause(true));
@@ -180,6 +181,100 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         await page.keyboard.up('KeyD');
         await page.keyboard.press('KeyJ');
         assert.deepEqual(await page.evaluate(() => [window.game.sim.input.move.x, window.game.sim.input.buttons.a.presses, window.game.sim.stats.attacks]), [0, 2, 2]);
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
+test('the field: monsters drawn, a fight to the result panel, the menu switches maps', { timeout: 240000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const { context, page, errors } = await openPhone(844, 390, '');
+    try {
+        const start = await page.evaluate(() => {
+            const g = window.game;
+            g.view.render(g.sim, 0);
+            return { map: g.map, kinds: g.sim.monsters.map(m => m.kind).sort(), calls: g.view.info().calls, goal: document.querySelector('[data-hud="goal"]').textContent, dummy: !!g.sim.dummy };
+        });
+        assert.equal(start.map, 'field', 'the field is the default map');
+        assert.deepEqual(start.kinds, ['goblin', 'goblin', 'wolf', 'wolf']);
+        assert.equal(start.dummy, false);
+        assert.ok(start.calls > 0 && start.calls < 80, `${start.calls} draw calls: a character is one skinned mesh`);
+        assert.match(start.goal, /4 \/ 4/);
+        // Walk up to a goblin: it notices and a "!" shows over it.
+        const alert = await page.evaluate(() => {
+            const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'goblin'), p = s.player;
+            p.x = m.x - 120; p.y = m.y; p.facing = 0;
+            g.run(0.05);
+            return m.phase;
+        });
+        assert.equal(alert, 'alert');
+        await page.waitForFunction(() => document.querySelectorAll('.mob:not([hidden]) .mob-alert:not([hidden])').length === 1, null, { timeout: 10000 });
+        // It chases and winds up, with its warning on the ground.
+        const fight = await page.evaluate(() => {
+            const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'goblin');
+            for (let i = 0; i < 300 && m.phase !== 'windup'; i++) g.run(0.01);
+            g.run(0.5);
+            g.view.render(s, 0.016);
+            const warning = g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a');
+            return { phase: m.phase, opacity: warning ? warning.material.opacity : 0 };
+        });
+        assert.equal(fight.phase, 'windup');
+        assert.ok(fight.opacity > 0.1, `the warning shows through the windup: ${JSON.stringify(fight)}`);
+        await page.waitForFunction(() => document.querySelector('[data-hud="target-name"]').textContent === '哥布林', null, { timeout: 10000 });
+        await shot(page, 'field-windup');
+        // Cut every monster down: the result panel comes up with the stats.
+        await page.evaluate(() => {
+            const g = window.game, s = g.sim;
+            for (const m of s.monsters) { m.hp = 1; m.atk = 0; }
+            for (let k = 0; k < 20 && !s.result; k++) {
+                const m = s.monsters.find(x => x.phase !== 'dead'), p = s.player;
+                Object.assign(m, { phase: 'patrol', t: 0, rest: 99 });
+                Object.assign(p, { x: m.x - 50, y: m.y, facing: 0, push: null, stun: 0, act: null });
+                g.run(0.01);
+                worldSim.command(s, { type: 'press', button: 'a' }); worldSim.command(s, { type: 'release', button: 'a' });
+                g.run(0.4);
+            }
+        });
+        await page.waitForFunction(() => window.game.panel === 'win', null, { timeout: 30000 });
+        const result = await page.evaluate(() => ({
+            title: document.querySelector('[data-panel-title]').textContent,
+            stats: document.querySelector('[data-panel-stats]').textContent,
+            buttons: [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent),
+            kills: window.game.sim.stats.kills
+        }));
+        await shot(page, 'field-win');
+        assert.equal(result.title, '胜利');
+        assert.equal(result.kills, 4);
+        assert.match(result.stats, /击倒4 \/ 4/);
+        assert.deepEqual(result.buttons, ['再来一次', '去训练场']);
+        // To the training ground, in place: no reload, the dummy is there, the address says so.
+        await page.click('[data-action="clearing"]');
+        const training = await page.evaluate(() => ({ map: window.game.map, dummy: !!window.game.sim.dummy, monsters: window.game.sim.monsters.length, panel: window.game.panel, url: location.search }));
+        assert.deepEqual(training, { map: 'clearing', dummy: true, monsters: 0, panel: null, url: '?map=clearing' });
+        await page.waitForFunction(() => document.querySelector('[data-hud="goal"]').hidden && document.querySelector('[data-hud="target-name"]').textContent === '训练木桩', null, { timeout: 10000 });
+        // The menu key pauses; from there to the field again, then a loss.
+        await page.click('[data-menu]');
+        assert.equal(await page.evaluate(() => window.game.panel), 'menu');
+        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '暂停');
+        await shot(page, 'menu');
+        await page.click('[data-action="field"]');
+        await page.evaluate(() => {
+            const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'wolf'), p = s.player;
+            p.hp = 1; p.x = m.x - 50; p.y = m.y; p.facing = Math.PI; m.phase = 'chase'; m.wait = 0;
+            for (let i = 0; i < 400 && !s.result; i++) g.run(0.01);
+        });
+        await page.waitForFunction(() => window.game.panel === 'lose', null, { timeout: 30000 });
+        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '失败');
+        await shot(page, 'field-lose');
+        await page.click('[data-action="restart"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['field', null, 360, null]);
+        // Rebuilding a world frees the last one: GPU memory does not grow.
+        const memory = await page.evaluate(() => {
+            const g = window.game, out = [];
+            for (const id of ['clearing', 'field', 'clearing', 'field']) { g.load(id); g.view.render(g.sim, 0.016); out.push({ ...g.view.renderer.info.memory }); }
+            return out;
+        });
+        assert.deepEqual(memory[2], memory[0]);
+        assert.deepEqual(memory[3], memory[1]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

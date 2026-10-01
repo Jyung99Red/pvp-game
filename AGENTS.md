@@ -15,7 +15,8 @@ uses `THREE`.
 - `core/` simulation and maths with no DOM and no three.js: coordinates,
   matrices and box tests, rig and forward kinematics, terrain, the fixed-step
   loop, fight rules and hit tests, the player fighter, the training dummy,
-  input maths. Node tests and the PVP host run it. Also the boot loader.
+  monsters and their AI, input maths. Node tests and the PVP host run it.
+  Also the boot loader.
 - `models/` model data: skeletons, boxes, equipment, key poses, palette.
 - `render/` three.js drawing only; reads the simulation, never writes it.
 - `ui/` DOM: input layer, app start-up, HUD, procedural sound.

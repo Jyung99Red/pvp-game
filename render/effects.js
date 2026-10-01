@@ -1,7 +1,8 @@
-// Drawn-only feedback (combat-combo-concept.md, 打击感 step 1): blade
+// Drawn-only feedback (combat-combo-concept.md, hit feel step 1): blade
 // trail, block debris, hit flash, a small camera shake, stagger stars, the
-// charge glow and the pause-line cue. Reads simulation events and solved
-// rigs; never writes the simulation. Kept low-key on purpose.
+// charge glow, the pause-line cue, a fallen monster's burst and an enraged
+// one's red glow. Reads simulation events and solved rigs; never writes the
+// simulation. Kept low-key on purpose.
 const renderEffects = (() => {
     const TRAIL_N = 40, TRAIL_AGE = 0.11, MAXP = 120;
 
@@ -67,55 +68,72 @@ const renderEffects = (() => {
             trailGeo.setDrawRange(0, Math.max(0, samples.length - 1) * 6);
         }
 
-        // ---- stagger stars ----
-        const stars = new T.Group();
-        for (let i = 0; i < 4; i++) {
-            const s = new T.Mesh(new T.BoxGeometry(0.09, 0.09, 0.09), new T.MeshBasicMaterial({ color: '#ffd84a' }));
-            s.position.set(Math.cos(i / 4 * Math.PI * 2) * 0.32, 0, Math.sin(i / 4 * Math.PI * 2) * 0.32);
-            stars.add(s);
+        // ---- stagger stars, one ring per reeling foe ----
+        const starRings = new Map();
+        function starsFor(id) {
+            if (!starRings.has(id)) {
+                const ring = new T.Group();
+                for (let i = 0; i < 4; i++) {
+                    const s = new T.Mesh(new T.BoxGeometry(0.09, 0.09, 0.09), new T.MeshBasicMaterial({ color: '#ffd84a' }));
+                    s.position.set(Math.cos(i / 4 * Math.PI * 2) * 0.32, 0, Math.sin(i / 4 * Math.PI * 2) * 0.32);
+                    ring.add(s);
+                }
+                scene.add(ring); starRings.set(id, ring);
+            }
+            return starRings.get(id);
         }
-        stars.visible = false; scene.add(stars);
 
         // ---- flashes, shake and glow, driven by events ----
-        const flash = { player: 0, dummy: 0 };
+        const flash = new Map(); // id -> seconds left
+        const FALLEN = { goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'] };
         let shake = 0, cue = 0;
         function onEvents(events) {
             for (const e of events) {
                 if (e.type === 'hit' && e.side === 'player') {
-                    flash.dummy = 0.12;
+                    flash.set(e.target, 0.12);
                     if (e.heavy) { burst(e.at, 12, ['#ffffff', '#ffd27a', '#f2b544'], 2, 3.8, 0.08); shake = Math.max(shake, 0.12); }
                     else burst(e.at, 7, ['#ffffff', '#f4f1e6', '#d9dee3'], 1.5, 2.8, 0.06);
-                } else if (e.type === 'hit' && e.side === 'dummy') {
-                    flash.player = 0.12; burst(e.at, 6, ['#ffffff', '#e8b4a0'], 1.4, 2.4, 0.06);
+                } else if (e.type === 'hit' && e.target === 'player') {
+                    flash.set('player', 0.12); burst(e.at, 6, ['#ffffff', '#e8b4a0'], 1.4, 2.4, 0.06);
                 } else if (e.type === 'block') burst(e.at, 5, ['#d9dee3', '#9aa2aa'], 1.2, 2.2, 0.05);
-                else if (e.type === 'parry') { burst(e.at, 12, ['#fff3b0', '#ffd84a', '#ffffff'], 2, 3.6, 0.07); flash.dummy = 0.12; shake = Math.max(shake, 0.1); }
+                else if (e.type === 'parry') { burst(e.at, 12, ['#fff3b0', '#ffd84a', '#ffffff'], 2, 3.6, 0.07); flash.set(e.target, 0.12); shake = Math.max(shake, 0.1); }
+                else if (e.type === 'defeated') burst(e.at, 14, FALLEN[e.kind] || ['#ffffff'], 1.2, 2.6, 0.08);
+                else if (e.type === 'enrage') burst(e.at, 8, ['#ff6a4a', '#d9473f'], 1, 2, 0.06);
                 else if (e.type === 'pause_ready') cue = 0.14;
             }
         }
-        const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544');
-        // Per frame. `view` gives the materials of each rig and the solved rigs.
+        const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24');
+        // Per frame. `view`: the player's rig, solved rig, blade and
+        // materials; `foes`: [{ body, view: { materials }, top, shown }].
         function update(dt, sim, view) {
             clock += dt;
             tickParts(dt);
             const p = sim.player, a = p.act;
             if (a?.phase === 'swing') sampleBlade(view.playerRig, view.playerSolved, gameConfig.combo.moves[a.move].knockback > 0);
             drawTrail();
-            for (const side of ['player', 'dummy']) flash[side] = Math.max(0, flash[side] - dt);
-            const kP = flash.player / 0.12, kD = flash.dummy / 0.12;
-            for (const m of view.materials.player) m.emissive.copy(red).multiplyScalar(0.7 * kP);
-            for (const m of view.materials.dummy) m.emissive.copy(white).multiplyScalar(0.8 * kD);
+            for (const [id, left] of flash) flash.set(id, Math.max(0, left - dt));
+            const lit = id => (flash.get(id) || 0) / 0.12;
+            for (const m of view.playerMaterials) m.emissive.copy(red).multiplyScalar(0.7 * lit('player'));
+            const reeling = new Set();
+            for (const foe of view.foes) {
+                const k = lit(foe.body.id), angry = foe.body.enraged && foe.body.phase !== 'dead' ? 0.1 + 0.06 * Math.sin(clock * 7) : 0;
+                for (const m of foe.view.materials) {
+                    if (k > 0) m.emissive.copy(white).multiplyScalar(0.8 * k);
+                    else m.emissive.copy(rage).multiplyScalar(angry);
+                }
+                if (foe.body.phase === 'reel') {
+                    const ring = starsFor(foe.body.id), b = foe.shown || foe.body, [x, , z] = space.toBlocks(b.x, b.y, b.h);
+                    ring.position.set(x, foe.top, z); ring.rotation.y = clock * 5; ring.visible = true;
+                    reeling.add(foe.body.id);
+                }
+            }
+            for (const [id, ring] of starRings) if (!reeling.has(id)) ring.visible = false;
             // The blade glows gold while charging, flashes white on the pause line.
             cue = Math.max(0, cue - dt);
             const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, a) / gameConfig.combat.charge.full) : 0;
             if (view.blade) {
                 if (cue > 0) view.blade.emissive.copy(white).multiplyScalar(0.9);
                 else view.blade.emissive.copy(gold).multiplyScalar(0.9 * charge);
-            }
-            const d = sim.dummy;
-            stars.visible = !!d && d.phase === 'reel';
-            if (stars.visible) {
-                const [x, , z] = space.toBlocks(d.x, d.y, d.h);
-                stars.position.set(x, 1.95, z); stars.rotation.y = clock * 5;
             }
             shake = Math.max(0, shake - dt);
         }

@@ -1,5 +1,6 @@
 // Procedural combat sounds (Web Audio, no asset files), carried over from
-// the 2D version. Presentation only: the simulation never waits on or reads
+// the 2D version, plus monsters noticing, enraging and falling, and the
+// end of a fight. Presentation only: the simulation never waits on or reads
 // anything here. Mobile browsers keep audio locked until the first touch,
 // so the context is created and resumed on the first pointer press.
 const sfx = (() => {
@@ -49,7 +50,12 @@ const sfx = (() => {
         block: () => { tone('triangle', 520, 470, 0.12, 0.07); tone('square', 1040, 900, 0.06, 0.025); },
         parry: () => { tone('sine', 1320, 1300, 0.26, 0.08); tone('sine', 1980, 1960, 0.18, 0.035, 0.01); },
         guardBroken: () => tone('sawtooth', 320, 110, 0.26, 0.05),
-        cue: () => tone('sine', 880, 900, 0.08, 0.04)
+        cue: () => tone('sine', 880, 900, 0.08, 0.04),
+        alert: () => tone('square', 520, 780, 0.07, 0.018),
+        enrage: () => { tone('sawtooth', 120, 95, 0.32, 0.045); hiss(500, 300, 0.25, 0.03, 0.8); },
+        fallen: () => { tone('triangle', 170, 55, 0.3, 0.14); hiss(700, 200, 0.18, 0.05, 0.7); },
+        win: () => { tone('sine', 660, 660, 0.16, 0.06); tone('sine', 880, 880, 0.26, 0.06, 0.14); },
+        lose: () => { tone('triangle', 330, 300, 0.2, 0.06); tone('triangle', 220, 180, 0.4, 0.06, 0.18); }
     };
     // Simulation events carry who they belong to (`side`).
     function play(e) {
@@ -61,6 +67,10 @@ const sfx = (() => {
         else if (e.type === 'parry') sounds.parry();
         else if (e.type === 'guard_broken' && own) sounds.guardBroken();
         else if (e.type === 'pause_ready' && own) sounds.cue();
+        else if (e.type === 'alert') sounds.alert();
+        else if (e.type === 'enrage') sounds.enrage();
+        else if (e.type === 'defeated') sounds.fallen();
+        else if (e.type === 'result') sounds[e.outcome]?.();
     }
     return { play, isEnabled: () => enabled };
 })();

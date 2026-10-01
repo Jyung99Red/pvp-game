@@ -1,6 +1,6 @@
 # 重建执行计划
 
-**状态：M1、M2 已完成（2026-10-01），等真机试用意见后开始 M3。** 2026-10-01 起草。
+**状态：M1、M2、M3 已完成（2026-10-01），等真机试用意见后开始 M4。** 2026-10-01 起草。
 
 整个游戏在同一个仓库里重建：方块风格 3D、横屏、5 个按钮、骨骼判定，不考虑旧存档。
 这份文档只管**做的顺序和每一步做到什么程度**；做什么、为什么，以两份设计文档为准：
@@ -69,7 +69,7 @@
 **完成标准**：在训练场能打完整套连段，打木桩、挡木桩的出招。
 **用户要试**：连段手感、A 和 B 来回按是否顺手、举盾和弹反的时机。
 
-### M3 第一批怪
+### M3 第一批怪（已完成 2026-10-01）
 
 - 哥布林（人形，约 9 根骨）和野狼（四足）的模型和动作。
 - 怪物 AI 先用旧的最小版本：巡逻、警觉、追击、出招循环、狂暴。
@@ -77,6 +77,10 @@
 - 测试：野狼这种矮个子怪，横扫在标准距离必中（第 4.6 节）。
 
 **完成标准**：在一块场地上和哥布林、野狼打完整一场，有胜负结果。
+**用户要试**：怪物的出招看不看得懂、躲不躲得开（红区、前摇时长）、对哥布林和野狼的挥刀高度、胜负结算、难度。
+
+落地时补的决定见 `3d-migration-concept.md` 第 18 节（模型、AI、判定、画法）和 `controls-landscape-concept.md` 第 12 节（菜单、两张图、结算界面）。
+另外顺手把每个角色合并成一个蒙皮网格（一次绘制），野外整个画面约 33～40 次绘制。
 
 ### M4 PVP 对战
 
@@ -190,5 +194,9 @@
 - 在用户的 Windows 电脑上：没有全局 Playwright，也不用下载它的浏览器。把 `playwright-core` 装在任意目录，
   设 `PLAYWRIGHT_MODULE=<该目录>/node_modules/playwright-core` 和 `PLAYWRIGHT_CHANNEL=chrome`，就用本机的 Chrome 跑。
 - 页面上 `window.game`：`game.pause()` 停掉实时时钟，`game.run(秒)` 确定地推进模拟，`game.sim` 是模拟状态。
+  M3 起还有 `game.load('field' | 'clearing')` 换图、`game.map` 当前图、`game.panel` 当前打开的面板（`menu`、`win`、`lose` 或 null）。
+  页面默认进野外，测训练木桩的冒烟测试用 `?map=clearing` 打开。
+- 想看模型近景时：在页面里先 `game.view.render(game.sim, 0)`，再把 `game.view.render` 临时换成空函数，
+  自己摆 `game.view.camera` 并 `game.view.renderer.render(game.view.scene, game.view.camera)`（实时循环就不会盖掉这一帧）。
 - three.js 的取法：`npm pack three@<版本>` 后用 esbuild 把 `build/three.module.js` 打成一个压缩文件
   （`npx esbuild <入口> --bundle --minify --format=esm`），放进 `vendor/three/`。
