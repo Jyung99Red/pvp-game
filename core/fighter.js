@@ -102,9 +102,6 @@ const fighterKit = (() => {
         if (!a.hit.length) { sim.stats.misses++; emit(sim, 'miss', { move: a.move }); }
         a.phase = 'recover'; a.t = 0;
         p.chain = { move: a.move, at: sim.time, cued: false };
-        // A shield pressed during the windup or swing goes up now, cutting
-        // the recovery like a shield pressed in it.
-        if (p.guard.queued) { p.act = null; raise(sim); }
     }
     // The player's body at swing progress u, for sampling the sweep.
     function solveAt(sim, x0, y0, x1, y1, u0, u1) {
@@ -155,15 +152,14 @@ const fighterKit = (() => {
     }
     const OFFHAND = {
         shield: {
-            // The one input that interrupts: it drops a charge and cuts a
-            // recovery. A windup or swing always finishes, so a shield
-            // pressed then goes up when the swing ends; a stun is waited out.
+            // It drops a charge at once. Any other move plays out whole --
+            // windup, swing and recovery (user, 2026-10-01) -- and the
+            // shield goes up as it ends; a stun is waited out the same way.
             press(sim) {
                 const p = sim.player, g = p.guard;
                 if (g.locked) { emit(sim, 'guard_locked'); return false; }
                 if (g.state !== 'down' || g.queued) return false;
                 if (p.act?.phase === 'charge') { p.act = null; emit(sim, 'charge_dropped'); }
-                if (p.act?.phase === 'recover') p.act = null;
                 p.buffer = null;
                 if (p.act || p.stun > 0) { g.queued = true; return true; }
                 raise(sim);
@@ -254,15 +250,12 @@ const fighterKit = (() => {
         const b = p.buffer;
         if (b && (b.age += dt) > K().bufferSeconds + 1e-9 && !(b.input === 'b' && p.bPress?.held && p.bPress.at === b.at)) p.buffer = null;
         if (p.push) combatKit.tickPush(sim, p, dt, obstacles(sim));
-        if (p.stun > 0) {
-            p.stun = Math.max(0, p.stun - dt);
-            if (p.stun === 0 && p.guard.queued) raise(sim);
-        }
-        // Free again with an input waiting (after a stun or a hitstop): go.
-        if (p.buffer && !p.act && !p.stun && p.guard.state === 'down' && !p.guard.queued) { const w = p.buffer; startMove(sim, w.input, w.at); }
+        if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
+        free(sim);
         offhandOf(p)?.tick(sim, dt);
         motion(sim, dt);
         tickAct(sim, dt);
+        free(sim);
         // Crossing the pause line of a node that has a pause move is cued once.
         const c = p.chain;
         if (c && !p.act) {
@@ -273,6 +266,14 @@ const fighterKit = (() => {
             }
         }
         blends(p, dt, B);
+    }
+    // Free again (a move over, a stun over, a hitstop over) with something
+    // waiting: a queued shield goes up, else a buffered input runs.
+    function free(sim) {
+        const p = sim.player;
+        if (p.act || p.stun > 0) return;
+        if (p.guard.queued) raise(sim);
+        else if (p.buffer && p.guard.state === 'down') { const w = p.buffer; startMove(sim, w.input, w.at); }
     }
     function blends(p, dt, B) {
         p.moveBlend = approach(p.moveBlend, p.speed > 1e-6 ? 1 : 0, dt / B);

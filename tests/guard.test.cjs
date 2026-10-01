@@ -94,21 +94,27 @@ test('an empty bar drops the shield and locks it until the bar is back to the un
     assert.equal(last.stats.blocks, 1); assert.equal(last.player.guard.locked, true); assert.equal(last.player.stun, 0);
 });
 
-test('the shield cuts a recovery at once, waits out a windup and swing, and drops a charge', () => {
-    const quiet = () => { const s = setup(); s.dummy.wait = 1e9; return s; };
-    const sim = quiet(); press(sim, 'a'); release(sim, 'a'); step(sim, 0.25);
-    assert.equal(sim.player.act.phase, 'recover');
-    press(sim, 'offhand'); assert.equal(sim.player.guard.state, 'raising'); assert.equal(sim.player.act, null); assert.equal(sim.player.chain, null);
-    const windup = quiet(); press(windup, 'a'); release(windup, 'a'); step(windup, 0.05);
-    press(windup, 'offhand'); assert.equal(windup.player.act.phase, 'windup'); assert.equal(windup.player.guard.queued, true);
-    let swingEnded = false;
-    for (let i = 0; i < 40 && windup.player.guard.state === 'down'; i++) { W.step(windup, 0.01); swingEnded ||= windup.player.chain !== null; }
-    assert.equal(windup.player.guard.state, 'raising', 'up the moment the swing ends');
-    assert.equal(windup.player.act, null, 'and the recovery is cut, as if pressed in it');
-    assert.equal(windup.stats.attacks, 1);
-    // So the shield walk starts at once.
-    W.command(windup, { type: 'move', x: 0, y: 1 }); const y0 = windup.player.y; step(windup, 0.2);
-    assert.ok(Math.abs(windup.player.y - y0 - gameConfig.player.speed * GU.moveMultiplier * 0.2) < 0.5);
+test('a move plays out whole before the shield goes up; a charge is dropped at once', () => {
+    // User, 2026-10-01: the shield no longer cuts a recovery. The dummy is
+    // moved off so no hitstop shifts the times.
+    const quiet = () => { const s = setup(); s.dummy.wait = 1e9; s.dummy.x += 400; return s; };
+    const M = gameConfig.combo.moves;
+    for (const at of [0.05, 0.15, 0.25]) { // windup, swing, recovery
+        const sim = quiet(); press(sim, 'a'); release(sim, 'a'); step(sim, at);
+        press(sim, 'offhand'); assert.equal(sim.player.guard.queued, true); assert.notEqual(sim.player.act, null);
+        let upAt = null;
+        for (let i = 0; i < 100 && upAt == null; i++) { W.step(sim, 0.01); if (sim.player.guard.state !== 'down') upAt = sim.time; }
+        assert.ok(Math.abs(upAt - (M.slash.windup + M.slash.swing + M.slash.recovery)) < 0.011, `pressed at ${at}: up at ${upAt}, when the recovery ends`);
+        assert.equal(sim.player.act, null); assert.equal(sim.player.chain, null); assert.equal(sim.stats.attacks, 1);
+    }
+    // A or B pressed while the shield waits do nothing, so the move cannot chain on.
+    const waiting = quiet(); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.15);
+    press(waiting, 'offhand'); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.6);
+    assert.equal(waiting.stats.attacks, 1); assert.notEqual(waiting.player.guard.state, 'down');
+    // Let go before the move ends: nothing goes up.
+    const changed = quiet(); press(changed, 'a'); release(changed, 'a'); step(changed, 0.15);
+    press(changed, 'offhand'); step(changed, 0.1); release(changed, 'offhand'); step(changed, 0.5);
+    assert.equal(changed.player.guard.state, 'down'); assert.equal(changed.player.guard.bar, G.max);
     // Pressed in the charged windup with B still held, it drops the charge when the windup ends.
     const held = quiet(); press(held, 'b'); step(held, 0.2); press(held, 'offhand');
     step(held, gameConfig.combo.moves.charged.windup - 0.2 + 0.02);
