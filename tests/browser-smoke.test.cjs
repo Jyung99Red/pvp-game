@@ -149,7 +149,9 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         await frame();
         assert.equal(await page.evaluate(() => window.game.sim.input.buttons.b.held), false);
         const walked = await page.evaluate(() => { window.game.run(1); return window.game.sim.player.x; });
-        assert.ok(Math.abs(walked - at.x0 - 115 * 0.3) < 1, `walked ${walked - at.x0} with the shield up`);
+        // Slowly with the shield up (a little less while it turns and gets going).
+        const slow = await page.evaluate(() => gameConfig.player.speed * gameConfig.combat.guard.moveMultiplier);
+        assert.ok(walked - at.x0 > 0.6 * slow && walked - at.x0 < slow + 1, `walked ${walked - at.x0} with the shield up`);
         await shot(page, 'two-thumbs');
         // A resize (going fullscreen does one) keeps the held stick alive.
         await page.setViewportSize({ width: 844, height: 380 });
@@ -337,7 +339,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
             const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === k);
             Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
         }, kind);
-        await page.evaluate(() => { const g = window.game; g.sim.progress.inventory.gold = 300; Object.assign(g.sim.progress.inventory.items, { goblin_ear: 4, wolf_pelt: 4 }); });
+        await page.evaluate(() => { const g = window.game; g.sim.progress.inventory.gold = 300; Object.assign(g.sim.progress.inventory.items, { goblin_ear: 4, wolf_pelt: 4, iron_ore: 6 }); });
         // The smithy, through its door.
         await door('smithy');
         await page.keyboard.press('KeyE'); await page.evaluate(() => window.game.run(0.02));
@@ -355,14 +357,14 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         await page.click('[data-row="torch"]'); await page.click('[data-act="buy"]');
         await page.click('[data-screen-close]');
         // The bag from the menu: iron armor and a potion on; the base is rebuilt round the player in them.
-        const before = await page.evaluate(() => ({ parts: window.game.sim.rigs.player.parts.length, x: window.game.sim.player.x }));
+        const before = await page.evaluate(() => ({ parts: window.game.sim.rigs.fighters.player.parts.length, x: window.game.sim.player.x }));
         await page.click('[data-menu]'); await page.click('[data-action="bag"]');
         await page.click('[data-row="iron_armor"]'); await page.click('[data-act="equip"]');
         await page.click('[data-row="potion"]'); await page.click('[data-act="equip"]');
         assert.match(await page.evaluate(() => document.querySelector('.detail-note').textContent), /换上了药水/);
         await shot(page, 'bag');
         await page.click('[data-screen-close]');
-        const worn = await page.evaluate(() => { const g = window.game, p = g.sim.player; return { map: g.map, parts: g.sim.rigs.player.parts.length, x: p.x, maxHp: p.maxHp, def: p.def, offhand: p.loadout.offhand, saved: g.save.loadout.armor }; });
+        const worn = await page.evaluate(() => { const g = window.game, p = g.sim.player; return { map: g.map, parts: g.sim.rigs.fighters.player.parts.length, x: p.x, maxHp: p.maxHp, def: p.def, offhand: p.loadout.offhand, saved: g.save.loadout.armor }; });
         assert.deepEqual({ ...worn, parts: undefined }, { map: 'base', parts: undefined, x: before.x, maxHp: 380, def: 11, offhand: 'potion', saved: 'iron_armor' });
         assert.ok(worn.parts > before.parts, 'the iron armor adds plates to the model');
         await page.waitForFunction(() => document.querySelector('[data-button="offhand"]').dataset.kind === 'potion' && document.querySelector('[data-hud="offhand-count"]').textContent === '2', null, { timeout: 10000 });

@@ -18,7 +18,8 @@ uses it.
   matrices and box tests, rig and forward kinematics, terrain (16 x 16
   chunks, editable), the fixed-step loop, fight rules and hit tests, the
   fighters, world entities (training dummy, monsters and their AI,
-  buildings, portals, chests, drops, thickets), the interact key, items,
+  buildings, portals, chests, drops, thickets, resources that grow
+  back), the interact key, items,
   gear and trade, the save format (storage injected), input maths, and
   the PVP duel protocol (host
   authority, guest prediction) over an injected `send`. Node tests run it;
