@@ -161,7 +161,7 @@ test('while charging the body walks slower; it cannot walk during any other move
     const P = gameConfig.player, C = gameConfig.combat.charge;
     const sim = setup(); sim.player.facing = 0; press(sim, 'b'); until(sim, 'charge:charged');
     const x0 = sim.player.x; W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, 0.5);
-    assert.ok(Math.abs(sim.player.x - x0 - P.speed * C.moveMultiplier * 0.5) < 0.5);
+    assert.ok(Math.abs(sim.player.x - x0 - P.speed * C.moveMultiplier * (0.5 - (P.startSeconds - 0.01) / 2)) < 0.5);
     release(sim, 'b');
     const moving = setup(); W.command(moving, { type: 'move', x: 1, y: 0 }); step(moving, 0.3);
     tap(moving); const x1 = moving.player.x; step(moving, 0.15);
@@ -186,8 +186,8 @@ test('inside a combo the stick only turns; still pushed when the recovery ends, 
 test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {
     const P = gameConfig.player;
     for (const button of ['a', 'offhand']) {
-        const sim = setup(); sim.player.y += 3 * gameConfig.world.unitsPerBlock;
-        W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, P.runAfter + P.runRampSeconds + 0.05);
+        const sim = setup(); sim.player.y += 3 * gameConfig.world.unitsPerBlock; sim.player.facing = 0;
+        W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, P.runAfter + P.runRampSeconds + P.startSeconds + 0.05);
         assert.equal(sim.player.runBlend, 1);
         press(sim, button); step(sim, 0.02);
         assert.equal(sim.player.runBlend, 0, `${button}: the run is over at once`);
@@ -198,7 +198,7 @@ test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {
             release(sim, button); step(sim, P.runAfter - 0.2);
             assert.equal(sim.player.runBlend, 0, 'and the two seconds start again');
         } else {
-            step(sim, 1); assert.ok(sim.player.speed > 0 && sim.player.runBlend === 0, 'after the move the body walks, it does not run on');
+            step(sim, M.slash.windup + M.slash.swing + M.slash.recovery + 0.1); assert.ok(sim.player.speed > 0 && sim.player.runBlend === 0, 'after the move the body walks, it does not run on');
         }
     }
 });

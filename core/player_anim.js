@@ -32,27 +32,45 @@ const playerAnim = (() => {
     function legs(phase, moveBlend, runBlend) {
         return rigKit.mix(rigKit.pick(playerPoses.stance, playerModel.layers.lower), gait('legs', phase, runBlend), moveBlend);
     }
-    // World units covered by one full cycle (two steps) of a pure gait: twice
-    // how far a planted foot travels backwards between contact and the
-    // mirrored contact, so feet do not slide whatever the key angles.
+    // A pure gait, measured once per skeleton. `length`: world units covered
+    // by one full cycle (two steps), twice how far a planted foot travels
+    // backwards between contact and the mirrored contact. `slip`: the keys
+    // swing the legs on curves, so over the half cycle a foot is down it
+    // would still drift a little against the body's even progress; the
+    // table holds that drift (blocks, at PLANT samples), and the body is
+    // shifted back by it so the planted foot stays put.
+    const PLANT = 24;
     function measure(rig, runBlend) {
         const foot = footOf(rig, 'R');
         const z = phase => rigKit.solve(rig, grounded(rig, legs(phase, 1, runBlend))).parts[foot][14];
-        const length = 2 * (z(0) - z(0.5)) * gameConfig.world.unitsPerBlock;
+        const z0 = z(0), half = z0 - z(0.5), length = 2 * half * gameConfig.world.unitsPerBlock;
         if (!(length > 0)) throw new Error('Gait keys must move the planted foot backwards');
-        return length;
+        const slip = [];
+        for (let i = 0; i <= PLANT; i++) { const u = i / PLANT; slip.push(z(u / 2) - (z0 - u * half)); }
+        return { length, slip };
     }
+    const gaitOf = rig => {
+        if (!cycles.has(rig)) cycles.set(rig, { walk: measure(rig, 0), run: measure(rig, 1) });
+        return cycles.get(rig);
+    };
     // Cycle length for a walk-to-run blend; the simulation advances the gait
     // phase by distance over this.
     function cycleLength(rig, runBlend = 0) {
-        if (!cycles.has(rig)) cycles.set(rig, { walk: measure(rig, 0), run: measure(rig, 1) });
-        const c = cycles.get(rig);
-        return c.walk + (c.run - c.walk) * runBlend;
+        const c = gaitOf(rig);
+        return c.walk.length + (c.run.length - c.walk.length) * runBlend;
     }
-    function locomotion(body) {
+    // How far to shift the body (model units, along its facing) at a gait
+    // phase so that the planted foot does not slide.
+    function plant(rig, phase, runBlend) {
+        const c = gaitOf(rig), f = ((phase % 0.5) + 0.5) % 0.5 * 2 * PLANT, i = Math.min(PLANT - 1, Math.floor(f)), t = f - i;
+        const at = table => table[i] + (table[i + 1] - table[i]) * t;
+        return -(at(c.walk.slip) + (at(c.run.slip) - at(c.walk.slip)) * runBlend) / rig.scale;
+    }
+    function locomotion(rig, body) {
         const P = playerPoses, run = body.runBlend || 0;
         const upper = rigKit.add(rigKit.pick(P.stance, playerModel.layers.upper), rigKit.scale(gait('arms', body.gait, run), body.moveBlend));
-        return rigKit.add(legs(body.gait, body.moveBlend, run), upper);
+        const lower = rigKit.add(legs(body.gait, body.moveBlend, run), { base: { pz: plant(rig, body.gait, run) * body.moveBlend } });
+        return rigKit.add(lower, upper);
     }
     // A move in progress, `act` = { move, phase, t, from }: the windup eases
     // from wherever the previous move's recovery had got to (or the stance)
@@ -71,7 +89,7 @@ const playerAnim = (() => {
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
     // fighter { act, guardBlend, stun, down, downT, drink, loadout }.
     function pose(rig, body) {
-        let pose = locomotion(body);
+        let pose = locomotion(rig, body);
         const act = body.act, lowerBody = playerModel.layers.lower;
         // A torch is carried up and forward when the arm is not busy.
         if (!act && inventoryKit.offhandOf(body.loadout) === 'torch') pose = { ...pose, ...playerMoves.torch };

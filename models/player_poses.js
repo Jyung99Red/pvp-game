@@ -13,15 +13,16 @@ const playerPoses = Object.freeze({
     // A full walk cycle is two steps: contact (right foot forward), passing
     // (left leg swinging through), then both mirrored. `legs` replaces the
     // lower body; `arms` is added to the upper body. The stride is measured
-    // from these poses, so feet do not slide whatever the angles.
+    // from these poses, so feet do not slide whatever the angles; long
+    // strides keep the steps unhurried at walking speed (user, 2026-10-02).
     walk: {
         legs: [
-            { pelvis: { ry: 0.06 }, thighR: { rx: -0.5 }, shinR: { rx: 0.05 }, thighL: { rx: 0.42 }, shinL: { rx: 0.4 } },
-            { thighR: { rx: -0.02 }, shinR: { rx: 0.05 }, thighL: { rx: -0.45 }, shinL: { rx: 1.2 } }
+            { pelvis: { ry: 0.09 }, thighR: { rx: -0.78 }, shinR: { rx: 0.15 }, thighL: { rx: 0.64 }, shinL: { rx: 0.38 } },
+            { thighR: { rx: 0.1 }, shinR: { rx: 0.15 }, thighL: { rx: -0.62 }, shinL: { rx: 1.45 } }
         ],
         arms: [
-            { chest: { rx: 0.06, ry: -0.08 }, upperArmR: { rx: 0.22 }, upperArmL: { rx: -0.25 } },
-            { chest: { rx: 0.06 } }
+            { chest: { rx: 0.07, ry: -0.1 }, upperArmR: { rx: 0.3 }, upperArmL: { rx: -0.34 } },
+            { chest: { rx: 0.07 } }
         ]
     },
     // Running: the same layout as the walk, with longer strides, knees

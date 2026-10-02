@@ -66,9 +66,10 @@ const worldSim = (() => {
             return fighterKit.init({
                 x: at.x, y: at.y, h: space.groundHeight(at.x, at.y),
                 facing: duel ? Math.atan2(other.y - at.y, other.x - at.x) : entry ? entry.facing : Math.PI / 2, radius: gameConfig.player.radius,
-                // gait: walk/run cycle phase, in cycles. moveTime: seconds of
-                // unbroken walking, which turns into a run.
-                speed: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
+                // gait: walk/run cycle phase, in cycles. pace: share of the
+                // walking speed built up from a standstill. moveTime: seconds
+                // of unbroken walking, which turns into a run.
+                speed: 0, pace: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
                 loadout: { ...gear[i] }
             }, { id, endless: !duel && !!map.training, stats: inventoryKit.statsOf(gear[i]) });
         });

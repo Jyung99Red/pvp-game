@@ -252,8 +252,8 @@ test('the guest walks at once on its own phone; only the host moves the host cop
     const p = pair(); fightNow(p);
     const g = () => p.guest.sim.fighters[1], hg = () => p.host.sim.fighters[1], x = g().x;
     p.guest.command({ type: 'move', x: -1, y: 0 });
-    p.guest.frame(0.03);
-    assert.ok(g().x < x - 2, 'predicted before anything was delivered');
+    p.guest.frame(0.06);
+    assert.ok(g().x < x - 1.5, 'predicted before anything was delivered');
     assert.ok(Math.abs(hg().x - x) < 1e-9);
     p.run(0.5);
     p.guest.command({ type: 'move', x: 0, y: 0 }); p.run(0.3);

@@ -315,7 +315,7 @@ const fighterKit = (() => {
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }
@@ -342,7 +342,12 @@ const fighterKit = (() => {
         let striding = false;
         p.speed = 0;
         if (mag > 1e-6 && !p.stun && (!a || charging)) {
-            let speed = P.speed * Math.min(1, mag), turn = P.turnRate;
+            // From a standstill the walk builds up over startSeconds, and
+            // heading away from where the body faces is slower until it has
+            // turned: no gliding off at full speed (user, 2026-10-02).
+            p.pace = Math.min(1, p.pace + dt / P.startSeconds);
+            const off = Math.abs(space.wrapAngle(Math.atan2(mv.y, mv.x) - p.facing));
+            let speed = P.speed * Math.min(1, mag) * p.pace * (1 - P.turnSlow * (1 - Math.cos(off)) / 2), turn = P.turnRate;
             if (guarding) { speed *= F().guard.moveMultiplier; turn *= F().guard.turnMultiplier; }
             else if (drinking) { speed *= F().potion.moveMultiplier; turn *= F().potion.turnMultiplier; }
             else if (charging) { speed *= F().charge.moveMultiplier; turn *= F().charge.turnMultiplier; }
@@ -359,10 +364,12 @@ const fighterKit = (() => {
             // walking (no shield, no charge), and really getting somewhere.
             striding = !guarding && !drinking && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
         } else if (mag > 1e-6 && a?.phase === 'recover') {
+            p.pace = 0;
             // Inside a combo the stick only turns, and slower; the next move
             // goes where the fighter faces the moment it starts.
             p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), P.turnRate * K().recoveryTurnMultiplier * dt);
         }
+        if (p.speed === 0) p.pace = 0;
         p.moveTime = striding ? p.moveTime + dt : 0;
         p.runBlend = approach(p.runBlend, p.moveTime >= P.runAfter - 1e-9 ? 1 : 0, dt / P.runRampSeconds);
     }

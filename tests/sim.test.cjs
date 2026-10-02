@@ -30,14 +30,18 @@ test('the fixed-step clock: whole steps, carried remainders, long frames capped'
     assert.equal(simLoop.STEP, 0.01);
 });
 
-test('full stick walks at player.speed; a half-pushed stick at half speed', () => {
-    const { sim, loop, p } = running(), x0 = p.x;
+test('full stick walks at player.speed once under way; a half-pushed stick at half speed', () => {
+    const { sim, loop, p } = running(), x0 = p.x, P = gameConfig.player;
+    p.facing = 0;
     W.command(sim, { type: 'move', x: 1, y: 0 });
     loop.run(1);
-    assert.ok(Math.abs(p.x - x0 - SPEED) < 1e-6, `moved ${p.x - x0}`);
-    assert.ok(Math.abs(p.gait - SPEED / playerAnim.cycleLength(sim.rigs.fighters.player, 0)) < 1e-6, 'the gait advances by distance over the stride');
-    const y0 = p.y;
+    // The first startSeconds build up to speed: half of that time is lost.
+    assert.ok(Math.abs(p.x - x0 - SPEED * (1 - (P.startSeconds - 0.01) / 2)) < 1e-6, `moved ${p.x - x0}`);
+    assert.ok(Math.abs(p.speed - SPEED) < 1e-6);
+    assert.ok(Math.abs(p.gait - (p.x - x0) / playerAnim.cycleLength(sim.rigs.fighters.player, 0)) < 1e-6, 'the gait advances by distance over the stride');
     W.command(sim, { type: 'move', x: 0, y: -0.5 });
+    loop.run(0.3); // turned by now
+    const y0 = p.y;
     loop.run(0.5);
     assert.ok(Math.abs(y0 - p.y - SPEED * 0.25) < 1e-6);
     assert.equal(p.h, 0, 'height comes from the ground query, flat for now');
@@ -66,13 +70,14 @@ test('commands are validated; a long vector is clipped to full speed', () => {
 });
 
 test('two thumbs: walking with the shield up, interact on top; A stands the walker still for the move', () => {
-    const { sim, loop, p } = running(), G = gameConfig.combat.guard, x0 = p.x;
+    const { sim, loop, p } = running(), G = gameConfig.combat.guard, x0 = p.x, P = gameConfig.player;
+    p.facing = 0;
     W.command(sim, { type: 'move', x: 1, y: 0 });
     W.command(sim, { type: 'press', button: 'offhand' });
     W.command(sim, { type: 'press', button: 'interact' });
     loop.run(0.5);
     assert.ok(sim.input.buttons.offhand.held && sim.input.buttons.interact.held);
-    assert.ok(Math.abs(p.x - x0 - SPEED * G.moveMultiplier * 0.5) < 1, `walked ${p.x - x0} with the shield up`);
+    assert.ok(Math.abs(p.x - x0 - SPEED * G.moveMultiplier * (0.5 - (P.startSeconds - 0.01) / 2)) < 1, `walked ${p.x - x0} with the shield up`);
     W.command(sim, { type: 'release', button: 'offhand' });
     W.command(sim, { type: 'press', button: 'a' });
     const x1 = p.x;
@@ -92,7 +97,7 @@ test('walls stop the body and it slides along them', () => {
     const x0 = p.x;
     W.command(sim, { type: 'move', x: 0.7071, y: -0.7071 });
     loop.run(0.5);
-    assert.ok(p.x - x0 > SPEED * 0.5 * 0.7, `slid ${p.x - x0}`);
+    assert.ok(p.x - x0 > SPEED * 0.5 * 0.6, `slid ${p.x - x0}`);
     assert.ok(!terrainKit.blocked(t, p.x, p.y, r));
 });
 
@@ -114,9 +119,26 @@ test('a block corner is walked round, not snagged on', () => {
     assert.ok(Math.abs(body.y - (2 * U - 12)) < 1e-6 && Math.abs(body.x - 2.5 * U) < 1e-9);
 });
 
+test('from a standstill the walk builds up; heading away from the facing is slower until the body has turned (user, 2026-10-02)', () => {
+    const P = gameConfig.player;
+    const walker = facing => { const { sim, loop, p } = running(); p.y += 3 * U; p.facing = facing; W.command(sim, { type: 'move', x: 1, y: 0 }); return { loop, p }; };
+    const a = walker(0); a.loop.run(P.startSeconds / 2);
+    assert.ok(a.p.speed > 0.3 * P.speed && a.p.speed < 0.7 * P.speed, `half way to speed: ${a.p.speed}`);
+    a.loop.run(P.startSeconds);
+    assert.ok(Math.abs(a.p.speed - P.speed) < 1e-6, 'then full speed');
+    // Facing the other way: the first steps are at (1 - turnSlow) of the pace.
+    const b = walker(Math.PI); b.loop.run(0.01);
+    const ahead = walker(0); ahead.loop.run(0.01);
+    assert.ok(Math.abs(b.p.speed / ahead.p.speed - (1 - P.turnSlow)) < 0.06, `turning round: ${(b.p.speed / ahead.p.speed).toFixed(2)}`);
+    b.loop.run(0.6);
+    assert.ok(Math.abs(b.p.speed - P.speed) < 1e-6, 'turned: full speed');
+    // The walk is quicker than before and the steps are no hastier (about 4 a second).
+    assert.ok(P.speed >= 3.4 * U && 2 * P.speed / playerAnim.cycleLength(W.create().rigs.fighters.player, 0) < 4);
+});
+
 test('two seconds of unbroken walking turn into a run at runMultiplier', () => {
     const P = gameConfig.player, { sim, loop, p } = running();
-    p.y += 3 * U; // room to run east and west along row 11
+    p.y += 3 * U; p.facing = 0; // room to run east and west along row 11
     W.command(sim, { type: 'move', x: 1, y: 0 });
     loop.run(P.runAfter - 0.05);
     assert.ok(p.runBlend === 0 && Math.abs(p.speed - P.speed) < 1e-6, 'still walking just before runAfter');
@@ -127,7 +149,7 @@ test('two seconds of unbroken walking turn into a run at runMultiplier', () => {
     assert.ok(Math.abs(p.speed - P.speed * P.runMultiplier) < 1e-6, `running at ${p.speed}`);
     // Easing the stick off below runStick breaks the run: back down to a walk.
     W.command(sim, { type: 'move', x: -0.6, y: 0 });
-    loop.run(P.runRampSeconds + 0.01);
+    loop.run(P.runRampSeconds + 0.2); // and turned round
     assert.ok(p.runBlend === 0 && p.moveTime === 0 && Math.abs(p.speed - P.speed * 0.6) < 1e-6);
 });
 

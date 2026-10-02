@@ -114,10 +114,12 @@ test('walking and running are pure functions of gait phase and blends, feet on t
     for (const run of [0, 1]) assert.ok(Array.from(at(0, 1, run).parts[3]).every((v, k) => Math.abs(v - at(1, 1, run).parts[3][k]) < 1e-9));
 });
 
-test('the stride matches the leg swing: the planted foot barely slides, walking or running', () => {
+test('the stride matches the leg swing: the planted foot stays put, walking or running', () => {
     const P = gameConfig.player, unit = gameConfig.world.unitsPerBlock;
     const foot = find(p => p.tag === 'foot' && rig.bones[p.bone].name === 'shinR');
-    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.15, [3, 5]], [1, P.speed * P.runMultiplier, 0.25, [5, 7]]]) {
+    // The body is nudged along its facing to keep the planted foot still;
+    // walking takes long, unhurried steps (user, 2026-10-02).
+    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.02, [3, 4]], [1, P.speed * P.runMultiplier, 0.02, [5, 7]]]) {
         const cycle = playerAnim.cycleLength(rig, runBlend), zs = [];
         for (let f = 0; f <= 0.4 + 1e-9; f += 0.025) {
             const s = R.solve(rig, playerAnim.pose(rig, { gait: f, moveBlend: 1, runBlend }));

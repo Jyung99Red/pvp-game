@@ -135,14 +135,16 @@ function drinker({ potions = 3, region = 'field' } = {}) {
     return { sim, p: sim.player };
 }
 test('a potion: a press drinks one over 0.8 s, slowly walking, and heals 30% of max HP at the end', () => {
-    const { sim, p } = drinker(), P = F.potion;
-    p.hp = 100;
+    const { sim, p } = drinker(), P = F.potion, W0 = gameConfig.player;
+    p.hp = 100; p.facing = 0;
     W.command(sim, { type: 'move', x: 1, y: 0 });
     const x0 = p.x;
     tap(sim, 'offhand');
     assert.equal(p.drink.phase, 'drink');
     step(sim, P.seconds / 2);
-    assert.ok(Math.abs(p.x - x0 - gameConfig.player.speed * P.moveMultiplier * P.seconds / 2) < 2, `walks slowly: ${p.x - x0}`);
+    // Slowly, after the walk's short build-up from a standstill.
+    const slow = W0.speed * P.moveMultiplier * (P.seconds / 2 - (W0.startSeconds - 0.01) / 2);
+    assert.ok(Math.abs(p.x - x0 - slow) < 1, `walks slowly: ${p.x - x0}`);
     tap(sim, 'a');
     assert.equal(p.act, null, 'no swinging with the flask up');
     assert.equal(p.hp, 100, 'nothing yet');

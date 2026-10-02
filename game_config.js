@@ -18,11 +18,14 @@ const gameConfig = (() => {
         // 2. The main character on foot.
         // speed: walking, world units/second at full stick. turnRate:
         // radians/second while turning towards the stick. radius: wall
-        // collision. Running: after `runAfter` seconds of unbroken walking
+        // collision. startSeconds: from a standstill to full walking speed.
+        // turnSlow: walking straight away from the facing is this share
+        // slower (easing with the angle) until the body has turned.
+        // Running: after `runAfter` seconds of unbroken walking
         // with the stick pushed at least `runStick` of the way, speed eases up
         // to speed * runMultiplier over runRampSeconds, and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 115, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 2.2, runRampSeconds: 0.3, runStick: 0.9 },
+        player: { speed: 140, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 1.8, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
