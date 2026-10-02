@@ -26,7 +26,7 @@
 | `player.turnRate` | 8 | 转身速度（转 180° 约 0.4 秒） |
 | `player.radius` | 12 | 撞墙用的圆 |
 | `player.runAfter` / `runStick` | 2 / 0.9 | 摇杆推到 90% 以上连续走 2 秒后开始跑 |
-| `player.runMultiplier` / `runRampSeconds` | 2.066 / 0.3 | 跑步是走路的 2.066 倍（约 252，走路变了跑步速度不变），0.3 秒加速到位 |
+| `player.runSpeed` / `runRampSeconds` | 252 / 0.3 | 跑步速度（每秒 6.3 格），和走路分开写，改一个不影响另一个（用户 2026-10-02）；0.3 秒加速到位 |
 | `animation.blendSeconds` | 0.1 | 站和走之间的淡入淡出 |
 | `models.playerScale` | 1 | 主角整体比例（高约 1.9 格） |
 

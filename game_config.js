@@ -23,9 +23,10 @@ const gameConfig = (() => {
         // slower (easing with the angle) until the body has turned.
         // Running: after `runAfter` seconds of unbroken walking
         // with the stick pushed at least `runStick` of the way, speed eases up
-        // to speed * runMultiplier over runRampSeconds, and back down the same
+        // to runSpeed over runRampSeconds (set apart from the walk, user
+        // 2026-10-02: changing one leaves the other), and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 2.066, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 2, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },

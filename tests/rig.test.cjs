@@ -129,7 +129,7 @@ test('the stride matches the leg swing: the planted foot stays put, walking or r
     // on evenly; walking takes unhurried steps, running is a jog with fewer
     // steps than before, a hop between strides (user, 2026-10-02). Running,
     // the foot is down only up to the toe-off.
-    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.02, [3, 4]], [1, P.speed * P.runMultiplier, 0.02, [4.8, 5.8]]]) {
+    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.02, [3, 4]], [1, P.runSpeed, 0.02, [4.8, 5.8]]]) {
         const cycle = playerAnim.cycleLength(rig, runBlend), zs = [], stance = playerAnim.gaitOf(rig)[runBlend ? 'run' : 'walk'].stance;
         for (let f = 0; f <= Math.min(0.4, stance) + 1e-9; f += 0.025) {
             const s = R.solve(rig, playerAnim.pose(rig, { gait: f, moveBlend: 1, runBlend }));

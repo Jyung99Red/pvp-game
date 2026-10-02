@@ -133,22 +133,22 @@ test('from a standstill the walk builds up; heading away from the facing is slow
     b.loop.run(0.6);
     assert.ok(Math.abs(b.p.speed - P.speed) < 1e-6, 'turned: full speed');
     // The walk the user settled on (122, 2026-10-02), and the steps no
-    // hastier: under 4 a second; the run keeps its speed (about 252).
+    // hastier: under 4 a second. The run has a speed of its own (252).
     assert.ok(P.speed === 122 && 2 * P.speed / playerAnim.cycleLength(W.create().rigs.fighters.player, 0) < 4);
-    assert.ok(Math.abs(P.speed * P.runMultiplier - 252) < 0.5, `running at ${P.speed * P.runMultiplier}`);
+    assert.equal(P.runSpeed, 252);
 });
 
-test('two seconds of unbroken walking turn into a run at runMultiplier', () => {
+test('two seconds of unbroken walking turn into a run at runSpeed', () => {
     const P = gameConfig.player, { sim, loop, p } = running();
     p.y += 3 * U; p.facing = 0; // room to run east and west along row 11
     W.command(sim, { type: 'move', x: 1, y: 0 });
     loop.run(P.runAfter - 0.05);
     assert.ok(p.runBlend === 0 && Math.abs(p.speed - P.speed) < 1e-6, 'still walking just before runAfter');
     loop.run(0.05 + P.runRampSeconds / 2);
-    assert.ok(p.runBlend > 0.3 && p.runBlend < 0.7 && p.speed > P.speed * 1.2 && p.speed < P.speed * P.runMultiplier, `easing up: ${p.speed}`);
+    assert.ok(p.runBlend > 0.3 && p.runBlend < 0.7 && p.speed > P.speed * 1.2 && p.speed < P.runSpeed, `easing up: ${p.speed}`);
     loop.run(P.runRampSeconds);
     assert.equal(p.runBlend, 1);
-    assert.ok(Math.abs(p.speed - P.speed * P.runMultiplier) < 1e-6, `running at ${p.speed}`);
+    assert.ok(Math.abs(p.speed - P.runSpeed) < 1e-6, `running at ${p.speed}`);
     // Easing the stick off below runStick breaks the run: back down to a walk.
     W.command(sim, { type: 'move', x: -0.6, y: 0 });
     loop.run(P.runRampSeconds + 0.2); // and turned round

@@ -354,7 +354,7 @@ const fighterKit = (() => {
             if (guarding) { speed *= F().guard.moveMultiplier; turn *= F().guard.turnMultiplier; }
             else if (drinking) { speed *= F().potion.moveMultiplier; turn *= F().potion.turnMultiplier; }
             else if (charging) { speed *= F().charge.moveMultiplier; turn *= F().charge.turnMultiplier; }
-            else speed *= 1 + (P.runMultiplier - 1) * p.runBlend;
+            else speed *= 1 + (P.runSpeed / P.speed - 1) * p.runBlend;
             const x0 = p.x, y0 = p.y;
             terrainKit.moveCircle(sim.terrain, p, mv.x / mag * speed * dt, mv.y / mag * speed * dt, obstacles(sim, p));
             const moved = Math.hypot(p.x - x0, p.y - y0);
