@@ -8,7 +8,7 @@
 // read and drain.
 //
 // `fighters` are the people playing: one in PVE ('player'), two in a duel
-// ('host' and 'guest', rebuild-plan.md M4). sim.player, sim.input and
+// ('host' and 'guest', design.md 8). sim.player, sim.input and
 // sim.stats are the first fighter's own; sim.monsters and sim.dummy are the
 // entities of those types (getters, left out of snapshots).
 // `region` is the map's key in gameConfig.maps; `progress` the world's
@@ -43,9 +43,9 @@ const worldSim = (() => {
     // loadout: the gear worn (else the save's, else the starter gear); the
     // fighter's stats are the base plus that gear (core/inventory.js).
     // A duel puts one fighter on each of the map's first two spawns, each
-    // facing the other, in the starter gear (a fair fight; no potions:
-    // controls-landscape-concept.md 8, item 5).
-    function create({ map = null, region = null, progress = null, arrival = null, carry = null, spot = null, seed = 1, loadout = null, duel = false } = {}) {
+    // facing the other; `loadouts` are their gear, [host, guest] (each one
+    // picked from duelKit's fair sets; the starter gear when left out).
+    function create({ map = null, region = null, progress = null, arrival = null, carry = null, spot = null, seed = 1, loadout = null, duel = false, loadouts = null } = {}) {
         if (!map) map = gameConfig.maps[region || 'clearing'];
         if (!map) throw new Error(`Unknown map ${region}`);
         region = region || regionOf(map);
@@ -54,8 +54,10 @@ const worldSim = (() => {
         if (duel) progress = null;
         loadout = { ...(duel ? inventoryKit.starter() : loadout || progress?.loadout || inventoryKit.starter()) };
         if (progress?.edits?.[region]) terrainKit.applyEdits(terrain, progress.edits[region]);
-        const rig = rigKit.build(playerModel, { scale: gameConfig.models.playerScale, equipment: equipmentModels.forLoadout(loadout) });
         const ids = duel ? DUEL_IDS : ['player'];
+        const gear = ids.map((_, i) => ({ ...(duel ? loadouts?.[i] || inventoryKit.starter() : loadout) }));
+        // Each fighter's skeleton carries its own gear (the blade decides reach).
+        const rigOf = g => rigKit.build(playerModel, { scale: gameConfig.models.playerScale, equipment: equipmentModels.forLoadout(g) });
         const spots = ids.map((_, i) => terrainKit.cellCentre(terrain, terrain.spawns[i].col, terrain.spawns[i].row));
         const entry = duel ? null : spot || (arrival ? propKit.arrival(map, terrain, arrival) : null);
         if (entry) spots[0] = entry;
@@ -67,8 +69,8 @@ const worldSim = (() => {
                 // gait: walk/run cycle phase, in cycles. moveTime: seconds of
                 // unbroken walking, which turns into a run.
                 speed: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
-                loadout: { ...loadout }
-            }, { id, endless: !duel && !!map.training, stats: inventoryKit.statsOf(loadout) });
+                loadout: { ...gear[i] }
+            }, { id, endless: !duel && !!map.training, stats: inventoryKit.statsOf(gear[i]) });
         });
         if (carry && Number.isFinite(carry.hp)) fighters[0].hp = Math.max(1, Math.min(fighters[0].maxHp, Math.round(carry.hp)));
         const saved = progress || {};
@@ -82,7 +84,7 @@ const worldSim = (() => {
         const kinds = [...new Set(terrain.monsters.map(m => m.kind))];
         return aliases({
             time: 0, tick: 0, terrain, map: map.name || '', region, duel, seed: seed >>> 0, serial: 0,
-            rigs: { player: rig, dummy: dummy ? dummyKit.rig() : null, monsters: Object.fromEntries(kinds.map(k => [k, monsterKit.rig(k)])) },
+            rigs: { fighters: Object.fromEntries(ids.map((id, i) => [id, rigOf(gear[i])])), dummy: dummy ? dummyKit.rig() : null, monsters: Object.fromEntries(kinds.map(k => [k, monsterKit.rig(k)])) },
             fighters, entities: [...(dummy ? [dummy] : []), ...monsters, ...propKit.place(map, terrain, saved, region)],
             progress: world, events: [], result: null
         });

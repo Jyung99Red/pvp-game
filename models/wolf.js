@@ -1,6 +1,6 @@
-// The wolf (3d-migration-concept.md 3.3): a quadruped of 8 bones, legs in
-// one piece, after the prototype (docs/tasks/3d-prototype.html). Its back
-// is about 0.8 blocks high and the top of its head about 1.0 (4.6), so a
+// The wolf (design.md 2.1): a quadruped of 8 bones, legs in
+// one piece, after the first 3D prototype. Its back
+// is about 0.8 blocks high and the top of its head about 1.0 (design.md 4.3), so a
 // cut at the shoulder passes over it. Faces +z; its right side is -x. The
 // muzzle is its weapon (the bite); the leap rams with the whole body.
 const wolfModel = (() => {

@@ -1,4 +1,4 @@
-// The channel between two phones for a duel (rebuild-plan.md M4), carried
+// The channel between two phones for a duel (design.md 8), carried
 // over from the 2D version (tag v1-2d, pvp/pvp_net.js and pvp_room.js). A
 // room is a 4-digit code. Both phones meet through a PeerJS signalling
 // server (the free public one unless the address says ?peer=host:port,

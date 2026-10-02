@@ -1,4 +1,4 @@
-// The training dummy (3d-migration-concept.md 3.3): a straw-and-sack figure
+// The training dummy (design.md 5): a straw-and-sack figure
 // on the simple monster skeleton (9 bones, limbs in one piece), with a
 // wooden club. About 1.75 blocks tall; faces +z, its right side is -x.
 const dummyModel = (() => {

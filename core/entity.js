@@ -1,4 +1,4 @@
-// World entities (3d-migration-concept.md 15): everything in the world that
+// World entities (design.md 6.2): everything in the world that
 // is not one of the fighters -- the training dummy, monsters, buildings,
 // portals, chests, things dropped and dry thickets -- is one plain record on
 // sim.entities: { id, type, x, y, h, facing, radius, solid, ... }. What a

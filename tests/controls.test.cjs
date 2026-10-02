@@ -65,7 +65,7 @@ test('controls fit every common landscape phone without overlapping', () => {
     }
 });
 
-test('first sizes follow controls-landscape-concept.md 3', () => {
+test('first sizes follow parameters.md 9', () => {
     assert.deepEqual([L.buttons.a.size, L.buttons.b.size, L.buttons.offhand.size, L.buttons.interact.size], [84, 72, 72, 56]);
     assert.equal(L.minGap, 10);
     assert.equal(I.maxTouches, 2);

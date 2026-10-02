@@ -1,8 +1,9 @@
 // A fighter: the move tree on A and B (pre-input, derive points, the pause
-// line, the opening charge), the offhand (a shield for now), being struck,
-// and moving between all of that. Rules carried over from the 2D version
+// line, the opening charge; the tree is the main weapon's type,
+// design.md 4.2), the offhand (shield, potion, torch), being struck, and
+// moving between all of that. Rules carried over from the 2D version
 // (tag v1-2d, pve/spatial_engine.js) with the input layer of
-// controls-landscape-concept.md 4: A and B are separate keys, A or B start
+// design.md 3.3: A and B are separate keys, A or B start
 // their move the moment they are pressed. Every rule takes the fighter it
 // applies to: PVE has one (sim.player), a duel two (sim.fighters).
 //
@@ -62,12 +63,14 @@ const fighterKit = (() => {
     }
     // Bodies in the way: other fighters and solid entities.
     const obstacles = (sim, p) => entityKit.obstacles(sim, p);
+    // A fighter's own skeleton with its gear (sim.rigs.fighters).
+    const rigOf = (sim, p) => sim.rigs.fighters[p.id];
     // The fighter's body as judged now.
     function solve(sim, p) {
-        const rig = sim.rigs.player;
+        const rig = rigOf(sim, p);
         return rigKit.solve(rig, playerAnim.pose(rig, p), space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
     }
-    function hurtboxes(sim, p) { return combatKit.hurtboxes(sim.rigs.player, solve(sim, p)); }
+    function hurtboxes(sim, p) { return combatKit.hurtboxes(rigOf(sim, p), solve(sim, p)); }
     // Foes further than this from the fighter are not tested against a swing.
     const REACH = 240;
 
@@ -80,7 +83,7 @@ const fighterKit = (() => {
     // way (pressed ahead, in its windup or swing) or the last finished one
     // while its window is open. An A past the pause line takes the node's
     // pause move; a node without one treats it as an ordinary A. An input
-    // with no entry starts over from the root.
+    // with no entry starts over from the root of the fighter's weapon.
     function derive(p, input, at) {
         let node = null, paused = false;
         if (p.act && (p.act.phase === 'windup' || p.act.phase === 'swing')) node = p.act.move;
@@ -90,7 +93,7 @@ const fighterKit = (() => {
         }
         const next = node ? moveOf(node).next || {} : {};
         const id = paused ? next.pause ?? next.a : next[input];
-        return id ? { id, derived: true, paused: paused && !!next.pause } : { id: K().root[input], derived: false, paused: false };
+        return id ? { id, derived: true, paused: paused && !!next.pause } : { id: K().weapons[inventoryKit.weaponOf(p.loadout)].root[input], derived: false, paused: false };
     }
     function startMove(sim, p, input, at) {
         const d = derive(p, input, at), prev = p.act;
@@ -122,7 +125,7 @@ const fighterKit = (() => {
         return Math.min(C.full, (b.held ? sim.time : b.upAt) - b.at);
     }
     // `charged`: the swing comes out of a held charge. Let go before the
-    // windup was over, it is the minimum charge (controls-landscape 4.2).
+    // windup was over, it is the minimum charge (design.md 4.1).
     function beginSwing(sim, p, charged = false) {
         const a = p.act, m = moveOf(a.move), C = F().charge;
         if (m.charge) {
@@ -143,7 +146,7 @@ const fighterKit = (() => {
     }
     // The fighter's body at swing progress u, for sampling the sweep.
     function solveAt(sim, p, a, x0, y0, x1, y1, u0, u1) {
-        const rig = sim.rigs.player, m = moveOf(a.move);
+        const rig = rigOf(sim, p), m = moveOf(a.move);
         return u => {
             const k = u1 > u0 ? (u - u0) / (u1 - u0) : 1;
             const body = { ...p, act: { ...a, t: u * m.swing } };
@@ -160,7 +163,7 @@ const fighterKit = (() => {
         // The lunge: forward along the locked facing, easing out.
         const lunge = u => a.stepTotal * (1 - (1 - u) * (1 - u));
         const x0 = p.x, y0 = p.y, want = lunge(u1) - lunge(u0);
-        if (want > 0) terrainKit.moveCircle(sim.terrain, p, Math.cos(a.facing) * want, Math.sin(a.facing) * want, obstacles(sim, p));
+        if (want !== 0) terrainKit.moveCircle(sim.terrain, p, Math.cos(a.facing) * want, Math.sin(a.facing) * want, obstacles(sim, p));
         sweeps.push({ p, a, x0, y0, x1: p.x, y1: p.y, u0, u1, done: a.t >= m.swing - 1e-9 });
     }
     // Judge every swing of this step against everyone as they stand now,
@@ -176,7 +179,7 @@ const fighterKit = (() => {
                 const targets = foes(sim, p).filter(f => !a.hit.includes(f.id) && Math.hypot(f.x - p.x, f.y - p.y) <= REACH && terrainKit.lineClear(sim.terrain, p.x, p.y, f.x, f.y))
                     .map(f => ({ id: f.id, foe: f, boxes: combatKit.kitOf(f).hurtboxes(sim, f) }));
                 if (!targets.length) continue;
-                for (const hit of combatKit.contacts(sim.rigs.player, solveAt(sim, p, a, s.x0, s.y0, s.x1, s.y1, s.u0, s.u1), s.u0, s.u1, targets)) {
+                for (const hit of combatKit.contacts(rigOf(sim, p), solveAt(sim, p, a, s.x0, s.y0, s.x1, s.y1, s.u0, s.u1), s.u0, s.u1, targets)) {
                     a.hit.push(hit.id);
                     landed.push({ p, a, hit, foe: targets.find(t => t.id === hit.id).foe });
                 }
@@ -188,7 +191,7 @@ const fighterKit = (() => {
     function land(sim, { p, a, hit, foe }) {
         const m = moveOf(a.move), raw = p.atk * (m.ratio + (m.chargeRatio || 0) * a.share), heavy = heavyOf(m);
         // Another fighter has a shield and stun of its own (a duel): only a
-        // heavy move breaks its combo (3d-migration-concept.md 5).
+        // heavy move breaks its combo (design.md 4.4).
         if (foe.kind === 'fighter') {
             combatKit.strike(sim, foe, p, raw, hit.point, { move: a.move, heavy, stun: heavy, knockback: m.knockback });
             return;
@@ -237,7 +240,7 @@ const fighterKit = (() => {
                 }
             }
         },
-        // A potion (rebuild-plan.md M6): a press drinks one, if any are
+        // A potion (design.md 3.4): a press drinks one, if any are
         // left -- at once when free, else as soon as the move or stun is
         // over (like the shield, and meanwhile A and B do nothing; another
         // press calls it off). The drink takes potion.seconds; a blow that
@@ -294,7 +297,7 @@ const fighterKit = (() => {
         if (button === 'b') p.bPress = { at: sim.time, held: true, upAt: null };
         if (button === 'a' || button === 'b') return pressAttack(sim, p, button);
         if (button === 'offhand') { const o = offhandOf(p); return o ? o.press(sim, p) : false; }
-        // Interact works alongside the shield (controls-landscape-concept.md 4.4).
+        // Interact works alongside the shield (design.md 3.5).
         return interactKit.press(sim, p);
     }
     function release(sim, p, button) {
@@ -347,7 +350,7 @@ const fighterKit = (() => {
             const x0 = p.x, y0 = p.y;
             terrainKit.moveCircle(sim.terrain, p, mv.x / mag * speed * dt, mv.y / mag * speed * dt, obstacles(sim, p));
             const moved = Math.hypot(p.x - x0, p.y - y0);
-            p.gait += moved / playerAnim.cycleLength(sim.rigs.player, p.runBlend);
+            p.gait += moved / playerAnim.cycleLength(rigOf(sim, p), p.runBlend);
             p.speed = moved / dt;
             p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), turn * dt);
             // Walking off ends the combo.
@@ -425,13 +428,14 @@ const fighterKit = (() => {
             swingStep(sim, p, dt);
         } else {
             a.t += dt;
-            // At the derive point a buffered input cuts the recovery short.
-            if (m.derive != null && a.t >= m.derive - 1e-9 && p.buffer) { const b = p.buffer; startMove(sim, p, b.input, b.at); return; }
+            // At the derive point a buffered input this move derives cuts the
+            // recovery short; one that starts over waits for its end.
+            if (m.derive != null && a.t >= m.derive - 1e-9 && p.buffer && derive(p, p.buffer.input, p.buffer.at).derived) { const b = p.buffer; startMove(sim, p, b.input, b.at); return; }
             if (a.t >= m.recovery - 1e-9) {
                 p.act = null;
                 if (p.buffer) { const b = p.buffer; startMove(sim, p, b.input, b.at); }
             }
         }
     }
-    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, OFFHAND };
+    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, rigOf, OFFHAND };
 })();

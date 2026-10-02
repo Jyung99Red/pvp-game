@@ -1,4 +1,4 @@
-// The save (rebuild-plan.md M5, M6; the 2D version's saves are not read):
+// The save (design.md 6.6; the 2D version's saves are not read):
 // { v, bosses: { kind: true }, chests: { 'region/chest id': true },
 //   inventory: { gold, items: { id: count } }, loadout: { main, offhand,
 //   armor, accessory }, edits: { region: [[col, row, kind, level]] } }.

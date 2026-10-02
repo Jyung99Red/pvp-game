@@ -1,7 +1,7 @@
 // Every tunable number of the game, and nothing else. Units: world units
 // (40 to a block) for positions, distances and speeds; seconds for time;
 // radians for angles; CSS pixels for anything on the touch layer.
-// docs/tasks/combat-parameter-inventory.md mirrors this file.
+// docs/tasks/parameters.md mirrors this file.
 const gameConfig = (() => {
     const freeze = value => {
         if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -27,7 +27,7 @@ const gameConfig = (() => {
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
 
-        // 4. Sizes that will decide hits (3d-migration-concept.md 4.3). The
+        // 4. Sizes that will decide hits (design.md 4.3). The
         // body boxes themselves are model data in models/; these scale it.
         // playerScale multiplies the whole character. Blade lengths are on
         // the weapons (`items`, blocks).
@@ -35,12 +35,12 @@ const gameConfig = (() => {
 
         // 4b. Fighting rules shared by every fight (training, PVE, PVP).
         // fighters.base: the main character's stats before equipment (no
-        // levels: equipment is the only growth, rebuild-plan.md M6); each
+        // levels: equipment is the only growth, design.md 7.1); each
         // item worn adds its own (`items`). The starter gear makes 360 HP,
         // 30 ATK, 8 DEF; a duel is always fought in it.
         // hitStun: a hit that is not guarded freezes the one struck's
         // controls this long. weaponPad: weapon boxes grow by this much on
-        // every side for hit tests only (3d-migration-concept.md 4.6).
+        // every side for hit tests only (design.md 4.3).
         // Damage = max(1, round(raw * (1 - DEF / (DEF + defenseConstant)))).
         // A blocked hit does blockMultiplier of that; a perfect parry hits
         // back for atk * parryAtkRatio. Impact: on contact both fighters'
@@ -69,7 +69,7 @@ const gameConfig = (() => {
             // that). Down, it refills in refillSeconds; emptied, the shield
             // stays locked until it is back to unlockRatio.
             guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 },
-            // A potion in the offhand (rebuild-plan.md M6): a drink takes
+            // A potion in the offhand (design.md 3.4): a drink takes
             // `seconds`, walking and turning slowed meanwhile, and heals
             // `heal` of max HP at the end; a blow that gets through spills
             // it (the potion is kept). Pressed in a move or a stun, it waits
@@ -77,34 +77,54 @@ const gameConfig = (() => {
             potion: { seconds: 0.8, heal: 0.3, moveMultiplier: 0.3, turnMultiplier: 0.5 }
         },
 
-        // 4c. Player move tree (first version, shared by every weapon;
-        // combat-combo-concept.md). Each move: windup -> swing -> recovery,
-        // seconds. Only the swing hits. `derive`, counted from the swing's
-        // end, is when a buffered next input cuts the recovery short; a
-        // finisher has none. `next` maps the next input -- A, B, or A after a
-        // pause -- to the move it derives; an input with no entry starts
-        // over from `root`. ratio: damage per ATK; stagger: stagger points;
+        // 4c. Player moves (design.md 4.1, 4.2). Every weapon belongs to a
+        // weapon type (`items.*.weapon`), and the type has its own move tree:
+        // `weapons.<type>.root` is what A and B start out of a combo, and
+        // `standard` the distance (centre to centre, world units) every move
+        // of the type must land at (tests). `moves` holds the moves of every
+        // type, each naming its `weapon`; ids are unique across types.
+        // Each move: windup -> swing -> recovery, seconds. Only the swing
+        // hits. `derive`, counted from the swing's end, is when a buffered
+        // input that `next` derives cuts the recovery short; a finisher has
+        // none, and an input with no entry starts over from the root once
+        // the recovery is over. `next` maps the next input -- A, B, or A
+        // after a pause -- to the move it derives. ratio: damage per ATK;
+        // stagger: stagger points (whole numbers, user 2026-10-02);
         // knockback: world units the target is pushed; step: how far the
-        // body lunges forward during the swing. The charged move grows
-        // ratio by chargeRatio and step by chargeStep with its charge.
-        // Shapes and reach come from the move's key poses (models/).
+        // body moves along its facing during the swing (negative: back). A
+        // `charge` move grows ratio by chargeRatio and step by chargeStep
+        // with its charge. Shapes and reach come from the key poses
+        // (models/player_moves.js).
         // pauseAfterRecovery: the pause line after a recovery ends;
         // windowAfterRecovery: the chain resets this long after;
         // bufferSeconds: an input pressed ahead that has not run within this
         // long is dropped. recoveryTurnMultiplier: in a recovery the stick
         // only turns the body, at this share of player.turnRate.
         combo: {
-            root: { a: 'slash', b: 'charged' },
-            pauseAfterRecovery: 0.2, windowAfterRecovery: 0.7, bufferSeconds: 0.4, recoveryTurnMultiplier: 0.5,
+            pauseAfterRecovery: 0.2, windowAfterRecovery: 0.7, bufferSeconds: 0.5, recoveryTurnMultiplier: 0.5,
+            weapons: {
+                // Heavy and far-reaching: everything a beat slower than the dagger.
+                sword: { name: '剑', root: { a: 'slash', b: 'charged' }, standard: 60 },
+                // Quick and close: chains up to six moves; B inside a combo flicks and goes on.
+                dagger: { name: '短刃', root: { a: 'cut', b: 'lunge' }, standard: 48 }
+            },
             moves: {
-                slash: { name: '横扫', windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.30, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
-                backslash: { name: '回扫', windup: 0.10, swing: 0.08, recovery: 0.36, derive: 0.14, ratio: 0.32, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },
-                spin: { name: '回旋斩', windup: 0.16, swing: 0.18, recovery: 0.60, ratio: 0.55, stagger: 0, knockback: 0, step: 0 },
-                thrust: { name: '连刺', windup: 0.12, swing: 0.06, recovery: 0.55, ratio: 0.60, stagger: 0, knockback: 0, step: 14 },
-                rising: { name: '上挑', windup: 0.30, swing: 0.10, recovery: 0.60, ratio: 0.70, stagger: 1.5, knockback: 15, step: 4 },
-                cleave: { name: '下劈', windup: 0.30, swing: 0.08, recovery: 0.65, ratio: 0.80, stagger: 1.5, knockback: 15, step: 7 },
-                charged: { name: '蓄力斩', windup: 0.45, swing: 0.12, recovery: 0.60, derive: 0.25, ratio: 0.30, chargeRatio: 0.80, stagger: 1, knockback: 18, step: 4, chargeStep: 13, charge: true, next: { a: 'follow' } },
-                follow: { name: '追斩', windup: 0.10, swing: 0.08, recovery: 0.45, ratio: 0.40, stagger: 0, knockback: 0, step: 3 }
+                slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.36, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
+                backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.44, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },
+                spin: { weapon: 'sword', name: '回旋斩', windup: 0.20, swing: 0.22, recovery: 0.72, ratio: 0.66, stagger: 0, knockback: 0, step: 0 },
+                thrust: { weapon: 'sword', name: '连刺', windup: 0.15, swing: 0.08, recovery: 0.66, ratio: 0.72, stagger: 0, knockback: 0, step: 14 },
+                rising: { weapon: 'sword', name: '上挑', windup: 0.36, swing: 0.12, recovery: 0.72, ratio: 0.84, stagger: 2, knockback: 16, step: 4 },
+                cleave: { weapon: 'sword', name: '下劈', windup: 0.36, swing: 0.10, recovery: 0.78, ratio: 0.96, stagger: 2, knockback: 16, step: 7 },
+                charged: { weapon: 'sword', name: '蓄力斩', windup: 0.54, swing: 0.14, recovery: 0.72, derive: 0.30, ratio: 0.36, chargeRatio: 0.96, stagger: 2, knockback: 20, step: 4, chargeStep: 13, charge: true, next: { a: 'follow' } },
+                follow: { weapon: 'sword', name: '追斩', windup: 0.13, swing: 0.10, recovery: 0.54, ratio: 0.48, stagger: 0, knockback: 0, step: 3 },
+                cut: { weapon: 'dagger', name: '斜切', windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.26, stagger: 0, knockback: 0, step: 4, next: { a: 'recut', b: 'flick' } },
+                recut: { weapon: 'dagger', name: '反切', windup: 0.10, swing: 0.08, recovery: 0.32, derive: 0.12, ratio: 0.26, stagger: 0, knockback: 0, step: 4, next: { a: 'stab', b: 'flick', pause: 'retreat' } },
+                stab: { weapon: 'dagger', name: '直刺', windup: 0.10, swing: 0.06, recovery: 0.34, derive: 0.13, ratio: 0.30, stagger: 0, knockback: 0, step: 10, next: { a: 'whirl', b: 'flick' } },
+                whirl: { weapon: 'dagger', name: '旋刃', windup: 0.14, swing: 0.16, recovery: 0.40, derive: 0.16, ratio: 0.36, stagger: 0, knockback: 0, step: 2, next: { a: 'drop' } },
+                drop: { weapon: 'dagger', name: '落刃', windup: 0.22, swing: 0.10, recovery: 0.60, ratio: 0.70, stagger: 1, knockback: 14, step: 8 },
+                flick: { weapon: 'dagger', name: '挑刃', windup: 0.16, swing: 0.08, recovery: 0.36, derive: 0.14, ratio: 0.42, stagger: 1, knockback: 10, step: 4, next: { a: 'whirl' } },
+                lunge: { weapon: 'dagger', name: '突刺', windup: 0.18, swing: 0.10, recovery: 0.45, derive: 0.16, ratio: 0.48, stagger: 1, knockback: 10, step: 30, next: { a: 'recut' } },
+                retreat: { weapon: 'dagger', name: '退步斩', windup: 0.08, swing: 0.08, recovery: 0.40, ratio: 0.40, stagger: 0, knockback: 0, step: -26 }
             }
         },
 
@@ -121,7 +141,7 @@ const gameConfig = (() => {
             ]
         },
 
-        // 4e. Monsters (rebuild-plan.md M3), on the old minimal AI (tag
+        // 4e. Monsters (design.md 5), on the old minimal AI (tag
         // v1-2d): patrol from waypoint to waypoint patrolRadius round home
         // at patrolSpeed, resting patrolRest at each; notice the player
         // within alertRange and stand alert for alertSeconds; chase at
@@ -135,13 +155,14 @@ const gameConfig = (() => {
         // home. At enrage.threshold of its HP it enrages for good: damage
         // times enrage.atk, its whole clock times enrage.tempo. HP is the
         // old value times the old hpScale 3, and so is ATK, to keep the old
-        // danger (combat-combo-concept.md 13). Moves: seconds; ratio per
+        // danger (the 2D version). Moves: seconds; ratio per
         // ATK; step: world units lunged during the swing; ram: the body
         // itself is the weapon (the wolf's leap). corpseSeconds: a fallen
         // monster lies this long, then sinks away. loot: the table rolled
-        // when it falls (`loot` below). A monster that gets home after
-        // giving up a chase is whole again.
-        // Bosses (rebuild-plan.md M5): `model` is the skeleton they are
+        // when it falls (`loot` below). stagger: points that make it reel
+        // (else combat.stagger.threshold; bosses take 10, user 2026-10-02).
+        // A monster that gets home after giving up a chase is whole again.
+        // Bosses (design.md 5): `model` is the skeleton they are
         // built on, `scale` how much bigger, `look` their colours
         // (models/); a boss down stays down and opens what waits on it.
         monsters: {
@@ -165,7 +186,7 @@ const gameConfig = (() => {
                 ]
             },
             goblinChief: {
-                name: '哥布林头目', model: 'goblin', scale: 1.45, look: 'chief', boss: true, loot: 'goblinChief',
+                name: '哥布林头目', model: 'goblin', scale: 1.45, look: 'chief', boss: true, loot: 'goblinChief', stagger: 10,
                 maxHp: 450, atk: 48, def: 5, radius: 18, speed: 50, turnRate: 2.6, trackTurn: 1.4,
                 patrolRadius: 0, patrolSpeed: 16, patrolRest: 2, alertRange: 190, alertSeconds: 0.7, leash: 360, standOff: 0.85,
                 firstDelay: 0.5, delay: 0.6, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.2 },
@@ -176,7 +197,7 @@ const gameConfig = (() => {
                 ]
             },
             wolfKing: {
-                name: '狼王', model: 'wolf', scale: 1.4, look: 'king', boss: true, loot: 'wolfKing',
+                name: '狼王', model: 'wolf', scale: 1.4, look: 'king', boss: true, loot: 'wolfKing', stagger: 10,
                 maxHp: 420, atk: 60, def: 4, radius: 22, speed: 88, turnRate: 3, trackTurn: 1.8,
                 patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
                 firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
@@ -188,7 +209,7 @@ const gameConfig = (() => {
             }
         },
 
-        // 4f. Items and loot (rebuild-plan.md M5, M6). items: everything that
+        // 4f. Items and loot (design.md 6.4, 7). items: everything that
         // can be carried, with its name, icon and line for the screens.
         // kind: gold | material | gear | supply. Gear goes in a `slot`
         // (main, offhand, armor, accessory) and adds its `stats`; a weapon's
@@ -205,9 +226,9 @@ const gameConfig = (() => {
             king_fang: { kind: 'material', name: '狼王之牙', icon: '🦴', sell: 40, desc: '狼王的牙。能打成项链。' },
             potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按副手键喝一口，回复三成生命；挨打会洒掉这一口（药水还在）。' },
             torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处，能烧掉枯木丛。不能挡，也不能拿来打。' },
-            wooden_sword: { kind: 'gear', slot: 'main', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
-            assassin_dagger: { kind: 'gear', slot: 'main', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { goblin_ear: 2, wolf_pelt: 2 } }, desc: '比木剑短，要贴得更近，伤害高一点。' },
-            iron_sword: { kind: 'gear', slot: 'main', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 1.0, max: 1, recipe: { gold: 80, materials: { goblin_ear: 4, wolf_pelt: 2 } }, desc: '比木剑长一点，也重得多。' },
+            wooden_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
+            assassin_dagger: { kind: 'gear', slot: 'main', weapon: 'dagger', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { goblin_ear: 2, wolf_pelt: 2 } }, desc: '短刃。比剑短，要贴得更近；出招快，连段最长六段，起手 B 是往前冲的突刺。' },
+            iron_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 1.0, max: 1, recipe: { gold: 80, materials: { goblin_ear: 4, wolf_pelt: 2 } }, desc: '比木剑长一点，也重得多。' },
             wooden_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '木盾', icon: '🛡️', stats: { def: 2 }, max: 1, desc: '开局带着的盾。按住副手键举盾。' },
             iron_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '铁盾', icon: '🔰', stats: { def: 6 }, max: 1, recipe: { gold: 80, materials: { goblin_ear: 3, wolf_pelt: 3 } }, desc: '更结实的盾。' },
             cloth_armor: { kind: 'gear', slot: 'armor', name: '布甲', icon: '👕', stats: { def: 2, maxHp: 20 }, max: 1, desc: '开局穿着的衣服。' },
@@ -233,7 +254,7 @@ const gameConfig = (() => {
         // collectDistance. radius: wall collision while it pops.
         drops: { radius: 4, popSeconds: 0.45, popHeight: 24, popSpeed: [30, 80], restSeconds: 0.5, pickupRange: 64, pullSpeed: 280, pullHeight: 14, collectDistance: 10 },
 
-        // 4g. The interact key (controls-landscape-concept.md 4.4). A target
+        // 4g. The interact key (design.md 3.5). A target
         // is picked within `reach` of the fighter (world units), scored by
         // distance plus facingWeight per radian off the facing; the target
         // already picked keeps it out to `release` and scores holdBonus
@@ -253,7 +274,7 @@ const gameConfig = (() => {
             storage: { name: '仓库', verb: '进入', action: 'open' }
         },
 
-        // 5. Fixed oblique camera (3d-migration-concept.md 7). yaw 0 keeps
+        // 5. Fixed oblique camera (design.md 1). yaw 0 keeps
         // screen-up on -z; pitch is the angle down from the horizon;
         // distance and lookHeight are blocks; fov is vertical, in degrees.
         camera: { yaw: 0, pitch: 0.96, distance: 10.5, fov: 34, lookHeight: 0.8 },
@@ -266,7 +287,7 @@ const gameConfig = (() => {
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full
         // over `ramp` more pixels. stickRadius: knob travel. maxTouches:
-        // two thumbs (controls-landscape-concept.md 4.5).
+        // two thumbs (design.md 3.2).
         input: {
             deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2,
             keys: {
@@ -276,7 +297,7 @@ const gameConfig = (() => {
             }
         },
 
-        // 8. Button layout (controls-landscape-concept.md 3). Each button's
+        // 8. Button layout (design.md 3.2). Each button's
         // centre is `x` from its `side` edge and `y` from the bottom edge,
         // both inside the safe area; `size` is the diameter. The stick
         // appears wherever the bottom-left zone (zoneWidth x zoneHeight from
@@ -293,7 +314,7 @@ const gameConfig = (() => {
             stick: { zoneWidth: 250, zoneHeight: 190, restX: 120, restY: 96 }
         },
 
-        // 9. Maps (rebuild-plan.md M5: the base, two regions, the training
+        // 9. Maps (design.md 6.3: the base, two regions, the training
         // ground and the PVP arena). One character per block: `.` grass,
         // `:` path, `=` cobble, `;` gravel, `1`-`9` stone wall of that many
         // blocks, `T` tree, `H` a building's wall (3 high), `#` a portal's
@@ -315,7 +336,7 @@ const gameConfig = (() => {
         // only a torch lights it (drawn). `floor`: the letter of the ground
         // the markers lie on (grass by default).
         maps: {
-            // The base (rebuild-plan.md M5): no monsters. Four buildings, the
+            // The base (design.md 6.3): no monsters. Four buildings, the
             // north gate to the field, the west gate to the training ground,
             // and the east gate straight to the valley once the goblin chief
             // is down.
@@ -452,7 +473,7 @@ const gameConfig = (() => {
                 ],
                 chests: [{ at: [42, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
-            // A dark cave off the valley (rebuild-plan.md M6): nothing to see
+            // A dark cave off the valley (design.md 2.5): nothing to see
             // without a lit torch. Its treasure room is shut by a thicket the
             // torch burns away.
             cave: {
@@ -517,7 +538,7 @@ const gameConfig = (() => {
                 ],
                 portals: [{ at: [4, 8], to: 'base', facing: 'east' }]
             },
-            // The PVP arena (rebuild-plan.md M4): 20 x 11 blocks inside a
+            // The PVP arena (design.md 8.3): 20 x 11 blocks inside a
             // wall, the same seen from either spawn (point symmetric). Walls
             // inside and to the south are 2 high, so they hide a fighter
             // without hiding one standing behind them from the camera.
@@ -548,7 +569,7 @@ const gameConfig = (() => {
             }
         },
 
-        // 10. PVP (rebuild-plan.md M4): one phone hosts and runs the duel,
+        // 10. PVP (design.md 8): one phone hosts and runs the duel,
         // the other sends its controls and draws the host's snapshots,
         // predicting its own moves in between. countdown: seconds from both
         // being ready to the fight. snapshotSeconds: host to guest state;

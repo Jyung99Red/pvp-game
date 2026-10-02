@@ -1,10 +1,10 @@
-// Block terrain (3d-migration-concept.md 12.1, 15): a grid where every cell
+// Block terrain (design.md 6.1): a grid where every cell
 // has a kind and a height in blocks, kept in 16 x 16 chunks so a change
 // rebuilds one chunk's drawing, not the world. Bodies move continuously over
 // it; collision and sight read the grid. Cell (col, row) covers world x in
 // [col, col + 1) * unit and y likewise; in 3D the block column stands on
-// x..x+1, z..z+1. The ground is flat (3d-migration-concept.md 6: no height
-// differences yet); solid kinds stand as columns `level` blocks high.
+// x..x+1, z..z+1. The ground is flat (design.md 1: no height
+// differences); solid kinds stand as columns `level` blocks high.
 //
 // The terrain can change at run time (`set`, reserved for placing and
 // breaking blocks). Changes are kept as `edits` against the map they were
@@ -177,7 +177,7 @@ const terrainKit = (() => {
     }
     // Is the straight line between two ground points free of solid blocks?
     // Sampled every eighth of a block; heights are not considered (a blow
-    // across any wall does not land: 3d-migration-concept.md 10, item 4).
+    // across any wall does not land: design.md 4.3).
     function lineClear(t, x0, y0, x1, y1) {
         const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (t.unit / 8)));
         for (let i = 1; i < n; i++) {

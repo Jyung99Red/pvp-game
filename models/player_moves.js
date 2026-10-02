@@ -1,9 +1,9 @@
 // Key poses of the main character's moves (sparse, see core/rig.js). Each
 // move has `a`, the pose at the end of its windup, and `b`, at the end of
 // its swing; the recovery eases back to the stance. Timing lives in
-// game_config.js (combo.moves). Keys are whole-body poses: a bone a key does
+// game_config.js (combo.moves); each weapon type has its own moves. Keys are whole-body poses: a bone a key does
 // not name is at rest. Horizontal moves keep the blade between waist and
-// chest (3d-migration-concept.md 4.6); `rising` and `cleave` cut on the
+// chest (design.md 4.3); `rising` and `cleave` cut on the
 // diagonal (4.5). rx < 0 raises an arm forward; ry > 0 turns towards the
 // character's left (+x).
 const playerMoves = (() => {
@@ -50,6 +50,48 @@ const playerMoves = (() => {
         follow: {
             a: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.1, ry: 0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
             b: key({ chest: { ry: -0.3 }, upperArmR: { rx: -1.1, ry: -0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } })
+        },
+
+        // ---- the dagger (design.md 4.2): low, tight, quick ----
+        // Diagonal, high right down to low left, from a crouch.
+        cut: {
+            a: key({ pelvis: { py: -0.05 }, chest: { ry: -0.4, rx: 0.08 }, upperArmR: { rx: -1.75, ry: -0.6 }, handR: { rx: 1.2 }, thighR: { rx: 0.35 }, shinR: { rx: 0.25 }, thighL: { rx: -0.4 }, shinL: { rx: 0.2 } }),
+            b: key({ pelvis: { py: -0.07 }, chest: { ry: 0.35, rx: 0.15 }, upperArmR: { rx: -0.85, ry: 0.55 }, handR: { rx: 1.35 }, thighR: { rx: 0.4 }, shinR: { rx: 0.25 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } })
+        },
+        // Flat, back left to right at the waist.
+        recut: {
+            a: key({ pelvis: { py: -0.06 }, chest: { ry: 0.4, rx: 0.1 }, upperArmR: { rx: -1.15, ry: 0.6 }, handR: { rx: 1.2 }, thighR: { rx: -0.35 }, shinR: { rx: 0.2 }, thighL: { rx: 0.35 }, shinL: { rx: 0.25 } }),
+            b: key({ pelvis: { py: -0.06 }, chest: { ry: -0.4, rx: 0.1 }, upperArmR: { rx: -1.15, ry: -0.65 }, handR: { rx: 1.2 }, thighR: { rx: -0.4 }, shinR: { rx: 0.2 }, thighL: { rx: 0.4 }, shinL: { rx: 0.25 } })
+        },
+        // Straight ahead from the hip.
+        stab: {
+            a: key({ pelvis: { py: -0.05 }, chest: { ry: -0.45, rx: 0.05 }, upperArmR: { rx: -0.25, ry: 0.3 }, forearmR: { rx: -1.4 }, handR: { rx: 1.5, ry: 0.25 }, thighR: { rx: 0.45 }, shinR: { rx: 0.25 }, thighL: { rx: -0.3 }, shinL: { rx: 0.15 } }),
+            b: key({ pelvis: { py: -0.08 }, chest: { ry: 0.2, rx: 0.2 }, upperArmR: { rx: -1.45, ry: 0.06 }, handR: { rx: 1.57 }, upperArmL: { rx: 0.1, ry: 0.2 }, thighR: { rx: 0.6 }, shinR: { rx: 0.3 }, thighL: { rx: -0.65 }, shinL: { rx: 0.35 } })
+        },
+        // A low whirl, right round to the left: about half a turn.
+        whirl: {
+            a: key({ base: { ry: -0.45 }, pelvis: { py: -0.1 }, chest: { ry: -0.3, rx: 0.15 }, upperArmR: { rx: -1.05, ry: -0.95 }, handR: { rx: 1.25 }, thighR: { rx: 0.5 }, shinR: { rx: 0.45 }, thighL: { rx: -0.45 }, shinL: { rx: 0.35 } }),
+            b: key({ base: { ry: 0.45 }, pelvis: { py: -0.1 }, chest: { ry: 0.3, rx: 0.15 }, upperArmR: { rx: -1.05, ry: 0.95 }, handR: { rx: 1.25 }, thighR: { rx: 0.5 }, shinR: { rx: 0.45 }, thighL: { rx: -0.45 }, shinL: { rx: 0.35 } })
+        },
+        // The finisher: both hands up, the blade brought straight down.
+        drop: {
+            a: key({ chest: { rx: -0.3 }, head: { rx: -0.1 }, upperArmR: { rx: -2.95, ry: -0.15 }, handR: { rx: 1.0 }, upperArmL: { rx: -2.7, ry: 0.25 }, forearmL: { rx: -0.4 }, thighR: { rx: 0.25 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
+            b: key({ pelvis: { py: -0.14 }, chest: { rx: 0.45 }, upperArmR: { rx: -0.75, ry: 0.1 }, handR: { rx: 1.35 }, upperArmL: { rx: -0.7, ry: -0.2 }, forearmL: { rx: -0.6 }, thighR: { rx: 0.55 }, shinR: { rx: 0.55 }, thighL: { rx: -0.75 }, shinL: { rx: 0.45 } })
+        },
+        // Low left up to high right, quick and short.
+        flick: {
+            a: key({ pelvis: { py: -0.08 }, chest: { rx: 0.25, ry: 0.4 }, upperArmR: { rx: -0.45, rz: 0.7 }, forearmR: { rx: -0.3 }, handR: { rx: 0.95 }, thighR: { rx: 0.45 }, shinR: { rx: 0.35 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
+            b: key({ chest: { rx: -0.15, ry: -0.3 }, upperArmR: { rx: -2.2, ry: -0.5 }, handR: { rx: 1.3 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.45 }, shinL: { rx: 0.1 } })
+        },
+        // The opening B: coiled low, then springing forward into a stab.
+        lunge: {
+            a: key({ pelvis: { py: -0.14 }, chest: { rx: 0.25, ry: -0.35 }, upperArmR: { rx: -0.2, ry: 0.3 }, forearmR: { rx: -1.5 }, handR: { rx: 1.5, ry: 0.25 }, upperArmL: { rx: -0.6, ry: 0.3 }, thighR: { rx: 0.65 }, shinR: { rx: 0.5 }, thighL: { rx: -0.35 }, shinL: { rx: 0.4 } }),
+            b: key({ pelvis: { py: -0.1 }, chest: { rx: 0.3, ry: 0.15 }, upperArmR: { rx: -1.52, ry: 0.05 }, handR: { rx: 1.57 }, upperArmL: { rx: 0.35, rz: 0.2 }, thighR: { rx: 0.7 }, shinR: { rx: 0.3 }, thighL: { rx: -0.85 }, shinL: { rx: 0.35 } })
+        },
+        // Jumping back with a cut right to left across the front.
+        retreat: {
+            a: key({ pelvis: { py: -0.05 }, chest: { ry: -0.4, rx: 0.05 }, upperArmR: { rx: -0.95, ry: -0.6 }, handR: { rx: 1.3 }, thighR: { rx: -0.25 }, shinR: { rx: 0.15 }, thighL: { rx: 0.3 }, shinL: { rx: 0.25 } }),
+            b: key({ pelvis: { py: -0.05 }, chest: { ry: 0.4, rx: -0.05 }, upperArmR: { rx: -0.95, ry: 0.6 }, handR: { rx: 1.3 }, thighR: { rx: -0.35 }, shinR: { rx: 0.25 }, thighL: { rx: 0.45 }, shinL: { rx: 0.35 } })
         }
     };
     return Object.freeze({

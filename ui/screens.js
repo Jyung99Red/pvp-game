@@ -1,4 +1,4 @@
-// The item screens (rebuild-plan.md M6), landscape, two columns: a list on
+// The item screens (design.md 7.3), landscape, two columns: a list on
 // the left, what is picked on the right. The bag (also the base's
 // storage: there is one bag) puts gear on and off -- in the base only -- and
 // lists what is carried; the shop sells potions and a torch and buys
@@ -21,6 +21,8 @@ const itemScreens = (() => {
         let kind = null, tab = null, picked = null, note = '', gearChanged = false;
 
         const statLine = stats => K.STATS.filter(k => stats?.[k]).map(k => `${STAT_NAMES[k]} +${stats[k]}`).join('，');
+        // The slot, and for a weapon its type (which decides the moves).
+        const slotLine = item => SLOT_NAMES[item.slot] + (item.weapon ? ` · ${gameConfig.combo.weapons[item.weapon].name}` : '');
         const owned = id => K.count(hooks.progress(), id);
         const row = (id, sub, tag = '', dim = false) => ({ id, icon: I[id].icon, name: I[id].name, sub, tag, dim });
 
@@ -48,7 +50,7 @@ const itemScreens = (() => {
                         ? (slot === 'main' ? [] : [{ id: 'unequip', label: '卸下', why: lock }])
                         : [{ id: 'equip', label: p.loadout[slot] ? `换上（替下${I[p.loadout[slot]].name}）` : '装上', primary: true, why: lock }];
                     return {
-                        lines: [item.desc, `${SLOT_NAMES[slot]}${item.stats ? ' · ' + statLine(item.stats) : ''}`],
+                        lines: [item.desc, `${slotLine(item)}${item.stats ? ' · ' + statLine(item.stats) : ''}`],
                         compare: (worn && slot === 'main') ? null : K.STATS.map(k => [STAT_NAMES[k], now[k], next[k]]),
                         totals: K.STATS.map(k => [STAT_NAMES[k], now[k]]),
                         actions
@@ -95,7 +97,7 @@ const itemScreens = (() => {
                 detail(id) {
                     const p = hooks.progress(), item = I[id];
                     return {
-                        lines: [item.desc, `${SLOT_NAMES[item.slot]} · ${statLine(item.stats)}`],
+                        lines: [item.desc, `${slotLine(item)} · ${statLine(item.stats)}`],
                         needs: K.needs(p, id).map(n => [I[n.id].icon, I[n.id].name, n.have, n.need]),
                         actions: [{ id: 'craft', label: '打造', primary: true, why: K.canCraft(p, id) }]
                     };

@@ -1,4 +1,4 @@
-// PVP (rebuild-plan.md M4): the duel rules in the simulation (two fighters,
+// PVP (design.md 8): the duel rules in the simulation (two fighters,
 // light hits trade, heavy hits break, the shield the same for both, same-step
 // trades, no blows across walls), and the host/guest protocol of
 // core/duel.js played end to end over an in-memory channel, carried over
@@ -238,7 +238,7 @@ test('a guest combo reaches the same move on both phones, over latency', () => {
     const p = pair({ latency: 0.04 }); fightNow(p);
     press(p.guest, 'a'); release(p.guest, 'a');
     assert.equal(p.guest.sim.fighters[1].act.move, 'slash', 'predicted at once');
-    p.run(0.2); press(p.guest, 'a'); release(p.guest, 'a'); p.run(0.15);
+    p.run(0.2); press(p.guest, 'a'); release(p.guest, 'a'); p.run(M.slash.windup + M.slash.swing + M.slash.derive - 0.2 + 0.03);
     assert.equal(p.host.sim.fighters[1].act.move, 'backslash');
     assert.equal(p.guest.sim.fighters[1].act.move, 'backslash');
     p.run(1.2);

@@ -1,22 +1,27 @@
-// Bone hit tests (3d-migration-concept.md 4): only a weapon box in its
+// Bone hit tests (design.md 4.3): only a weapon box in its
 // swing hits, body boxes follow the model, weapon boxes grow by
 // combat.weaponPad, and a fast swing is sampled finely enough to hit a thin
-// target. Every move must land on a standard target at the standard
-// distance, and keep the horizontal sweep it was designed with (4.3, 4.5).
+// target. Every move of every weapon type must land on a standard target at
+// its type's standard distance, and keep the horizontal sweep it was
+// designed with.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
 const g = load();
 const { rigKit: R, math3d: M, playerAnim, combatKit, space, gameConfig, playerModel, equipmentModels, dummyKit, worldSim: W } = g;
-const MOVES = gameConfig.combo.moves, U = gameConfig.world.unitsPerBlock;
-// Centre to centre, about a block and a half: the distance a fight is held at.
-const STANDARD = 60;
+const MOVES = gameConfig.combo.moves, WEAPONS = gameConfig.combo.weapons, U = gameConfig.world.unitsPerBlock;
+// Centre to centre, about a block and a half: the distance a sword fight is held at.
+const STANDARD = WEAPONS.sword.standard;
+const movesOf = type => Object.keys(MOVES).filter(id => MOVES[id].weapon === type);
 
 const player = R.build(playerModel, { equipment: equipmentModels.forLoadout(gameConfig.gear.starter) });
+const daggerRig = R.build(playerModel, { equipment: equipmentModels.forLoadout({ ...gameConfig.gear.starter, main: 'assassin_dagger' }) });
+const rigOf = type => type === 'dagger' ? daggerRig : player;
 const dummy = dummyKit.rig();
 const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
-// The attacker at the origin facing +x (simulation facing 0), at swing progress u.
-const swingAt = (move, u) => R.solve(player, playerAnim.pose(player, { ...still, act: { move, phase: 'swing', t: u * MOVES[move].swing, from: null } }), [0, 0, 0], space.yawOf(0));
+// The attacker at the origin facing +x (simulation facing 0), at swing
+// progress u, holding its move's weapon.
+const swingAt = (move, u) => { const rig = rigOf(MOVES[move].weapon); return R.solve(rig, playerAnim.pose(rig, { ...still, act: { move, phase: 'swing', t: u * MOVES[move].swing, from: null } }), [0, 0, 0], space.yawOf(0)); };
 // A target standing `dist` away at `angle` from the attacker's facing, facing back.
 function target(kind, dist, angle = 0) {
     const x = Math.cos(angle) * dist, y = Math.sin(angle) * dist, yaw = space.yawOf(Math.atan2(-y, -x)), at = space.toBlocks(x, y, 0);
@@ -28,15 +33,15 @@ function target(kind, dist, angle = 0) {
 // Swing in simulation-sized steps; true if the target is touched.
 function lands(move, boxes, stepSeconds = 0.01) {
     const n = Math.ceil(MOVES[move].swing / stepSeconds);
-    for (let i = 0; i < n; i++) if (combatKit.sweep(player, u => swingAt(move, u), i / n, (i + 1) / n, [{ id: 't', boxes }])) return true;
+    for (let i = 0; i < n; i++) if (combatKit.sweep(rigOf(MOVES[move].weapon), u => swingAt(move, u), i / n, (i + 1) / n, [{ id: 't', boxes }])) return true;
     return false;
 }
 const degrees = r => r * 180 / Math.PI;
 // Where the blade tip points, horizontally, relative to facing: + is the attacker's left.
 function tipAngles(move) {
-    const blade = player.parts.findIndex(p => p.kind === 'weapon'), half = player.parts[blade].size[2] / 2, out = [];
+    const rig = rigOf(MOVES[move].weapon), blade = rig.parts.findIndex(p => p.kind === 'weapon'), half = rig.parts[blade].size[2] / 2, out = [];
     for (let k = 0; k <= 40; k++) {
-        const s = R.solve(player, playerAnim.pose(player, { ...still, act: { move, phase: 'swing', t: k / 40 * MOVES[move].swing, from: null } }));
+        const s = R.solve(rig, playerAnim.pose(rig, { ...still, act: { move, phase: 'swing', t: k / 40 * MOVES[move].swing, from: null } }));
         const tip = M.transformPoint(s.parts[blade], [0, 0, half]);
         out.push({ angle: Math.atan2(tip[0], tip[2]), height: tip[1] });
     }
@@ -45,11 +50,27 @@ function tipAngles(move) {
     return out;
 }
 
-test('every move lands on a standard target at the standard distance, the dummy and a person alike', () => {
-    for (const move of Object.keys(MOVES)) {
-        for (const kind of ['dummy', 'player']) assert.ok(lands(move, target(kind, STANDARD)), `${move} misses a ${kind} at ${STANDARD}`);
-        assert.ok(!lands(move, target('dummy', 140)), `${move} reaches far beyond its range`);
+test('every move lands on a standard target at its weapon\'s standard distance, the dummy and a person alike', () => {
+    for (const [type, w] of Object.entries(WEAPONS)) {
+        assert.ok(movesOf(type).length >= 8, `${type} has a move tree of its own`);
+        for (const move of movesOf(type)) {
+            for (const kind of ['dummy', 'player']) assert.ok(lands(move, target(kind, w.standard)), `${move} misses a ${kind} at ${w.standard}`);
+            assert.ok(!lands(move, target('dummy', 140)), `${move} reaches far beyond its range`);
+        }
     }
+});
+
+test('the dagger\'s cuts keep their shapes: tight arcs, a half-turn whirl, a straight drop', () => {
+    const designed = { cut: 98, recut: 111, stab: 28, whirl: 190, flick: 111, lunge: 19, retreat: 109 };
+    for (const [move, arc] of Object.entries(designed)) {
+        const a = tipAngles(move).map(x => x.angle), sweep = degrees(Math.max(...a) - Math.min(...a));
+        assert.ok(Math.abs(sweep - arc) <= 15, `${move} sweeps ${sweep.toFixed(0)} degrees, designed ${arc}`);
+    }
+    // Cut goes high right to low left; flick low left to high right; the drop comes straight down.
+    const cut = tipAngles('cut'), flick = tipAngles('flick'), drop = tipAngles('drop');
+    assert.ok(cut[0].angle < 0 && cut[0].height > 1.4 && cut.at(-1).angle > 0 && cut.at(-1).height < 0.7, 'cut: high right to low left');
+    assert.ok(flick[0].angle > 0 && flick[0].height < 0.8 && flick.at(-1).angle < 0 && flick.at(-1).height > 1.8, 'flick: low left to high right');
+    assert.ok(drop[0].height > 2.2 && drop.at(-1).height < 0.3, 'drop: from overhead to the ground');
 });
 
 test('horizontal cuts keep the sweep of their 2D sectors; the spin covers about 210 degrees', () => {
@@ -109,7 +130,7 @@ test('weapon boxes grow by weaponPad for hits; body boxes are exactly what is dr
     const s = swingAt('slash', 0.5), pad = gameConfig.combat.weaponPad / U;
     const drawn = R.boxes(player, s, ['weapon'])[0].box, grown = combatKit.weaponBoxes(player, s, pad)[0];
     drawn.h.forEach((h, i) => assert.ok(Math.abs(grown.h[i] - h - pad) < 1e-12));
-    assert.ok(Math.abs(pad - 0.2) < 1e-9, 'about 0.2 blocks (3d-migration-concept.md 4.6)');
+    assert.ok(Math.abs(pad - 0.2) < 1e-9, 'about 0.2 blocks (design.md 4.3)');
     const body = combatKit.hurtboxes(player, s);
     const parts = player.parts.filter(p => p.kind === 'body');
     body.forEach((b, i) => b.h.forEach((h, k) => assert.ok(Math.abs(h - parts[i].size[k] / 2) < 1e-12)));

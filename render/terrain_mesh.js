@@ -1,4 +1,4 @@
-// Terrain drawn in 16 x 16 chunks (3d-migration-concept.md 12.1, 15): each
+// Terrain drawn in 16 x 16 chunks (design.md 2.5, 6.1): each
 // chunk is one mesh of only the block faces that can be seen (a face
 // against another block is left out), textured from one atlas, so a chunk
 // is one draw and a change rebuilds only the chunks it touched (their

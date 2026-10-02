@@ -1,6 +1,6 @@
 // Fixed-step clock: real frame time in, whole simulation steps out. A long
 // frame (a background tab, a slow phone) is capped so the game slows down
-// instead of jumping (rebuild-plan.md 5).
+// instead of jumping (roadmap.md 4.1).
 const simLoop = (() => {
     const STEP = 0.01, MAX_FRAME = 0.1;
     function create(stepFn, { step = STEP, maxFrame = MAX_FRAME } = {}) {

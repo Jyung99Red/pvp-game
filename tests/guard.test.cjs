@@ -1,5 +1,5 @@
-// The offhand key with a shield (controls-landscape-concept.md 4.3) and the
-// guard bar (combat-combo-concept.md 7), carried over from the 2D version
+// The offhand key with a shield (design.md 3.4) and the
+// guard bar (design.md 4.5), carried over from the 2D version
 // and played against the training dummy's real attacks.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');

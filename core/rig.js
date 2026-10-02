@@ -1,7 +1,7 @@
 // Skeletons, sparse poses and forward kinematics. A model (models/) is data:
 // bones with joint positions, boxes hung on bones, and mount points for
 // equipment. Poses are sparse: { bone: { rx, ry, rz, px, py, pz } }, and a
-// bone a pose does not name stays at rest (3d-migration-concept.md 12.1).
+// bone a pose does not name stays at rest (design.md 2.4).
 // Box kinds: `body` is hurtbox, `weapon` hits, `shield` blocks (later), and
 // `deco` is only drawn.
 const rigKit = (() => {

@@ -1,4 +1,4 @@
-// Drawn-only feedback (combat-combo-concept.md, hit feel step 1): blade
+// Drawn-only feedback (design.md 2.5): blade
 // trails, block debris, hit flash, a small camera shake, stagger stars, the
 // charge glow, the pause-line cue, a fallen monster's burst and an enraged
 // one's red glow. Reads simulation events and solved rigs; never writes the
@@ -122,7 +122,7 @@ const renderEffects = (() => {
             }
         }
         const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24');
-        // Per frame. `view`: { selfId, playerRig, fighters: [{ id, body,
+        // Per frame. `view`: { selfId, fighters: [{ id, body, rig,
         // solved, blade, materials }] (those drawn), foes: [{ body, view:
         // { materials }, top, shown }] }.
         function update(dt, sim, view) {
@@ -147,7 +147,7 @@ const renderEffects = (() => {
                     const [x, , z] = space.toBlocks(f.shown.x, f.shown.y, f.shown.h), a2 = rnd() * Math.PI * 2;
                     burst([x + Math.cos(a2) * 0.4, 0.2 + rnd() * 1.4, z + Math.sin(a2) * 0.4], 1, ['#9ff0a0', '#e8ffd8'], 0.2, 0.6, 0.05);
                 }
-                if (a?.phase === 'swing') sampleBlade(trail, view.playerRig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
+                if (a?.phase === 'swing') sampleBlade(trail, f.rig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
                 drawTrail(trail); trail.mesh.visible = true;
                 for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));
                 // The blade glows gold while charging, flashes white on the pause line.

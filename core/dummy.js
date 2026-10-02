@@ -1,5 +1,5 @@
 // The training dummy: anchored where the map puts it, it never walks,
-// turns or gets pushed (combat-combo-concept.md 13). While the player is
+// turns or gets pushed (design.md 5). While the player is
 // within engageRange it attacks its moves in turn; its club hits by the same
 // box test as the player's sword, and the blow is settled by
 // combatKit.strike. Hits on it stagger it like any fighter.

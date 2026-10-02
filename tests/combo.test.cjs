@@ -1,6 +1,6 @@
 // The move tree on A and B, carried over from the 2D version's tests
 // (tag v1-2d, tests/spatial-engine.test.cjs) and rewritten for separate A and
-// B keys (controls-landscape-concept.md 4.2): no tap/hold detection, no
+// B keys (design.md 3.3): no tap/hold detection, no
 // poise, A or B start a move the moment they are pressed.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,8 +9,9 @@ const { worldSim: W, gameConfig } = load();
 const K = gameConfig.combo, M = K.moves;
 
 // A sim with the dummy out of the way: far off and with nothing to do.
-function setup({ near = false } = {}) {
-    const sim = W.create(), d = sim.dummy;
+// `main`: the weapon held (its type decides the move tree).
+function setup({ near = false, main = null } = {}) {
+    const sim = W.create(main ? { loadout: { ...gameConfig.gear.starter, main } } : {}), d = sim.dummy;
     d.wait = 1e9; // never attacks
     if (near) { sim.player.x = d.x - 60; sim.player.y = d.y; sim.player.facing = 0; }
     else { d.x += 400; }
@@ -54,9 +55,9 @@ test('pressing A starts the windup at once; without a next input the recovery pl
     const swingEnd = log.find(x => x.key === 'recover:slash').time;
     assert.ok(Math.abs(log.at(-1).time - swingEnd - M.slash.recovery) < 0.011);
     tap(sim); assert.equal(sim.player.act.move, 'backslash', 'inside the window an A continues the chain');
-    const late = setup(); tap(late); step(late, 0.18 + M.slash.recovery + K.windowAfterRecovery + 0.05);
+    const late = setup(); tap(late); step(late, M.slash.windup + M.slash.swing + M.slash.recovery + K.windowAfterRecovery + 0.05);
     assert.equal(late.player.chain, null); tap(late); assert.equal(late.player.act.move, 'slash', 'after the window an A starts over');
-    const walked = setup(); tap(walked); step(walked, 0.5);
+    const walked = setup(); tap(walked); step(walked, M.slash.windup + M.slash.swing + M.slash.recovery + 0.02);
     W.command(walked, { type: 'move', x: 1, y: 0 }); step(walked, 0.05); W.command(walked, { type: 'move', x: 0, y: 0 });
     assert.equal(walked.player.chain, null, 'walking off ends the combo'); tap(walked); assert.equal(walked.player.act.move, 'slash');
 });
@@ -219,22 +220,101 @@ test('a landed hit holds both fighters for the hitstop; only moves with knockbac
     assert.equal(anchored.dummy.x, ax);
 });
 
-test('stagger comes from B moves only; three points and the dummy reels, then recovers', () => {
+test('stagger comes from B moves only, in whole points; three and the dummy reels, then recovers', () => {
     const S = gameConfig.combat.stagger;
     const sim = setup({ near: true });
     tap(sim); until(sim, 'recover:slash'); tap(sim); until(sim, 'recover:backslash'); tap(sim);
     run(sim, () => phase(sim) === 'idle');
     assert.equal(sim.stats.hits, 3); assert.equal(sim.dummy.stagger, 0, 'A A A: no stagger');
+    for (const m of Object.values(M)) assert.ok(Number.isInteger(m.stagger) && m.stagger >= 0, `${m.name}: whole stagger points (user, 2026-10-02)`);
     tap(sim, 'b'); until(sim, 'recover:charged'); assert.equal(sim.dummy.stagger, M.charged.stagger);
     run(sim, () => phase(sim) === 'idle'); step(sim, K.windowAfterRecovery + 0.05); // else A would be the follow-up
-    // A B: the rising cut's 1.5 brings it to 2.5; another A B tips it over 3.
+    // A B: the rising cut's 2 tips it over 3.
+    assert.ok(M.charged.stagger < S.threshold && M.charged.stagger + M.rising.stagger >= S.threshold);
     tap(sim); until(sim, 'recover:slash'); tap(sim, 'b'); until(sim, 'recover:rising');
-    assert.equal(sim.dummy.stagger, M.charged.stagger + M.rising.stagger);
-    run(sim, () => phase(sim) === 'idle'); step(sim, K.windowAfterRecovery + 0.05);
-    tap(sim); until(sim, 'recover:slash'); tap(sim, 'b'); until(sim, 'recover:rising');
-    assert.equal(sim.dummy.phase, 'reel');
+    assert.equal(sim.dummy.phase, 'reel'); assert.equal(sim.dummy.stagger, 0, 'and its points start over');
     assert.ok(W.drain(sim).some(e => e.type === 'stagger' && e.side === 'dummy'));
     step(sim, S.duration + 0.05); assert.equal(sim.dummy.phase, 'idle');
+});
+
+// ---- weapon types (design.md 4.2) ----
+test('each weapon type has its own tree: roots and derived moves stay in the type, stagger in whole points', () => {
+    for (const [type, w] of Object.entries(K.weapons)) {
+        for (const input of ['a', 'b']) assert.equal(M[w.root[input]]?.weapon, type, `${type} ${input} root`);
+        for (const [id, m] of Object.entries(M).filter(([, m]) => m.weapon === type)) {
+            for (const next of Object.values(m.next || {})) assert.equal(M[next]?.weapon, type, `${id} -> ${next}`);
+            assert.equal(m.derive != null, !!m.next, `${id}: a derive point exactly when something derives`);
+        }
+    }
+    // Every weapon names a type with a tree.
+    for (const [id, item] of Object.entries(gameConfig.items)) if (item.slot === 'main') assert.ok(K.weapons[item.weapon], id);
+    // The sword is the slower one: every sword move is longer than the dagger's at the same place in the tree.
+    const length = id => M[id].windup + M[id].swing + M[id].recovery;
+    for (const [s, d] of [['slash', 'cut'], ['backslash', 'recut'], ['spin', 'whirl'], ['thrust', 'stab']]) assert.ok(length(s) > length(d), `${s} is slower than ${d}`);
+});
+
+// Walk a combo: each input pressed once the move before has swung.
+function combo(sim, inputs) {
+    const done = [];
+    for (const input of inputs) {
+        const prev = done.at(-1) ?? sim.player.act?.move;
+        tap(sim, input);
+        run(sim, () => sim.player.act?.phase === 'recover' && sim.player.act.move !== prev);
+        done.push(sim.player.act?.move);
+    }
+    return done;
+}
+
+test('the dagger chains five As: cut, recut, stab, whirl, drop', () => {
+    const sim = setup({ main: 'assassin_dagger' });
+    assert.deepEqual(combo(sim, ['a', 'a', 'a', 'a', 'a']), ['cut', 'recut', 'stab', 'whirl', 'drop']);
+    assert.deepEqual([...sim.player.combo], ['a', 'a', 'a', 'a', 'a']);
+    // The drop is the finisher: an A late in its recovery starts over once it is over.
+    run(sim, () => sim.player.act.t > M.drop.recovery - 0.2);
+    tap(sim); assert.equal(sim.player.act.move, 'drop');
+    run(sim, () => sim.player.act?.move === 'cut');
+    assert.equal(sim.player.act?.move, 'cut');
+});
+
+test('inside a dagger combo B flicks and goes on: A A A B A A is six moves', () => {
+    const sim = setup({ main: 'assassin_dagger' });
+    assert.deepEqual(combo(sim, ['a', 'a', 'a', 'b', 'a', 'a']), ['cut', 'recut', 'stab', 'flick', 'whirl', 'drop']);
+    assert.deepEqual([...sim.player.combo], ['a', 'a', 'a', 'b', 'a', 'a']);
+    const early = setup({ main: 'assassin_dagger' });
+    assert.deepEqual(combo(early, ['a', 'b', 'a', 'a']), ['cut', 'flick', 'whirl', 'drop']);
+});
+
+test('the dagger opens B with a lunge forward and goes on into the chain; a pause after A A jumps back', () => {
+    const sim = setup({ main: 'assassin_dagger' }), x0 = sim.player.x;
+    sim.player.facing = 0;
+    tap(sim, 'b'); assert.equal(sim.player.act.move, 'lunge', 'no charge: B is the lunge at once');
+    until(sim, 'recover:lunge');
+    assert.ok(sim.player.x - x0 > M.lunge.step - 1, `lunged ${(sim.player.x - x0).toFixed(1)}`);
+    assert.deepEqual(combo(sim, ['a', 'a']), ['recut', 'stab']);
+    const back = setup({ main: 'assassin_dagger' });
+    back.player.facing = 0;
+    tap(back); until(back, 'recover:cut'); tap(back); run(back, () => phase(back) === 'idle');
+    step(back, K.pauseAfterRecovery + 0.02);
+    const x1 = back.player.x; tap(back);
+    assert.equal(back.player.act.move, 'retreat');
+    until(back, 'recover:retreat');
+    assert.ok(x1 - back.player.x > -M.retreat.step - 1, `jumped back ${(x1 - back.player.x).toFixed(1)}`);
+});
+
+test('an input the move does not derive waits for the recovery: no endless loops through the root', () => {
+    // B in the whirl (it derives only A): the lunge starts after the whirl's whole recovery.
+    const sim = setup({ main: 'assassin_dagger' });
+    combo(sim, ['a', 'a', 'a', 'a']);
+    assert.equal(sim.player.act.move, 'whirl');
+    tap(sim, 'b');
+    const log = until(sim, 'windup:lunge');
+    const swingEnd = log.find(x => x.key === 'recover:whirl')?.time ?? log[0].time - sim.player.act.t;
+    assert.ok(log.at(-1).time - swingEnd >= M.whirl.recovery - 0.011, 'not cut short at the derive point');
+    assert.deepEqual([...sim.player.combo], ['b'], 'and it is a new combo');
+    // A derived input still cuts the recovery short.
+    const d = setup({ main: 'assassin_dagger' }); combo(d, ['a', 'a', 'a']); tap(d);
+    const l2 = until(d, 'windup:whirl'), end2 = l2.find(x => x.key === 'recover:stab')?.time;
+    assert.ok(end2 === undefined || l2.at(-1).time - end2 < M.stab.recovery);
 });
 
 test('the same inputs give the same fight', () => {

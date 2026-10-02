@@ -1,12 +1,12 @@
-// Monsters (rebuild-plan.md M3): the goblin and the wolf, on the old
+// Monsters (design.md 5): the goblin and the wolf, on the old
 // minimal AI of the 2D version (tag v1-2d, pve/adventure_world.js and
 // pve/spatial_engine.js): patrol round home, notice the player and stand
 // alert a moment, chase, attack the moves in turn, enrage when low, walk
 // home past the leash. Their blows hit by the same box test as the
-// player's sword (3d-migration-concept.md 4.4); the wolf's leap rams with
+// player's sword (design.md 5); the wolf's leap rams with
 // its whole body along its path. How far a move reaches, and the warning
 // on the ground, are swept out of its key poses once (`reach`).
-// Bosses (rebuild-plan.md M5) are the same skeletons made bigger, with a
+// Bosses (design.md 5) are the same skeletons made bigger, with a
 // look and moves of their own; a boss down stays down (the save), and the
 // portals and chests waiting on it open. A fallen monster drops its loot
 // (core/props.js). One that gives up the chase and gets home is whole
@@ -107,7 +107,7 @@ const monsterKit = (() => {
     // What strikes in a move, and how much it grows for the hit test.
     const striking = move => move.ram ? { kinds: ['body', 'weapon'], pad: 0 } : { kinds: ['weapon'], pad: F().weaponPad / UNIT() };
 
-    // ---- reach, swept out of the key poses (3d-migration-concept.md 4.3, 4.4) ----
+    // ---- reach, swept out of the key poses (design.md 5) ----
     // For move `index` of `kind`, in the monster's own frame (blocks, +z
     // ahead, standing at the origin): `hull`, the convex outline on the
     // ground of everything that strikes over the swing, lunge included (the
@@ -153,11 +153,12 @@ const monsterKit = (() => {
         if (['patrol', 'alert', 'return'].includes(m.phase)) { m.phase = 'chase'; m.t = 0; m.wait = S.firstDelay; }
         if (points > 0) stagger(sim, m, points);
     }
+    // Stagger points that make a kind reel (bosses take more).
+    function threshold(kind) { return configOf(kind).stagger ?? F().stagger.threshold; }
     function stagger(sim, m, amount) {
-        const S = F().stagger;
         if (m.phase === 'reel') return;
         m.stagger += amount;
-        if (m.stagger >= S.threshold - 1e-9) {
+        if (m.stagger >= threshold(m.kind) - 1e-9) {
             m.stagger = 0; m.phase = 'reel'; m.t = 0; m.struck = false;
             emit(sim, m, 'stagger');
         }
@@ -296,5 +297,5 @@ const monsterKit = (() => {
         m.h = space.groundHeight(m.x, m.y);
     }
     function tick(sim, dt) { for (const m of sim.monsters) tickOne(sim, m, dt); }
-    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, reach, cycleLength, height, tick, living, engaged, present: living, modelOf };
+    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, threshold, reach, cycleLength, height, tick, living, engaged, present: living, modelOf };
 })();

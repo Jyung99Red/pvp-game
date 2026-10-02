@@ -1,4 +1,4 @@
-// The world (rebuild-plan.md M5): terrain in chunks that can change at run
+// The world (design.md 6): terrain in chunks that can change at run
 // time, the regions and how their portals join up, entities, the interact
 // key, chests, loot on the ground, bosses that stay down, and the save.
 const { test } = require('node:test');

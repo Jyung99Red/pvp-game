@@ -1,5 +1,5 @@
 // The main character's pose as a pure function of simulation state
-// (3d-migration-concept.md 12.1): stance, walk, run, moves, shield and
+// (design.md 2.3): stance, walk, run, moves, shield and
 // flinch depend only on what the simulation holds, so the host and a guest
 // pose a body the same way, and a hit test sees what is drawn. `present`
 // adds what is drawn but never tested (breathing, leaning, trembling).

@@ -1,5 +1,5 @@
 // The one place where simulation coordinates meet 3D and screen
-// coordinates (3d-migration-concept.md 12.1).
+// coordinates (design.md 2.2).
 // - Simulation: ground position (x, y) in world units, y grows towards the
 //   bottom of the screen; height h; facing theta, 0 = +x, pi/2 = +y.
 // - 3D (blocks): (x, h, y) / unitsPerBlock, no flip, so screen-up is -z.
@@ -15,7 +15,7 @@ const space = (() => {
         return { x: c * sx + s * sy, y: -s * sx + c * sy };
     }
     // The ground position under a body: the simulation's only source of
-    // "where the floor is". Flat for now (3d-migration-concept.md 6).
+    // "where the floor is". Flat for now (design.md 2.2).
     function groundHeight(/* x, y */) { return 0; }
     function wrapAngle(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
     // Turn `from` towards `to` by at most `maxStep` radians.

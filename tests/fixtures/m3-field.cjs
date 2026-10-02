@@ -1,4 +1,4 @@
-// The field of M3 (rebuild-plan.md), kept as a fixed test ground for the
+// The field of M3 (roadmap.md 4.2), kept as a fixed test ground for the
 // monster tests: 2 goblins, 2 wolves, low walls and a few stones, no
 // portals. The game's own regions change with the content; this does not.
 module.exports = {

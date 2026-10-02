@@ -35,7 +35,7 @@ test('full stick walks at player.speed; a half-pushed stick at half speed', () =
     W.command(sim, { type: 'move', x: 1, y: 0 });
     loop.run(1);
     assert.ok(Math.abs(p.x - x0 - SPEED) < 1e-6, `moved ${p.x - x0}`);
-    assert.ok(Math.abs(p.gait - SPEED / playerAnim.cycleLength(sim.rigs.player, 0)) < 1e-6, 'the gait advances by distance over the stride');
+    assert.ok(Math.abs(p.gait - SPEED / playerAnim.cycleLength(sim.rigs.fighters.player, 0)) < 1e-6, 'the gait advances by distance over the stride');
     const y0 = p.y;
     W.command(sim, { type: 'move', x: 0, y: -0.5 });
     loop.run(0.5);

@@ -1,10 +1,10 @@
-// Browser smoke test (rebuild-plan.md 5): the real page in headless Chromium
+// Browser smoke test (roadmap.md 4): the real page in headless Chromium
 // as a landscape phone. Boots without console errors, draws the world, lays
 // out the controls, covers portrait with the rotate hint, two real touch
 // points (stick + A) drive the simulation together; the world (M5): from
 // the base through a portal by touch, a fight, falling and home, walls in
 // front cut open, the save across a reload. Two pages of one browser play
-// a whole duel over ?link=local (rebuild-plan.md M4).
+// a whole duel over ?link=local (design.md 8).
 //
 // Skipped when Playwright is not available. It is looked up as
 // PLAYWRIGHT_MODULE (a path), then `playwright`, `playwright-core`, then the

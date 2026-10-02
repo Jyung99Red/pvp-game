@@ -1,4 +1,4 @@
-// Models of the world's props (rebuild-plan.md M5): the chest (a rig with a
+// Models of the world's props (design.md 6): the chest (a rig with a
 // hinged lid), the shapes of things lying on the ground, the roof colour of
 // each building, and the colours of a portal's opening. Data only; the
 // renderer builds them.

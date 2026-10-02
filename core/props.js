@@ -1,4 +1,4 @@
-// Props (rebuild-plan.md M5): the world entities that are neither fighters
+// Props (design.md 6): the world entities that are neither fighters
 // nor monsters (core/entity.js).
 // - building: a house of `H` blocks with a door; the interact key in front
 //   of the door rests (the hot spring) or opens the building's panel.

@@ -34,15 +34,18 @@ uses it.
 - `index.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
 
 The code, `game_config.js` and the tests are the description of current
-behaviour. Design in progress lives in `docs/tasks/` (Chinese); the rebuild
-order is `docs/tasks/rebuild-plan.md`. The 2D version is tag `v1-2d`
-(commit `2a313c4`).
+behaviour. `docs/tasks/` (Chinese) holds three documents and no more:
+`design.md` (what the game is and the rules decided, marked where the user
+decided them), `parameters.md` (every number in `game_config.js`, readable)
+and `roadmap.md` (what was done, what is next, how to test in this
+container). New decisions go into the matching section of `design.md`. The
+2D version is tag `v1-2d` (commit `2a313c4`).
 This file only changes when project setup changes.
 
 ## Rules
 
 - Tunable numbers live only in `game_config.js`. When they change, update
-  `docs/tasks/combat-parameter-inventory.md` to match. Model shapes and key
+  `docs/tasks/parameters.md` to match. Model shapes and key
   poses are data in `models/`, not tunables.
 - What is drawn is what is judged: poses that change a body's volume are a
   pure function of simulation state (`core/player_anim.js`); `render/` adds

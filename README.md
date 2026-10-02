@@ -5,7 +5,7 @@
 
 项目使用原生 HTML、CSS 和 JavaScript，没有打包器和安装步骤；3D 画面用 three.js，联机用 PeerJS，都已放在 `vendor/` 里，离线也能打开。
 
-按 [docs/tasks/rebuild-plan.md](docs/tasks/rebuild-plan.md) 的 6 个里程碑重建完毕（2026-10-02）。2D 竖屏的旧版本在标签 `v1-2d`（提交 `2a313c4`）。
+2026-10-01～02 按 6 个里程碑重建完毕，之后的路线见 [docs/tasks/roadmap.md](docs/tasks/roadmap.md)。2D 竖屏的旧版本在标签 `v1-2d`（提交 `2a313c4`）。
 
 ## 开始运行
 
@@ -175,5 +175,5 @@ partials/   启动时挂载的页面片段
 tests/      Node 测试和浏览器冒烟测试
 ```
 
-可调数值都在 `game_config.js`，对照表是 `docs/tasks/combat-parameter-inventory.md`。设计文档在 `docs/tasks/`。
+可调数值都在 `game_config.js`，对照表是 `docs/tasks/parameters.md`；设计是 `docs/tasks/design.md`。
 新增或删除脚本、样式及页面片段时，要同步更新 `client-assets.json`。

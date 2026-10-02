@@ -14,7 +14,7 @@ const lowestBody = solved => R.lowest(rig, solved);
 // Objects made inside the vm have their own prototypes; compare as data.
 const plain = value => JSON.parse(JSON.stringify(value));
 
-test('the main character has the 14 bones of 3d-migration-concept.md 12.1', () => {
+test('the main character has the 14 bones of design.md 2.1', () => {
     const names = rig.bones.map(b => b.name);
     assert.deepEqual(plain(names.sort()), ['base', 'chest', 'forearmL', 'forearmR', 'handL', 'handR', 'head', 'pelvis', 'shinL', 'shinR', 'thighL', 'thighR', 'upperArmL', 'upperArmR'].sort());
     const parent = name => { const b = rig.bones[rig.index[name]]; return b.parent < 0 ? null : rig.bones[b.parent].name; };

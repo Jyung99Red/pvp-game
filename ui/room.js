@@ -1,4 +1,4 @@
-// The room screen (rebuild-plan.md M4): create a room and show its code, or
+// The room screen (design.md 8.4): create a room and show its code, or
 // type the other phone's code on a keypad and join. Once the channel is up
 // the link is handed to `connected({ link, role, code, on })`; the duel
 // itself is ui/app.js's, which sets on.message and on.close. `closed()`:

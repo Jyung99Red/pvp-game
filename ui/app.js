@@ -1,13 +1,13 @@
 // Starts the game once every script is loaded: simulation, 3D view, input
 // and the frame loop, plus the landscape shell (fullscreen on Android's
-// first touch), the menu and the panels. The world (rebuild-plan.md M5):
+// first touch), the menu and the panels. The world (design.md 6):
 // a game starts in the base; a portal's `travel` builds the next region in
 // place (fullscreen survives it), bringing the HP along; the save
 // (core/save.js, in localStorage) is written on every trip, when a boss
 // falls or a chest opens, a moment after loot is picked up, and when the
 // page goes to the background. Falling ends the trip: back to the base,
 // whole, keeping what was picked up. ?map= starts in another region
-// (testing). A duel (rebuild-plan.md M4) starts from the room screen
+// (testing). A duel (design.md 8) starts from the room screen
 // (ui/room.js): its world belongs to the duel session (core/duel.js),
 // which this loop feeds with time and controls; panels never pause it.
 // window.game is for tests and debugging: game.pause() stops the real-time

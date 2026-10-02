@@ -1,7 +1,7 @@
 // Fighting rules every fighter shares: damage, impact (hitstop and
 // knockback), the guard bar, a blow meeting a fighter, and the hit
 // test itself. A hit is a weapon box touching a body box
-// (3d-migration-concept.md 4.1): the attacker's swing is sampled at
+// (design.md 4.3): the attacker's swing is sampled at
 // sub-steps between simulation steps so a fast blade cannot pass through a
 // thin limb.
 const combatKit = (() => {
@@ -42,7 +42,7 @@ const combatKit = (() => {
         if (k.t <= 1e-9) body.push = null;
     }
 
-    // ---- guard bar (combat-combo-concept.md 7) ----
+    // ---- guard bar (design.md 4.5) ----
     function guardCost(raw, maxHp, parry) {
         const G = C().guardBar;
         return raw / maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);

@@ -1,4 +1,4 @@
-// Items and the offhand (rebuild-plan.md M6): gear stats on top of the base
+// Items and the offhand (design.md 7): gear stats on top of the base
 // stats, putting gear on and off, the shop and the smithy, weapon length
 // deciding reach, a potion (drinking, spilling, waiting for a free moment),
 // a torch (lighting it, burning thickets away for good), and the dark cave.
@@ -36,7 +36,7 @@ test('stats are the base plus the gear worn; the starter gear makes 360 HP, 30 A
     save.inventory.items.iron_armor = 1; save.loadout.armor = 'iron_armor';
     const sim = W.create({ region: 'base', progress: save });
     assert.deepEqual([sim.player.maxHp, sim.player.hp, sim.player.def], [380, 380, 13]);
-    const plates = sim.rigs.player.parts.filter(p => p.owner === 'iron_armor');
+    const plates = sim.rigs.fighters.player.parts.filter(p => p.owner === 'iron_armor');
     assert.ok(plates.length >= 3 && plates.every(p => p.kind === 'deco'), 'iron armor plates are drawn only: the body under them is what is hit');
     assert.deepEqual(plain(equipmentModels.lookOf(save.loadout)), { tunic: 'ironTunic', tunicTrim: 'steelDark' });
     // A duel ignores the save: both in the starter gear.
@@ -113,9 +113,14 @@ test('a weapon\'s length decides its reach: the dagger must stand closer, the ir
         return false;
     };
     const dagger = rigFor('assassin_dagger'), sword = rigFor('wooden_sword'), iron = rigFor('iron_sword');
-    for (const move of Object.keys(MOVES)) {
-        assert.ok(lands(dagger, move, 48), `the dagger's ${move} lands at 48`);
-        assert.ok(!lands(dagger, move, 80) && lands(sword, move, 80), `${move}: at 80 the sword lands and the dagger does not`);
+    const of = type => Object.keys(MOVES).filter(id => MOVES[id].weapon === type);
+    // Each weapon plays its own type's moves (design.md 4.2).
+    for (const move of of('dagger')) {
+        assert.ok(lands(dagger, move, gameConfig.combo.weapons.dagger.standard), `the dagger's ${move} lands at its standard distance`);
+        assert.ok(!lands(dagger, move, 80), `the dagger's ${move} does not reach 80`);
+    }
+    for (const move of of('sword')) {
+        assert.ok(lands(sword, move, 80), `${move}: at 80 the wooden sword lands`);
         assert.ok(lands(iron, move, 88) && !lands(sword, move, 92), `${move}: the iron sword reaches past the wooden one`);
     }
     assert.ok(Math.abs(I.assassin_dagger.blade / I.wooden_sword.blade - 0.65) < 0.02, 'the dagger blade is about 65% of the sword');

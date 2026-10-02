@@ -2,7 +2,7 @@
 // foe being fought (its HP, stagger, enrage, a boss tag), small HP bars and
 // a "!" over monsters in a fight, the region and the gold carried, the
 // running combo with the move's name, and floating damage numbers. The
-// world (rebuild-plan.md M5): the interact key names what it would do (dim
+// world (design.md 6): the interact key names what it would do (dim
 // with nothing in reach, greyed when it cannot now, a ring filling while a
 // hold runs) and a tag over the target says what it is and why not; the
 // region's name as it is entered, a banner when a boss falls, and what is
@@ -16,7 +16,7 @@ const hud = (() => {
         const els = {
             hp: $('[data-hud="hp"]'), guard: $('[data-hud="guard"]'), guardBar: $('[data-hud="guard-bar"]'), goal: $('[data-hud="goal"]'),
             target: $('[data-hud="target"]'), targetName: $('[data-hud="target-name"]'), rage: $('[data-hud="rage"]'),
-            targetHp: $('[data-hud="target-hp"]'), pipBox: $('[data-hud="pips"]'), pips: [...root.querySelectorAll('[data-hud="pip"]')],
+            targetHp: $('[data-hud="target-hp"]'), pipBox: $('[data-hud="pips"]'),
             combo: $('[data-hud="combo"]'), chips: $('[data-hud="chips"]'), move: $('[data-hud="move"]'),
             floats: $('[data-hud="floats"]'), mobs: $('[data-hud="mobs"]'), banner: $('[data-hud="banner"]'), arrow: $('[data-hud="arrow"]'),
             boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
@@ -164,9 +164,15 @@ const hud = (() => {
                 els.boss.hidden = !d.boss;
                 els.rage.hidden = !d.enraged;
                 width(els.targetHp, d.hp / d.maxHp);
+                // One pip per stagger point the target takes to reel.
                 els.pipBox.hidden = d.kind === 'fighter';
-                const points = d.phase === 'reel' ? gameConfig.combat.stagger.threshold : d.stagger;
-                els.pips.forEach((pip, i) => pip.classList.toggle('on', i < Math.floor(points + 1e-9)));
+                const most = d.type === 'monster' ? monsterKit.threshold(d.kind) : gameConfig.combat.stagger.threshold;
+                if (els.pipBox.children.length !== most) {
+                    els.pipBox.innerHTML = '<i></i>'.repeat(most);
+                    els.pipBox.classList.toggle('many', most > 5);
+                }
+                const points = d.phase === 'reel' ? most : d.stagger;
+                [...els.pipBox.children].forEach((pip, i) => pip.classList.toggle('on', i < Math.floor(points + 1e-9)));
                 els.target.classList.toggle('reeling', d.phase === 'reel');
             }
             // Over each monster in a fight or hurt: a small bar; "!" as it notices.

@@ -1,6 +1,6 @@
 // Colour names used by every model and texture. Models name a colour; only
 // this table holds values, so a restyle touches one file
-// (3d-migration-concept.md 12.1).
+// (design.md 2.1).
 const palette = Object.freeze({
     // characters
     skin: '#e2b48b', hair: '#5a3a24', eye: '#2a2d38',

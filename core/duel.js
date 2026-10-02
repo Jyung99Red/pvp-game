@@ -1,5 +1,5 @@
 // A PVP duel between two phones over one ordered, reliable message channel
-// (rebuild-plan.md M4), carried over from the 2D version (tag v1-2d,
+// (design.md 8), carried over from the 2D version (tag v1-2d,
 // pvp/pvp_logic.js) onto the new simulation. The host runs the fight and
 // decides every hit; the guest sends its controls and draws the host's
 // snapshots, predicting in between (both fighters move on, nothing is

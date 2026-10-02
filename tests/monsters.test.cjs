@@ -1,5 +1,5 @@
-// Monsters (rebuild-plan.md M3): the goblin and wolf models, the player's
-// cuts landing on a short monster (3d-migration-concept.md 4.6), their own
+// Monsters (design.md 5): the goblin and wolf models, the player's
+// cuts landing on a short monster (design.md 4.3), their own
 // blows as bone hits with reach and warning swept from the key poses
 // (4.3, 4.4), and the old minimal AI: patrol, alert, chase, attack in turn,
 // enrage, leash; then a whole fight to a result.
@@ -69,8 +69,11 @@ test('walking swings the legs and keeps the feet on the ground; the stride follo
     }
 });
 
-// ---- the player's cuts on monsters (3d-migration-concept.md 4.6) ----
-const swingAt = (move, u) => R.solve(player, playerAnim.pose(player, { ...still, act: { move, phase: 'swing', t: u * MOVES[move].swing, from: null } }), [0, 0, 0], space.yawOf(0));
+// ---- the player's cuts on monsters (design.md 4.3) ----
+// Each move swung with a weapon of its type.
+const daggerRig = R.build(playerModel, { equipment: equipmentModels.forLoadout({ ...gameConfig.gear.starter, main: 'assassin_dagger' }) });
+const rigFor = move => MOVES[move].weapon === 'dagger' ? daggerRig : player;
+const swingAt = (move, u) => R.solve(rigFor(move), playerAnim.pose(rigFor(move), { ...still, act: { move, phase: 'swing', t: u * MOVES[move].swing, from: null } }), [0, 0, 0], space.yawOf(0));
 // A monster `dist` ahead of the player, turned `turn` from facing it.
 function monsterAt(kind, dist, turn = 0) {
     const rig = rigs[kind];
@@ -78,13 +81,16 @@ function monsterAt(kind, dist, turn = 0) {
 }
 function lands(move, boxes) {
     const n = Math.ceil(MOVES[move].swing / 0.01);
-    for (let i = 0; i < n; i++) if (combatKit.sweep(player, u => swingAt(move, u), i / n, (i + 1) / n, [{ id: 't', boxes }])) return true;
+    for (let i = 0; i < n; i++) if (combatKit.sweep(rigFor(move), u => swingAt(move, u), i / n, (i + 1) / n, [{ id: 't', boxes }])) return true;
     return false;
 }
-test('at the standard distance every move lands on the goblin and on the low wolf (and the bosses), whichever way they face', () => {
+test('at its weapon\'s standard distance every move lands on the goblin and on the low wolf (and the bosses), whichever way they face', () => {
     for (const kind of KINDS) {
         for (const turn of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) {
-            for (const move of Object.keys(MOVES)) assert.ok(lands(move, monsterAt(kind, STANDARD, turn)), `${move} misses a ${kind} turned ${turn.toFixed(2)}`);
+            for (const move of Object.keys(MOVES)) {
+                const at = gameConfig.combo.weapons[MOVES[move].weapon].standard;
+                assert.ok(lands(move, monsterAt(kind, at, turn)), `${move} misses a ${kind} turned ${turn.toFixed(2)} at ${at}`);
+            }
         }
         assert.ok(!lands('slash', monsterAt(kind, 150)), `the slash does not reach a ${kind} far off`);
     }
@@ -271,17 +277,28 @@ test('struck while still on patrol or alert it fights back at once; B moves push
     tap(sim); step(sim, 0.25);
     assert.equal(sim.stats.hits, 1);
     assert.ok(['chase', 'windup'].includes(m.phase) && sim.time < MON.goblin.alertSeconds);
-    // A B (rising): pushed back and 1.5 stagger; a second A B reels it.
+    // A B (rising): pushed back and 2 stagger; a second A B reels it.
     const x0 = m.x;
-    step(sim, 0.2); tap(sim, 'b'); step(sim, 0.6);
+    step(sim, 0.2); tap(sim, 'b'); step(sim, 0.75);
     assert.ok(m.x - x0 > 5, `pushed ${(m.x - x0).toFixed(1)}`);
     assert.equal(m.stagger, MOVES.rising.stagger);
     m.hp = m.maxHp; m.phase = 'chase'; m.wait = 99;
     put(p, m.x - STANDARD, m.y, 0);
-    step(sim, 0.5); tap(sim); step(sim, 0.25); tap(sim, 'b'); step(sim, 0.6);
+    step(sim, 0.5); tap(sim); step(sim, 0.25); tap(sim, 'b'); step(sim, 0.75);
     assert.equal(m.phase, 'reel');
     step(sim, F.stagger.duration + 0.05);
     assert.equal(m.phase, 'chase');
+});
+
+test('bosses take ten stagger points to reel, other monsters three (user, 2026-10-02)', () => {
+    for (const kind of KINDS) assert.equal(monsterKit.threshold(kind), MON[kind].boss ? 10 : F.stagger.threshold, kind);
+    const sim = W.create({ region: 'valley' }), boss = sim.monsters.find(m => m.kind === 'wolfKing');
+    boss.phase = 'chase';
+    monsterKit.stagger(sim, boss, 9);
+    assert.equal(boss.phase, 'chase', 'nine points: still fighting');
+    monsterKit.stagger(sim, boss, 1);
+    assert.equal(boss.phase, 'reel');
+    assert.equal(boss.stagger, 0);
 });
 
 test('a block and a perfect parry work against a monster as against the dummy', () => {
@@ -325,7 +342,7 @@ test('the wolf\'s leap rams with its body along the path, sub-stepped, and stops
     assert.equal(guarded.sim.stats.blocks, 1, 'and it can be blocked');
 });
 
-test('no blow lands across a wall, either way (3d-migration-concept.md 10, item 4)', () => {
+test('no blow lands across a wall, either way (design.md 4.3)', () => {
     // A one-block stone at cell (15, 15) of the field; the two stand either side of it.
     const across = (stone, goblinSwings) => {
         const sim = field('goblin'), m = sim.monsters[0], p = sim.player, t = sim.terrain;
@@ -352,7 +369,7 @@ test('a whole fight: every monster down drops its loot and the world goes on; a 
         put(p, m.x - 50, m.y, 0); p.push = null;
         tap(sim); step(sim, 0.3);
     }
-    assert.equal(sim.result, null, 'a world has no win: it goes on (rebuild-plan.md M5)');
+    assert.equal(sim.result, null, 'a world has no win: it goes on (design.md 6)');
     assert.equal(sim.stats.kills, 4);
     assert.ok(sim.monsters.every(m => m.phase === 'dead' && m.hp === 0));
     const ev = W.drain(sim);

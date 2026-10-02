@@ -1,6 +1,6 @@
 // three.js view of the simulation. It only draws: positions come from the
 // sim and every character box's matrix comes from core/rig.js, so what is
-// drawn is exactly what hit tests use (3d-migration-concept.md 8). The
+// drawn is exactly what hit tests use (design.md 2.5). The
 // renderer and camera live as long as the page; the scene is built per
 // world (`load`), so switching maps or restarting needs no reload.
 const worldView = (() => {
@@ -65,7 +65,7 @@ const worldView = (() => {
     // ---- one world: scene, terrain, characters, effects ----
     function build(T, sim, camera, mapSize, selfId) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
-        // A dark region (rebuild-plan.md M6) has no daylight to speak of:
+        // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
         // light there.
         const dark = !!C.maps[sim.region]?.dark, L = dark ? LIGHT.dark : LIGHT.day;
@@ -199,12 +199,14 @@ const worldView = (() => {
                 }
             };
         }
-        const playerRig = sim.rigs.player;
-        // Every fighter: this phone's own as modelled, any other as the rival;
-        // armor may swap the tunic's colours. The blade and torch flames are
-        // meshes of their own (the blade glows while charging).
+        // Every fighter, on its own skeleton (its gear): this phone's own as
+        // modelled, any other as the rival; armor may swap the tunic's
+        // colours. The blade and torch flames are meshes of their own (the
+        // blade glows while charging).
+        const rigOf = id => sim.rigs.fighters[id], playerRig = rigOf(selfId) || rigOf(sim.fighters[0].id);
         const fighters = new Map(sim.fighters.map(f => [f.id, {
-            view: character(playerRig, part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }),
+            rig: rigOf(f.id),
+            view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }),
             lastFacing: f.facing, lean: 0
         }]));
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
@@ -367,16 +369,16 @@ const worldView = (() => {
                 entry.lastFacing = p.facing;
                 const leanTarget = Math.max(-0.12, Math.min(0.12, 0.015 * omega)) * p.moveBlend;
                 entry.lean += (leanTarget - entry.lean) * Math.min(1, frameSeconds * 10);
-                const pose = playerAnim.present(playerAnim.pose(playerRig, p), p, { time: clock, lean: entry.lean });
-                const solved = rigKit.solve(playerRig, pose, space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
+                const pose = playerAnim.present(playerAnim.pose(entry.rig, p), p, { time: clock, lean: entry.lean });
+                const solved = rigKit.solve(entry.rig, pose, space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
                 entry.view.place(solved);
                 entry.view.light(!!f.lit);
-                drawn.push({ id: f.id, body: f, shown: p, solved, blade: entry.view.blade, materials: entry.view.materials });
+                drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials });
             }
             // The torch light sits on this fighter's flame, flickering a little.
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
             if (bearer) {
-                const flame = playerRig.parts.findIndex(part => part.tag === 'flame'), m = bearer.solved.parts[flame];
+                const flame = bearer.rig.parts.findIndex(part => part.tag === 'flame'), m = bearer.solved.parts[flame];
                 torchLight.position.set(m[12], m[13] + 0.15, m[14]);
                 torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
             } else torchLight.intensity = 0;
@@ -401,7 +403,7 @@ const worldView = (() => {
             props(current, focus);
             ground.update();
             effects.onEvents(events, selfId);
-            effects.update(frameSeconds, current, { selfId, playerRig, fighters: drawn, foes });
+            effects.update(frameSeconds, current, { selfId, fighters: drawn, foes });
             const at = space.toBlocks(me.x, me.y, me.h);
             if (shade) shade(at[0], at[2]);
             placeCamera(at[0], at[1], at[2]);

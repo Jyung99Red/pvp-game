@@ -79,7 +79,7 @@ const math3d = (() => {
     }
     // How many sub-steps a moving box needs so that no sub-step carries it
     // further than half the thinnest box it could pass through
-    // (3d-migration-concept.md 4.1). `travel` and `thinnest` in one unit.
+    // (design.md 4.3). `travel` and `thinnest` in one unit.
     function substeps(travel, thinnest) {
         if (!(thinnest > 0)) throw new Error('substeps needs a positive thickness');
         return Math.max(1, Math.ceil(travel / (thinnest / 2) - 1e-9));

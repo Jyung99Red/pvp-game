@@ -1,5 +1,4 @@
-// The interact key (controls-landscape-concept.md 4.4, 3d-migration-concept.md
-// 15): one target at a time, picked from the entities in reach that offer
+// The interact key (design.md 3.5): one target at a time, picked from the entities in reach that offer
 // something (core/props.js offer), nearest first with a penalty for being
 // off to the side, so the one ahead of a fighter wins over one behind. The
 // target holds on a little past its reach, so the prompt does not flicker

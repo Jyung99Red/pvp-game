@@ -1,5 +1,5 @@
-// Equipment models, hung on a model's mount points (3d-migration-concept.md
-// 14). Each part sits in the mount's frame; for a hand mount +z points along
+// Equipment models, hung on a model's mount points (design.md
+// 7.2). Each part sits in the mount's frame; for a hand mount +z points along
 // the held item. Gear is built by item id (game_config.js `items`); a
 // weapon's blade length comes from there, since it decides the reach.
 // Armor may add plates (drawn only: the body boxes under them are what is

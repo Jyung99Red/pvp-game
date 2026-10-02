@@ -1,4 +1,4 @@
-// The main character (3d-migration-concept.md 12.1): 14 bones, blocks as the
+// The main character (design.md 2.1): 14 bones, blocks as the
 // unit, about 1.9 blocks tall. The model faces +z; its right side is -x.
 // Mount points carry equipment and are not bones.
 const playerModel = (() => {
@@ -63,7 +63,7 @@ const playerModel = (() => {
         // Colour swaps by role: in a duel each phone draws its own fighter
         // as usual and the other one as the rival.
         looks: { rival: { tunic: 'rivalTunic', tunicTrim: 'rivalTrim' } },
-        // Animation layers (3d-migration-concept.md 12.1): legs walk while
+        // Animation layers (design.md 2.4): legs walk while
         // the upper body holds a shield or attacks.
         layers: {
             lower: ['base', 'pelvis', 'thighR', 'shinR', 'thighL', 'shinL'],

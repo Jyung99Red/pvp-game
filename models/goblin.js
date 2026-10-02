@@ -1,8 +1,7 @@
-// The goblin (3d-migration-concept.md 3.3): the simple monster skeleton
+// The goblin (design.md 2.1): the simple monster skeleton
 // (9 bones, limbs in one piece, like the training dummy), about 1.4 blocks
-// tall, after the prototype (docs/tasks/3d-prototype.html). Faces +z; its
-// right side is -x. Ears are only drawn, never hit (3d-migration-concept.md
-// 2).
+// tall, after the first 3D prototype. Faces +z; its right side is -x.
+// Ears are only drawn, never hit (design.md 2.1).
 const goblinModel = (() => {
     const bones = [
         { name: 'base', parent: null, at: [0, 0, 0] },

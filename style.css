@@ -108,6 +108,7 @@ html, body {
 .pips { display: flex; gap: 3px; }
 .pips[hidden] { display: none; }
 .pips i { width: 14px; height: 5px; border-radius: 2px; background: rgba(14, 18, 23, 0.55); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.pips.many i { width: 10px; }
 .pips i.on { background: var(--accent); }
 .hud-target.reeling .pips i { background: #ffd84a; }
 .hud-combo { display: grid; justify-items: center; gap: 3px; opacity: 0; transition: opacity 0.25s; }

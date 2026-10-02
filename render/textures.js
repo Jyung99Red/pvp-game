@@ -1,5 +1,5 @@
 // Procedural 16x16 pixel textures, drawn by code at start and sampled
-// nearest-neighbour (3d-migration-concept.md 2). Presentation only.
+// nearest-neighbour (design.md 2.1). Presentation only.
 // Terrain blocks share one atlas (8 x 4 tiles), so a whole 16 x 16 chunk is
 // one mesh and one draw (render/terrain_mesh.js); the grass beyond the map
 // and the grain on character boxes are textures of their own.
