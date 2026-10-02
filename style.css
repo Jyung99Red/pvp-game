@@ -61,9 +61,9 @@ html, body {
 
 /* Over each monster in a fight: a small HP bar, and "!" as it notices. */
 .hud-mobs { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
-.mob { position: absolute; left: 0; top: 0; width: 40px; display: grid; justify-items: center; gap: 2px; }
+.mob { position: absolute; left: 0; top: 0; width: 52px; display: grid; justify-items: center; gap: 2px; }
 .mob[hidden] { display: none; }
-.mob-bar { width: 100%; height: 4px; border-radius: 2px; background: rgba(14, 18, 23, 0.6); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); overflow: hidden; }
+.mob-bar { width: 100%; height: 6px; border-radius: 3px; background: rgba(14, 18, 23, 0.6); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3); overflow: hidden; }
 .mob-bar i { display: block; height: 100%; width: 100%; background: #e05a4f; }
 .mob.enraged .mob-bar i { background: #ff3a24; }
 .mob-alert { font: 800 20px/1 var(--font); color: #ffd84a; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
@@ -155,8 +155,8 @@ html, body {
 .toast.fade { opacity: 0; }
 .target-boss { font-style: normal; font-size: 11px; padding: 1px 4px; border-radius: 3px; background: var(--accent); color: #1d1606; text-shadow: none; }
 .target-boss[hidden] { display: none; }
-.mob.boss { width: 64px; }
-.mob.boss .mob-bar { height: 6px; }
+.mob.boss { width: 80px; }
+.mob.boss .mob-bar { height: 8px; }
 
 /* A duel: the countdown in the middle, and an arrow on the screen's edge
    towards the rival while it is in sight but off screen. */
@@ -336,3 +336,94 @@ html, body {
 @keyframes rotate-phone { 0%, 25% { transform: rotate(0deg); } 55%, 100% { transform: rotate(-90deg); } }
 @media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } }
 @media (orientation: portrait) { .rotate-hint { display: grid; } }
+
+/* The menu (ui/menu.js): three columns over the running game -- the
+   figure (its canvas, render/figure_view.js), HP, stats, gear and the bag,
+   then the side with pause, the room, settings. */
+.menu {
+    position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; box-sizing: border-box;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 8px) calc(env(safe-area-inset-left, 0px) + 12px);
+    background: rgba(10, 13, 17, 0.45);
+}
+.menu[hidden] { display: none; }
+.menu-card {
+    width: min(880px, 100%); height: min(420px, 100%); box-sizing: border-box; overflow: hidden;
+    display: grid; grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.75fr) minmax(124px, 0.72fr);
+    border-radius: 10px; background: rgba(20, 25, 31, 0.96); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.menu-figure {
+    position: relative; min-height: 0; overflow: hidden; touch-action: none; cursor: grab;
+    background: radial-gradient(ellipse at 50% 78%, rgba(120, 160, 210, 0.3), rgba(26, 32, 41, 0) 68%), #1a2029;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+.figure-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.menu-figure-note { position: absolute; left: 0; right: 0; bottom: 6px; margin: 0; text-align: center; font-size: 11px; color: var(--muted); pointer-events: none; }
+.menu-figure.none::after { content: '无法显示 3D 人物'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.menu-gear {
+    min-height: 0; display: grid; grid-template-rows: auto auto auto minmax(48px, 1fr) auto; gap: 6px; padding: 8px 10px;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+.menu-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.menu-title { margin: 0; font-size: 17px; white-space: nowrap; }
+.menu-where { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.menu-gold { margin-left: auto; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.menu-life { display: grid; grid-template-columns: minmax(60px, 1fr) auto auto; gap: 8px; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.menu-life .bar { height: 10px; }
+.menu-stats { margin: 0 0 0 4px; display: flex; gap: 10px; font-size: 12px; white-space: nowrap; }
+.menu-stats div { display: flex; gap: 5px; }
+.menu-stats dt { color: var(--muted); }
+.menu-stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.menu-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.slot { display: grid; justify-items: center; gap: 2px; }
+.slot-name { font-size: 10px; line-height: 1; color: var(--muted); }
+.cell {
+    position: relative; width: 42px; height: 42px; box-sizing: border-box; padding: 3px; margin: 0; border-radius: 7px;
+    display: grid; place-items: center; font: 20px/1 var(--font); color: var(--fg); cursor: pointer; touch-action: manipulation;
+    border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06);
+}
+.cell.on { border-color: var(--accent); background: rgba(242, 181, 68, 0.16); box-shadow: 0 0 0 1px var(--accent) inset; }
+.cell.empty { cursor: default; font-size: 11px; color: var(--muted); border-style: dashed; }
+.cell .item-icon { width: 100%; height: 100%; object-fit: contain; display: grid; place-items: center; }
+.cell-count { position: absolute; right: 3px; bottom: 2px; font: 600 11px/1 var(--font); color: #fff; text-shadow: 0 1px 2px #000; }
+.menu-bag {
+    min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 42px); gap: 6px; align-content: start;
+    padding: 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.22);
+}
+.bag-empty { grid-column: 1 / -1; margin: 6px; font-size: 12px; color: var(--muted); }
+.menu-detail { min-height: 58px; max-height: 118px; overflow-y: auto; display: grid; gap: 3px; align-content: start; font-size: 12px; }
+.menu-detail .detail-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.menu-detail h3 { margin: 0; font-size: 14px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.menu-detail h3 .item-icon { width: 22px; height: 22px; font-size: 18px; object-fit: contain; }
+.menu-detail p { margin: 0; line-height: 1.4; }
+.menu-detail p + p { color: var(--muted); }
+.menu-detail .detail-compare { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg); }
+.detail-compare b.up { color: #8be07a; }
+.detail-compare b.down { color: #ff8a7a; }
+.menu-detail .detail-hint { color: var(--muted); }
+.menu-detail .detail-actions { margin: 0 0 0 auto; flex-wrap: nowrap; }
+.menu-detail .detail-actions button { min-height: 34px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+.menu-detail .detail-note:empty { display: none; }
+.menu-side { min-height: 0; overflow-y: auto; display: grid; gap: 6px; align-content: start; padding: 8px; }
+.menu-side > button {
+    min-height: 36px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.07); color: var(--fg);
+}
+.menu-side > button[hidden] { display: none; }
+.menu-side > button:disabled { opacity: 0.45; cursor: default; }
+.menu-side .menu-close { border-color: var(--accent); background: var(--accent); color: #1d1606; }
+.menu-side-title { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 500; }
+.menu-settings { display: grid; gap: 5px; }
+.setting { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; font-size: 12px; }
+.setting-options { display: flex; gap: 3px; justify-content: flex-end; flex-wrap: wrap; }
+.setting-options button {
+    min-height: 28px; min-width: 30px; padding: 0 6px; border-radius: 6px; font: 12px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.05); color: var(--fg);
+}
+.setting-options button.on { border-color: var(--accent); background: var(--accent); color: #1d1606; }
+.menu-side .menu-reset { margin-top: 4px; font-size: 13px; color: #ffb4a6; }
+/* Item pictures (drawn from models) in the shop, smithy and room. */
+img.item-icon { object-fit: contain; vertical-align: middle; }
+.row-icon img.item-icon { width: 28px; height: 28px; }
+.screen-detail h3 img.item-icon { width: 26px; height: 26px; }
+.detail-needs img.item-icon, .screen-gold img.item-icon, .menu-gold img.item-icon { width: 18px; height: 18px; }
+.room-weapons .weapon-icon img.item-icon { width: 30px; height: 30px; display: block; }

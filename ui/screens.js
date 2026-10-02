@@ -1,68 +1,36 @@
-// The item screens (design.md 7.3), landscape, two columns: a list on
-// the left, what is picked on the right. The bag (also the base's
-// storage: there is one bag) puts gear on and off -- in the base only -- and
-// lists what is carried; the shop sells potions and a torch and buys
-// materials; the smithy makes gear from materials and gold. Every change
-// goes through core/inventory.js on the world's progress; `changed(kind)`
-// tells the page (it saves; gear changes rebuild the player when the bag
-// closes). Reads and writes no simulation state but that progress.
+// The item screens of the base's shop and smithy (design.md 7.3),
+// landscape, two columns: a list on the left, what is picked on the right.
+// The shop sells potions and a torch and buys materials; the smithy makes
+// gear from materials and gold. (The bag is the menu's, ui/menu.js.) Every
+// change goes through core/inventory.js on the world's progress;
+// `changed(kind)` tells the page (it saves). Reads and writes no simulation
+// state but that progress. `iconHtml` is an item's picture for any screen:
+// gear drawn from its own model (render/figure_view.js), else its emoji.
 const itemScreens = (() => {
     const SLOT_NAMES = Object.freeze({ main: '主手', offhand: '副手', armor: '护甲', accessory: '饰品' });
     const STAT_NAMES = Object.freeze({ maxHp: '生命', atk: '攻击', def: '防御' });
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    function iconHtml(id) {
+        const url = figureView.icon(id);
+        return url ? `<img class="item-icon" src="${url}" alt="">` : `<span class="item-icon">${gameConfig.items[id].icon}</span>`;
+    }
 
-    // hooks: progress() the world's progress; canChange() gear may be
-    // changed now (in the base); changed(what) 'gear' | 'trade'; closed().
+    // hooks: progress() the world's progress; changed('trade'); closed().
     function attach(root, hooks) {
         const el = root.querySelector('[data-screen]'), $ = sel => el.querySelector(sel);
         const title = $('[data-screen-title]'), tabs = $('[data-screen-tabs]'), gold = $('[data-screen-gold]');
         const list = $('[data-screen-list]'), detail = $('[data-screen-detail]');
         const I = gameConfig.items, K = inventoryKit;
-        let kind = null, tab = null, picked = null, note = '', gearChanged = false;
+        let kind = null, tab = null, picked = null, note = '';
 
         const statLine = stats => K.STATS.filter(k => stats?.[k]).map(k => `${STAT_NAMES[k]} +${stats[k]}`).join('，');
         // The slot, and for a weapon its type (which decides the moves).
         const slotLine = item => SLOT_NAMES[item.slot] + (item.weapon ? ` · ${gameConfig.combo.weapons[item.weapon].name}` : '');
         const owned = id => K.count(hooks.progress(), id);
-        const row = (id, sub, tag = '', dim = false) => ({ id, icon: I[id].icon, name: I[id].name, sub, tag, dim });
+        const row = (id, sub, tag = '', dim = false) => ({ id, name: I[id].name, sub, tag, dim });
 
         // ---- what each screen shows: tabs, rows, and the picked row's detail ----
         const SCREENS = {
-            bag: {
-                title: '背包',
-                tabs: [['gear', '装备'], ['goods', '物品']],
-                rows(t) {
-                    const p = hooks.progress();
-                    if (t === 'goods') {
-                        return Object.keys(I).filter(id => I[id].kind !== 'gear' && I[id].kind !== 'gold' && owned(id) > 0).map(id => row(id, `× ${owned(id)}`));
-                    }
-                    // Gear owned (and a potion slot, owned or worn), by slot.
-                    return K.SLOTS.flatMap(slot => K.gearFor(slot).filter(id => owned(id) > 0 || p.loadout[slot] === id)
-                        .map(id => row(id, SLOT_NAMES[slot] + (I[id].kind === 'supply' ? ` · 剩 ${owned(id)}` : ''), p.loadout[slot] === id ? '穿着' : '')));
-                },
-                detail(id, t) {
-                    const p = hooks.progress(), item = I[id];
-                    if (t === 'goods') return { lines: [item.desc], actions: [] };
-                    const slot = item.slot, worn = p.loadout[slot] === id, now = K.statsOf(p.loadout);
-                    const next = K.statsOf({ ...p.loadout, [slot]: worn ? null : id });
-                    const lock = hooks.canChange() ? '' : '只能在据点里换装备';
-                    const actions = worn
-                        ? (slot === 'main' ? [] : [{ id: 'unequip', label: '卸下', why: lock }])
-                        : [{ id: 'equip', label: p.loadout[slot] ? `换上（替下${I[p.loadout[slot]].name}）` : '装上', primary: true, why: lock }];
-                    return {
-                        lines: [item.desc, `${slotLine(item)}${item.stats ? ' · ' + statLine(item.stats) : ''}`],
-                        compare: (worn && slot === 'main') ? null : K.STATS.map(k => [STAT_NAMES[k], now[k], next[k]]),
-                        totals: K.STATS.map(k => [STAT_NAMES[k], now[k]]),
-                        actions
-                    };
-                },
-                act(action, id) {
-                    const p = hooks.progress(), slot = I[id].slot;
-                    const why = K.equip(p, slot, action === 'equip' ? id : null);
-                    if (!why) { gearChanged = true; hooks.changed('gear'); }
-                    return why || (action === 'equip' ? `换上了${I[id].name}` : `卸下了${I[id].name}`);
-                }
-            },
             shop: {
                 title: '商店',
                 tabs: [['buy', '买'], ['sell', '卖']],
@@ -98,14 +66,14 @@ const itemScreens = (() => {
                     const p = hooks.progress(), item = I[id];
                     return {
                         lines: [item.desc, `${slotLine(item)} · ${statLine(item.stats)}`],
-                        needs: K.needs(p, id).map(n => [I[n.id].icon, I[n.id].name, n.have, n.need]),
+                        needs: K.needs(p, id).map(n => [n.id, I[n.id].name, n.have, n.need]),
                         actions: [{ id: 'craft', label: '打造', primary: true, why: K.canCraft(p, id) }]
                     };
                 },
                 act(action, id) {
                     const why = K.craft(hooks.progress(), id);
                     if (!why) hooks.changed('trade');
-                    return why || `打造好了${I[id].name}，去背包装上`;
+                    return why || `打造好了${I[id].name}，打开菜单装上`;
                 }
             }
         };
@@ -114,30 +82,30 @@ const itemScreens = (() => {
             const S = SCREENS[kind], rows = S.rows(tab);
             if (!rows.some(r => r.id === picked)) picked = rows[0]?.id ?? null;
             title.textContent = S.title;
-            gold.textContent = `${I.gold.icon} ${hooks.progress().inventory.gold}`;
+            gold.innerHTML = `${iconHtml('gold')} ${hooks.progress().inventory.gold}`;
             tabs.innerHTML = S.tabs.map(([id, label]) => `<button type="button" data-tab="${id}" class="${id === tab ? 'on' : ''}">${label}</button>`).join('');
             list.innerHTML = rows.length ? rows.map(r => `<li><button type="button" data-row="${r.id}" class="${r.id === picked ? 'on' : ''}${r.dim ? ' dim' : ''}">
-                <span class="row-icon">${r.icon}</span><span class="row-name">${esc(r.name)}</span><span class="row-sub">${esc(r.sub)}</span>${r.tag ? `<em class="row-tag">${esc(r.tag)}</em>` : ''}</button></li>`).join('')
+                <span class="row-icon">${iconHtml(r.id)}</span><span class="row-name">${esc(r.name)}</span><span class="row-sub">${esc(r.sub)}</span>${r.tag ? `<em class="row-tag">${esc(r.tag)}</em>` : ''}</button></li>`).join('')
                 : `<li class="empty">${kind === 'shop' && tab === 'sell' ? '没有可卖的材料' : '什么都没有'}</li>`;
             if (!picked) { detail.innerHTML = note ? `<p class="detail-note">${esc(note)}</p>` : ''; return; }
             const d = S.detail(picked, tab), item = I[picked];
-            detail.innerHTML = `<h3><span class="row-icon">${item.icon}</span>${esc(item.name)}</h3>
+            detail.innerHTML = `<h3><span class="row-icon">${iconHtml(picked)}</span>${esc(item.name)}</h3>
                 ${d.lines.filter(Boolean).map(l => `<p>${esc(l)}</p>`).join('')}
                 ${d.compare ? `<dl class="detail-stats">${d.compare.map(([k, a, b]) => `<div><dt>${k}</dt><dd>${a}${a !== b ? ` → <b class="${b > a ? 'up' : 'down'}">${b}</b>` : ''}</dd></div>`).join('')}</dl>` : ''}
                 ${!d.compare && d.totals ? `<dl class="detail-stats">${d.totals.map(([k, a]) => `<div><dt>${k}</dt><dd>${a}</dd></div>`).join('')}</dl>` : ''}
-                ${d.needs ? `<ul class="detail-needs">${d.needs.map(([icon, name, have, need]) => `<li class="${have >= need ? 'ok' : 'short'}">${icon} ${esc(name)} <b>${have}/${need}</b></li>`).join('')}</ul>` : ''}
+                ${d.needs ? `<ul class="detail-needs">${d.needs.map(([id, name, have, need]) => `<li class="${have >= need ? 'ok' : 'short'}">${iconHtml(id)} ${esc(name)} <b>${have}/${need}</b></li>`).join('')}</ul>` : ''}
                 <div class="detail-actions">${d.actions.map(a => `<button type="button" data-act="${a.id}" class="${a.primary ? 'primary' : ''}" ${a.why ? 'disabled' : ''}>${esc(a.label)}</button>`).join('')}</div>
                 <p class="detail-note">${esc(note || d.actions.find(a => a.why)?.why || '')}</p>`;
         }
         function open(next) {
-            kind = next; tab = SCREENS[next].tabs[0]?.[0] ?? null; picked = null; note = ''; gearChanged = false;
+            kind = next; tab = SCREENS[next].tabs[0]?.[0] ?? null; picked = null; note = '';
             el.hidden = false;
             render();
             $('[data-screen-close]').focus({ preventScroll: true });
         }
         function close() {
             if (!kind) return;
-            const was = { kind, gearChanged };
+            const was = { kind };
             kind = null; el.hidden = true;
             hooks.closed(was);
         }
@@ -158,5 +126,5 @@ const itemScreens = (() => {
         }, true);
         return { open, close, isOpen: () => !!kind, get kind() { return kind; }, render };
     }
-    return { attach, SLOT_NAMES };
+    return { attach, SLOT_NAMES, STAT_NAMES, iconHtml };
 })();

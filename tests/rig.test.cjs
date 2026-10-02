@@ -94,7 +94,7 @@ test('sparse poses: unnamed bones stay at rest; mirror, mix and add', () => {
     }
 });
 
-test('walking and running are pure functions of gait phase and blends, feet on the ground', () => {
+test('walking and running are pure functions of gait phase and blends, feet on the ground (off it in a running stride)', () => {
     const at = (gait, moveBlend = 1, runBlend = 0) => R.solve(rig, playerAnim.pose(rig, { gait, moveBlend, runBlend }));
     // Same state, separately built rig: the same pose. Nothing hidden in
     // the rig or in earlier calls feeds the result.
@@ -104,12 +104,20 @@ test('walking and running are pure functions of gait phase and blends, feet on t
     assert.equal(JSON.stringify(playerAnim.pose(other, body)), JSON.stringify(playerAnim.pose(rig, body)));
     assert.notDeepEqual(Array.from(at(0).bones[rig.index.thighR]), Array.from(at(0.25).bones[rig.index.thighR]));
     assert.notDeepEqual(Array.from(at(0.1, 1, 0).bones[rig.index.thighR]), Array.from(at(0.1, 1, 1).bones[rig.index.thighR]));
+    // Running is a jog with both feet off the ground between strides (user,
+    // 2026-10-02): from the toe-off to the other foot's touchdown the body
+    // is up; on the ground otherwise.
+    const stance = playerAnim.gaitOf(rig).run.stance;
     for (let i = 0; i <= 40; i++) {
         for (const moveBlend of [0, 0.5, 1]) for (const runBlend of [0, 0.5, 1]) {
-            const low = lowestBody(at(i / 40, moveBlend, runBlend));
-            assert.ok(Math.abs(low) < 1e-9, `phase ${i / 40} blends ${moveBlend}/${runBlend}: lowest body point ${low}`);
+            const low = lowestBody(at(i / 40, moveBlend, runBlend)), half = (i / 40) % 0.5;
+            const aloft = moveBlend > 0 && runBlend > 0 && half > stance + 1e-9 && half < 0.5 - 1e-9;
+            if (aloft) assert.ok(low > -1e-9 && low < 0.15, `phase ${i / 40} blends ${moveBlend}/${runBlend}: off the ground by ${low}`);
+            else assert.ok(Math.abs(low) < 1e-9, `phase ${i / 40} blends ${moveBlend}/${runBlend}: lowest body point ${low}`);
         }
     }
+    // Mid-flight in a full run, both feet are clear of the ground.
+    for (const f of [0.4, 0.9]) assert.ok(lowestBody(at(f, 1, 1)) > 0.03, `phase ${f}: both feet up`);
     // A full cycle returns to the same pose.
     for (const run of [0, 1]) assert.ok(Array.from(at(0, 1, run).parts[3]).every((v, k) => Math.abs(v - at(1, 1, run).parts[3][k]) < 1e-9));
 });
@@ -117,11 +125,13 @@ test('walking and running are pure functions of gait phase and blends, feet on t
 test('the stride matches the leg swing: the planted foot stays put, walking or running', () => {
     const P = gameConfig.player, unit = gameConfig.world.unitsPerBlock;
     const foot = find(p => p.tag === 'foot' && rig.bones[p.bone].name === 'shinR');
-    // The body is nudged along its facing to keep the planted foot still;
-    // walking takes long, unhurried steps (user, 2026-10-02).
-    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.02, [3, 4]], [1, P.speed * P.runMultiplier, 0.02, [5, 7]]]) {
-        const cycle = playerAnim.cycleLength(rig, runBlend), zs = [];
-        for (let f = 0; f <= 0.4 + 1e-9; f += 0.025) {
+    // The legs are timed so the planted foot keeps pace while the body goes
+    // on evenly; walking takes unhurried steps, running is a jog with fewer
+    // steps than before, a hop between strides (user, 2026-10-02). Running,
+    // the foot is down only up to the toe-off.
+    for (const [runBlend, speed, maxSlide, cadence] of [[0, P.speed, 0.02, [3, 4]], [1, P.speed * P.runMultiplier, 0.02, [4.8, 5.8]]]) {
+        const cycle = playerAnim.cycleLength(rig, runBlend), zs = [], stance = playerAnim.gaitOf(rig)[runBlend ? 'run' : 'walk'].stance;
+        for (let f = 0; f <= Math.min(0.4, stance) + 1e-9; f += 0.025) {
             const s = R.solve(rig, playerAnim.pose(rig, { gait: f, moveBlend: 1, runBlend }));
             zs.push(s.parts[foot][14] + f * cycle / unit); // body moves forward along +z
         }

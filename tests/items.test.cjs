@@ -102,7 +102,7 @@ test('the smithy makes gear from materials and gold, once each', () => {
 });
 
 // ---- reach comes from the blade ----
-test('a weapon\'s length decides its reach: the dagger must stand closer, the iron sword reaches a little further', () => {
+test('a weapon\'s length decides its reach: the dagger must stand closer; the two swords reach alike', () => {
     const dummy = dummyKit.rig(), still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
     const rigFor = main => R.build(playerModel, { equipment: equipmentModels.forLoadout({ ...gameConfig.gear.starter, main }) });
     const lands = (rig, move, dist) => {
@@ -119,9 +119,12 @@ test('a weapon\'s length decides its reach: the dagger must stand closer, the ir
         assert.ok(lands(dagger, move, gameConfig.combo.weapons.dagger.standard), `the dagger's ${move} lands at its standard distance`);
         assert.ok(!lands(dagger, move, 80), `the dagger's ${move} does not reach 80`);
     }
+    // The wooden and the iron sword share one model size; only the colours
+    // differ (user, 2026-10-02).
+    assert.equal(I.iron_sword.blade, I.wooden_sword.blade);
     for (const move of of('sword')) {
         assert.ok(lands(sword, move, 80), `${move}: at 80 the wooden sword lands`);
-        assert.ok(lands(iron, move, 88) && !lands(sword, move, 92), `${move}: the iron sword reaches past the wooden one`);
+        assert.ok(lands(iron, move, 80) && !lands(iron, move, 92), `${move}: the iron sword reaches as far`);
     }
     assert.ok(Math.abs(I.assassin_dagger.blade / I.wooden_sword.blade - 0.65) < 0.02, 'the dagger blade is about 65% of the sword');
 });

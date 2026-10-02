@@ -26,9 +26,10 @@ uses it.
   in a duel the host's copy decides. Also the boot loader.
 - `models/` model data: skeletons, boxes, equipment, key poses, palette.
 - `render/` three.js drawing only (terrain as one mesh per chunk); reads the
-  simulation, never writes it.
+  simulation, never writes it. The menu's figure and the item icons are
+  drawn by a second, small renderer (`figure_view.js`).
 - `ui/` DOM: input layer, app start-up, HUD, procedural sound, room screen,
-  item screens (bag, shop, smithy).
+  the menu (figure, gear and bag, settings), item screens (shop, smithy).
 - `net/` the channel between two phones: PeerJS rooms, or `?link=local`
   (BroadcastChannel between two tabs, for tests). No game rules.
 - `vendor/` third-party files, unmodified apart from bundling.

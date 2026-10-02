@@ -95,17 +95,19 @@ test('the latest press wins, and a stale press expires', () => {
 
 test('a pause past the recovery takes the pause move; only A is changed by it', () => {
     const twoA = () => { const s = setup(); tap(s); until(s, 'recover:slash'); tap(s); until(s, 'idle'); return s; };
-    const sim = twoA(); assert.equal(sim.player.chain.move, 'backslash');
-    step(sim, K.pauseAfterRecovery + 0.02);
+    const sim = twoA(), pause = K.weapons.sword.pauseAfterRecovery; assert.equal(sim.player.chain.move, 'backslash');
+    // The sword's pause line comes a little sooner than the first 0.2 s (user, 2026-10-02).
+    assert.ok(pause > 0.1 && pause < 0.2, `sword pause line ${pause}`);
+    step(sim, pause + 0.02);
     assert.ok(W.drain(sim).some(e => e.type === 'pause_ready' && e.move === 'thrust'), 'crossing the pause line is cued');
     tap(sim); assert.equal(sim.player.act.move, 'thrust');
     assert.deepEqual([...sim.player.combo], ['a', 'a', '-', 'a']);
     const onTime = twoA(); step(onTime, 0.05); tap(onTime); assert.equal(onTime.player.act.move, 'spin');
     // A node without a pause move treats the late A as its ordinary A.
-    const late = setup(); tap(late); until(late, 'idle'); step(late, K.pauseAfterRecovery + 0.05);
+    const late = setup(); tap(late); until(late, 'idle'); step(late, pause + 0.05);
     tap(late); assert.equal(late.player.act.move, 'backslash');
     // B is the node's B, pause or not.
-    const b = twoA(); step(b, K.pauseAfterRecovery + 0.05); tap(b, 'b'); assert.equal(b.player.act.move, 'cleave');
+    const b = twoA(); step(b, pause + 0.05); tap(b, 'b'); assert.equal(b.player.act.move, 'cleave');
 });
 
 test('opening B: windup at once, charges while held, cuts on release; A then follows up', () => {
@@ -168,19 +170,18 @@ test('while charging the body walks slower; it cannot walk during any other move
     assert.ok(moving.player.x - x1 <= M.slash.step + 1e-6, 'the windup and swing stand still but for the lunge');
 });
 
-test('inside a combo the stick only turns; still pushed when the recovery ends, the body walks off', () => {
+test('inside a move the stick neither walks nor turns, recovery included (user, 2026-10-02); still pushed when the recovery ends, the body walks off', () => {
     const sim = setup(); sim.player.facing = -Math.PI / 2; tap(sim); until(sim, 'recover:slash');
     const { x, y } = sim.player; W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, 0.1);
     assert.equal(phase(sim), 'recover:slash');
     assert.ok(Math.abs(sim.player.x - x) < 1e-9 && Math.abs(sim.player.y - y) < 1e-9, 'no walking in the recovery');
-    assert.ok(Math.abs(sim.player.facing - (-Math.PI / 2 + gameConfig.player.turnRate * K.recoveryTurnMultiplier * 0.1)) < 1e-6,
-        'but the stick turned the fighter, at the slower combo rate');
+    assert.equal(sim.player.facing, -Math.PI / 2, 'and no turning');
     step(sim, 0.3); assert.equal(phase(sim), 'idle'); assert.ok(sim.player.x > x); assert.equal(sim.player.chain, null);
-    // Turn, then A: the next move goes the new way.
+    // The stick held through a recovery, then A: the next move goes the same way as the last.
     const c = setup(); c.player.facing = -Math.PI / 2; tap(c); until(c, 'recover:slash');
     W.command(c, { type: 'move', x: 1, y: 0 }); step(c, 0.1); W.command(c, { type: 'move', x: 0, y: 0 });
-    const facing = c.player.facing; tap(c); until(c, 'windup:backslash');
-    assert.equal(c.player.act.facing, facing);
+    tap(c); until(c, 'windup:backslash');
+    assert.equal(c.player.act.facing, -Math.PI / 2);
 });
 
 test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {
@@ -294,7 +295,7 @@ test('the dagger opens B with a lunge forward and goes on into the chain; a paus
     const back = setup({ main: 'assassin_dagger' });
     back.player.facing = 0;
     tap(back); until(back, 'recover:cut'); tap(back); run(back, () => phase(back) === 'idle');
-    step(back, K.pauseAfterRecovery + 0.02);
+    step(back, K.weapons.dagger.pauseAfterRecovery + 0.02);
     const x1 = back.player.x; tap(back);
     assert.equal(back.player.act.move, 'retreat');
     until(back, 'recover:retreat');

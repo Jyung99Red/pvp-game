@@ -10,6 +10,9 @@
 // (testing). A duel (design.md 8) starts from the room screen
 // (ui/room.js): its world belongs to the duel session (core/duel.js),
 // which this loop feeds with time and controls; panels never pause it.
+// The menu (ui/menu.js) does not pause the adventure either (user,
+// 2026-10-02); its pause button does, and so do the other panels and the
+// shop and smithy.
 // window.game is for tests and debugging: game.pause() stops the real-time
 // clock, game.run(seconds) steps exactly, game.load(region) starts a
 // region afresh, game.save is the save, game.duel the duel session (or
@@ -29,10 +32,10 @@ const app = (() => {
         left: '对方离开了房间。'
     };
     // Panel buttons and their usual labels.
-    const LABELS = { resume: '继续', home: '回到据点', bag: '背包', rematch: '再来一局', duel: '联机对战', surrender: '认输', leave: '离开对战', reset: '重新开始冒险', erase: '清除并重新开始' };
-    // The screen each building of the base opens (ui/screens.js): the
-    // storage is the bag.
-    const BUILDING_SCREENS = { storage: 'bag', shop: 'shop', smithy: 'smithy' };
+    const LABELS = { resume: '继续', home: '回到据点', rematch: '再来一局', menu: '菜单', surrender: '认输', leave: '离开对战', erase: '清除并重新开始' };
+    // The screen each building of the base opens (ui/screens.js); the
+    // storage is the bag, which is the menu's.
+    const BUILDING_SCREENS = { shop: 'shop', smithy: 'smithy' };
     function fallback(root, text) {
         const box = root.querySelector('[data-fallback]');
         box.textContent = text; box.hidden = false;
@@ -109,22 +112,36 @@ const app = (() => {
         // what is carried and what the key would do.
         const display = hud.attach(root);
         display.reset(sim, 0);
-        const room = roomScreen.attach(root, { connected: beginDuel, closed: () => openPanel('menu') });
-        // Gear changes (in the base) take effect when the bag closes: the
+        const room = roomScreen.attach(root, { connected: beginDuel, closed: () => { if (!duel) menu.open(); } });
+        const screens = itemScreens.attach(root, { progress: () => sim.progress, changed: () => persist(), closed: () => loop.reset() });
+        // Gear changes (in the base) take effect when the menu closes: the
         // base is rebuilt round the player, where they stood, as hurt as
         // they were.
-        const screens = itemScreens.attach(root, {
+        const menu = menuScreen.attach(root, {
             progress: () => sim.progress,
+            player: () => sim.player,
+            place: () => ({ name: gameConfig.maps[mapId].name, base: mapId === 'base', fighting: interactKit.inCombat(sim, sim.player) }),
             canChange: () => !duel && mapId === 'base',
             changed: () => persist(),
+            act: name => {
+                menu.close();
+                if (name === 'pause') openPanel('pause');
+                else if (name === 'home') load('base');
+                else if (name === 'duel') room.open();
+                else if (name === 'reset') openPanel('reset');
+            },
             closed: ({ gearChanged }) => {
-                loop.reset();
-                if (!gearChanged) return;
+                if (!gearChanged || duel) return;
                 const p = sim.player;
                 load('base', { spot: { x: p.x, y: p.y, facing: p.facing }, carry: { hp: p.hp }, quiet: true });
             }
         });
-        function blocked() { return !!panel || room.isOpen() || screens.isOpen(); }
+        // The world stands still under a panel, the room, the shop or the
+        // smithy; under the menu it goes on, but the controls do not reach it.
+        // (game.pause() stops the clock only, not the controls.)
+        const covered = () => !!panel || room.isOpen() || screens.isOpen();
+        function halted() { return paused || covered(); }
+        function blocked() { return covered() || menu.isOpen(); }
 
         // ---- the menu and the result panels ----
         const panelEl = root.querySelector('[data-panel]'), $p = sel => panelEl.querySelector(sel);
@@ -133,13 +150,7 @@ const app = (() => {
         // the main one), each with its label if not the usual one.
         function content(kind) {
             const w = world(), me = w.fighters.find(f => f.id === selfId()) || sim.player, S = me.stats;
-            if (kind === 'menu') {
-                const fighting = interactKit.inCombat(sim, sim.player);
-                return {
-                    title: '暂停', note: `当前：${gameConfig.maps[mapId].name}${fighting && mapId !== 'base' ? ' · 战斗中不能回到据点' : ''}`, stats: [],
-                    buttons: [['resume'], ...(mapId !== 'base' ? [['home']] : []), ['bag'], ['duel'], ['reset']], disable: fighting ? ['home'] : []
-                };
-            }
+            if (kind === 'pause') return { title: '暂停', note: `${gameConfig.maps[mapId].name} · 游戏停住了`, stats: [], buttons: [['resume'], ['menu']] };
             if (kind === 'reset') {
                 return { title: '重新开始冒险？', tone: 'lose', note: '存档会被清除：打倒的首领、开过的宝箱和带着的东西都没了。', stats: [], buttons: [['erase'], ['resume', '取消']] };
             }
@@ -215,7 +226,7 @@ const app = (() => {
             for (const e of events) {
                 if (e.side !== 'player' && e.type !== 'boss_defeated') continue;
                 if (e.type === 'travel') { load(e.to, { arrival: e.from, carry: { hp: sim.player.hp } }); return; }
-                if (e.type === 'open') { input.releaseAll(); screens.open(BUILDING_SCREENS[e.what]); }
+                if (e.type === 'open') { input.releaseAll(); if (BUILDING_SCREENS[e.what]) screens.open(BUILDING_SCREENS[e.what]); else menu.open(); }
                 else if (e.type === 'boss_defeated' || e.type === 'chest_open') persist();
                 else if (e.type === 'pickup' && saveAt === null) saveAt = clock + SAVE_DELAY;
             }
@@ -258,19 +269,20 @@ const app = (() => {
             d?.link.close();
         }
 
+        // Esc and the key top left: the menu, or in a duel its own panel;
+        // again, back to the game (from the pause too).
         function menuKey() {
             if (room.isOpen() || screens.isOpen()) return;
-            if (!panel) openPanel(live() ? 'duelMenu' : 'menu');
-            else if (panel === 'menu' || panel === 'duelMenu') closePanel();
+            if (menu.isOpen()) menu.close();
+            else if (!panel) { if (live()) openPanel('duelMenu'); else if (!duel && !sim.result) menu.open(); }
+            else if (panel === 'pause' || panel === 'duelMenu') closePanel();
         }
         root.querySelector('[data-menu]').addEventListener('click', menuKey);
         window.addEventListener('keydown', e => { if (e.code === 'Escape' && !e.repeat) menuKey(); });
         actions.resume.addEventListener('click', closePanel);
         actions.home.addEventListener('click', () => load('base'));
-        actions.reset.addEventListener('click', () => openPanel('reset'));
         actions.erase.addEventListener('click', () => { save = saveKit.erase(storage()); load('base', { keep: false }); });
-        actions.duel.addEventListener('click', () => { closePanel(); room.open(); });
-        actions.bag.addEventListener('click', () => { closePanel(); screens.open('bag'); });
+        actions.menu.addEventListener('click', () => { closePanel(); menu.open(); });
         actions.surrender.addEventListener('click', () => { duel?.session.surrender(); closePanel(); });
         actions.leave.addEventListener('click', () => load('base'));
         // Asking first shows "waiting"; agreeing starts the match at once.
@@ -296,6 +308,11 @@ const app = (() => {
         fullscreenOnFirstTouch();
 
         const perf = root.querySelector('[data-perf]'), portrait = window.matchMedia('(orientation: portrait)');
+        // This phone's settings, from the menu.
+        gameSettings.apply(v => {
+            view?.settings({ zoom: gameConfig.camera.zoom[v.camera], saver: v.quality === 'saver' });
+            perf.hidden = !v.perf;
+        });
         let clock = 0;
         let last = performance.now(), frames = 0, perfTime = 0;
         function frame(now) {
@@ -312,10 +329,10 @@ const app = (() => {
                 if (beat !== null && beat !== lastBeat && (lastBeat !== null || beat > 0)) sfx.tick(beat === 0);
                 lastBeat = beat;
             } else {
-                if (!paused && !blocked()) loop.advance(seconds);
+                if (!halted()) loop.advance(seconds);
                 events = worldSim.drain(sim);
                 react(events);
-                bodies = shownBodies(paused || blocked() ? 1 : loop.alpha());
+                bodies = shownBodies(halted() ? 1 : loop.alpha());
                 if (saveAt !== null && clock >= saveAt) persist();
             }
             const w = world(), me = selfId();
@@ -329,7 +346,7 @@ const app = (() => {
                 if (duel.outcome && !duel.shown && !duel.ended && clock - duel.resultAt >= RESULT_DELAY) { duel.shown = true; openPanel('duelResult'); }
             } else if (sim.result && !panel) {
                 if (resultSeen === null) resultSeen = clock;
-                else if (clock - resultSeen >= RESULT_DELAY) { persist(); openPanel(sim.result.outcome); }
+                else if (clock - resultSeen >= RESULT_DELAY) { menu.close(); persist(); openPanel(sim.result.outcome); }
             }
             frames++; perfTime += seconds;
             if (perfTime >= 0.5) {
@@ -342,7 +359,7 @@ const app = (() => {
         requestAnimationFrame(frame);
         window.game = {
             get sim() { return world(); }, get map() { return duel ? 'arena' : mapId; }, get panel() { return panel; },
-            get duel() { return duel?.session || null; }, get save() { return save; }, room, screens,
+            get duel() { return duel?.session || null; }, get save() { return save; }, room, screens, menu,
             view, input, load, persist,
             pause(flag = true) { paused = flag; loop.reset(); },
             run: seconds => loop.run(seconds)

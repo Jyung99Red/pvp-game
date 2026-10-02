@@ -102,5 +102,11 @@ const sfx = (() => {
     }
     // A beat of the duel's countdown; `last` is the start itself.
     function tick(last = false) { if (enabled && ctx && ctx.state === 'running') sounds.countdown(last); }
-    return { play, tick, isEnabled: () => enabled };
+    // Sound on or off (the menu's settings), kept on this phone.
+    function setEnabled(on) {
+        enabled = !!on;
+        try { localStorage.setItem(key, enabled ? 'on' : 'off'); } catch (_) { /* Not kept. */ }
+        if (enabled) unlock();
+    }
+    return { play, tick, isEnabled: () => enabled, setEnabled };
 })();

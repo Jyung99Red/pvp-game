@@ -49,13 +49,39 @@
                 <button type="button" data-action="resume">继续</button>
                 <button type="button" data-action="home">回到据点</button>
                 <button type="button" data-action="rematch">再来一局</button>
-                <button type="button" data-action="bag">背包</button>
-                <button type="button" data-action="duel">联机对战</button>
+                <button type="button" data-action="menu">菜单</button>
                 <button type="button" data-action="surrender">认输</button>
                 <button type="button" data-action="leave">离开对战</button>
-                <button type="button" data-action="reset">重新开始冒险</button>
                 <button type="button" data-action="erase">清除并重新开始</button>
             </div>
+        </div>
+    </div>
+
+    <div class="menu" data-menu-screen hidden>
+        <div class="menu-card" role="dialog" aria-modal="true" aria-labelledby="menu-title">
+            <section class="menu-figure" data-menu-figure aria-label="人物，拖动旋转">
+                <p class="menu-figure-note">拖动旋转</p>
+            </section>
+            <section class="menu-gear">
+                <header class="menu-head">
+                    <h2 class="menu-title" id="menu-title">菜单</h2>
+                    <span class="menu-where" data-menu-where></span>
+                    <span class="menu-gold" data-menu-gold></span>
+                </header>
+                <div class="menu-life"><div class="bar bar-hp"><i data-menu-hp></i></div><span data-menu-hp-text></span><dl class="menu-stats" data-menu-stats></dl></div>
+                <div class="menu-slots" data-menu-slots></div>
+                <div class="menu-bag" data-menu-bag></div>
+                <div class="menu-detail" data-menu-detail></div>
+            </section>
+            <section class="menu-side">
+                <button type="button" class="menu-close" data-menu-act="close">关闭</button>
+                <button type="button" data-menu-act="pause">暂停</button>
+                <button type="button" data-menu-act="home">回到据点</button>
+                <button type="button" data-menu-act="duel">联机对战</button>
+                <h3 class="menu-side-title">设定</h3>
+                <div class="menu-settings" data-menu-settings></div>
+                <button type="button" class="menu-reset" data-menu-act="reset">重新开始冒险</button>
+            </section>
         </div>
     </div>
 

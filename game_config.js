@@ -25,7 +25,7 @@ const gameConfig = (() => {
         // with the stick pushed at least `runStick` of the way, speed eases up
         // to speed * runMultiplier over runRampSeconds, and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 140, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 1.8, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
+        player: { speed: 128, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 1.97, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -98,18 +98,19 @@ const gameConfig = (() => {
         // `charge` move grows ratio by chargeRatio and step by chargeStep
         // with its charge. Shapes and reach come from the key poses
         // (models/player_moves.js).
-        // pauseAfterRecovery: the pause line after a recovery ends;
+        // weapons.<type>.pauseAfterRecovery: the pause line after a
+        // recovery ends (the sword's a little sooner, user 2026-10-02);
         // windowAfterRecovery: the chain resets this long after;
         // bufferSeconds: an input pressed ahead that has not run within this
-        // long is dropped. recoveryTurnMultiplier: in a recovery the stick
-        // only turns the body, at this share of player.turnRate.
+        // long is dropped. Inside a move, recovery included, the body does
+        // not turn (user, 2026-10-02).
         combo: {
-            pauseAfterRecovery: 0.2, windowAfterRecovery: 0.7, bufferSeconds: 0.5, recoveryTurnMultiplier: 0.5,
+            windowAfterRecovery: 0.7, bufferSeconds: 0.5,
             weapons: {
                 // Heavy and far-reaching: everything a beat slower than the dagger.
-                sword: { name: '剑', root: { a: 'slash', b: 'charged' }, standard: 60 },
+                sword: { name: '剑', root: { a: 'slash', b: 'charged' }, standard: 60, pauseAfterRecovery: 0.15 },
                 // Quick and close: chains up to six moves; B inside a combo flicks and goes on.
-                dagger: { name: '短刃', root: { a: 'cut', b: 'lunge' }, standard: 48 }
+                dagger: { name: '短刃', root: { a: 'cut', b: 'lunge' }, standard: 48, pauseAfterRecovery: 0.2 }
             },
             moves: {
                 slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.36, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
@@ -216,7 +217,8 @@ const gameConfig = (() => {
         // can be carried, with its name, icon and line for the screens.
         // kind: gold | material | gear | supply. Gear goes in a `slot`
         // (main, offhand, armor, accessory) and adds its `stats`; a weapon's
-        // `blade` (blocks) decides its reach; an offhand item's `offhand` is
+        // `blade` (blocks) decides its reach (the two swords share one size,
+        // only their colours differ: user 2026-10-02); an offhand item's `offhand` is
         // what the offhand key does with it (shield, torch, potion). `max`:
         // how many can be owned. `price`: what the shop sells it for;
         // `sell`: what it pays for one. `recipe`: what the smithy wants for
@@ -234,7 +236,7 @@ const gameConfig = (() => {
             torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处，能烧掉枯木丛。不能挡，也不能拿来打。' },
             wooden_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
             assassin_dagger: { kind: 'gear', slot: 'main', weapon: 'dagger', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { wolf_pelt: 2, iron_ore: 2 } }, desc: '短刃。比剑短，要贴得更近；出招快，连段最长六段，起手 B 是往前冲的突刺。' },
-            iron_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 1.0, max: 1, recipe: { gold: 80, materials: { iron_ore: 5, goblin_ear: 2 } }, desc: '比木剑长一点，也重得多。' },
+            iron_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 0.92, max: 1, recipe: { gold: 80, materials: { iron_ore: 5, goblin_ear: 2 } }, desc: '和木剑一样长，铁打的刃，攻击高得多。' },
             wooden_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '木盾', icon: '🛡️', stats: { def: 2 }, max: 1, desc: '开局带着的盾。按住副手键举盾。' },
             iron_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '铁盾', icon: '🔰', stats: { def: 6 }, max: 1, recipe: { gold: 80, materials: { iron_ore: 4, wolf_pelt: 2 } }, desc: '更结实的盾。' },
             cloth_armor: { kind: 'gear', slot: 'armor', name: '布甲', icon: '👕', stats: { def: 2, maxHp: 20 }, max: 1, desc: '开局穿着的衣服。' },
@@ -295,13 +297,16 @@ const gameConfig = (() => {
 
         // 5. Fixed oblique camera (design.md 1). yaw 0 keeps
         // screen-up on -z; pitch is the angle down from the horizon;
-        // distance and lookHeight are blocks; fov is vertical, in degrees.
-        camera: { yaw: 0, pitch: 0.96, distance: 10.5, fov: 34, lookHeight: 0.8 },
+        // distance and lookHeight are blocks (distance a little further
+        // out, user 2026-10-02); fov is vertical, in degrees. zoom: the
+        // distance multiplier each camera setting of the menu picks.
+        camera: { yaw: 0, pitch: 0.96, distance: 11.5, fov: 34, lookHeight: 0.8, zoom: { near: 0.85, mid: 1, far: 1.15 } },
 
         // 6. Rendering cost. Shadow map size by screen class (short side
         // under 700 CSS px is small); shadowExtent is the half-width in
-        // blocks of the shadowed area around the player.
-        graphics: { pixelRatioMax: 2, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 12 },
+        // blocks of the shadowed area around the player. The menu's power
+        // saver draws at saverPixelRatio and without sun shadows.
+        graphics: { pixelRatioMax: 2, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 13 },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full

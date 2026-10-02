@@ -21,6 +21,13 @@ const roomScreen = (() => {
             const item = gameConfig.items[main], type = gameConfig.items[main].weapon;
             return `<button type="button" role="radio" data-weapon="${main}"><span class="weapon-icon">${item.icon}</span><b>${typeOf(main).name}</b><small>${LINES[type] || ''}</small></button>`;
         }).join('');
+        // The weapons' pictures are drawn from their models the first time the picker shows.
+        let drawn = false;
+        const drawIcons = () => {
+            if (drawn) return;
+            drawn = true;
+            picker.querySelectorAll('[data-weapon]').forEach(b => { b.querySelector('.weapon-icon').innerHTML = itemScreens.iconHtml(b.dataset.weapon); });
+        };
         function pick(main) {
             if (!choices.includes(main)) return;
             weapon = main;
@@ -48,6 +55,7 @@ const roomScreen = (() => {
             title.textContent = S.title;
             note.textContent = S.pick ? S.note : [S.note, `你用：${typeOf(weapon).name}`].filter(Boolean).join(' ');
             picker.hidden = !S.pick;
+            if (S.pick) drawIcons();
             code.hidden = !S.code; keys.hidden = !S.keys;
             panel.classList.toggle('keyed', !!S.keys);
             for (const [id, button] of Object.entries(actions)) {

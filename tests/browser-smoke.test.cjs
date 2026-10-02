@@ -164,15 +164,15 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         // Frames can be most of a second apart here, so after the clock has
         // run, wait for two more frames: the game's own frame comes first.
         const real = await page.evaluate(async () => {
-            const g = window.game, y0 = g.sim.player.y, t0 = performance.now();
+            const g = window.game, y0 = g.sim.player.y, t0 = performance.now(), speed = gameConfig.player.speed;
             const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
             g.pause(false);
             await new Promise(resolve => setTimeout(resolve, 600));
             await frame(); await frame();
             g.pause(true);
-            return { walked: y0 - g.sim.player.y, seconds: (performance.now() - t0) / 1000 };
+            return { walked: y0 - g.sim.player.y, seconds: (performance.now() - t0) / 1000, speed };
         });
-        assert.ok(real.walked > 1 && real.walked <= 115 * 0.3 * real.seconds + 1, `real-time walk ${JSON.stringify(real)} ${errors.join(' / ')}`);
+        assert.ok(real.walked > 1 && real.walked <= real.speed * 0.3 * real.seconds + 1, `real-time walk ${JSON.stringify(real)} ${errors.join(' / ')}`);
         await touch('touchEnd', []);
         await page.waitForFunction(() => window.game.input.state().pointers.length === 0, null, { timeout: 10000 }).catch(() => {});
         const released = await page.evaluate(() => ({ move: window.game.sim.input.move, shield: window.game.sim.player.guard.state, pointers: window.game.input.state().pointers }));
@@ -217,7 +217,7 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         });
         assert.ok(start.calls > 0 && start.calls < 60, `${start.calls} draw calls: terrain is a mesh per chunk`);
         await shot(page, 'base');
-        // The storage: the key names it, a tap opens the bag (one bag: the storage is it).
+        // The storage: the key names it, a tap opens the menu with the bag (one bag: the storage is it).
         const key = await page.evaluate(() => {
             const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === 'storage');
             Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
@@ -226,10 +226,13 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         });
         await page.waitForFunction(() => document.querySelector('[data-hud="interact"]').textContent === '进入' && document.querySelector('[data-hud="tag-name"]').textContent === '仓库', null, { timeout: 10000 });
         await page.touchscreen.tap(key.x, key.y);
-        await page.waitForFunction(() => window.game.screens.kind === 'bag', null, { timeout: 10000 });
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-screen-list] .row-name')].map(e => e.textContent)), ['木剑', '木盾', '布甲']);
+        await page.waitForFunction(() => window.game.menu.isOpen(), null, { timeout: 10000 });
+        // Worn: the three starter pieces, drawn from their models; the bag is otherwise empty.
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-menu-slots] [data-item]')].map(e => [e.dataset.item, e.querySelector('img.item-icon')?.src.startsWith('data:image/png') || false])),
+            [['wooden_sword', true], ['wooden_shield', true], ['cloth_armor', true]]);
+        assert.equal(await page.evaluate(() => document.querySelectorAll('[data-menu-bag] [data-item]').length), 0);
         await shot(page, 'storage');
-        await page.click('[data-screen-close]');
+        await page.click('[data-menu-act="close"]');
         // The north gate, by touch: off to the field, standing at the gate back.
         await page.evaluate(() => {
             const g = window.game, p = g.sim.player, gate = g.sim.entities.find(e => e.id === 'p-field');
@@ -305,8 +308,8 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
         // The menu: home is not offered in the base; resetting asks first.
         await page.click('[data-menu]');
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent)), ['继续', '背包', '联机对战', '重新开始冒险']);
-        await page.click('[data-action="reset"]');
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side > [data-menu-act]')].filter(b => !b.hidden).map(b => b.textContent)), ['关闭', '暂停', '联机对战', '重新开始冒险']);
+        await page.click('[data-menu-act="reset"]');
         assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
         await page.click('[data-action="resume"]');
         // Loot picked up is in the save and survives a reload.
@@ -356,14 +359,16 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         await page.click('[data-row="potion"]'); await page.click('[data-act="buy"]'); await page.click('[data-act="buy"]');
         await page.click('[data-row="torch"]'); await page.click('[data-act="buy"]');
         await page.click('[data-screen-close]');
-        // The bag from the menu: iron armor and a potion on; the base is rebuilt round the player in them.
+        // The bag in the menu: iron armor and a potion on (the figure shows
+        // them at once); the base is rebuilt round the player in them when it closes.
         const before = await page.evaluate(() => ({ parts: window.game.sim.rigs.fighters.player.parts.length, x: window.game.sim.player.x }));
-        await page.click('[data-menu]'); await page.click('[data-action="bag"]');
-        await page.click('[data-row="iron_armor"]'); await page.click('[data-act="equip"]');
-        await page.click('[data-row="potion"]'); await page.click('[data-act="equip"]');
-        assert.match(await page.evaluate(() => document.querySelector('.detail-note').textContent), /换上了药水/);
+        await page.click('[data-menu]');
+        await page.click('[data-menu-bag] [data-item="iron_armor"]'); await page.click('[data-act="equip"]');
+        await page.click('[data-menu-bag] [data-item="potion"]'); await page.click('[data-act="equip"]');
+        assert.match(await page.evaluate(() => document.querySelector('[data-menu-detail] .detail-note').textContent), /换上了药水/);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-menu-slots] [data-item]')].map(e => e.dataset.item)), ['wooden_sword', 'potion', 'iron_armor']);
         await shot(page, 'bag');
-        await page.click('[data-screen-close]');
+        await page.click('[data-menu-act="close"]');
         const worn = await page.evaluate(() => { const g = window.game, p = g.sim.player; return { map: g.map, parts: g.sim.rigs.fighters.player.parts.length, x: p.x, maxHp: p.maxHp, def: p.def, offhand: p.loadout.offhand, saved: g.save.loadout.armor }; });
         assert.deepEqual({ ...worn, parts: undefined }, { map: 'base', parts: undefined, x: before.x, maxHp: 380, def: 11, offhand: 'potion', saved: 'iron_armor' });
         assert.ok(worn.parts > before.parts, 'the iron armor adds plates to the model');
@@ -373,12 +378,24 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         await page.keyboard.press('KeyL');
         await page.evaluate(() => window.game.run(0.9));
         assert.deepEqual(await page.evaluate(() => [window.game.sim.player.hp, window.game.sim.progress.inventory.items.potion]), [214, 1]);
-        // Outside the base the bag only shows: no changing gear.
+        // Outside the base the bag only shows: no changing gear. The menu
+        // does not pause the world (user, 2026-10-02); its pause button does.
         await page.evaluate(() => window.game.load('field'));
-        await page.click('[data-menu]'); await page.click('[data-action="bag"]');
-        await page.click('[data-row="wooden_shield"]');
-        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-act="equip"]').disabled, document.querySelector('.detail-note').textContent]), [true, '只能在据点里换装备']);
-        await page.click('[data-screen-close]');
+        await page.click('[data-menu]');
+        await page.click('[data-menu-bag] [data-item="wooden_shield"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-act="equip"]').disabled, document.querySelector('[data-menu-detail] .detail-note').textContent]), [true, '只能在据点里换装备']);
+        // Real time for a few frames, then frozen again for the test.
+        const ticks = () => page.evaluate(async () => {
+            const g = window.game, t0 = g.sim.time, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+            g.pause(false); await frame(); await frame(); await frame(); g.pause(true);
+            return g.sim.time - t0;
+        });
+        const ticking = await ticks();
+        assert.ok(ticking > 0, `the world goes on under the menu: ${ticking}`);
+        await page.click('[data-menu-act="pause"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.menu.isOpen(), window.game.panel, document.querySelector('[data-panel-title]').textContent]), [false, 'pause', '暂停']);
+        assert.equal(await ticks(), 0, 'paused, it stands still');
+        await page.click('[data-action="resume"]');
         // The torch in the dark cave: the ground round the player is lit only while it burns.
         await page.evaluate(() => { const g = window.game; g.sim.progress.loadout.offhand = 'torch'; g.load('cave'); });
         const light = await page.evaluate(() => {
@@ -410,7 +427,7 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         const A = await openPage(context, '?link=local&map=clearing'), B = await openPage(context, '?link=local&map=clearing');
         const text = (page, sel) => page.evaluate(s => document.querySelector(s).textContent, sel);
         // A creates a room; B types its code on the keypad and joins.
-        await A.page.click('[data-menu]'); await A.page.click('[data-action="duel"]');
+        await A.page.click('[data-menu]'); await A.page.click('[data-menu-act="duel"]');
         assert.equal(await text(A.page, '[data-room-title]'), '联机对战');
         await A.page.click('[data-room-action="host"]');
         await A.page.waitForFunction(() => document.querySelector('[data-room-status]').textContent.includes('等待'), null, { timeout: 20000 });
@@ -418,7 +435,7 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         assert.match(code, /^\d{4}$/);
         await shot(A.page, 'room-host');
         // B picks the dagger first (each side picks its own weapon; the pick is remembered).
-        await B.page.click('[data-menu]'); await B.page.click('[data-action="duel"]');
+        await B.page.click('[data-menu]'); await B.page.click('[data-menu-act="duel"]');
         assert.equal(await B.page.evaluate(() => document.querySelector('[data-room-weapons]').hidden), false);
         await B.page.click('[data-weapon="assassin_dagger"]');
         await shot(B.page, 'room-weapons');

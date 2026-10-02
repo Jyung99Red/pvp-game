@@ -23,10 +23,13 @@ const worldView = (() => {
         const camera = new T.PerspectiveCamera(C.camera.fov, 1, 0.1, 120);
         const mapSize = small ? C.graphics.shadowMapSmall : C.graphics.shadowMapLarge;
         let world = null;
+        // The menu's settings (ui/settings.js): the camera's distance
+        // multiplier, and sun shadows (off in the power saver).
+        const tune = { zoom: 1, shadows: true };
 
         function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
-            world = build(T, next, camera, mapSize, selfId);
+            world = build(T, next, camera, mapSize, selfId, tune);
         }
         load(sim, opts);
         // `bodies`: fighters and monsters as shown, by id -- a blend between
@@ -41,6 +44,12 @@ const worldView = (() => {
             renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
+        // zoom: camera distance multiplier; saver: fewer pixels, no shadows.
+        function settings({ zoom, saver }) {
+            tune.zoom = zoom; tune.shadows = !saver;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, saver ? C.graphics.saverPixelRatio : C.graphics.pixelRatioMax));
+            world.retune();
+        }
         // A point in blocks to CSS pixels on the canvas, or null behind the camera.
         const projected = new T.Vector3();
         function project(point) {
@@ -50,7 +59,7 @@ const worldView = (() => {
             return { x: (projected.x + 1) / 2 * r.width, y: (1 - projected.y) / 2 * r.height };
         }
         return {
-            load, render, resize, project, renderer, camera,
+            load, render, resize, project, settings, renderer, camera,
             info: () => renderer.info.render,
             get scene() { return world.scene; },
             get playerRig() { return world.playerRig; },
@@ -63,7 +72,7 @@ const worldView = (() => {
     }
 
     // ---- one world: scene, terrain, characters, effects ----
-    function build(T, sim, camera, mapSize, selfId) {
+    function build(T, sim, camera, mapSize, selfId, tune) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
         // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
@@ -72,10 +81,16 @@ const worldView = (() => {
         const scene = new T.Scene(), sky = new T.Color(dark ? P.darkSky : P.sky);
         scene.background = sky;
         scene.fog = new T.Fog(sky, C.camera.distance + L.fog[0], C.camera.distance + L.fog[1]);
+        // Fog and shadows follow the menu's settings.
+        function retune() {
+            const d = C.camera.distance * tune.zoom;
+            scene.fog.near = d + L.fog[0]; scene.fog.far = d + L.fog[1];
+            sun.castShadow = !dark && tune.shadows;
+        }
 
         scene.add(new T.HemisphereLight(P.skyLight, P.groundLight, L.sky));
         const sun = new T.DirectionalLight(P.sun, L.sun), extent = C.graphics.shadowExtent;
-        sun.castShadow = !dark;
+        sun.castShadow = !dark && tune.shadows;
         // The torch's light: always there (lights coming and going would
         // rebuild every shader), at zero while no torch burns.
         const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
@@ -344,7 +359,7 @@ const worldView = (() => {
         const seen = new Set();
 
         function placeCamera(x, y, z) {
-            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * fit, cp = Math.cos(cam.pitch);
+            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(cam.pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
             camera.position.set(tx0 + Math.sin(cam.yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(cam.yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
@@ -426,7 +441,8 @@ const worldView = (() => {
             // The shadow map is the light's own render target.
             sun.dispose();
         }
-        return { scene, render, dispose, playerRig, seen, ground };
+        retune();
+        return { scene, render, dispose, retune, playerRig, seen, ground };
     }
     return { create };
 })();

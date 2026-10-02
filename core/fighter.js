@@ -75,6 +75,9 @@ const fighterKit = (() => {
     const REACH = 240;
 
     // ---- the move tree ----
+    // The pause line: this long after a move's swing ends, an A takes its
+    // pause move. Each weapon type keeps its own beat.
+    const pauseLine = id => moveOf(id).recovery + K().weapons[moveOf(id).weapon].pauseAfterRecovery;
     function chainOpen(p, at) {
         const c = p.chain;
         return !!c && at - c.at <= moveOf(c.move).recovery + K().windowAfterRecovery + 1e-9;
@@ -89,7 +92,7 @@ const fighterKit = (() => {
         if (p.act && (p.act.phase === 'windup' || p.act.phase === 'swing')) node = p.act.move;
         else if (chainOpen(p, at)) {
             node = p.chain.move;
-            paused = input === 'a' && at - p.chain.at >= moveOf(node).recovery + K().pauseAfterRecovery - 1e-9;
+            paused = input === 'a' && at - p.chain.at >= pauseLine(node) - 1e-9;
         }
         const next = node ? moveOf(node).next || {} : {};
         const id = paused ? next.pause ?? next.a : next[input];
@@ -363,12 +366,9 @@ const fighterKit = (() => {
             // An unbroken walk turns into a run: stick well pushed, free
             // walking (no shield, no charge), and really getting somewhere.
             striding = !guarding && !drinking && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
-        } else if (mag > 1e-6 && a?.phase === 'recover') {
-            p.pace = 0;
-            // Inside a combo the stick only turns, and slower; the next move
-            // goes where the fighter faces the moment it starts.
-            p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), P.turnRate * K().recoveryTurnMultiplier * dt);
         }
+        // Inside a move, recovery included, the stick neither walks nor
+        // turns (user, 2026-10-02): a combo goes the way it started.
         if (p.speed === 0) p.pace = 0;
         p.moveTime = striding ? p.moveTime + dt : 0;
         p.runBlend = approach(p.runBlend, p.moveTime >= P.runAfter - 1e-9 ? 1 : 0, dt / P.runRampSeconds);
@@ -397,7 +397,7 @@ const fighterKit = (() => {
         if (c && !p.act) {
             const m = moveOf(c.move);
             if (!chainOpen(p, sim.time)) { p.chain = null; p.combo = []; }
-            else if (m.next?.pause && !c.cued && sim.time - c.at >= m.recovery + K().pauseAfterRecovery - 1e-9) {
+            else if (m.next?.pause && !c.cued && sim.time - c.at >= pauseLine(c.move) - 1e-9) {
                 c.cued = true; emit(sim, p, 'pause_ready', { move: m.next.pause });
             }
         }

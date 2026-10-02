@@ -10,32 +10,43 @@ const playerPoses = Object.freeze({
         thighR: { rx: -0.08 }, shinR: { rx: 0.12 },
         thighL: { rx: 0.1 }, shinL: { rx: 0.08 }
     },
-    // A full walk cycle is two steps: contact (right foot forward), passing
-    // (left leg swinging through), then both mirrored. `legs` replaces the
-    // lower body; `arms` is added to the upper body. The stride is measured
-    // from these poses, so feet do not slide whatever the angles; long
-    // strides keep the steps unhurried at walking speed (user, 2026-10-02).
+    // A gait cycle is two steps: the keys of the right foot's step, evenly
+    // spaced, then the same mirrored for the left. Key 0 is the right foot
+    // coming down. `legs` replaces the lower body; `arms` (mirrored too) and
+    // `carry` (the sword arm's hold, not mirrored) are added to the upper
+    // body. The stride is measured from the legs, and the keys are timed
+    // along it, so feet do not slide whatever the angles
+    // (core/player_anim.js).
+    // Walking: contact, passing. Strides between the first walk's and the
+    // long one (user, 2026-10-02: the speed half way, the steps as unhurried).
     walk: {
         legs: [
-            { pelvis: { ry: 0.09 }, thighR: { rx: -0.78 }, shinR: { rx: 0.15 }, thighL: { rx: 0.64 }, shinL: { rx: 0.38 } },
-            { thighR: { rx: 0.1 }, shinR: { rx: 0.15 }, thighL: { rx: -0.62 }, shinL: { rx: 1.45 } }
+            { pelvis: { ry: 0.08 }, thighR: { rx: -0.68 }, shinR: { rx: 0.12 }, thighL: { rx: 0.56 }, shinL: { rx: 0.39 } },
+            { thighR: { rx: 0.06 }, shinR: { rx: 0.12 }, thighL: { rx: -0.56 }, shinL: { rx: 1.36 } }
         ],
         arms: [
-            { chest: { rx: 0.07, ry: -0.1 }, upperArmR: { rx: 0.3 }, upperArmL: { rx: -0.34 } },
-            { chest: { rx: 0.07 } }
-        ]
+            { chest: { rx: 0.065, ry: -0.09 }, upperArmR: { rx: 0.27 }, upperArmL: { rx: -0.31 } },
+            { chest: { rx: 0.065 } }
+        ],
+        carry: { forearmR: { rx: -0.15 }, handR: { rx: -0.15 } }
     },
-    // Running: the same layout as the walk, with longer strides, knees
-    // driven high, a forward lean and pumping arms.
+    // Running, a jog (user, 2026-10-02): touchdown, mid-stance (the knee
+    // gives), toe-off; from the toe-off to the other foot's touchdown both
+    // feet are off the ground, the body `flight.height` (blocks) up at
+    // most. The sword is carried with the elbow bent and the blade up, clear
+    // of the ground.
     run: {
         legs: [
-            { pelvis: { ry: 0.1 }, thighR: { rx: -0.85 }, shinR: { rx: 0.25 }, thighL: { rx: 0.65 }, shinL: { rx: 0.95 } },
-            { thighR: { rx: -0.25 }, shinR: { rx: 0.55 }, thighL: { rx: -0.95 }, shinL: { rx: 1.55 } }
+            { pelvis: { ry: 0.08 }, thighR: { rx: -0.65 }, shinR: { rx: 0.25 }, thighL: { rx: 0.6 }, shinL: { rx: 1.35 } },
+            { thighR: { rx: -0.2 }, shinR: { rx: 0.45 }, thighL: { rx: -0.4 }, shinL: { rx: 1.9 } },
+            { pelvis: { ry: -0.04 }, thighR: { rx: 0.72 }, shinR: { rx: 0.08 }, thighL: { rx: -0.85 }, shinL: { rx: 1.15 } }
         ],
         arms: [
-            { chest: { rx: 0.22, ry: -0.12 }, upperArmR: { rx: 0.5 }, forearmR: { rx: -0.35 }, upperArmL: { rx: -0.55 }, forearmL: { rx: -0.45 } },
-            { chest: { rx: 0.22 } }
-        ]
+            { chest: { rx: 0.14, ry: -0.1 }, upperArmR: { rx: 0.4 }, upperArmL: { rx: -0.45 }, forearmL: { rx: -0.35 } },
+            { chest: { rx: 0.14 } }
+        ],
+        carry: { forearmR: { rx: -0.55 }, handR: { rx: -0.45 } },
+        flight: { height: 0.09 }
     },
     // Breathing while idle; drawn only, never part of a hit test.
     breath: { rate: 2.2, chest: 0.012, head: -0.008, arms: 0.02 }

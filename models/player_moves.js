@@ -73,10 +73,11 @@ const playerMoves = (() => {
             a: key({ base: { ry: -0.45 }, pelvis: { py: -0.1 }, chest: { ry: -0.3, rx: 0.15 }, upperArmR: { rx: -1.05, ry: -0.95 }, handR: { rx: 1.25 }, thighR: { rx: 0.5 }, shinR: { rx: 0.45 }, thighL: { rx: -0.45 }, shinL: { rx: 0.35 } }),
             b: key({ base: { ry: 0.45 }, pelvis: { py: -0.1 }, chest: { ry: 0.3, rx: 0.15 }, upperArmR: { rx: -1.05, ry: 0.95 }, handR: { rx: 1.25 }, thighR: { rx: 0.5 }, shinR: { rx: 0.45 }, thighL: { rx: -0.45 }, shinL: { rx: 0.35 } })
         },
-        // The finisher: both hands up, the blade brought straight down.
+        // The finisher: the blade hand up over the head and straight down;
+        // the other arm stays low, a little out for balance (user, 2026-10-02).
         drop: {
-            a: key({ chest: { rx: -0.3 }, head: { rx: -0.1 }, upperArmR: { rx: -2.95, ry: -0.15 }, handR: { rx: 1.0 }, upperArmL: { rx: -2.7, ry: 0.25 }, forearmL: { rx: -0.4 }, thighR: { rx: 0.25 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
-            b: key({ pelvis: { py: -0.14 }, chest: { rx: 0.45 }, upperArmR: { rx: -0.75, ry: 0.1 }, handR: { rx: 1.35 }, upperArmL: { rx: -0.7, ry: -0.2 }, forearmL: { rx: -0.6 }, thighR: { rx: 0.55 }, shinR: { rx: 0.55 }, thighL: { rx: -0.75 }, shinL: { rx: 0.45 } })
+            a: key({ chest: { rx: -0.3 }, head: { rx: -0.1 }, upperArmR: { rx: -2.95, ry: -0.15 }, handR: { rx: 1.0 }, upperArmL: { rx: -0.6, ry: 0.3, rz: 0.25 }, forearmL: { rx: -0.7 }, thighR: { rx: 0.25 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
+            b: key({ pelvis: { py: -0.14 }, chest: { rx: 0.45 }, upperArmR: { rx: -0.75, ry: 0.1 }, handR: { rx: 1.35 }, upperArmL: { rx: -0.3, ry: 0.2, rz: 0.3 }, forearmL: { rx: -0.6 }, thighR: { rx: 0.55 }, shinR: { rx: 0.55 }, thighL: { rx: -0.75 }, shinL: { rx: 0.45 } })
         },
         // Low left up to high right, quick and short.
         flick: {

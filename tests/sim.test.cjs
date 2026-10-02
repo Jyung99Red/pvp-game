@@ -132,8 +132,9 @@ test('from a standstill the walk builds up; heading away from the facing is slow
     assert.ok(Math.abs(b.p.speed / ahead.p.speed - (1 - P.turnSlow)) < 0.06, `turning round: ${(b.p.speed / ahead.p.speed).toFixed(2)}`);
     b.loop.run(0.6);
     assert.ok(Math.abs(b.p.speed - P.speed) < 1e-6, 'turned: full speed');
-    // The walk is quicker than before and the steps are no hastier (about 4 a second).
-    assert.ok(P.speed >= 3.4 * U && 2 * P.speed / playerAnim.cycleLength(W.create().rigs.fighters.player, 0) < 4);
+    // The walk is half way between the first one (115) and the long-stride
+    // one (140), and the steps no hastier: under 4 a second (user, 2026-10-02).
+    assert.ok(Math.abs(P.speed - (115 + 140) / 2) <= 1 && 2 * P.speed / playerAnim.cycleLength(W.create().rigs.fighters.player, 0) < 4);
 });
 
 test('two seconds of unbroken walking turn into a run at runMultiplier', () => {
