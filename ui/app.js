@@ -120,7 +120,6 @@ const app = (() => {
         const menu = menuScreen.attach(root, {
             progress: () => sim.progress,
             player: () => sim.player,
-            place: () => ({ name: gameConfig.maps[mapId].name }),
             canChange: () => !duel && mapId === 'base',
             changed: () => persist(),
             act: name => {

@@ -16,14 +16,14 @@ const menuScreen = (() => {
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
     // hooks: progress() the world's progress; player() the fighter shown
-    // (HP); place() { name }; canChange() gear may be changed now;
+    // (HP); canChange() gear may be changed now;
     // changed('gear'); act(name) for the side's buttons (pause, duel,
     // reset); closed({ gearChanged }).
     function attach(root, hooks) {
         const el = root.querySelector('[data-menu-screen]'), $ = sel => el.querySelector(sel);
         const figureBox = $('[data-menu-figure]'), slotsEl = $('[data-menu-slots]'), bagEl = $('[data-menu-bag]'), detailEl = $('[data-menu-detail]');
         const hpFill = $('[data-menu-hp]'), hpText = $('[data-menu-hp-text]'), statsEl = $('[data-menu-stats]');
-        const whereEl = $('[data-menu-where]'), settingsEl = $('[data-menu-settings]');
+        const settingsEl = $('[data-menu-settings]');
         const acts = Object.fromEntries([...el.querySelectorAll('[data-menu-act]')].map(b => [b.dataset.menuAct, b]));
         const I = gameConfig.items;
         let open = false, picked = null, message = '', gearChanged = false, raf = 0, drag = null, fig = null, shownHp = '', folded = true;
@@ -68,8 +68,7 @@ const menuScreen = (() => {
                 ${lines.map(l => `<p>${esc(l)}</p>`).join('')}`;
         }
         function render() {
-            const p = hooks.progress(), place = hooks.place(), stats = K.statsOf(p.loadout);
-            whereEl.textContent = `${place.name} · 游戏没有暂停`;
+            const p = hooks.progress(), stats = K.statsOf(p.loadout);
             statsEl.innerHTML = ['atk', 'def', 'maxHp'].map(k => `<div><dt>${k === 'maxHp' ? '生命上限' : STAT_NAMES[k]}</dt><dd>${stats[k]}</dd></div>`).join('')
                 + `<div class="menu-gold"><dt aria-label="金币">${itemScreens.iconHtml('gold')}</dt><dd>${p.inventory.gold}</dd></div>`;
             slotsEl.innerHTML = K.SLOTS.map(slot => {

@@ -337,8 +337,8 @@ html, body {
 @media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } }
 @media (orientation: portrait) { .rotate-hint { display: grid; } }
 
-/* The menu (ui/menu.js): a window of about 78% of the screen over the
-   running game, three columns -- the figure (its canvas,
+/* The menu (ui/menu.js): a window of about 88% x 80% of the screen over
+   the running game, three columns -- the figure (its canvas,
    render/figure_view.js); HP and stats over the gear slots (a column, as
    in Minecraft) and the bag, the picked item below; the side with pause,
    the room, folded settings. The close key stands apart in the corner. */
@@ -349,8 +349,8 @@ html, body {
 }
 .menu[hidden] { display: none; }
 .menu-card {
-    position: relative; width: min(78vw, 860px); height: min(80vh, 420px); max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;
-    display: grid; grid-template-columns: minmax(96px, 0.62fr) minmax(0, 2fr) minmax(108px, 0.62fr);
+    position: relative; width: min(88vw, 960px); height: min(80vh, 420px); max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;
+    display: grid; grid-template-columns: minmax(110px, 0.72fr) minmax(0, 2fr) minmax(124px, 0.72fr);
     border-radius: 10px; background: rgba(20, 25, 31, 0.96); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 .menu-figure {
@@ -363,12 +363,9 @@ html, body {
 .menu-figure.none::after { content: '无法显示 3D 人物'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 .menu-gear {
     --cell: clamp(30px, 9.5vh, 40px);
-    min-height: 0; min-width: 0; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 4px; padding: 6px 9px;
+    min-height: 0; min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 5px; padding: 8px 9px 6px;
     border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
-.menu-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.menu-title { margin: 0; font-size: 16px; white-space: nowrap; }
-.menu-where { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .menu-life { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; font-size: 11px; font-variant-numeric: tabular-nums; }
 .menu-life > b { font-weight: 500; color: var(--muted); }
 .menu-life .bar { height: 9px; }
@@ -398,7 +395,7 @@ html, body {
 .bag-empty { grid-column: 1 / -1; margin: 6px; font-size: 12px; color: var(--muted); }
 /* The picked item: one line with its name, what it changes and the key; then what it is. */
 .menu-detail {
-    min-height: 36px; max-height: 60px; overflow-y: auto; display: grid; gap: 2px; align-content: start; font-size: 11px;
+    min-height: 36px; max-height: 72px; overflow-y: auto; display: grid; gap: 2px; align-content: start; font-size: 11px;
     padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .menu-detail .detail-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -412,8 +409,8 @@ html, body {
 .menu-detail .detail-actions button { min-height: 30px; padding: 0 11px; font-size: 13px; white-space: nowrap; }
 .menu-detail .detail-note:empty { display: none; }
 .menu-detail .detail-note { color: var(--accent); }
-/* The side: a column of keys under the close key's corner; settings fold away. */
-.menu-side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 52px 8px 8px; }
+/* The side: a column of keys well below the close key's corner; settings fold away. */
+.menu-side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 72px 8px 8px; }
 .menu-side > button {
     flex: none; min-height: 34px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 var(--font); cursor: pointer; touch-action: manipulation;
     border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.07); color: var(--fg);
