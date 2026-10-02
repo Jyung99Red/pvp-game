@@ -41,6 +41,7 @@ M7（2026-10-02）用户要试：短刃的新连段顺不顺手（A 五连、连
 
 约定（也在 `AGENTS.md`）：
 
+- 改动直接提交并推送到 `main`，不另开分支（用户 2026-10-02）。
 - 可调数值只放 `game_config.js`，改了同步 `parameters.md`。模型形状和关键姿势是 `models/` 里的数据，不是可调数值。
 - 新脚本登记到 `client-assets.json`；新页面片段还要在 `index.html` 里加 `#mount-<id>`。
 - 完成 = `node --test "tests/*.test.cjs"` 全绿。改了测试断言的内容要说明为什么。
