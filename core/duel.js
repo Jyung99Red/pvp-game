@@ -7,13 +7,16 @@
 // snapshot. No DOM and no network here: `send` and `now` come from the
 // caller, so Node tests can play both ends.
 //
-// Messages: hello { protocol, rules } both ways on connect; host start
+// Each side picks its weapon before connecting (one of pvp.weapons; the
+// rest of the gear is the starter's) and names it in its hello.
+//
+// Messages: hello { protocol, rules, weapon } both ways on connect; host start
 // { battle }; guest ready; host snap { serial, ack, countdown, state,
 // events } every pvp.snapshotSeconds; guest input { seq, cmd }; either way
 // beat (nothing else to say), surrender, rematch, abort (the match is off),
 // leave (the room is closed). Everything after hello names its battle.
 const duelKit = (() => {
-    const PROTOCOL = 2;
+    const PROTOCOL = 3;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -36,11 +39,17 @@ const duelKit = (() => {
     function rules() {
         if (!fingerprint) {
             const { input, controlsLayout, graphics, camera, ...shared } = gameConfig;
-            fingerprint = hash(JSON.stringify([PROTOCOL, shared, playerModel, playerPoses, playerMoves, equipmentModels.forLoadout(inventoryKit.starter())]));
+            fingerprint = hash(JSON.stringify([PROTOCOL, shared, playerModel, playerPoses, playerMoves, P().weapons.map(main => equipmentModels.forLoadout(loadoutFor(main)))]));
         }
         return fingerprint;
     }
-    const arena = () => worldSim.create({ map: gameConfig.maps.arena, duel: true });
+    // The fair gear for a duel: the starter's, with the main hand picked.
+    const weaponOk = main => typeof main === 'string' && P().weapons.includes(main);
+    function loadoutFor(main) {
+        if (!weaponOk(main)) throw new Error(`Not a duel weapon: ${main}`);
+        return { ...inventoryKit.starter(), main };
+    }
+    const arena = mains => worldSim.create({ map: gameConfig.maps.arena, duel: true, loadouts: mains.map(loadoutFor) });
     const newBattle = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
     // ---- a snapshot from the other phone is checked before it is used ----
@@ -51,6 +60,8 @@ const duelKit = (() => {
     const obj = v => !!v && typeof v === 'object' && !Array.isArray(v);
     const moveId = v => typeof v === 'string' && Object.hasOwn(gameConfig.combo.moves, v);
     function validFighter(f, ref, t) {
+        // Only moves of the fighter's own weapon type.
+        const type = inventoryKit.weaponOf(ref.loadout), ownMove = v => moveId(v) && gameConfig.combo.moves[v].weapon === type;
         if (!obj(f) || f.id !== ref.id || f.side !== ref.side || f.kind !== 'fighter') return false;
         if (!within(f.x, 0, t.width * t.unit) || !within(f.y, 0, t.height * t.unit) || !num(f.h) || !num(f.facing)) return false;
         if (f.radius !== ref.radius || f.maxHp !== ref.maxHp || f.atk !== ref.atk || f.def !== ref.def || f.endless !== ref.endless) return false;
@@ -66,14 +77,14 @@ const duelKit = (() => {
         if (f.bPress !== null && !(obj(f.bPress) && num(f.bPress.at) && bool(f.bPress.held) && (f.bPress.upAt === null || num(f.bPress.upAt)))) return false;
         if (f.buffer !== null && !(obj(f.buffer) && ['a', 'b'].includes(f.buffer.input) && num(f.buffer.at) && num(f.buffer.age))) return false;
         if (!Array.isArray(f.combo) || f.combo.length > 32 || !f.combo.every(c => ['a', 'b', '-'].includes(c))) return false;
-        // Nothing in the arena to interact with; sword and shield only.
+        // Nothing in the arena to interact with; a weapon and the shield only.
         if (f.focus !== null || f.using !== null || f.drink !== null || f.lit !== false) return false;
-        if (f.chain !== null && !(obj(f.chain) && moveId(f.chain.move) && num(f.chain.at) && bool(f.chain.cued))) return false;
+        if (f.chain !== null && !(obj(f.chain) && ownMove(f.chain.move) && num(f.chain.at) && bool(f.chain.cued))) return false;
         const a = f.act;
         if (a === null) return true;
-        return obj(a) && moveId(a.move) && ['windup', 'charge', 'swing', 'recover'].includes(a.phase) && within(a.t, 0, 60) && num(a.facing) &&
+        return obj(a) && ownMove(a.move) && ['windup', 'charge', 'swing', 'recover'].includes(a.phase) && within(a.t, 0, 60) && num(a.facing) &&
             num(a.pressAt) && within(a.share, 0, 1) && num(a.stepTotal) && Array.isArray(a.hit) && a.hit.length <= 8 && a.hit.every(h => typeof h === 'string') &&
-            (a.from === null || (obj(a.from) && moveId(a.from.move) && num(a.from.t)));
+            (a.from === null || (obj(a.from) && ownMove(a.from.move) && num(a.from.t)));
     }
     function validSnapshot(sim, s) {
         if (!obj(s) || !num(s.time) || s.time < 0 || !count(s.tick) || s.map !== sim.map || s.region !== sim.region || s.duel !== true || !count(s.seed) || !count(s.serial)) return false;
@@ -84,17 +95,19 @@ const duelKit = (() => {
     }
 
     // One end of a duel. role: 'host' | 'guest'. send(message): to the other
-    // phone. now(): seconds. `on` (all optional): start(sim) a new match;
+    // phone. now(): seconds. weapon: this side's main hand (pvp.weapons).
+    // `on` (all optional): start(sim) a new match;
     // result(outcome) 'win' | 'lose' | 'draw'; rematch() the other side asks
     // for another; end(reason) 'incompatible' | 'timeout' | 'lost' (the
     // channel closed) | 'aborted' | 'left' | 'closed' (this phone left): the
     // duel is over for good.
     // phase: hello -> starting -> countdown -> fight -> over (-> starting
     // again on a rematch) | ended.
-    function create({ role, send, now, on = {} }) {
+    function create({ role, send, now, on = {}, weapon = P().weapons[0] }) {
         if (role !== 'host' && role !== 'guest') throw new Error(`Unknown duel role ${role}`);
+        loadoutFor(weapon);
         const host = role === 'host', self = host ? 0 : 1, other = 1 - self;
-        let phase = 'hello', battle = null, sim = null, countdown = 0, peerOk = false, endReason = null;
+        let phase = 'hello', battle = null, sim = null, countdown = 0, peerOk = false, endReason = null, peerWeapon = null;
         let lastHeard = now(), lastSent = -Infinity, wantRematch = false, peerRematch = false;
         // host
         let receivedSeq = 0, eventId = 0, history = [], lastSnap = -Infinity, serial = 0;
@@ -139,7 +152,8 @@ const duelKit = (() => {
 
         // ---- starting a match ----
         function begin(id) {
-            battle = id; sim = arena(); phase = 'starting';
+            const mains = [weapon, peerWeapon];
+            battle = id; sim = arena(host ? mains : mains.reverse()); phase = 'starting';
             wantRematch = peerRematch = false; countdown = P().countdown;
             receivedSeq = eventId = serial = 0; history = []; lastSnap = -Infinity;
             inputSeq = 0; pending = []; applied = -1; seenEvent = 0; snapCountdown = countdown; snapAt = now();
@@ -210,8 +224,8 @@ const duelKit = (() => {
             if (phase === 'ended' || !obj(msg) || typeof msg.t !== 'string') return;
             lastHeard = now();
             if (msg.t === 'hello') {
-                if (msg.protocol !== PROTOCOL || msg.rules !== rules()) { end('incompatible'); return; }
-                peerOk = true;
+                if (msg.protocol !== PROTOCOL || msg.rules !== rules() || !weaponOk(msg.weapon)) { end('incompatible'); return; }
+                peerOk = true; peerWeapon = msg.weapon;
                 if (host && phase === 'hello') hostStart();
                 return;
             }
@@ -282,13 +296,14 @@ const duelKit = (() => {
         }
 
         return {
-            role, self,
+            role, self, weapon,
+            get peerWeapon() { return peerWeapon; },
             get phase() { return phase; }, get sim() { return sim; }, get battle() { return battle; },
             get countdown() { return countdown; }, get endReason() { return endReason; },
             get selfId() { return sim ? sim.fighters[self].id : worldSim.DUEL_IDS[self]; },
             get rematchAsked() { return peerRematch; }, get rematchSent() { return wantRematch; },
             // The channel is open: introduce this phone.
-            open() { lastHeard = now(); post({ t: 'hello', protocol: PROTOCOL, rules: rules() }); },
+            open() { lastHeard = now(); post({ t: 'hello', protocol: PROTOCOL, rules: rules(), weapon }); },
             receive, command, frame,
             // Drawing helpers: interpolation between the last two live steps
             // and the guest's eased snapshot corrections.
@@ -316,5 +331,5 @@ const duelKit = (() => {
             lost() { end('lost'); }
         };
     }
-    return { PROTOCOL, PREDICTED, rules, validSnapshot, create };
+    return { PROTOCOL, PREDICTED, rules, loadoutFor, validSnapshot, create };
 })();

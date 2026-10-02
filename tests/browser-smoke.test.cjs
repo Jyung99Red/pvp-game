@@ -415,7 +415,14 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         const code = await A.page.evaluate(() => [...document.querySelectorAll('[data-room-code] i')].map(i => i.textContent).join(''));
         assert.match(code, /^\d{4}$/);
         await shot(A.page, 'room-host');
-        await B.page.click('[data-menu]'); await B.page.click('[data-action="duel"]'); await B.page.click('[data-room-action="join"]');
+        // B picks the dagger first (each side picks its own weapon; the pick is remembered).
+        await B.page.click('[data-menu]'); await B.page.click('[data-action="duel"]');
+        assert.equal(await B.page.evaluate(() => document.querySelector('[data-room-weapons]').hidden), false);
+        await B.page.click('[data-weapon="assassin_dagger"]');
+        await shot(B.page, 'room-weapons');
+        assert.equal(await B.page.evaluate(() => [window.game.room.weapon, localStorage.getItem('pvp-weapon')].join()), 'assassin_dagger,assassin_dagger');
+        await B.page.click('[data-room-action="join"]');
+        assert.match(await text(B.page, '[data-room-note]'), /你用：短刃/);
         assert.equal(await B.page.evaluate(() => document.querySelector('[data-room-action="connect"]').disabled), true);
         for (const d of code) await B.page.click(`[data-key="${d}"]`);
         await shot(B.page, 'room-join');
@@ -424,6 +431,7 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.duel.selfId, window.game.room.isOpen()]), ['arena', 'host', false]);
         assert.deepEqual(await B.page.evaluate(() => [window.game.map, window.game.duel.selfId, window.game.duel.battle]), ['arena', 'guest', await A.page.evaluate(() => window.game.duel.battle)]);
         for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'fight', null, { timeout: 30000 });
+        for (const { page } of [A, B]) assert.deepEqual(await page.evaluate(() => window.game.sim.fighters.map(f => f.loadout.main)), ['wooden_sword', 'assassin_dagger']);
         // The rival behind the north pillar is not drawn, and has no bar or arrow; in sight it is.
         const seen = await A.page.evaluate(() => {
             const g = window.game, [h, r] = g.sim.fighters, look = () => { g.view.render(g.sim, 0.016); return g.view.seen('guest'); };

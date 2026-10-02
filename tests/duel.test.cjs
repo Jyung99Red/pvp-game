@@ -166,13 +166,13 @@ test('snapshot checks turn away broken or foreign state', () => {
 });
 
 // ---- the protocol, both ends over an in-memory channel ----
-function pair({ latency = 0 } = {}) {
+function pair({ latency = 0, weapons = {} } = {}) {
     let clock = 100;
     const queue = [], log = {}, ends = {};
     for (const role of ['host', 'guest']) {
         log[role] = { starts: 0, results: [], ends: [], rematch: 0, sent: [] };
         ends[role] = duelKit.create({
-            role, now: () => clock,
+            role, now: () => clock, ...(weapons[role] ? { weapon: weapons[role] } : {}),
             send: msg => { const copy = plain(msg); log[role].sent.push(copy); queue.push({ to: role === 'host' ? 'guest' : 'host', at: clock + latency, msg: copy }); },
             on: { start: () => log[role].starts++, result: o => log[role].results.push(o), end: r => log[role].ends.push(r), rematch: () => log[role].rematch++ }
         });
@@ -217,8 +217,35 @@ test('two phones: hello, start, ready, a countdown, then the fight on both', () 
 test('different rules on the other phone end it before it starts', () => {
     const p = pair();
     const h = duelKit.create({ role: 'host', now: () => p.clock, send() {}, on: { end: r => p.log.host.ends.push(r) } });
-    h.receive({ t: 'hello', protocol: duelKit.PROTOCOL, rules: 'something-else' });
+    h.receive({ t: 'hello', protocol: duelKit.PROTOCOL, rules: 'something-else', weapon: PV.weapons[0] });
     assert.equal(h.phase, 'ended'); assert.equal(h.endReason, 'incompatible');
+    // So does a weapon that is not on the duel list.
+    const odd = duelKit.create({ role: 'host', now: () => p.clock, send() {} });
+    odd.receive({ t: 'hello', protocol: duelKit.PROTOCOL, rules: duelKit.rules(), weapon: 'iron_sword' });
+    assert.equal(odd.endReason, 'incompatible');
+    assert.throws(() => duelKit.create({ role: 'guest', now: () => 0, send() {}, weapon: 'iron_sword' }), /duel weapon/);
+});
+
+test('each side picks its weapon: a dagger against a sword, the same on both phones (user, 2026-10-02)', () => {
+    assert.deepEqual(plain(PV.weapons.map(id => gameConfig.items[id].weapon)), ['sword', 'dagger'], 'one of each weapon type');
+    const p = pair({ weapons: { host: 'wooden_sword', guest: 'assassin_dagger' } }); fightNow(p);
+    for (const end of [p.host, p.guest]) {
+        assert.deepEqual(plain(end.sim.fighters.map(f => f.loadout.main)), ['wooden_sword', 'assassin_dagger']);
+        assert.deepEqual(plain(end.sim.fighters.map(f => f.loadout.offhand)), ['wooden_shield', 'wooden_shield'], 'the rest is the starter gear');
+        assert.equal(end.sim.fighters[1].atk, inventoryKit.statsOf(duelKit.loadoutFor('assassin_dagger')).atk);
+    }
+    // Each plays its own tree.
+    press(p.guest, 'a'); release(p.guest, 'a'); press(p.host, 'a'); release(p.host, 'a'); p.run(0.1);
+    assert.deepEqual([p.host.sim.fighters[0].act?.move, p.host.sim.fighters[1].act?.move], ['slash', 'cut']);
+    assert.equal(p.guest.sim.fighters[1].act?.move, 'cut');
+    // A snapshot giving the dagger a sword move is refused.
+    const snap = W.snapshot(p.host.sim);
+    assert.equal(duelKit.validSnapshot(p.guest.sim, snap), true);
+    snap.fighters[1].act.move = 'slash';
+    assert.equal(duelKit.validSnapshot(p.guest.sim, snap), false);
+    // Both may pick the same.
+    const q = pair({ weapons: { host: 'assassin_dagger', guest: 'assassin_dagger' } });
+    assert.ok(q.host.sim.fighters.every(f => f.loadout.main === 'assassin_dagger'));
 });
 
 test('the guest walks at once on its own phone; only the host moves the host copy', () => {

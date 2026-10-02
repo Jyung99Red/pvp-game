@@ -223,11 +223,11 @@ const app = (() => {
 
         // ---- a duel ----
         let lastBeat = null;
-        function beginDuel({ link, role, code, on }) {
+        function beginDuel({ link, role, code, on, weapon }) {
             input.releaseAll();
             persist();
             const session = duelKit.create({
-                role, now: () => performance.now() / 1000, send: msg => link.send(msg),
+                role, weapon, now: () => performance.now() / 1000, send: msg => link.send(msg),
                 on: {
                     start: next => {
                         Object.assign(duel, { outcome: null, resultAt: null, shown: false });

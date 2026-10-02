@@ -579,9 +579,12 @@ const gameConfig = (() => {
         // predicts at most; latencySeconds: cap on its one-way estimate.
         // historyEvents: events the host keeps until the guest has them.
         // connectSeconds: how long finding the other phone may take.
+        // weapons: the main hands each side may pick before a duel (user
+        // 2026-10-02: one of each weapon type); the rest is gear.starter.
         pvp: {
             countdown: 3, snapshotSeconds: 0.05, heartbeatSeconds: 0.25, timeoutSeconds: 5,
-            replaySeconds: 0.25, latencySeconds: 0.15, historyEvents: 128, connectSeconds: 12
+            replaySeconds: 0.25, latencySeconds: 0.15, historyEvents: 128, connectSeconds: 12,
+            weapons: ['wooden_sword', 'assassin_dagger']
         }
     });
 })();
