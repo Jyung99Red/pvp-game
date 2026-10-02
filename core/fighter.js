@@ -24,6 +24,8 @@
 //   stun, freeze (hitstop), push (knockback), bPress: { at, held, upAt }
 //   down, downT  fallen (HP emptied where nobody is `endless`), and since when
 //   focus, using  the interact key's target and a hold under way (core/interact.js)
+//   drink  a potion: null, or { phase: wait (pressed while busy) | drink, t }
+//   lit    a torch carried in the offhand is burning
 //
 // Swings are settled once every fighter has moved (`settle`): each is
 // sampled against everyone as they stand after the step, and only then are
@@ -38,15 +40,15 @@ const fighterKit = (() => {
     const heavyOf = m => m.knockback > 0 || m.stagger > 0;
 
     // `endless`: an emptied HP bar refills (training) instead of falling.
-    // `stats` (optional) overrides the fighter's HP, ATK and DEF.
-    function init(p, { id = 'player', endless = true, stats = F().fighters.player } = {}) {
+    // `stats`: HP, ATK and DEF (the base plus gear, core/inventory.js).
+    function init(p, { id = 'player', endless = true, stats = inventoryKit.statsOf(inventoryKit.starter()) } = {}) {
         const buttons = {};
         for (const b of BUTTONS) buttons[b] = { held: false, presses: 0 };
         return Object.assign(p, {
             id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
-            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0, focus: null, using: null,
+            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0, focus: null, using: null, drink: null, lit: false,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
         });
     }
@@ -104,8 +106,8 @@ const fighterKit = (() => {
         emit(sim, p, 'attack', { move: d.id });
     }
     function pressAttack(sim, p, input) {
-        // Shield up (or going up): A and B do nothing.
-        if (p.guard.state !== 'down' || p.guard.queued) return false;
+        // Shield up (or going up), or a potion at the lips: A and B do nothing.
+        if (p.guard.state !== 'down' || p.guard.queued || p.drink) return false;
         if (p.act?.phase === 'charge') return false;
         // Pre-input: kept, never dropped; only the latest counts, and it runs
         // at the derive point, so pressing early never makes a move faster.
@@ -234,9 +236,58 @@ const fighterKit = (() => {
                     if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
                 }
             }
+        },
+        // A potion (rebuild-plan.md M6): a press drinks one, if any are
+        // left -- at once when free, else as soon as the move or stun is
+        // over (like the shield, and meanwhile A and B do nothing; another
+        // press calls it off). The drink takes potion.seconds; a blow that
+        // gets through spills it and the potion is kept.
+        potion: {
+            press(sim, p) {
+                if (p.drink?.phase === 'wait') { p.drink = null; return true; }
+                if (p.drink) return false;
+                if (inventoryKit.count(propKit.progressOf(sim), 'potion') < 1) { emit(sim, p, 'potion_empty'); return false; }
+                p.buffer = null;
+                if (p.act?.phase === 'charge') { p.act = null; emit(sim, p, 'charge_dropped'); }
+                p.drink = { phase: 'wait', t: 0 };
+                if (!p.act && p.stun <= 0) startDrink(sim, p);
+                return true;
+            },
+            release() {},
+            tick(sim, p, dt) {
+                const d = p.drink;
+                if (!d) return;
+                if (d.phase === 'wait') {
+                    d.t += dt;
+                    if (!p.act && p.stun <= 0) startDrink(sim, p);
+                    return;
+                }
+                d.t += dt;
+                if (d.t < F().potion.seconds - 1e-9) return;
+                p.drink = null;
+                const bag = propKit.progressOf(sim);
+                if (inventoryKit.count(bag, 'potion') < 1) return;
+                inventoryKit.give(bag, 'potion', -1);
+                const before = p.hp;
+                p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * F().potion.heal));
+                emit(sim, p, 'drink', { healed: p.hp - before, left: inventoryKit.count(bag, 'potion') });
+            }
+        },
+        // A torch: each press lights it or puts it out. It lights the dark
+        // (drawn) and sets thickets alight (core/props.js).
+        torch: {
+            press(sim, p) { p.lit = !p.lit; emit(sim, p, p.lit ? 'torch_lit' : 'torch_out'); return true; },
+            release() {},
+            tick() {}
         }
     };
-    const offhandOf = p => OFFHAND[p.loadout.offhand] || null;
+    function startDrink(sim, p) {
+        p.drink = { phase: 'drink', t: 0 };
+        p.chain = null; p.combo = []; p.buffer = null;
+        p.runBlend = 0; p.moveTime = 0;
+        emit(sim, p, 'drink_start');
+    }
+    const offhandOf = p => OFFHAND[inventoryKit.offhandOf(p.loadout)] || null;
 
     function press(sim, p, button) {
         if (p.down) return false;
@@ -261,7 +312,7 @@ const fighterKit = (() => {
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0, focus: null, using: null });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }
@@ -272,6 +323,7 @@ const fighterKit = (() => {
         p.stats.hurt++;
         if (p.hp === 0) { fall(sim, p); return; }
         if (!stun) return;
+        if (p.drink) { p.drink = null; emit(sim, p, 'drink_spilled'); }
         p.act = null; p.chain = null; p.combo = [];
         if (p.guard.state !== 'down') p.guard.state = 'down';
         // Still holding the shield key: it goes back up once the stun is over.
@@ -283,12 +335,13 @@ const fighterKit = (() => {
     // ---- moving ----
     function motion(sim, p, dt) {
         const P = gameConfig.player, mv = p.input.move, mag = Math.hypot(mv.x, mv.y), a = p.act;
-        const guarding = p.guard.state !== 'down', charging = a?.phase === 'charge';
+        const guarding = p.guard.state !== 'down', charging = a?.phase === 'charge', drinking = p.drink?.phase === 'drink';
         let striding = false;
         p.speed = 0;
         if (mag > 1e-6 && !p.stun && (!a || charging)) {
             let speed = P.speed * Math.min(1, mag), turn = P.turnRate;
             if (guarding) { speed *= F().guard.moveMultiplier; turn *= F().guard.turnMultiplier; }
+            else if (drinking) { speed *= F().potion.moveMultiplier; turn *= F().potion.turnMultiplier; }
             else if (charging) { speed *= F().charge.moveMultiplier; turn *= F().charge.turnMultiplier; }
             else speed *= 1 + (P.runMultiplier - 1) * p.runBlend;
             const x0 = p.x, y0 = p.y;
@@ -301,7 +354,7 @@ const fighterKit = (() => {
             if (!a && moved > 1e-9) { p.chain = null; p.combo = []; }
             // An unbroken walk turns into a run: stick well pushed, free
             // walking (no shield, no charge), and really getting somewhere.
-            striding = !guarding && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
+            striding = !guarding && !drinking && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
         } else if (mag > 1e-6 && a?.phase === 'recover') {
             // Inside a combo the stick only turns, and slower; the next move
             // goes where the fighter faces the moment it starts.
@@ -345,7 +398,7 @@ const fighterKit = (() => {
     function free(sim, p) {
         if (p.act || p.stun > 0) return;
         if (p.guard.queued) raise(sim, p);
-        else if (p.buffer && p.guard.state === 'down') { const w = p.buffer; startMove(sim, p, w.input, w.at); }
+        else if (p.buffer && p.guard.state === 'down' && !p.drink) { const w = p.buffer; startMove(sim, p, w.input, w.at); }
     }
     function blends(p, dt, B) {
         p.moveBlend = approach(p.moveBlend, p.speed > 1e-6 ? 1 : 0, dt / B);

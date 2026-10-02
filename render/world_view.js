@@ -5,6 +5,11 @@
 // world (`load`), so switching maps or restarting needs no reload.
 const worldView = (() => {
     const UP = [0, 1, 0];
+    // Lighting by day and in a dark region: sky (hemisphere) and sun
+    // intensity, fog start and end past the camera distance (blocks), and
+    // the torch's intensity. A torch lights `reach` blocks round it.
+    const LIGHT = { day: { sky: 1.9, sun: 2.7, fog: [8, 26], torch: 3 }, dark: { sky: 0.05, sun: 0.03, fog: [1, 9], torch: 9 } };
+    const TORCH = { reach: 7, decay: 1.2 };
 
     // opts.selfId: the fighter this phone plays (the camera follows it; in a
     // duel the other one is drawn as the rival).
@@ -60,13 +65,21 @@ const worldView = (() => {
     // ---- one world: scene, terrain, characters, effects ----
     function build(T, sim, camera, mapSize, selfId) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
-        const scene = new T.Scene(), sky = new T.Color(P.sky);
+        // A dark region (rebuild-plan.md M6) has no daylight to speak of:
+        // dim sky light, no sun shadows, black fog close in; a torch is the
+        // light there.
+        const dark = !!C.maps[sim.region]?.dark, L = dark ? LIGHT.dark : LIGHT.day;
+        const scene = new T.Scene(), sky = new T.Color(dark ? P.darkSky : P.sky);
         scene.background = sky;
-        scene.fog = new T.Fog(sky, C.camera.distance + 8, C.camera.distance + 26);
+        scene.fog = new T.Fog(sky, C.camera.distance + L.fog[0], C.camera.distance + L.fog[1]);
 
-        scene.add(new T.HemisphereLight(P.skyLight, P.groundLight, 1.9));
-        const sun = new T.DirectionalLight(P.sun, 2.7), extent = C.graphics.shadowExtent;
-        sun.castShadow = true;
+        scene.add(new T.HemisphereLight(P.skyLight, P.groundLight, L.sky));
+        const sun = new T.DirectionalLight(P.sun, L.sun), extent = C.graphics.shadowExtent;
+        sun.castShadow = !dark;
+        // The torch's light: always there (lights coming and going would
+        // rebuild every shader), at zero while no torch burns.
+        const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
+        scene.add(torchLight);
         sun.shadow.mapSize.set(mapSize, mapSize);
         Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: 60 });
         sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
@@ -162,9 +175,14 @@ const worldView = (() => {
             mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
             const grown = new T.Matrix4();
+            // Flames on a torch: shown only while it burns, glowing.
+            const flames = loose.filter(l => rig.parts[l.i].tag === 'flame').map(l => l.mesh);
+            for (const f of flames) { f.material.emissive.set(P[rig.parts[loose.find(l => l.mesh === f).i].color]); f.castShadow = false; }
+            let lit = false;
             return {
-                mesh, blade: loose[0]?.mesh.material || null,
-                materials: [material, ...loose.map(l => l.mesh.material)],
+                mesh, blade: loose.find(l => rig.parts[l.i].kind === 'weapon')?.mesh.material || null, flames,
+                materials: [material, ...loose.filter(l => rig.parts[l.i].tag !== 'flame').map(l => l.mesh.material)],
+                light(on) { lit = on; for (const f of flames) f.visible = on && mesh.visible; },
                 place(solved) {
                     boned.forEach((part, b) => bones[b].matrixWorld.fromArray(solved.parts[part]));
                     for (const { i, mesh: m } of loose) { m.matrix.fromArray(solved.parts[i]); m.matrixWorldNeedsUpdate = true; }
@@ -174,13 +192,19 @@ const worldView = (() => {
                         line.matrixWorldNeedsUpdate = true;
                     }
                 },
-                show(visible) { mesh.visible = visible; for (const l of loose) l.mesh.visible = visible; for (const l of lines) l.line.visible = visible; }
+                show(visible) {
+                    mesh.visible = visible;
+                    for (const l of loose) l.mesh.visible = visible && (lit || rig.parts[l.i].tag !== 'flame');
+                    for (const l of lines) l.line.visible = visible;
+                }
             };
         }
         const playerRig = sim.rigs.player;
-        // Every fighter: this phone's own as modelled, any other as the rival.
+        // Every fighter: this phone's own as modelled, any other as the rival;
+        // armor may swap the tunic's colours. The blade and torch flames are
+        // meshes of their own (the blade glows while charging).
         const fighters = new Map(sim.fighters.map(f => [f.id, {
-            view: character(playerRig, part => part.kind === 'weapon', f.id === selfId ? {} : playerModel.looks.rival),
+            view: character(playerRig, part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }),
             lastFacing: f.facing, lean: 0
         }]));
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
@@ -203,6 +227,10 @@ const worldView = (() => {
         const unitBox = new T.BoxGeometry(1, 1, 1), DROPS = 64, drops = new T.InstancedMesh(unitBox, new T.MeshLambertMaterial({ map: tx.grain }), DROPS);
         drops.castShadow = true; drops.frustumCulled = false; drops.count = 0;
         scene.add(drops);
+        // Flames on burning thickets: a few bright cubes per block, licking.
+        const FIRES = 48, fires = new T.InstancedMesh(unitBox, new T.MeshBasicMaterial(), FIRES);
+        fires.frustumCulled = false; fires.count = 0;
+        scene.add(fires);
         const place = new T.Object3D(), tint = new T.Color();
         function props(current, me) {
             for (const { body, plane } of portals) {
@@ -233,6 +261,21 @@ const worldView = (() => {
             drops.count = n;
             drops.instanceMatrix.needsUpdate = true;
             if (drops.instanceColor) drops.instanceColor.needsUpdate = true;
+            let f = 0;
+            for (const e of current.entities) {
+                if (e.type !== 'brush' || e.burning < 0) continue;
+                const [x, , z] = space.toBlocks(e.x, e.y), life = 1 - e.burning / C.props.burnSeconds;
+                for (let k = 0; k < 4 && f < FIRES; k++, f++) {
+                    const a = k * 1.7 + e.col * 0.9 + e.row * 1.3, lick = 0.5 + 0.5 * Math.sin(clock * (9 + k) + a);
+                    const size = (0.28 + 0.22 * lick) * Math.max(0.3, life);
+                    place.position.set(x + Math.cos(a) * 0.25, terrainKit.BRUSH_HEIGHT * Math.max(0.2, life) + size / 2 - 0.1 + lick * 0.2, z + Math.sin(a) * 0.25);
+                    place.rotation.set(0, a + clock, 0); place.scale.setScalar(size); place.updateMatrix();
+                    fires.setMatrixAt(f, place.matrix); fires.setColorAt(f, tint.set(k % 2 ? P.flame : P.flameTip));
+                }
+            }
+            fires.count = f;
+            fires.instanceMatrix.needsUpdate = true;
+            if (fires.instanceColor) fires.instanceColor.needsUpdate = true;
         }
         // ---- range warnings: the swept outline of a monster's move on the
         // ground (core/monster.js reach), fading in through its windup ----
@@ -327,8 +370,16 @@ const worldView = (() => {
                 const pose = playerAnim.present(playerAnim.pose(playerRig, p), p, { time: clock, lean: entry.lean });
                 const solved = rigKit.solve(playerRig, pose, space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
                 entry.view.place(solved);
+                entry.view.light(!!f.lit);
                 drawn.push({ id: f.id, body: f, shown: p, solved, blade: entry.view.blade, materials: entry.view.materials });
             }
+            // The torch light sits on this fighter's flame, flickering a little.
+            const bearer = drawn.find(d => d.id === selfId && d.body.lit);
+            if (bearer) {
+                const flame = playerRig.parts.findIndex(part => part.tag === 'flame'), m = bearer.solved.parts[flame];
+                torchLight.position.set(m[12], m[13] + 0.15, m[14]);
+                torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
+            } else torchLight.intensity = 0;
             const foes = [];
             if (dummyView && current.dummy) { dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
             const focus = space.toBlocks(me.x, me.y, me.h);

@@ -62,6 +62,15 @@ const playerMoves = (() => {
             upperArmL: { rx: -1.25, ry: -0.95, rz: 0.1 }, forearmL: { rx: -0.35 }, handL: { ry: -0.3 },
             upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
+        // Drinking a potion: the flask up to the mouth, the head tipped
+        // back. Upper body only: legs keep walking underneath.
+        drink: {
+            chest: { rx: -0.08 }, head: { rx: -0.45 },
+            upperArmL: { rx: -1.35, ry: -0.75, rz: 0.2 }, forearmL: { rx: -1.65 }, handL: { rx: -0.3 },
+            upperArmR: { rx: -0.1, rz: -0.15 }, forearmR: { rx: -0.6 }, handR: { rx: 0.95, ry: -0.2 }
+        },
+        // Carrying a torch: held up and forward on the left.
+        torch: { upperArmL: { rx: -0.55, ry: 0.15, rz: 0.1 }, forearmL: { rx: -1.05 } },
         // Struck: thrown back; added on top, faded by the stun.
         flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } },
         // Fallen: on the back, arms flung out.

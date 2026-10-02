@@ -29,13 +29,10 @@ const app = (() => {
         left: '对方离开了房间。'
     };
     // Panel buttons and their usual labels.
-    const LABELS = { resume: '继续', home: '回到据点', rematch: '再来一局', duel: '联机对战', surrender: '认输', leave: '离开对战', reset: '重新开始冒险', erase: '清除并重新开始' };
-    // What a building's panel says until its trade arrives (rebuild-plan.md M6).
-    const BUILDINGS = {
-        storage: { note: '带回来的东西都在这里。' },
-        shop: { note: '买卖在后面的版本（M6）开放。现在带着：' },
-        smithy: { note: '打造和强化在后面的版本（M6）开放。现在带着：' }
-    };
+    const LABELS = { resume: '继续', home: '回到据点', bag: '背包', rematch: '再来一局', duel: '联机对战', surrender: '认输', leave: '离开对战', reset: '重新开始冒险', erase: '清除并重新开始' };
+    // The screen each building of the base opens (ui/screens.js): the
+    // storage is the bag.
+    const BUILDING_SCREENS = { storage: 'bag', shop: 'shop', smithy: 'smithy' };
     function fallback(root, text) {
         const box = root.querySelector('[data-fallback]');
         box.textContent = text; box.hidden = false;
@@ -61,12 +58,6 @@ const app = (() => {
     };
     const storage = () => { try { return window.localStorage; } catch (_) { return null; } };
     const seed = () => Math.floor(Math.random() * 0x100000000);
-    // What is carried, as panel rows: [label, count].
-    function carried(inventory) {
-        const I = gameConfig.items, rows = [[`${I.gold.icon} ${I.gold.name}`, inventory.gold]];
-        for (const [id, n] of Object.entries(inventory.items)) if (I[id] && n > 0) rows.push([`${I[id].icon} ${I[id].name}`, n]);
-        return rows;
-    }
     const clockText = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
     function start() {
@@ -114,13 +105,26 @@ const app = (() => {
             press: button => blocked() ? false : act({ type: 'press', button }),
             release: button => act({ type: 'release', button })
         });
-        // The offhand key greys out when nothing is carried there; the
-        // interact key is the HUD's (ui/hud.js): it names what it would do.
-        const offhandKey = root.querySelector('[data-button="offhand"]');
+        // The offhand and interact keys are the HUD's (ui/hud.js): they show
+        // what is carried and what the key would do.
         const display = hud.attach(root);
         display.reset(sim, 0);
         const room = roomScreen.attach(root, { connected: beginDuel, closed: () => openPanel('menu') });
-        function blocked() { return !!panel || room.isOpen(); }
+        // Gear changes (in the base) take effect when the bag closes: the
+        // base is rebuilt round the player, where they stood, as hurt as
+        // they were.
+        const screens = itemScreens.attach(root, {
+            progress: () => sim.progress,
+            canChange: () => !duel && mapId === 'base',
+            changed: () => persist(),
+            closed: ({ gearChanged }) => {
+                loop.reset();
+                if (!gearChanged) return;
+                const p = sim.player;
+                load('base', { spot: { x: p.x, y: p.y, facing: p.facing }, carry: { hp: p.hp }, quiet: true });
+            }
+        });
+        function blocked() { return !!panel || room.isOpen() || screens.isOpen(); }
 
         // ---- the menu and the result panels ----
         const panelEl = root.querySelector('[data-panel]'), $p = sel => panelEl.querySelector(sel);
@@ -133,7 +137,7 @@ const app = (() => {
                 const fighting = interactKit.inCombat(sim, sim.player);
                 return {
                     title: '暂停', note: `当前：${gameConfig.maps[mapId].name}${fighting && mapId !== 'base' ? ' · 战斗中不能回到据点' : ''}`, stats: [],
-                    buttons: [['resume'], ...(mapId !== 'base' ? [['home']] : []), ['duel'], ['reset']], disable: fighting ? ['home'] : []
+                    buttons: [['resume'], ...(mapId !== 'base' ? [['home']] : []), ['bag'], ['duel'], ['reset']], disable: fighting ? ['home'] : []
                 };
             }
             if (kind === 'reset') {
@@ -145,10 +149,6 @@ const app = (() => {
                     stats: [['用时', clockText(sim.result.at)], ['击倒', S.kills], ['命中', S.hits], ['格挡', S.blocks], ['弹反', S.parries], ['受伤', S.hurt]],
                     buttons: [['home']]
                 };
-            }
-            if (BUILDINGS[kind]) {
-                const rows = carried(sim.progress.inventory);
-                return { title: gameConfig.buildings[kind].name, note: BUILDINGS[kind].note, stats: rows, buttons: [['resume', '离开']] };
             }
             const s = duel.session;
             if (kind === 'duelMenu') return { title: '对战中', note: `竞技场 · 房间 ${duel.code} · 对局不会暂停`, stats: [], buttons: [['resume'], ['surrender'], ['leave']] };
@@ -197,17 +197,17 @@ const app = (() => {
         // ---- regions: `arrival` the region left (to stand at the portal
         // back), `carry` the HP brought along ----
         // keep: false drops this world's progress instead of saving it (the
-        // save was just erased).
-        function load(id = mapId, { arrival = null, carry = null, keep = true } = {}) {
+        // save was just erased). spot: where to stand; quiet: no region
+        // banner (the same region rebuilt).
+        function load(id = mapId, { arrival = null, carry = null, spot = null, keep = true, quiet = false } = {}) {
             if (!MAPS.includes(id)) throw new Error(`Unknown map ${id}`);
             if (!duel && keep) persist();
             leaveDuel();
             input.releaseAll();
-            mapId = id; sim = worldSim.create({ region: id, progress: save, arrival, carry, seed: seed() });
+            mapId = id; sim = worldSim.create({ region: id, progress: save, arrival, carry, spot, seed: seed() });
             before = snapshot(); resultSeen = null;
             view?.load(sim);
-            display.reset(sim, clock);
-            offhandKey.classList.toggle('disabled', !sim.player.loadout.offhand);
+            display.reset(sim, clock, { announce: !quiet });
             closePanel();
         }
         // What the world asks of the page: travel, a building's panel, saving.
@@ -215,7 +215,7 @@ const app = (() => {
             for (const e of events) {
                 if (e.side !== 'player' && e.type !== 'boss_defeated') continue;
                 if (e.type === 'travel') { load(e.to, { arrival: e.from, carry: { hp: sim.player.hp } }); return; }
-                if (e.type === 'open') openPanel(e.what);
+                if (e.type === 'open') { input.releaseAll(); screens.open(BUILDING_SCREENS[e.what]); }
                 else if (e.type === 'boss_defeated' || e.type === 'chest_open') persist();
                 else if (e.type === 'pickup' && saveAt === null) saveAt = clock + SAVE_DELAY;
             }
@@ -233,7 +233,6 @@ const app = (() => {
                         Object.assign(duel, { outcome: null, resultAt: null, shown: false });
                         view?.load(next, { selfId: session.selfId });
                         display.reset(); lastBeat = null;
-                        offhandKey.classList.toggle('disabled', !next.fighters[session.self].loadout.offhand);
                         if (panel) closePanel();
                     },
                     result: outcome => { duel.outcome = outcome; duel.resultAt = clock; },
@@ -259,9 +258,8 @@ const app = (() => {
             d?.link.close();
         }
 
-        offhandKey.classList.toggle('disabled', !sim.player.loadout.offhand);
         function menuKey() {
-            if (room.isOpen()) return;
+            if (room.isOpen() || screens.isOpen()) return;
             if (!panel) openPanel(live() ? 'duelMenu' : 'menu');
             else if (panel === 'menu' || panel === 'duelMenu') closePanel();
         }
@@ -272,6 +270,7 @@ const app = (() => {
         actions.reset.addEventListener('click', () => openPanel('reset'));
         actions.erase.addEventListener('click', () => { save = saveKit.erase(storage()); load('base', { keep: false }); });
         actions.duel.addEventListener('click', () => { closePanel(); room.open(); });
+        actions.bag.addEventListener('click', () => { closePanel(); screens.open('bag'); });
         actions.surrender.addEventListener('click', () => { duel?.session.surrender(); closePanel(); });
         actions.leave.addEventListener('click', () => load('base'));
         // Asking first shows "waiting"; agreeing starts the match at once.
@@ -343,7 +342,7 @@ const app = (() => {
         requestAnimationFrame(frame);
         window.game = {
             get sim() { return world(); }, get map() { return duel ? 'arena' : mapId; }, get panel() { return panel; },
-            get duel() { return duel?.session || null; }, get save() { return save; }, room,
+            get duel() { return duel?.session || null; }, get save() { return save; }, room, screens,
             view, input, load, persist,
             pause(flag = true) { paused = flag; loop.reset(); },
             run: seconds => loop.run(seconds)

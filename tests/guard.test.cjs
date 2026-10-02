@@ -4,8 +4,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, gameConfig, fighterKit } = load();
+const { worldSim: W, gameConfig, fighterKit, inventoryKit } = load();
 const G = gameConfig.combat.guardBar, GU = gameConfig.combat.guard, D = gameConfig.dummy, F = gameConfig.combat;
+// The player's stats: the base plus the starter gear (core/inventory.js).
+const S = inventoryKit.statsOf(inventoryKit.starter());
 
 // Player 60 units in front of the dummy, facing it; the dummy swipes at once.
 function setup({ facingAway = false, loadout } = {}) {
@@ -23,7 +25,7 @@ const impactTime = (() => {
     for (let i = 0; i < 400; i++) { W.step(sim, 0.01); if (sim.stats.hurt) return sim.time; }
     throw new Error('the dummy never reached the player');
 })();
-const swipeRaw = D.atk * D.moves[0].ratio, cost = parry => swipeRaw / F.fighters.player.maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
+const swipeRaw = D.atk * D.moves[0].ratio, cost = parry => swipeRaw / S.maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
 // Run to `t`, raise the shield then, and run through the impact.
 function guardAt(sim, t) {
     step(sim, t - sim.time); press(sim, 'offhand');
@@ -38,7 +40,7 @@ test('the dummy attacks in reach, its swipe lands during its swing, and an ungua
     while (sim.time < impactTime - 0.015) W.step(sim, 0.01);
     const hp = sim.player.hp;
     step(sim, 0.02);
-    assert.equal(sim.player.hp, hp - Math.max(1, Math.round(swipeRaw * (1 - F.fighters.player.def / (F.fighters.player.def + F.damage.defenseConstant)))));
+    assert.equal(sim.player.hp, hp - Math.max(1, Math.round(swipeRaw * (1 - S.def / (S.def + F.damage.defenseConstant)))));
     assert.ok(sim.player.stun > 0 && sim.player.act === null && sim.player.chain === null, 'a hit stuns and ends the combo');
     // An A pressed during the stun runs once it is over.
     press(sim, 'a'); release(sim, 'a'); assert.equal(sim.player.act, null);
@@ -130,7 +132,7 @@ test('with the shield up A and B do nothing; the offhand key needs something in 
     press(sim, 'a'); release(sim, 'a'); press(sim, 'b'); release(sim, 'b'); step(sim, 0.5);
     assert.equal(sim.stats.attacks, 0);
     release(sim, 'offhand'); press(sim, 'a'); assert.equal(sim.player.act.move, 'slash');
-    const empty = setup({ loadout: { main: 'sword', offhand: null } }); empty.dummy.wait = 1e9;
+    const empty = setup({ loadout: { main: 'wooden_sword', offhand: null } }); empty.dummy.wait = 1e9;
     press(empty, 'offhand'); step(empty, 0.3);
     assert.equal(empty.player.guard.state, 'down'); assert.equal(empty.player.guard.bar, G.max);
     assert.equal(fighterKit.OFFHAND.shield.press.length, 2, 'press(sim, fighter)');

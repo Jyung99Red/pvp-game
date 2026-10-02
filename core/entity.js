@@ -1,6 +1,6 @@
 // World entities (3d-migration-concept.md 15): everything in the world that
 // is not one of the fighters -- the training dummy, monsters, buildings,
-// portals, chests and things dropped -- is one plain record on
+// portals, chests, things dropped and dry thickets -- is one plain record on
 // sim.entities: { id, type, x, y, h, facing, radius, solid, ... }. What a
 // record does comes from the kit of its type: core/dummy.js,
 // core/monster.js, and core/props.js for buildings, portals, chests and
@@ -14,7 +14,7 @@
 const entityKit = (() => {
     const KITS = {
         dummy: () => dummyKit, monster: () => monsterKit,
-        building: () => propKit, portal: () => propKit, chest: () => propKit, drop: () => propKit
+        building: () => propKit, portal: () => propKit, chest: () => propKit, drop: () => propKit, brush: () => propKit
     };
     function kitOf(e) {
         const kit = KITS[e?.type];

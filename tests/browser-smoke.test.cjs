@@ -215,7 +215,7 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         });
         assert.ok(start.calls > 0 && start.calls < 60, `${start.calls} draw calls: terrain is a mesh per chunk`);
         await shot(page, 'base');
-        // The storage: the key names it, a tap opens its panel.
+        // The storage: the key names it, a tap opens the bag (one bag: the storage is it).
         const key = await page.evaluate(() => {
             const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === 'storage');
             Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
@@ -224,10 +224,10 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         });
         await page.waitForFunction(() => document.querySelector('[data-hud="interact"]').textContent === '进入' && document.querySelector('[data-hud="tag-name"]').textContent === '仓库', null, { timeout: 10000 });
         await page.touchscreen.tap(key.x, key.y);
-        await page.waitForFunction(() => window.game.panel === 'storage', null, { timeout: 10000 });
-        assert.match(await page.evaluate(() => document.querySelector('[data-panel-stats]').textContent), /金币0/);
+        await page.waitForFunction(() => window.game.screens.kind === 'bag', null, { timeout: 10000 });
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-screen-list] .row-name')].map(e => e.textContent)), ['木剑', '木盾', '布甲']);
         await shot(page, 'storage');
-        await page.click('[data-action="resume"]');
+        await page.click('[data-screen-close]');
         // The north gate, by touch: off to the field, standing at the gate back.
         await page.evaluate(() => {
             const g = window.game, p = g.sim.player, gate = g.sim.entities.find(e => e.id === 'p-field');
@@ -303,7 +303,7 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
         // The menu: home is not offered in the base; resetting asks first.
         await page.click('[data-menu]');
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent)), ['继续', '联机对战', '重新开始冒险']);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent)), ['继续', '背包', '联机对战', '重新开始冒险']);
         await page.click('[data-action="reset"]');
         assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
         await page.click('[data-action="resume"]');
@@ -325,6 +325,78 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         });
         assert.deepEqual(memory[2], memory[0]);
         assert.deepEqual(memory[3], memory[1]);
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
+test('items: the smithy makes iron armor, the bag puts it on (the model changes), the shop sells a potion that heals; a torch lights the dark cave', { timeout: 300000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const { context, page, errors } = await openPhone(844, 390, '');
+    try {
+        const door = kind => page.evaluate(k => {
+            const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === k);
+            Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
+        }, kind);
+        await page.evaluate(() => { const g = window.game; g.sim.progress.inventory.gold = 300; Object.assign(g.sim.progress.inventory.items, { goblin_ear: 4, wolf_pelt: 4 }); });
+        // The smithy, through its door.
+        await door('smithy');
+        await page.keyboard.press('KeyE'); await page.evaluate(() => window.game.run(0.02));
+        await page.waitForFunction(() => window.game.screens.kind === 'smithy', null, { timeout: 10000 });
+        await page.click('[data-row="iron_armor"]');
+        await shot(page, 'smithy');
+        await page.click('[data-act="craft"]');
+        assert.equal(await page.evaluate(() => window.game.sim.progress.inventory.items.iron_armor), 1);
+        await page.click('[data-screen-close]');
+        // The shop: two potions.
+        await door('shop');
+        await page.keyboard.press('KeyE'); await page.evaluate(() => window.game.run(0.02));
+        await page.waitForFunction(() => window.game.screens.kind === 'shop', null, { timeout: 10000 });
+        await page.click('[data-row="potion"]'); await page.click('[data-act="buy"]'); await page.click('[data-act="buy"]');
+        await page.click('[data-row="torch"]'); await page.click('[data-act="buy"]');
+        await page.click('[data-screen-close]');
+        // The bag from the menu: iron armor and a potion on; the base is rebuilt round the player in them.
+        const before = await page.evaluate(() => ({ parts: window.game.sim.rigs.player.parts.length, x: window.game.sim.player.x }));
+        await page.click('[data-menu]'); await page.click('[data-action="bag"]');
+        await page.click('[data-row="iron_armor"]'); await page.click('[data-act="equip"]');
+        await page.click('[data-row="potion"]'); await page.click('[data-act="equip"]');
+        assert.match(await page.evaluate(() => document.querySelector('.detail-note').textContent), /换上了药水/);
+        await shot(page, 'bag');
+        await page.click('[data-screen-close]');
+        const worn = await page.evaluate(() => { const g = window.game, p = g.sim.player; return { map: g.map, parts: g.sim.rigs.player.parts.length, x: p.x, maxHp: p.maxHp, def: p.def, offhand: p.loadout.offhand, saved: g.save.loadout.armor }; });
+        assert.deepEqual({ ...worn, parts: undefined }, { map: 'base', parts: undefined, x: before.x, maxHp: 380, def: 11, offhand: 'potion', saved: 'iron_armor' });
+        assert.ok(worn.parts > before.parts, 'the iron armor adds plates to the model');
+        await page.waitForFunction(() => document.querySelector('[data-button="offhand"]').dataset.kind === 'potion' && document.querySelector('[data-hud="offhand-count"]').textContent === '2', null, { timeout: 10000 });
+        // A drink with the offhand key heals 30% of max HP.
+        await page.evaluate(() => { window.game.sim.player.hp = 100; });
+        await page.keyboard.press('KeyL');
+        await page.evaluate(() => window.game.run(0.9));
+        assert.deepEqual(await page.evaluate(() => [window.game.sim.player.hp, window.game.sim.progress.inventory.items.potion]), [214, 1]);
+        // Outside the base the bag only shows: no changing gear.
+        await page.evaluate(() => window.game.load('field'));
+        await page.click('[data-menu]'); await page.click('[data-action="bag"]');
+        await page.click('[data-row="wooden_shield"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-act="equip"]').disabled, document.querySelector('.detail-note').textContent]), [true, '只能在据点里换装备']);
+        await page.click('[data-screen-close]');
+        // The torch in the dark cave: the ground round the player is lit only while it burns.
+        await page.evaluate(() => { const g = window.game; g.sim.progress.loadout.offhand = 'torch'; g.load('cave'); });
+        const light = await page.evaluate(() => {
+            const g = window.game, s = g.sim, p = s.player, gl = g.view.renderer.getContext(), N = 16, px = new Uint8Array(N * N * 4);
+            s.monsters = [];
+            const sample = () => {
+                g.view.render(s, 0);
+                const at = g.view.project([p.x / 40 + 1.2, 0, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
+                gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                let sum = 0;
+                for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+                return sum / (N * N * 3);
+            };
+            const dark = sample();
+            worldSim.command(s, { type: 'press', button: 'offhand' }); worldSim.command(s, { type: 'release', button: 'offhand' });
+            g.run(0.02);
+            return { dark, lit: sample(), on: p.lit };
+        });
+        await shot(page, 'cave');
+        assert.ok(light.on && light.lit > light.dark * 2 && light.dark < 40, `the torch lights the cave floor: ${JSON.stringify(light)}`);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

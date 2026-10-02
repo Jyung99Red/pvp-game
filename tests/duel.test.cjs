@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, duelKit, terrainKit, gameConfig } = load();
+const { worldSim: W, duelKit, terrainKit, gameConfig, inventoryKit } = load();
 const F = gameConfig.combat, M = gameConfig.combo.moves, PV = gameConfig.pvp, U = gameConfig.world.unitsPerBlock;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -23,12 +23,13 @@ const step = (sim, seconds, opts) => { for (let i = 0; i < Math.round(seconds / 
 const tap = (sim, who, button = 'a') => { W.command(sim, { type: 'press', button }, who); W.command(sim, { type: 'release', button }, who); };
 
 test('a duel: two mortal fighters with the same stats, on the arena spawns, face to face, in sight', () => {
-    const sim = duel(), [h, g] = sim.fighters, S = F.fighters.player;
+    const sim = duel(), [h, g] = sim.fighters, S = inventoryKit.statsOf(inventoryKit.starter());
     assert.deepEqual(plain(sim.fighters.map(f => f.id)), ['host', 'guest']);
     assert.equal(sim.player, h, 'sim.player is the first fighter');
     for (const f of sim.fighters) {
         assert.deepEqual([f.hp, f.maxHp, f.atk, f.def, f.endless], [S.maxHp, S.maxHp, S.atk, S.def, false]);
-        assert.deepEqual(plain(f.loadout), { main: 'sword', offhand: 'shield' });
+        assert.deepEqual(plain(f.loadout), plain(gameConfig.gear.starter), 'the starter gear: a fair fight');
+        assert.deepEqual([S.maxHp, S.atk, S.def], [360, 30, 8]);
     }
     assert.ok(Math.abs(h.facing) < 1e-9 && Math.abs(Math.abs(g.facing) - Math.PI) < 1e-9);
     assert.ok(Math.hypot(g.x - h.x, g.y - h.y) >= 10 * U, 'they start well apart');

@@ -38,22 +38,26 @@ const worldSim = (() => {
     // progress: the save (core/save.js) -- bosses down stay down, opened
     // chests stay open, saved terrain edits are put back. arrival: the region
     // just left, to stand at the portal back there (else the map's spawn).
-    // carry: { hp } brought along. seed: the world's dice.
+    // carry: { hp } brought along. seed: the world's dice. spot: { x, y,
+    // facing } to stand at instead (the base rebuilt after a change of gear).
+    // loadout: the gear worn (else the save's, else the starter gear); the
+    // fighter's stats are the base plus that gear (core/inventory.js).
     // A duel puts one fighter on each of the map's first two spawns, each
-    // facing the other, with the same fixed stats and loadout (a fair fight;
-    // no potions: controls-landscape-concept.md 8, item 5).
-    function create({ map = null, region = null, progress = null, arrival = null, carry = null, seed = 1, loadout = { main: 'sword', offhand: 'shield' }, duel = false } = {}) {
+    // facing the other, in the starter gear (a fair fight; no potions:
+    // controls-landscape-concept.md 8, item 5).
+    function create({ map = null, region = null, progress = null, arrival = null, carry = null, spot = null, seed = 1, loadout = null, duel = false } = {}) {
         if (!map) map = gameConfig.maps[region || 'clearing'];
         if (!map) throw new Error(`Unknown map ${region}`);
         region = region || regionOf(map);
-        const terrain = terrainKit.fromRows(map.rows);
+        const terrain = terrainKit.fromRows(map.rows, gameConfig.world.unitsPerBlock, map.floor || '.');
         if (duel && terrain.spawns.length < 2) throw new Error('A duel needs a map with two spawns');
-        if (duel) { loadout = { main: 'sword', offhand: 'shield' }; progress = null; }
+        if (duel) progress = null;
+        loadout = { ...(duel ? inventoryKit.starter() : loadout || progress?.loadout || inventoryKit.starter()) };
         if (progress?.edits?.[region]) terrainKit.applyEdits(terrain, progress.edits[region]);
         const rig = rigKit.build(playerModel, { scale: gameConfig.models.playerScale, equipment: equipmentModels.forLoadout(loadout) });
         const ids = duel ? DUEL_IDS : ['player'];
         const spots = ids.map((_, i) => terrainKit.cellCentre(terrain, terrain.spawns[i].col, terrain.spawns[i].row));
-        const entry = !duel && arrival ? propKit.arrival(map, terrain, arrival) : null;
+        const entry = duel ? null : spot || (arrival ? propKit.arrival(map, terrain, arrival) : null);
         if (entry) spots[0] = entry;
         const fighters = ids.map((id, i) => {
             const at = spots[i], other = spots[1 - i];
@@ -64,13 +68,13 @@ const worldSim = (() => {
                 // unbroken walking, which turns into a run.
                 speed: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
                 loadout: { ...loadout }
-            }, { id, endless: !duel && !!map.training });
+            }, { id, endless: !duel && !!map.training, stats: inventoryKit.statsOf(loadout) });
         });
         if (carry && Number.isFinite(carry.hp)) fighters[0].hp = Math.max(1, Math.min(fighters[0].maxHp, Math.round(carry.hp)));
         const saved = progress || {};
         const world = {
             bosses: { ...saved.bosses }, chests: { ...saved.chests },
-            inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }
+            inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }, loadout: { ...loadout }
         };
         const dummy = dummyKit.create(terrain, map.dummyFacing ?? Math.PI);
         // A boss once down stays down.

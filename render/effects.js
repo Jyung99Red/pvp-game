@@ -16,12 +16,12 @@ const renderEffects = (() => {
         dummy.scale.setScalar(0); dummy.updateMatrix();
         for (let i = 0; i < MAXP; i++) { parts.setMatrixAt(i, dummy.matrix); parts.setColorAt(i, col.set('#ffffff')); }
         dummy.scale.setScalar(1);
-        function burst(at, n, colors, lo, hi, size) {
+        function burst(at, n, colors, lo, hi, size, float = false) {
             for (let k = 0; k < n; k++) {
                 const i = pool.findIndex(q => q.life <= 0);
                 if (i < 0) break;
                 const th = rnd() * Math.PI * 2, up = 0.3 + rnd() * 0.9, v = lo + rnd() * (hi - lo);
-                Object.assign(pool[i], { life: 0.45 + rnd() * 0.3, x: at[0], y: at[1], z: at[2], vx: Math.cos(th) * v, vy: up * v, vz: Math.sin(th) * v, s: size * (0.7 + rnd() * 0.6), spin: rnd() * 6 });
+                Object.assign(pool[i], { life: 0.45 + rnd() * 0.3, x: at[0], y: at[1], z: at[2], vx: Math.cos(th) * v, vy: up * v, vz: Math.sin(th) * v, s: size * (0.7 + rnd() * 0.6), spin: rnd() * 6, float });
                 parts.setColorAt(i, col.set(colors[rnd() * colors.length | 0]));
             }
             parts.instanceColor.needsUpdate = true;
@@ -29,7 +29,7 @@ const renderEffects = (() => {
         function tickParts(dt) {
             pool.forEach((p, i) => {
                 if (p.life <= 0) return;
-                p.life -= dt; p.vy -= 9.8 * dt;
+                p.life -= dt; p.vy += (p.float ? 1.2 : -9.8) * dt;
                 p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
                 if (p.y < p.s / 2) { p.y = p.s / 2; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
                 p.spin += dt * 8;
@@ -114,6 +114,9 @@ const renderEffects = (() => {
                 else if (e.type === 'chest_open') burst(e.at, 16, ['#ffe066', '#d8b04a', '#ffffff'], 1.2, 3, 0.06);
                 else if (e.type === 'pickup' && e.side === selfId) burst(e.at, 3, ['#fff3b0', '#ffffff'], 0.6, 1.2, 0.04);
                 else if (e.type === 'rest' && e.side === selfId) rested = 0.9;
+                else if (e.type === 'drink' && e.side === selfId) rested = 0.5;
+                else if (e.type === 'burn') burst(e.at, 6, ['#ffb13b', '#ff6a2a', '#fff1a8'], 0.6, 1.4, 0.06);
+                else if (e.type === 'burned') burst(e.at, 8, ['#3a3430', '#5a5048', '#ff8a3a'], 0.4, 1.2, 0.07);
                 else if (e.type === 'enrage') burst(e.at, 8, ['#ff6a4a', '#d9473f'], 1, 2, 0.06);
                 else if (e.type === 'pause_ready' && e.side === selfId) cue = 0.14;
             }
@@ -130,6 +133,12 @@ const renderEffects = (() => {
             cue = Math.max(0, cue - dt);
             const drawn = new Set();
             rested = Math.max(0, rested - dt);
+            // Thickets on fire: flames lick up from each burning block.
+            for (const e of sim.entities) {
+                if (e.type !== 'brush' || e.burning < 0 || rnd() > 0.7) continue;
+                const [x, , z] = space.toBlocks(e.x, e.y);
+                burst([x + (rnd() - 0.5) * 0.9, 0.3 + rnd() * 1.6, z + (rnd() - 0.5) * 0.9], 2, ['#ffb13b', '#ff6a2a', '#fff1a8'], 0.2, 0.6, 0.08 + rnd() * 0.06, true);
+            }
             for (const f of view.fighters) {
                 const a = f.body.act, trail = trailOf(f.id);
                 drawn.add(f.id);

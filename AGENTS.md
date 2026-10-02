@@ -18,14 +18,16 @@ uses it.
   matrices and box tests, rig and forward kinematics, terrain (16 x 16
   chunks, editable), the fixed-step loop, fight rules and hit tests, the
   fighters, world entities (training dummy, monsters and their AI,
-  buildings, portals, chests, drops), the interact key, the save format
-  (storage injected), input maths, and the PVP duel protocol (host
+  buildings, portals, chests, drops, thickets), the interact key, items,
+  gear and trade, the save format (storage injected), input maths, and
+  the PVP duel protocol (host
   authority, guest prediction) over an injected `send`. Node tests run it;
   in a duel the host's copy decides. Also the boot loader.
 - `models/` model data: skeletons, boxes, equipment, key poses, palette.
 - `render/` three.js drawing only (terrain as one mesh per chunk); reads the
   simulation, never writes it.
-- `ui/` DOM: input layer, app start-up, HUD, procedural sound, room screen.
+- `ui/` DOM: input layer, app start-up, HUD, procedural sound, room screen,
+  item screens (bag, shop, smithy).
 - `net/` the channel between two phones: PeerJS rooms, or `?link=local`
   (BroadcastChannel between two tabs, for tests). No game rules.
 - `vendor/` third-party files, unmodified apart from bundling.

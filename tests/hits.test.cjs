@@ -12,7 +12,7 @@ const MOVES = gameConfig.combo.moves, U = gameConfig.world.unitsPerBlock;
 // Centre to centre, about a block and a half: the distance a fight is held at.
 const STANDARD = 60;
 
-const player = R.build(playerModel, { equipment: equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' }) });
+const player = R.build(playerModel, { equipment: equipmentModels.forLoadout(gameConfig.gear.starter) });
 const dummy = dummyKit.rig();
 const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
 // The attacker at the origin facing +x (simulation facing 0), at swing progress u.

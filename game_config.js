@@ -29,12 +29,15 @@ const gameConfig = (() => {
 
         // 4. Sizes that will decide hits (3d-migration-concept.md 4.3). The
         // body boxes themselves are model data in models/; these scale it.
-        // playerScale multiplies the whole character; swordBladeLength is in
-        // blocks.
-        models: { playerScale: 1, swordBladeLength: 0.92 },
+        // playerScale multiplies the whole character. Blade lengths are on
+        // the weapons (`items`, blocks).
+        models: { playerScale: 1 },
 
         // 4b. Fighting rules shared by every fight (training, PVE, PVP).
-        // fighters: stats until equipment and growth come back (M6).
+        // fighters.base: the main character's stats before equipment (no
+        // levels: equipment is the only growth, rebuild-plan.md M6); each
+        // item worn adds its own (`items`). The starter gear makes 360 HP,
+        // 30 ATK, 8 DEF; a duel is always fought in it.
         // hitStun: a hit that is not guarded freezes the one struck's
         // controls this long. weaponPad: weapon boxes grow by this much on
         // every side for hit tests only (3d-migration-concept.md 4.6).
@@ -47,7 +50,7 @@ const gameConfig = (() => {
         // player, blocks and parries. Stagger: points from moves (and
         // `parry`) fill to `threshold`, then the target reels `duration`.
         combat: {
-            fighters: { player: { maxHp: 360, atk: 30, def: 8 } },
+            fighters: { base: { maxHp: 340, atk: 22, def: 4 } },
             hitStun: 0.35, weaponPad: 8,
             damage: { defenseConstant: 17.5, blockMultiplier: 0.4, parryAtkRatio: 0.5 },
             impact: { hitstop: { hit: 0.06, block: 0.04, parry: 0.08 }, knockback: { hit: 10, block: 5, parry: 8 }, knockbackSeconds: 0.12 },
@@ -65,7 +68,13 @@ const gameConfig = (() => {
             // raw / maxHp * blockCostScale * max (a parry parryCostRatio of
             // that). Down, it refills in refillSeconds; emptied, the shield
             // stays locked until it is back to unlockRatio.
-            guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 }
+            guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 },
+            // A potion in the offhand (rebuild-plan.md M6): a drink takes
+            // `seconds`, walking and turning slowed meanwhile, and heals
+            // `heal` of max HP at the end; a blow that gets through spills
+            // it (the potion is kept). Pressed in a move or a stun, it waits
+            // for that to be over.
+            potion: { seconds: 0.8, heal: 0.3, moveMultiplier: 0.3, turnMultiplier: 0.5 }
         },
 
         // 4c. Player move tree (first version, shared by every weapon;
@@ -179,24 +188,43 @@ const gameConfig = (() => {
             }
         },
 
-        // 4f. Loot (rebuild-plan.md M5). items: what can be carried, with its
-        // name and icon for the screen. loot: tables rolled when a monster
-        // falls or a chest opens; each entry drops `item` with `chance`, a
-        // whole amount from amount[0] to amount[1].
+        // 4f. Items and loot (rebuild-plan.md M5, M6). items: everything that
+        // can be carried, with its name, icon and line for the screens.
+        // kind: gold | material | gear | supply. Gear goes in a `slot`
+        // (main, offhand, armor, accessory) and adds its `stats`; a weapon's
+        // `blade` (blocks) decides its reach; an offhand item's `offhand` is
+        // what the offhand key does with it (shield, torch, potion). `max`:
+        // how many can be owned. `price`: what the shop sells it for;
+        // `sell`: what it pays for one. `recipe`: what the smithy wants for
+        // it (gold and materials). Gear is never lost; potions are used up.
         items: {
-            gold: { name: '金币', icon: '🪙' },
-            goblin_ear: { name: '哥布林耳', icon: '👂' },
-            wolf_pelt: { name: '狼皮', icon: '🐺' },
-            chief_tusk: { name: '头目獠牙', icon: '🦷' },
-            king_fang: { name: '狼王之牙', icon: '🦴' }
+            gold: { kind: 'gold', name: '金币', icon: '🪙', desc: '打怪和开宝箱得来，在商店和铁匠铺花。' },
+            goblin_ear: { kind: 'material', name: '哥布林耳', icon: '👂', sell: 4, desc: '哥布林掉的。铁匠铺打造要用，商店也收。' },
+            wolf_pelt: { kind: 'material', name: '狼皮', icon: '🐺', sell: 6, desc: '野狼掉的。铁匠铺打造要用，商店也收。' },
+            chief_tusk: { kind: 'material', name: '头目獠牙', icon: '🦷', sell: 30, desc: '哥布林头目的獠牙。能打成护符。' },
+            king_fang: { kind: 'material', name: '狼王之牙', icon: '🦴', sell: 40, desc: '狼王的牙。能打成项链。' },
+            potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按副手键喝一口，回复三成生命；挨打会洒掉这一口（药水还在）。' },
+            torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处，能烧掉枯木丛。不能挡，也不能拿来打。' },
+            wooden_sword: { kind: 'gear', slot: 'main', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
+            assassin_dagger: { kind: 'gear', slot: 'main', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { goblin_ear: 2, wolf_pelt: 2 } }, desc: '比木剑短，要贴得更近，伤害高一点。' },
+            iron_sword: { kind: 'gear', slot: 'main', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 1.0, max: 1, recipe: { gold: 80, materials: { goblin_ear: 4, wolf_pelt: 2 } }, desc: '比木剑长一点，也重得多。' },
+            wooden_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '木盾', icon: '🛡️', stats: { def: 2 }, max: 1, desc: '开局带着的盾。按住副手键举盾。' },
+            iron_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '铁盾', icon: '🔰', stats: { def: 6 }, max: 1, recipe: { gold: 80, materials: { goblin_ear: 3, wolf_pelt: 3 } }, desc: '更结实的盾。' },
+            cloth_armor: { kind: 'gear', slot: 'armor', name: '布甲', icon: '👕', stats: { def: 2, maxHp: 20 }, max: 1, desc: '开局穿着的衣服。' },
+            iron_armor: { kind: 'gear', slot: 'armor', name: '铁甲', icon: '🥋', stats: { def: 7, maxHp: 40 }, max: 1, recipe: { gold: 100, materials: { wolf_pelt: 4, goblin_ear: 2 } }, desc: '加了肩甲和胸甲。' },
+            chief_charm: { kind: 'gear', slot: 'accessory', name: '头目护符', icon: '📿', stats: { maxHp: 50 }, max: 1, recipe: { gold: 60, materials: { chief_tusk: 1, goblin_ear: 2 } }, desc: '用头目的獠牙打的护符。' },
+            fang_necklace: { kind: 'gear', slot: 'accessory', name: '狼牙项链', icon: '🦷', stats: { atk: 4 }, max: 1, recipe: { gold: 60, materials: { king_fang: 1, wolf_pelt: 2 } }, desc: '用狼王的牙穿的项链。' }
         },
+        // What a new game starts with, worn (a duel is fought in this too).
+        gear: { starter: { main: 'wooden_sword', offhand: 'wooden_shield', armor: 'cloth_armor', accessory: null } },
         loot: {
             goblin: [{ item: 'gold', chance: 1, amount: [2, 5] }, { item: 'goblin_ear', chance: 0.85, amount: [1, 2] }],
             wolf: [{ item: 'gold', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 0.9, amount: [1, 2] }],
             goblinChief: [{ item: 'gold', chance: 1, amount: [20, 30] }, { item: 'chief_tusk', chance: 1, amount: [1, 1] }],
             wolfKing: [{ item: 'gold', chance: 1, amount: [25, 35] }, { item: 'king_fang', chance: 1, amount: [1, 1] }],
             chiefChest: [{ item: 'gold', chance: 1, amount: [40, 60] }, { item: 'goblin_ear', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 1, amount: [1, 2] }],
-            kingChest: [{ item: 'gold', chance: 1, amount: [60, 90] }, { item: 'wolf_pelt', chance: 1, amount: [3, 5] }]
+            kingChest: [{ item: 'gold', chance: 1, amount: [60, 90] }, { item: 'wolf_pelt', chance: 1, amount: [3, 5] }],
+            caveChest: [{ item: 'gold', chance: 1, amount: [50, 80] }, { item: 'goblin_ear', chance: 1, amount: [2, 3] }, { item: 'wolf_pelt', chance: 1, amount: [2, 3] }]
         },
         // Loot on the ground (world units, seconds). It pops out at
         // popSpeed[0..1] and up to popHeight over popSeconds, lies still,
@@ -212,8 +240,10 @@ const gameConfig = (() => {
         // better. chestHold: seconds the key is held to open a chest.
         interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6 },
         // Props: chestRadius (a chest is solid); arriveDistance, how far
-        // in front of the portal back someone arriving stands.
-        props: { chestRadius: 14, arriveDistance: 64 },
+        // in front of the portal back someone arriving stands. A thicket
+        // set alight sets its neighbours alight after burnSpread seconds
+        // and is gone after burnSeconds.
+        props: { chestRadius: 14, arriveDistance: 64, burnSpread: 0.35, burnSeconds: 1.4 },
         // Buildings of the base: name, the interact key's verb, and what it
         // does -- `rest` refills HP, `open` opens the building's panel.
         buildings: {
@@ -272,7 +302,8 @@ const gameConfig = (() => {
         // duel: the host on the first, the guest on the second, in reading
         // order), `D` the training dummy (facing `dummyFacing`, radians),
         // and monster homes: `g` goblin, `w` wolf, `G` the goblin chief, `K`
-        // the wolf king. Rows run north (screen top) to south.
+        // the wolf king; `B` a dry thicket (2 high, burnt away by a lit
+        // torch). Rows run north (screen top) to south.
         // Next to the rows: `buildings` ({ kind, at: [col, row, width,
         // depth] over its H blocks, door: side, south by default}),
         // `portals` ({ at: [col, row] of its P, to: map, facing: the side
@@ -280,7 +311,9 @@ const gameConfig = (() => {
         // `chests` ({ at, loot, requires }). Someone arriving stands in front
         // of the portal that leads back. `training`: nobody falls there (an
         // emptied HP bar refills); elsewhere the player can fall. `safe`: no
-        // monsters. `duel`: the map is for PVP only.
+        // monsters. `duel`: the map is for PVP only. `dark`: no daylight,
+        // only a torch lights it (drawn). `floor`: the letter of the ground
+        // the markers lie on (grass by default).
         maps: {
             // The base (rebuild-plan.md M5): no monsters. Four buildings, the
             // north gate to the field, the west gate to the training ground,
@@ -380,7 +413,7 @@ const gameConfig = (() => {
                     '..T.T..T..T....T.T......T....T.......T..T..T.T..',
                     '.TT.TT.....T.T..T..T...T....T....T.......T......',
                     'T.............................................T.',
-                    'T..334333433343334333433343334333433343334333...',
+                    'T..33433#P#3343334333433343334333433343334333...',
                     '...4..........................3.............4...',
                     '...3.T;;;;.;;T............T...3...........C.3...',
                     '...3...;;;;.;......12...;;.;;.3.............3..T',
@@ -414,9 +447,50 @@ const gameConfig = (() => {
                 ],
                 portals: [
                     { at: [8, 30], to: 'field', facing: 'north' },
-                    { at: [14, 30], to: 'base', facing: 'north' }
+                    { at: [14, 30], to: 'base', facing: 'north' },
+                    { at: [9, 3], to: 'cave', facing: 'south' }
                 ],
                 chests: [{ at: [42, 5], loot: 'kingChest', requires: 'wolfKing' }]
+            },
+            // A dark cave off the valley (rebuild-plan.md M6): nothing to see
+            // without a lit torch. Its treasure room is shut by a thicket the
+            // torch burns away.
+            cave: {
+                name: '幽暗洞穴', dark: true, floor: ';',
+                rows: [
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;333333333333333333333333333333333333;;;',
+                    ';;;33333;;;;33333;;;;;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;33333;;;;33333;;;2;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;33333;;;;33333;;;;;;;;;;;3;;;;;;C;;3;;;',
+                    ';;;3;;;;;;;;33333;;;;;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;33333;;;w;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;3;;;;g;;;;;;;;;;;;;;;;;;;3;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;333333;;;;;333BBB33333;;;',
+                    ';;;3;;;;;;22;;;;;333333;;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;333333;;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;w;;333333;;;;;2;;;2;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;333333;3333;;;;;;;;;;3;;;',
+                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;;;;;;3;;;',
+                    ';;;3333333;;;;;;;;;;;;;;3333;;;w;;;;;;3;;;',
+                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;333333;;;',
+                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;333333;;;',
+                    ';;;3;;;;;;;33333;;;;;;;;3333;;;;;333333;;;',
+                    ';;;3;;;;;;;33333;;;;;;;;3333;;g;;333333;;;',
+                    ';;;3;;;;;;;33333;;;;;;;;3333;;;;;;;;;;3;;;',
+                    ';;;3;;;;2;;;;;;;;;;;;2;;3333;;2;;;;;;;3;;;',
+                    ';;;3;;;;;;;;@;;;;;;;;;;;;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3;;;',
+                    ';;;333333#P#333333333333333333333333333;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;'
+                ],
+                portals: [{ at: [10, 26], to: 'valley', facing: 'north' }],
+                chests: [{ at: [35, 6], loot: 'caveChest' }]
             },
             clearing: {
                 name: '训练场', training: true,

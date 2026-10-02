@@ -4,7 +4,7 @@ const { load } = require('./load.cjs');
 const g = load();
 const { math3d: M, rigKit: R, playerModel, playerAnim, equipmentModels, space, gameConfig } = g;
 
-const equipment = equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' });
+const equipment = equipmentModels.forLoadout(gameConfig.gear.starter);
 const rig = R.build(playerModel, { equipment });
 const half = part => part.size.map(v => v / 2);
 const cornersOf = (solved, i) => M.corners(M.obb(solved.parts[i], half(rig.parts[i])));
@@ -74,7 +74,7 @@ test('hurtboxes are the body only: not deco, not the sword, not the shield', () 
     for (const b of ['head', 'chest', 'upperArmR', 'forearmL', 'handR', 'thighL', 'shinR']) assert.ok(bones.has(b), `${b} can be hit`);
     const weapons = R.boxes(rig, solved, ['weapon']);
     assert.equal(weapons.length, 1);
-    assert.equal(rig.parts[weapons[0].part].size[2], gameConfig.models.swordBladeLength);
+    assert.equal(rig.parts[weapons[0].part].size[2], gameConfig.items.wooden_sword.blade);
     assert.equal(R.boxes(rig, solved, ['shield']).length, 1);
 });
 
@@ -98,7 +98,7 @@ test('walking and running are pure functions of gait phase and blends, feet on t
     const at = (gait, moveBlend = 1, runBlend = 0) => R.solve(rig, playerAnim.pose(rig, { gait, moveBlend, runBlend }));
     // Same state, separately built rig: the same pose. Nothing hidden in
     // the rig or in earlier calls feeds the result.
-    const other = R.build(playerModel, { equipment: equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' }) });
+    const other = R.build(playerModel, { equipment: equipmentModels.forLoadout(gameConfig.gear.starter) });
     at(3 / 7, 1, 1);
     const body = { gait: 0.32, moveBlend: 0.4, runBlend: 0.7 };
     assert.equal(JSON.stringify(playerAnim.pose(other, body)), JSON.stringify(playerAnim.pose(rig, body)));

@@ -24,7 +24,7 @@ const terrainMesh = (() => {
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
     // Tile and shade spread per solid kind (by name).
-    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06] };
+    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1] };
 
     // Drawn-only blocks: { 'x,y,z': { tile, tint } } for the whole map.
     function decor(sim) {

@@ -8,6 +8,9 @@
 //   down; it throws out its loot. Opened stays opened (the save).
 // - drop: loot on the ground. It pops out, settles, and is picked up by
 //   walking near it: it flies to the one who came close.
+// - brush: a dry thicket (a `B` block). The interact key with a lit torch
+//   sets it alight; fire spreads to the thickets next to it, and each burns
+//   away to bare ground. The terrain change is an edit, so it stays burnt.
 // A map lists its buildings, portals and chests next to its rows; each entry
 // must sit on the letters that draw it, so a map cannot disagree with itself.
 const propKit = (() => {
@@ -81,6 +84,12 @@ const propKit = (() => {
             });
         }
         for (const { col, row } of terrain.chests) if (!chests.has(`${col},${row}`)) throw new Error(`${map.name}: C at ${col},${row} is in no chest list`);
+        // Thickets still standing (saved edits may have burnt some).
+        for (let r = 0; r < terrain.height; r++) for (let c = 0; c < terrain.width; c++) {
+            if (terrainKit.kindAt(terrain, c, r) !== terrainKit.KIND.brush) continue;
+            const at = centre(c, r);
+            out.push({ id: `brush-${c}-${r}`, type: 'brush', col: c, row: r, x: at.x, y: at.y, h: 0, facing: 0, radius: 0, solid: false, burning: -1, spread: false });
+        }
         return out;
     }
     // Where someone arriving from region `from` stands: just inside the
@@ -108,6 +117,10 @@ const propKit = (() => {
             if (e.open) return null;
             out = { verb: '打开', name: '宝箱', hold: gameConfig.interact.chestHold, ready: true, why: '' };
             if (e.requires && !downed(sim, e.requires)) Object.assign(out, { ready: false, why: `${bossName(e.requires)}守着它` });
+        } else if (e.type === 'brush') {
+            if (e.burning >= 0) return null;
+            const torch = inventoryKit.offhandOf(p.loadout) === 'torch';
+            out = { verb: '点燃', name: '枯木丛', hold: 0, ready: torch && p.lit, why: !torch ? '要用火把点燃' : p.lit ? '' : '先点燃火把' };
         }
         if (out && out.ready && interactKit.inCombat(sim, p)) Object.assign(out, { ready: false, why: '战斗中' });
         return out;
@@ -126,7 +139,26 @@ const propKit = (() => {
             const ahead = gameConfig.props.chestRadius + 6;
             drop(sim, e.loot, e.x + Math.cos(e.facing) * ahead, e.y + Math.sin(e.facing) * ahead);
             emit(sim, 'chest_open', { side: p.id, target: e.id, at: space.toBlocks(e.x, e.y, 24) });
+        } else if (e.type === 'brush') ignite(sim, e, p.id);
+    }
+    // ---- fire ----
+    function ignite(sim, e, by = null) {
+        if (e.burning >= 0) return;
+        e.burning = 0;
+        emit(sim, 'burn', { side: by, target: e.id, at: space.toBlocks(e.x, e.y, 30) });
+    }
+    function tickBrush(sim, e, dt) {
+        if (e.burning < 0) return;
+        const B = gameConfig.props;
+        e.burning += dt;
+        if (!e.spread && e.burning >= B.burnSpread - 1e-9) {
+            e.spread = true;
+            for (const o of sim.entities) if (o.type === 'brush' && Math.abs(o.col - e.col) + Math.abs(o.row - e.row) === 1) ignite(sim, o, null);
         }
+        if (e.burning < B.burnSeconds - 1e-9) return;
+        terrainKit.set(sim.terrain, e.col, e.row, 'path', 0);
+        entityKit.remove(sim, e);
+        emit(sim, 'burned', { target: e.id, at: space.toBlocks(e.x, e.y, 20) });
     }
 
     // ---- loot ----
@@ -182,6 +214,7 @@ const propKit = (() => {
     function tick(sim, dt) {
         for (const e of [...sim.entities]) {
             if (e.type === 'drop') tickDrop(sim, e, dt);
+            else if (e.type === 'brush') tickBrush(sim, e, dt);
             else if (e.type === 'chest' && e.open && e.t < 99) e.t = Math.min(99, e.t + dt);
         }
     }

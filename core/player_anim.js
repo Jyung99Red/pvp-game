@@ -69,10 +69,12 @@ const playerAnim = (() => {
     }
 
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
-    // fighter { act, guardBlend, stun, down, downT }.
+    // fighter { act, guardBlend, stun, down, downT, drink, loadout }.
     function pose(rig, body) {
         let pose = locomotion(body);
-        const act = body.act;
+        const act = body.act, lowerBody = playerModel.layers.lower;
+        // A torch is carried up and forward when the arm is not busy.
+        if (!act && inventoryKit.offhandOf(body.loadout) === 'torch') pose = { ...pose, ...playerMoves.torch };
         if (act) {
             // Out of a walk the move cross-fades in; out of a move it does not need to.
             const w = act.from || act.phase !== 'windup' ? 1 : clamp01(act.t / BLEND());
@@ -86,8 +88,15 @@ const playerAnim = (() => {
             pose = rigKit.mix(pose, moving, w);
         }
         if (body.guardBlend > 0) {
-            const raised = { ...rigKit.pick(pose, playerModel.layers.lower), ...playerMoves.guard };
+            const raised = { ...rigKit.pick(pose, lowerBody), ...playerMoves.guard };
             pose = rigKit.mix(pose, raised, body.guardBlend);
+        }
+        // Drinking: the flask comes up over a fifth of a second, stays, and
+        // goes down over the last tenth.
+        const d = body.drink;
+        if (d?.phase === 'drink') {
+            const S = gameConfig.combat.potion.seconds, k = Math.min(clamp01(d.t / 0.2), clamp01((S - d.t) / 0.1));
+            pose = rigKit.mix(pose, { ...rigKit.pick(pose, lowerBody), ...playerMoves.drink }, smooth(k));
         }
         if (body.down) pose = rigKit.mix(pose, playerMoves.down, easeOut(clamp01(body.downT / 0.5)));
         if (body.stun > 0) {

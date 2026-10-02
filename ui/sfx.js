@@ -1,7 +1,7 @@
 // Procedural combat sounds (Web Audio, no asset files), carried over from
 // the 2D version, plus monsters noticing, enraging and falling, the end of
 // a fight, and the world's: loot picked up, a chest opening, a rest, a
-// building entered, a boss down. Presentation only: the simulation never waits on or reads
+// building entered, a boss down, a potion drunk or spilt, a torch, fire. Presentation only: the simulation never waits on or reads
 // anything here. Mobile browsers keep audio locked until the first touch,
 // so the context is created and resumed on the first pointer press.
 const sfx = (() => {
@@ -63,6 +63,11 @@ const sfx = (() => {
         chest: () => { hiss(500, 260, 0.2, 0.04, 0.9); tone('sine', 660, 660, 0.12, 0.05, 0.16); tone('sine', 990, 990, 0.22, 0.05, 0.26); },
         rest: () => { tone('sine', 523, 523, 0.3, 0.04); tone('sine', 659, 659, 0.3, 0.035, 0.08); tone('sine', 784, 784, 0.4, 0.035, 0.16); },
         door: () => tone('square', 300, 220, 0.06, 0.03),
+        drink: () => { tone('sine', 300, 520, 0.12, 0.05); tone('sine', 520, 700, 0.14, 0.04, 0.12); },
+        spill: () => hiss(1200, 500, 0.18, 0.05, 0.8),
+        empty: () => tone('square', 180, 160, 0.05, 0.025),
+        torch: lit => lit ? hiss(400, 1400, 0.25, 0.05, 0.6) : hiss(900, 300, 0.15, 0.03, 0.8),
+        burn: () => { hiss(1500, 600, 0.5, 0.05, 0.5); hiss(300, 200, 0.6, 0.04, 1.2); },
         boss: () => { tone('sine', 523, 523, 0.18, 0.06); tone('sine', 659, 659, 0.18, 0.06, 0.16); tone('sine', 784, 784, 0.18, 0.06, 0.32); tone('sine', 1047, 1047, 0.5, 0.06, 0.48); }
     };
     // Simulation events carry who they belong to (`side`); `selfId` is the
@@ -86,6 +91,11 @@ const sfx = (() => {
         else if (e.type === 'rest' && own) sounds.rest();
         else if (e.type === 'open' && own) sounds.door();
         else if (e.type === 'boss_defeated') sounds.boss();
+        else if (e.type === 'drink' && own) sounds.drink();
+        else if (e.type === 'drink_spilled' && own) sounds.spill();
+        else if (e.type === 'potion_empty' && own) sounds.empty();
+        else if ((e.type === 'torch_lit' || e.type === 'torch_out') && own) sounds.torch(e.type === 'torch_lit');
+        else if (e.type === 'burn' && e.side) sounds.burn();
     }
     // A beat of the duel's countdown; `last` is the start itself.
     function tick(last = false) { if (enabled && ctx && ctx.state === 'running') sounds.countdown(last); }

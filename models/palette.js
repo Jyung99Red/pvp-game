@@ -9,6 +9,8 @@ const palette = Object.freeze({
     belt: '#5b3b22', leather: '#7a5233', gold: '#d8b04a',
     // equipment
     steel: '#dfe5ec', steelDark: '#9aa2aa', wood: '#8a5a2e', woodDark: '#6b4423',
+    daggerGrip: '#3b2a1e', ironTunic: '#5f6b78', torchWrap: '#4a3a2a', flame: '#ffb13b', flameTip: '#fff1a8',
+    potionRed: '#d8394a', glass: '#cfe6ef', cork: '#9a7246',
     // training dummy
     sack: '#c9b48a', rope: '#7b6243', straw: '#e3c76a', target: '#c8433a',
     // goblin
@@ -32,5 +34,6 @@ const palette = Object.freeze({
     // props
     chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6',
     // world
-    sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8'
+    sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8', darkSky: '#05060a',
+    brush: '#8a6a3c', brushDark: '#4e3a20'
 });

@@ -13,10 +13,11 @@ const terrainKit = (() => {
     const CHUNK = 16, MAX_LEVEL = 15;
     // `portal` is a portal's pillar; `gate` the glowing opening between two
     // pillars, which nobody walks through (the interact key travels).
-    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8 });
+    // `brush` is a dry thicket a lit torch burns away (core/props.js).
+    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8, brush: 9 });
     const NAMES = Object.freeze(Object.fromEntries(Object.entries(KIND).map(([name, k]) => [k, name])));
-    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate]);
-    const TREE_HEIGHT = 4, HOUSE_HEIGHT = 3, PORTAL_HEIGHT = 3;
+    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate, KIND.brush]);
+    const TREE_HEIGHT = 4, HOUSE_HEIGHT = 3, PORTAL_HEIGHT = 3, BRUSH_HEIGHT = 2;
     // Map letters that put a monster's home on a grass block.
     const MONSTERS = Object.freeze({ g: 'goblin', w: 'wolf', G: 'goblinChief', K: 'wolfKing' });
     // Letters that mark a spot on grass: the spawn, the training dummy, a chest.
@@ -25,9 +26,10 @@ const terrainKit = (() => {
     // tree's crown, a neighbour's hidden face): chunks that near are redrawn.
     const REACH = 3;
 
-    // One map letter as [kind, level].
-    function cellOf(ch) {
-        if (MARKS.has(ch)) return [KIND.grass, 0];
+    // One map letter as [kind, level]. Markers lie on `floor` (grass, or a
+    // map's own floor: a cave's gravel).
+    function cellOf(ch, floor = KIND.grass) {
+        if (MARKS.has(ch)) return [ch === '.' ? KIND.grass : floor, 0];
         if (ch === ':') return [KIND.path, 0];
         if (ch === 'P') return [KIND.gate, PORTAL_HEIGHT];
         if (ch === '=') return [KIND.cobble, 0];
@@ -35,6 +37,7 @@ const terrainKit = (() => {
         if (ch === 'T') return [KIND.tree, TREE_HEIGHT];
         if (ch === 'H') return [KIND.wood, HOUSE_HEIGHT];
         if (ch === '#') return [KIND.portal, PORTAL_HEIGHT];
+        if (ch === 'B') return [KIND.brush, BRUSH_HEIGHT];
         if (ch >= '1' && ch <= '9') return [KIND.stone, Number(ch)];
         return null;
     }
@@ -42,21 +45,24 @@ const terrainKit = (() => {
     // Rows run north (screen top) to south, one letter per cell:
     // `.` grass, `:` path, `=` cobble, `;` gravel, `1`-`9` stone wall of
     // that many blocks, `T` tree, `H` a building's wall, `#` a portal's
-    // pillar, `P` a portal's opening, `C` a chest, `@` a
+    // pillar, `P` a portal's opening, `B` a dry thicket, `C` a chest, `@` a
     // spawn, `D` the training dummy, and the monster letters (MONSTERS).
     // A portal's opening is solid: it is used from in front, not walked into.
     // Markers are collected for the world to place what stands on them.
-    function fromRows(rows, unit = gameConfig.world.unitsPerBlock) {
+    // `floor`: the letter of the ground markers lie on ('.' grass by default).
+    function fromRows(rows, unit = gameConfig.world.unitsPerBlock, floor = '.') {
         const height = rows.length, width = rows[0]?.length || 0;
         if (!height || rows.some(r => r.length !== width)) throw new Error('Map rows must be non-empty and equal in length');
+        const ground = cellOf(floor);
+        if (!ground || isSolid(ground[0])) throw new Error(`A map's floor must be ground, not "${floor}"`);
         const cw = Math.ceil(width / CHUNK), ch = Math.ceil(height / CHUNK);
         const t = {
-            width, height, unit, cw, ch, rows: [...rows], rev: 0, edits: {},
+            width, height, unit, cw, ch, rows: [...rows], floor: ground[0], rev: 0, edits: {},
             chunks: Array.from({ length: cw * ch }, () => ({ kind: new Uint8Array(CHUNK * CHUNK), level: new Uint8Array(CHUNK * CHUNK), rev: 0 })),
             spawn: null, spawns: [], dummy: null, monsters: [], portals: [], chests: []
         };
         rows.forEach((row, r) => [...row].forEach((letter, c) => {
-            const cell = cellOf(letter);
+            const cell = cellOf(letter, t.floor);
             if (!cell) throw new Error(`Unknown map cell "${letter}" at ${c},${r}`);
             write(t, c, r, cell[0], cell[1]);
             if (letter === '@') t.spawns.push({ col: c, row: r });
@@ -101,7 +107,7 @@ const terrainKit = (() => {
         if (SOLID.has(k) ? level < 1 || level > MAX_LEVEL : level !== 0) return false;
         if (kindAt(t, c, r) === k && levelAt(t, c, r) === level) return false;
         write(t, c, r, k, level);
-        const [k0, l0] = cellOf(t.rows[r][c]), key = `${c},${r}`;
+        const [k0, l0] = cellOf(t.rows[r][c], t.floor), key = `${c},${r}`;
         if (k0 === k && l0 === level) delete t.edits[key]; else t.edits[key] = [NAMES[k], level];
         const touched = new Set();
         for (let dr = -REACH; dr <= REACH; dr++) for (let dc = -REACH; dc <= REACH; dc++) {
@@ -203,7 +209,7 @@ const terrainKit = (() => {
         }
     }
     return {
-        CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, MONSTERS,
+        CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, BRUSH_HEIGHT, MONSTERS,
         cellOf, fromRows, inside, kindAt, levelAt, solidAt, isSolid, cellCentre,
         chunkIndex, chunkCells, set, edits, applyEdits,
         blocked, lineClear, sightClear, moveCircle

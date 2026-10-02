@@ -49,6 +49,7 @@ html, body {
 .bar-guard { height: 6px; }
 .bar-guard i { background: #f2b544; }
 .bar-guard.locked i { background: #8a8f96; }
+.bar[hidden] { display: none; }
 .hud-target { justify-self: end; display: grid; gap: 4px; width: min(200px, 100%); justify-items: end; }
 .hud-target[hidden] { display: none; }
 .target-name { font-size: 12px; line-height: 1; color: var(--fg); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); display: flex; gap: 6px; align-items: center; }
@@ -194,6 +195,63 @@ html, body {
 .room-keys button:active { background: rgba(255, 255, 255, 0.24); }
 .room-keys button:disabled { opacity: 0.4; }
 
+/* Item screens (bag, shop, smithy): landscape, a list on the left and the
+   picked item on the right. Built by ui/screens.js. */
+.screen {
+    position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; box-sizing: border-box;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 8px) calc(env(safe-area-inset-left, 0px) + 12px);
+    background: rgba(10, 13, 17, 0.6);
+}
+.screen[hidden] { display: none; }
+.screen-card {
+    width: min(780px, 100%); height: min(400px, 100%); box-sizing: border-box; overflow: hidden;
+    display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: 10px;
+    background: rgba(20, 25, 31, 0.96); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.screen-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.screen-title { margin: 0; font-size: 18px; white-space: nowrap; }
+.screen-tabs { display: flex; gap: 6px; }
+.screen-tabs button, .screen-close {
+    min-height: 34px; padding: 0 14px; border-radius: 17px; font: 500 14px/1 var(--font); cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.06); color: var(--fg); touch-action: manipulation;
+}
+.screen-tabs button.on { border-color: var(--accent); background: var(--accent); color: #1d1606; }
+.screen-gold { margin-left: auto; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.screen-close { border-radius: 8px; }
+.screen-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); min-height: 0; }
+.screen-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); display: grid; gap: 4px; align-content: start; }
+.screen-list .empty { padding: 14px; color: var(--muted); font-size: 13px; }
+.screen-list button {
+    width: 100%; min-height: 46px; padding: 4px 10px; box-sizing: border-box; border-radius: 8px; cursor: pointer; text-align: left;
+    display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; grid-template-areas: "icon name tag" "icon sub tag"; column-gap: 8px; align-items: center;
+    border: 1px solid transparent; background: rgba(255, 255, 255, 0.05); color: var(--fg); font: 14px/1.25 var(--font); touch-action: manipulation;
+}
+.screen-list button.on { border-color: var(--accent); background: rgba(242, 181, 68, 0.12); }
+.screen-list button.dim { opacity: 0.6; }
+.row-icon { grid-area: icon; font-size: 20px; text-align: center; }
+.row-name { grid-area: name; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { grid-area: sub; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.row-tag { grid-area: tag; font-style: normal; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.12); white-space: nowrap; }
+.screen-detail { padding: 10px 14px; overflow-y: auto; display: grid; align-content: start; gap: 6px; font-size: 13px; }
+.screen-detail h3 { margin: 0 0 2px; font-size: 17px; display: flex; gap: 8px; align-items: center; }
+.screen-detail p { margin: 0; color: var(--fg); line-height: 1.45; }
+.screen-detail p + p { color: var(--muted); }
+.detail-stats { margin: 4px 0; display: flex; gap: 6px 16px; flex-wrap: wrap; }
+.detail-stats div { display: flex; gap: 6px; }
+.detail-stats dt { color: var(--muted); }
+.detail-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+.detail-stats b.up { color: #8be07a; } .detail-stats b.down { color: #ff8a7a; }
+.detail-needs { list-style: none; margin: 2px 0; padding: 0; display: grid; gap: 3px; }
+.detail-needs li.short b { color: #ff8a7a; } .detail-needs li.ok b { color: #8be07a; }
+.detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.detail-actions button {
+    min-height: 42px; padding: 0 16px; border-radius: 8px; font: 500 15px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.08); color: var(--fg);
+}
+.detail-actions button.primary { border-color: var(--accent); background: var(--accent); color: #1d1606; }
+.detail-actions button:disabled { opacity: 0.45; cursor: default; }
+.detail-note { min-height: 1.3em; color: var(--accent) !important; }
+
 /* Stick: pressing anywhere in the bottom-left zone puts the stick there.
    ui/input.js sizes the zone from game_config.js. */
 .stick-zone { position: absolute; left: 0; bottom: 0; width: 250px; height: 190px; z-index: 1; touch-action: none; }
@@ -225,9 +283,19 @@ html, body {
 .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ctl-a { border-color: var(--accent); color: var(--accent); font-size: 32px; }
 .ctl-b { font-size: 28px; }
-.ctl-offhand svg { width: 52%; height: 52%; }
+.ctl-offhand svg { width: 52%; height: 52%; display: none; grid-area: 1 / 1; }
+.ctl-offhand[data-kind="shield"] .icon-shield, .ctl-offhand[data-kind="torch"] .icon-torch, .ctl-offhand[data-kind="potion"] .icon-potion { display: block; }
 .shield-face { fill: #8a5a2e; stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; }
 .shield-band { fill: #c9cfd5; }
+.torch-stick { fill: #8a5a2e; } .torch-head { fill: #4a3a2a; } .torch-flame { fill: rgba(255, 255, 255, 0.35); }
+.ctl-offhand.lit .torch-flame { fill: #ffb13b; }
+.potion-glass { fill: rgba(207, 230, 239, 0.35); stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.1; } .potion-liquid { fill: #d8394a; }
+/* Potions left, on the offhand key. */
+.ctl-count {
+    position: absolute; right: -2px; top: -2px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px;
+    display: grid; place-items: center; font: 600 12px/1 var(--font); background: var(--accent); color: #1d1606;
+}
+.ctl-count[hidden] { display: none; }
 .ctl-interact { font-size: 14px; letter-spacing: 0.05em; --hold: 0; white-space: nowrap; }
 .ctl.idle { opacity: 0.5; }
 .ctl-interact:not(.idle) { border-color: var(--accent); }

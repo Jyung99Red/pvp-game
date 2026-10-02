@@ -14,7 +14,7 @@ const STANDARD = 60;
 const FIELD = require('./fixtures/m3-field.cjs');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-const player = R.build(playerModel, { equipment: equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' }) });
+const player = R.build(playerModel, { equipment: equipmentModels.forLoadout(gameConfig.gear.starter) });
 const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
 const standing = kind => ({ kind, phase: 'patrol', t: 0, move: 0, flinch: 0, gait: 0, moveBlend: 0 });
 const KINDS = ['goblin', 'wolf', 'goblinChief', 'wolfKing'];
@@ -252,7 +252,7 @@ test('enraged below its threshold: harder blows and a faster clock, for good', (
     };
     const calm = timeToHit(false), wild = timeToHit(true);
     assert.ok(Math.abs(wild.time * S.enrage.tempo - calm.time) < 0.05, `windup ${calm.time} then ${wild.time}`);
-    const def = F.fighters.player.def, hit = raw => Math.max(1, Math.round(raw * (1 - def / (def + F.damage.defenseConstant))));
+    const def = g.inventoryKit.statsOf(gameConfig.gear.starter).def, hit = raw => Math.max(1, Math.round(raw * (1 - def / (def + F.damage.defenseConstant))));
     assert.equal(calm.damage, hit(S.atk * mv.ratio));
     assert.equal(wild.damage, hit(S.atk * mv.ratio * S.enrage.atk));
     // The player's hits set it off at the threshold.

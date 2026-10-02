@@ -68,15 +68,18 @@ test('a change to a block redraws only the chunks it can touch and is kept as an
 });
 
 // ---- the regions ----
-function reachable(t, from) {
+// Cells walkable from `from`; with `burn`, dry thickets count as open (a
+// lit torch burns them away).
+function reachable(t, from, burn = true) {
     const seen = new Set([`${from.col},${from.row}`]), todo = [[from.col, from.row]];
+    const open_ = (c, r) => !T.solidAt(t, c, r) || (burn && T.inside(t, c, r) && T.kindAt(t, c, r) === T.KIND.brush);
     let open = true;
     while (todo.length) {
         const [c, r] = todo.pop();
         if (c <= 0 || r <= 0 || c >= t.width - 1 || r >= t.height - 1) open = false;
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const key = `${c + dc},${r + dr}`;
-            if (!seen.has(key) && !T.solidAt(t, c + dc, r + dr)) { seen.add(key); todo.push([c + dc, r + dr]); }
+            if (!seen.has(key) && open_(c + dc, r + dr)) { seen.add(key); todo.push([c + dc, r + dr]); }
         }
     }
     return { seen, closed: open, has: (x, y) => seen.has(`${Math.floor(x / U)},${Math.floor(y / U)}`) };
@@ -105,27 +108,33 @@ test('portals come in pairs, the base is safe, and arrivals are out of every mon
         for (const p of map.portals || []) assert.ok((MAPS[p.to].portals || []).some(q => q.to === id), `${id} -> ${p.to} has no way back`);
         if (map.safe) assert.equal(T.fromRows(map.rows).monsters.length, 0, `${id} is safe`);
         const sim = W.create({ region: id }), t = sim.terrain;
-        // Coming from a region that only opens once a boss is down (every
-        // portal into it waits on that boss), that boss is down.
-        const into = region => REGIONS.flatMap(r => (MAPS[r].portals || []).filter(q => q.to === region));
-        const implied = region => { const list = into(region).map(q => q.requires); return list.length && list.every(b => b && b === list[0]) ? list[0] : null; };
-        const spots = [{ ...terrainKit_centre(t, t.spawn), down: null }, ...(map.portals || []).map(p => ({ ...propKit.arrival(map, t, p.to), down: implied(p.to) }))];
+        // Coming from a region that cannot be reached from the base while a
+        // boss stands, that boss is down.
+        const spots = [{ ...terrainKit_centre(t, t.spawn), down: [] }, ...(map.portals || []).map(p => ({ ...propKit.arrival(map, t, p.to), down: implied(p.to) }))];
         for (const m of sim.monsters) for (const at of spots) {
-            if (m.kind === at.down) continue;
+            if (at.down.includes(m.kind)) continue;
             const d = Math.hypot(m.x - at.x, m.y - at.y);
             assert.ok(d > MON[m.kind].alertRange + 100, `${id}: ${m.kind} at ${(m.x / U).toFixed(1)},${(m.y / U).toFixed(1)} would notice an arrival (${d.toFixed(0)})`);
         }
     }
-    // Every region can be reached from the base; the valley waits on the goblin chief either way.
+    // Every region can be reached from the base; the valley (and the cave off it) waits on the goblin chief.
     const seen = new Set(['base']), todo = ['base'];
     while (todo.length) for (const p of MAPS[todo.pop()].portals || []) if (!seen.has(p.to)) { seen.add(p.to); todo.push(p.to); }
     assert.deepEqual([...seen].sort(), [...REGIONS].sort());
-    for (const id of REGIONS) for (const p of MAPS[id].portals || []) if (p.to === 'valley') assert.equal(p.requires, 'goblinChief', `${id} -> valley`);
+    assert.deepEqual([...reachedWithout('goblinChief')].sort(), ['base', 'clearing', 'field'], 'the valley and the cave beyond it wait on the goblin chief');
     // Each region but the base has a boss and its chest.
     assert.deepEqual(plain(T.fromRows(MAPS.field.rows).monsters.filter(m => MON[m.kind].boss).map(m => m.kind)), ['goblinChief']);
     assert.deepEqual(plain(T.fromRows(MAPS.valley.rows).monsters.filter(m => MON[m.kind].boss).map(m => m.kind)), ['wolfKing']);
 });
 const terrainKit_centre = (t, cell) => T.cellCentre(t, cell.col, cell.row);
+// Regions reached from the base without going through a portal that waits on `boss`.
+function reachedWithout(boss) {
+    const seen = new Set(['base']), todo = ['base'];
+    while (todo.length) for (const p of MAPS[todo.pop()].portals || []) if (p.requires !== boss && !seen.has(p.to)) { seen.add(p.to); todo.push(p.to); }
+    return seen;
+}
+// The bosses that must be down for anyone to be in `region`.
+const implied = region => Object.keys(MON).filter(k => MON[k].boss && !reachedWithout(k).has(region));
 
 test('a map whose lists and letters disagree does not load', () => {
     const base = MAPS.base;
@@ -325,28 +334,40 @@ function storage() {
     const data = new Map();
     return { data, getItem: k => data.has(k) ? data.get(k) : null, setItem: (k, v) => data.set(k, String(v)), removeItem: k => data.delete(k) };
 }
-test('the save: fresh, written and read back with progress and terrain edits, and junk cleaned out', () => {
-    const store = storage();
-    assert.deepEqual(plain(saveKit.load(store)), plain(saveKit.fresh()));
+test('the save: fresh, written and read back with progress, gear and terrain edits, and junk cleaned out', () => {
+    const store = storage(), START = { wooden_sword: 1, wooden_shield: 1, cloth_armor: 1 }, WORN = plain(gameConfig.gear.starter);
+    const fresh = plain(saveKit.load(store));
+    assert.deepEqual(fresh, plain(saveKit.fresh()));
+    assert.deepEqual(fresh, { v: 2, bosses: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {} }, 'a new game owns and wears the starter gear');
     const sim = W.create({ region: 'field' });
     sim.progress.bosses.goblinChief = true;
-    sim.progress.inventory.gold = 12; sim.progress.inventory.items.goblin_ear = 3;
+    sim.progress.inventory.gold = 12; sim.progress.inventory.items.goblin_ear = 3; sim.progress.inventory.items.iron_armor = 1;
+    sim.progress.loadout.armor = 'iron_armor';
     T.set(sim.terrain, 20, 20, 'stone', 2);
     assert.equal(saveKit.write(store, saveKit.merge(saveKit.fresh(), sim)), true);
-    const back = saveKit.load(store);
-    assert.deepEqual(plain(back), { v: 1, bosses: { goblinChief: true }, chests: {}, inventory: { gold: 12, items: { goblin_ear: 3 } }, edits: { field: [[20, 20, 'stone', 2]] } });
-    // A region made from the save has the edit back, and carries what was carried.
+    const back = saveKit.load(store), items = { ...START, goblin_ear: 3, iron_armor: 1 };
+    assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] } });
+    // A region made from the save has the edit back, carries what was carried and wears what was worn.
     const again = W.create({ region: 'field', progress: back });
     assert.equal(T.levelAt(again.terrain, 20, 20), 2);
-    assert.deepEqual(plain(again.progress.inventory), { gold: 12, items: { goblin_ear: 3 } });
-    // Junk is dropped, and anything unreadable starts fresh.
+    assert.deepEqual(plain(again.progress.inventory), { gold: 12, items });
+    assert.equal(again.player.loadout.armor, 'iron_armor');
+    // Junk is dropped, and anything unreadable starts fresh. A version 1
+    // save (M5, before gear) gets the starter gear.
     const junk = {
         v: 1, bosses: { goblinChief: true, goblin: true, nobody: true }, chests: { 'field/chest-46-5': true, 'mars/x': true },
-        inventory: { gold: -5, items: { goblin_ear: 2.5, wolf_pelt: 3, junk: 9, gold: 4 } },
+        inventory: { gold: -5, items: { goblin_ear: 2.5, wolf_pelt: 3, junk: 9, gold: 4, potion: 99 } },
         edits: { arena: [[1, 1, 'stone', 1]], field: [[1, 1, 'stone', 1], 'x', [1, 2, 'lava', 1]], mars: [[1, 1, 'stone', 1]] }
     };
-    assert.deepEqual(plain(saveKit.clean(junk)), { v: 1, bosses: { goblinChief: true }, chests: { 'field/chest-46-5': true }, inventory: { gold: 0, items: { wolf_pelt: 3 } }, edits: { field: [[1, 1, 'stone', 1]] } });
-    for (const raw of ['not json', '{"v":2}', 'null', '[]']) { store.setItem(saveKit.KEY, raw); assert.deepEqual(plain(saveKit.load(store)), plain(saveKit.fresh()), raw); }
+    assert.deepEqual(plain(saveKit.clean(junk)), {
+        v: 2, bosses: { goblinChief: true }, chests: { 'field/chest-46-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
+        loadout: WORN, edits: { field: [[1, 1, 'stone', 1]] }
+    });
+    // Gear worn but not owned, or in the wrong slot, falls back to the starter piece; the main hand is never empty.
+    const worn = saveKit.clean({ ...fresh, loadout: { main: null, offhand: 'iron_shield', armor: 'wooden_sword', accessory: 'chief_charm' } });
+    assert.deepEqual(plain(worn.loadout), WORN);
+    assert.equal(saveKit.clean({ ...fresh, loadout: { ...WORN, offhand: null } }).loadout.offhand, null, 'the offhand may be empty');
+    for (const raw of ['not json', '{"v":3}', 'null', '[]']) { store.setItem(saveKit.KEY, raw); assert.deepEqual(plain(saveKit.load(store)), plain(saveKit.fresh()), raw); }
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('full'); }, removeItem() { throw new Error('denied'); } };
     assert.deepEqual(plain(saveKit.load(broken)), plain(saveKit.fresh()));
     assert.equal(saveKit.write(broken, saveKit.fresh()), false);

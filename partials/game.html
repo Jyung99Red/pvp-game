@@ -31,8 +31,11 @@
 
     <button type="button" class="ctl ctl-a" data-button="a" aria-label="A">A</button>
     <button type="button" class="ctl ctl-b" data-button="b" aria-label="B">B</button>
-    <button type="button" class="ctl ctl-offhand" data-button="offhand" aria-label="副手">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
+    <button type="button" class="ctl ctl-offhand" data-button="offhand" data-kind="shield" aria-label="副手">
+        <svg class="icon-shield" viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
+        <svg class="icon-torch" viewBox="0 0 24 24" aria-hidden="true"><path class="torch-stick" d="M10.5 10h3l-1 12h-1z"/><path class="torch-head" d="M9 7h6v4H9z"/><path class="torch-flame" d="M12 1c2 2.5 3.5 3.8 3.5 5.6 0 .3 0 .3-.1.4H8.6c-.1-.1-.1-.1-.1-.4C8.5 4.8 10 3.5 12 1z"/></svg>
+        <svg class="icon-potion" viewBox="0 0 24 24" aria-hidden="true"><path class="potion-glass" d="M9.5 2h5v2h-1v4.2c3 1.2 5 3.8 5 7 0 4.2-2.9 6.8-6.5 6.8S5.5 19.4 5.5 15.2c0-3.2 2-5.8 5-7V4h-1z"/><path class="potion-liquid" d="M7 15h10c0 3-2 5.3-5 5.3S7 18 7 15z"/></svg>
+        <span class="ctl-count" data-hud="offhand-count" hidden></span>
     </button>
     <button type="button" class="ctl ctl-interact idle" data-button="interact" aria-label="交互"><span data-hud="interact">交互</span></button>
     <button type="button" class="hud-menu" data-menu aria-label="菜单"><i></i><i></i></button>
@@ -46,6 +49,7 @@
                 <button type="button" data-action="resume">继续</button>
                 <button type="button" data-action="home">回到据点</button>
                 <button type="button" data-action="rematch">再来一局</button>
+                <button type="button" data-action="bag">背包</button>
                 <button type="button" data-action="duel">联机对战</button>
                 <button type="button" data-action="surrender">认输</button>
                 <button type="button" data-action="leave">离开对战</button>
@@ -74,6 +78,21 @@
                 <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button>
                 <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button>
                 <button type="button" data-key="clear" aria-label="清空">清空</button><button type="button" data-key="0">0</button><button type="button" data-key="back" aria-label="删除">⌫</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="screen" data-screen hidden>
+        <div class="screen-card" role="dialog" aria-modal="true" aria-labelledby="screen-title">
+            <header class="screen-head">
+                <h2 class="screen-title" id="screen-title" data-screen-title>背包</h2>
+                <nav class="screen-tabs" data-screen-tabs></nav>
+                <span class="screen-gold" data-screen-gold></span>
+                <button type="button" class="screen-close" data-screen-close>关闭</button>
+            </header>
+            <div class="screen-body">
+                <ul class="screen-list" data-screen-list></ul>
+                <section class="screen-detail" data-screen-detail></section>
             </div>
         </div>
     </div>

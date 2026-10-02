@@ -54,7 +54,11 @@ const playerModel = (() => {
             handL: { bone: 'handL', at: [0, -0.08, 0] },
             back: { bone: 'chest', at: [0, 0.3, -0.17] },
             waist: { bone: 'pelvis', at: [0.28, 0.06, 0] },
-            head: { bone: 'head', at: [0, 0.5, 0] }
+            head: { bone: 'head', at: [0, 0.5, 0] },
+            // Armor plates (models/equipment.js).
+            chest: { bone: 'chest', at: [0, 0.26, 0] },
+            shoulderR: { bone: 'upperArmR', at: [0, 0, 0] },
+            shoulderL: { bone: 'upperArmL', at: [0, 0, 0] }
         },
         // Colour swaps by role: in a duel each phone draws its own fighter
         // as usual and the other one as the rival.

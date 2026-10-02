@@ -21,7 +21,8 @@ const hud = (() => {
             floats: $('[data-hud="floats"]'), mobs: $('[data-hud="mobs"]'), banner: $('[data-hud="banner"]'), arrow: $('[data-hud="arrow"]'),
             boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
             tag: $('[data-hud="tag"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
-            region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]')
+            region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]'),
+            offhand: $('[data-button="offhand"]'), offhandCount: $('[data-hud="offhand-count"]')
         };
         let toasts = [], notice = null;
         let comboKey = '', comboShownAt = -1, floats = [], focus = null, mobs = new Map(), fightAt = null, selfId = 'player';
@@ -38,8 +39,9 @@ const hud = (() => {
             els.regionTitle.textContent = title; els.regionNote.textContent = note;
             els.region.hidden = false; els.region.classList.remove('fade');
         }
-        // A new world: forget the last one's foes; name the region entered.
-        function reset(sim = null, now = 0) {
+        // A new world: forget the last one's foes; name the region entered
+        // (unless `announce` is false: the same place rebuilt).
+        function reset(sim = null, now = 0, { announce: named = true } = {}) {
             focus = null; comboKey = ''; fightAt = null;
             for (const m of mobs.values()) m.el.remove();
             mobs = new Map();
@@ -49,9 +51,10 @@ const hud = (() => {
             toasts = [];
             els.banner.hidden = true; els.arrow.hidden = true; els.tag.hidden = true;
             els.region.hidden = true; notice = null;
-            if (sim && !sim.duel) {
+            if (sim && !sim.duel && named) {
                 const map = gameConfig.maps[sim.region], boss = sim.monsters.find(m => m.boss);
-                const note = map?.safe ? '安全区' : map?.training ? '训练场里不会倒下' : boss ? `首领：${gameConfig.monsters[boss.kind].name}` : '首领已被击败';
+                const bossHere = sim.terrain.monsters.some(m => gameConfig.monsters[m.kind].boss);
+                const note = map?.safe ? '安全区' : map?.training ? '训练场里不会倒下' : map?.dark ? '很暗，带上点燃的火把' : boss ? `首领：${gameConfig.monsters[boss.kind].name}` : bossHere ? '首领已被击败' : '';
                 announce(map?.name || sim.map, note, 2.2, now);
             }
         }
@@ -132,6 +135,15 @@ const hud = (() => {
             width(els.hp, p.hp / p.maxHp);
             width(els.guard, p.guard.bar / G.max);
             els.guardBar.classList.toggle('locked', p.guard.locked);
+            // The offhand key shows what is carried there (the guard bar
+            // only with a shield); potions left on it, greyed with none.
+            const kind = inventoryKit.offhandOf(p.loadout), potions = kind === 'potion' ? inventoryKit.count(sim.progress || { inventory: { gold: 0, items: {} } }, 'potion') : 0;
+            els.guardBar.hidden = kind !== 'shield';
+            els.offhand.dataset.kind = kind || 'none';
+            els.offhand.classList.toggle('lit', !!p.lit);
+            els.offhand.classList.toggle('disabled', !kind || (kind === 'potion' && potions < 1));
+            els.offhandCount.hidden = kind !== 'potion';
+            els.offhandCount.textContent = String(potions);
             // The region and what is carried.
             const map = gameConfig.maps[sim.region];
             els.goal.hidden = !!sim.duel || !map;
