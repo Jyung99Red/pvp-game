@@ -10,12 +10,15 @@ const g = load();
 const { worldSim: W, rigKit: R, math3d: M, playerAnim, combatKit, monsterKit, terrainKit, space, gameConfig, playerModel, equipmentModels } = g;
 const MOVES = gameConfig.combo.moves, MON = gameConfig.monsters, U = gameConfig.world.unitsPerBlock, F = gameConfig.combat;
 const STANDARD = 60;
+// The M3 field, fixed for these tests (the game's regions change with content).
+const FIELD = require('./fixtures/m3-field.cjs');
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const player = R.build(playerModel, { equipment: equipmentModels.forLoadout({ main: 'sword', offhand: 'shield' }) });
 const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
 const standing = kind => ({ kind, phase: 'patrol', t: 0, move: 0, flinch: 0, gait: 0, moveBlend: 0 });
-const rigs = { goblin: monsterKit.rig('goblin'), wolf: monsterKit.rig('wolf') };
+const KINDS = ['goblin', 'wolf', 'goblinChief', 'wolfKing'];
+const rigs = Object.fromEntries(KINDS.map(k => [k, monsterKit.rig(k)]));
 const extent = (rig, solved, kinds) => {
     let top = -Infinity, low = Infinity;
     rig.parts.forEach((p, i) => {
@@ -78,8 +81,8 @@ function lands(move, boxes) {
     for (let i = 0; i < n; i++) if (combatKit.sweep(player, u => swingAt(move, u), i / n, (i + 1) / n, [{ id: 't', boxes }])) return true;
     return false;
 }
-test('at the standard distance every move lands on the goblin and on the low wolf, whichever way they face', () => {
-    for (const kind of ['goblin', 'wolf']) {
+test('at the standard distance every move lands on the goblin and on the low wolf (and the bosses), whichever way they face', () => {
+    for (const kind of KINDS) {
         for (const turn of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) {
             for (const move of Object.keys(MOVES)) assert.ok(lands(move, monsterAt(kind, STANDARD, turn)), `${move} misses a ${kind} turned ${turn.toFixed(2)}`);
         }
@@ -105,9 +108,9 @@ function blow(kind, i, dist, angle = 0) {
 const inside = (hull, x, z) => hull.every((a, i) => { const b = hull[(i + 1) % hull.length]; return (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]) >= -1e-9; });
 
 test('each monster move reaches as far as its key poses carry it, in front only, and the warning covers where it lands', () => {
-    for (const kind of ['goblin', 'wolf']) MON[kind].moves.forEach((mv, i) => {
+    for (const kind of KINDS) MON[kind].moves.forEach((mv, i) => {
         const r = monsterKit.reach(kind, i);
-        assert.ok(r.forward > 40 && r.forward < 220, `${kind} ${mv.id} reach ${r.forward}`);
+        assert.ok(r.forward > 40 && r.forward < 260, `${kind} ${mv.id} reach ${r.forward}`);
         // Where the AI attacks from, and closer, the blow lands on a player in front.
         for (const d of [30, MON[kind].standOff * r.forward, r.forward]) {
             const hit = blow(kind, i, d);
@@ -116,7 +119,8 @@ test('each monster move reaches as far as its key poses carry it, in front only,
             assert.ok(inside(r.hull, -hit.point[2], hit.point[0]), `${kind} ${mv.id} lands outside its warning`);
         }
         assert.ok(!blow(kind, i, r.forward + 30), `${kind} ${mv.id} reaches past its reach`);
-        assert.ok(!blow(kind, i, 40, Math.PI), `${kind} ${mv.id} reaches behind`);
+        // Behind, out of touch with the body (a boss's body is bigger).
+        assert.ok(!blow(kind, i, 40 + 60 * ((MON[kind].scale || 1) - 1), Math.PI), `${kind} ${mv.id} reaches behind`);
     });
     // The leap flies far and straight; the bite stays close.
     assert.ok(monsterKit.reach('wolf', 1).forward > 4 * U && monsterKit.reach('wolf', 0).forward < 2 * U);
@@ -126,7 +130,7 @@ test('each monster move reaches as far as its key poses carry it, in front only,
 // ---- the AI on the field ----
 // The field with only the first monster of each kind named left in it.
 function field(...kinds) {
-    const sim = W.create({ map: gameConfig.maps.field });
+    const sim = W.create({ map: FIELD });
     sim.monsters = kinds.map(kind => sim.monsters.find(m => m.kind === kind));
     return sim;
 }
@@ -139,7 +143,7 @@ const put = (body, x, y, facing) => { body.x = x; body.y = y; if (facing !== und
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 test('the field: closed, the player spawns out of every alert range, monsters stand on open grass', () => {
-    const sim = W.create({ map: gameConfig.maps.field }), t = sim.terrain;
+    const sim = W.create({ map: FIELD }), t = sim.terrain;
     assert.deepEqual(plain(sim.monsters.map(m => m.kind).sort()), ['goblin', 'goblin', 'wolf', 'wolf']);
     assert.equal(sim.dummy, null);
     assert.equal(sim.player.endless, false, 'outside training the player can fall');
@@ -339,21 +343,21 @@ test('no blow lands across a wall, either way (3d-migration-concept.md 10, item 
     assert.equal(across(true, false), 0, 'nor the charged cut');
 });
 
-test('a whole fight: every monster down is a win; a fallen player is a loss and the monsters go home', () => {
-    // Win: cut every monster down with A combos, standing at each in turn.
-    const sim = W.create({ map: gameConfig.maps.field }), p = sim.player;
+test('a whole fight: every monster down drops its loot and the world goes on; a fallen player is a loss and the monsters go home', () => {
+    // Cut every monster down with A combos, standing at each in turn.
+    const sim = W.create({ map: FIELD }), p = sim.player;
     for (const m of sim.monsters) { m.atk = 0; m.wait = 999; }
-    for (let guard = 0; guard < 400 && !sim.result; guard++) {
+    for (let guard = 0; guard < 400 && sim.monsters.some(monsterKit.living); guard++) {
         const m = sim.monsters.find(monsterKit.living);
         put(p, m.x - 50, m.y, 0); p.push = null;
         tap(sim); step(sim, 0.3);
     }
-    assert.deepEqual(plain(sim.result && sim.result.outcome), 'win');
+    assert.equal(sim.result, null, 'a world has no win: it goes on (rebuild-plan.md M5)');
     assert.equal(sim.stats.kills, 4);
     assert.ok(sim.monsters.every(m => m.phase === 'dead' && m.hp === 0));
     const ev = W.drain(sim);
     assert.equal(ev.filter(e => e.type === 'defeated').length, 4);
-    assert.equal(ev.filter(e => e.type === 'result' && e.outcome === 'win').length, 1);
+    assert.ok(sim.entities.filter(e => e.type === 'drop' && e.item === 'gold').length + ev.filter(e => e.type === 'pickup' && e.item === 'gold').length === 4, 'each one dropped gold');
     // The fallen block nothing and take no more hits.
     assert.deepEqual(plain(fighterFoes(sim)), []);
     // Loss: the player's HP runs out.
@@ -376,7 +380,7 @@ const fighterFoes = sim => g.fighterKit.foes(sim, sim.player).map(f => f.id);
 test('the same inputs give the same field fight, and it survives a JSON round trip (PVP snapshots)', () => {
     const script = { 0: ['move', 1, 0.2], 150: ['press', 'a'], 152: ['release', 'a'], 300: ['press', 'b'], 340: ['release', 'b'] };
     const play = () => {
-        const sim = W.create({ map: gameConfig.maps.field });
+        const sim = W.create({ map: FIELD });
         const m = sim.monsters[0]; put(sim.player, m.x - 230, m.y);
         for (let t = 0; t < 900; t++) {
             const s = script[t];
@@ -390,7 +394,7 @@ test('the same inputs give the same field fight, and it survives a JSON round tr
     const a = play();
     assert.equal(strip(a), strip(play()));
     assert.ok(a.monsters[0].phase !== 'patrol', 'the goblin joined in');
-    const copy = W.restore(W.create({ map: gameConfig.maps.field }), JSON.parse(strip(a)));
+    const copy = W.restore(W.create({ map: FIELD }), JSON.parse(strip(a)));
     for (const s of [a, copy]) { tap(s); step(s, 3); }
     assert.equal(strip(copy), strip(a));
 });

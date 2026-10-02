@@ -5,6 +5,9 @@
     <div class="hud-mobs" data-hud="mobs" aria-hidden="true"></div>
     <div class="hud-floats" data-hud="floats" aria-hidden="true"></div>
     <div class="hud-banner" data-hud="banner" aria-live="polite" hidden></div>
+    <div class="hud-region" data-hud="region" aria-live="polite" hidden><b data-hud="region-title"></b><span data-hud="region-note"></span></div>
+    <div class="hud-tag" data-hud="tag" aria-hidden="true" hidden><b data-hud="tag-name"></b><span data-hud="tag-why"></span></div>
+    <div class="hud-toasts" data-hud="toasts" aria-live="polite"></div>
     <div class="hud-arrow" data-hud="arrow" aria-hidden="true" hidden></div>
     <div class="hud-top">
         <div class="hud-self" aria-label="生命与格挡条">
@@ -17,7 +20,7 @@
             <div class="move-name" data-hud="move"></div>
         </div>
         <div class="hud-target" data-hud="target" hidden>
-            <span class="target-name"><b data-hud="target-name">训练木桩</b><em class="target-rage" data-hud="rage" hidden>狂暴</em></span>
+            <span class="target-name"><em class="target-boss" data-hud="boss" hidden>首领</em><b data-hud="target-name">训练木桩</b><em class="target-rage" data-hud="rage" hidden>狂暴</em></span>
             <div class="bar bar-target"><i data-hud="target-hp"></i></div>
             <div class="pips" data-hud="pips" aria-label="失衡"><i data-hud="pip"></i><i data-hud="pip"></i><i data-hud="pip"></i></div>
         </div>
@@ -31,7 +34,7 @@
     <button type="button" class="ctl ctl-offhand" data-button="offhand" aria-label="副手">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
     </button>
-    <button type="button" class="ctl ctl-interact" data-button="interact" aria-label="交互">交互</button>
+    <button type="button" class="ctl ctl-interact idle" data-button="interact" aria-label="交互"><span data-hud="interact">交互</span></button>
     <button type="button" class="hud-menu" data-menu aria-label="菜单"><i></i><i></i></button>
 
     <div class="panel" data-panel hidden>
@@ -41,13 +44,13 @@
             <dl class="panel-stats" data-panel-stats></dl>
             <div class="panel-actions">
                 <button type="button" data-action="resume">继续</button>
-                <button type="button" data-action="restart">重新开始</button>
+                <button type="button" data-action="home">回到据点</button>
                 <button type="button" data-action="rematch">再来一局</button>
-                <button type="button" data-action="field">去野外</button>
-                <button type="button" data-action="clearing">去训练场</button>
                 <button type="button" data-action="duel">联机对战</button>
                 <button type="button" data-action="surrender">认输</button>
                 <button type="button" data-action="leave">离开对战</button>
+                <button type="button" data-action="reset">重新开始冒险</button>
+                <button type="button" data-action="erase">清除并重新开始</button>
             </div>
         </div>
     </div>

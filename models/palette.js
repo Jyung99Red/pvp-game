@@ -17,11 +17,20 @@ const palette = Object.freeze({
     // wolf
     wolf: '#9c9ea3', wolfLight: '#b5b7bc', wolfHead: '#a7a9ae', wolfMuzzle: '#cbccd0', wolfDark: '#8d8f94', wolfLeg: '#8f9196',
     wolfNose: '#26272b', wolfEye: '#f2c94c', fang: '#f4f1e6',
+    // bosses: the goblin chief, the wolf king
+    chiefSkin: '#5f8a34', chiefSkinLight: '#6f9c3e', chiefSkinDark: '#527a2c', chiefRag: '#8a2f2a', chiefRagDark: '#6a2420', chiefRagLight: '#a8473d',
+    chiefClub: '#3a2a1a', helmet: '#7d8088', horn: '#e8dcc0',
+    kingFur: '#4c4d55', kingFurLight: '#60616a', kingHead: '#56575f', kingMuzzle: '#7c7d85', kingDark: '#3a3b41', kingLeg: '#46474e', kingEye: '#ff7a3a', mane: '#2c2d33',
     // terrain
     grass: '#6aa94b', grassLight: '#8cc95e', dirt: '#8b5d3c', path: '#b4925e', pebble: '#8e8a83',
     stone: '#8e9297', stoneDark: '#5f6368', stoneLight: '#b8bcc0', moss: '#5d8a3c',
     bark: '#6c4a2c', leaves: '#3f8b3c', leavesDark: '#1f4d22', leavesLight: '#6dbb57',
     stem: '#4f8f36', flowerRed: '#d9473f', flowerYellow: '#f0cf3c', flowerWhite: '#f2f0ea', flowerViolet: '#8a6ad8',
+    cobble: '#9b9a93', cobbleDark: '#6e6d68', gravel: '#8d8579', plank: '#a3733f', plankDark: '#7a5230', roof: '#a6463b', roofDark: '#7c3129',
+    door: '#5a3a22', window: '#2c3542', portalStone: '#4a4357', portalStoneLight: '#6b6279', portalGlow: '#a183ff', portalLocked: '#c0453a',
+    roofSpring: '#6f9fc4', roofSmithy: '#7b7b85', roofShop: '#c2574a', roofStorage: '#a07a45',
+    // props
+    chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6',
     // world
     sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8'
 });

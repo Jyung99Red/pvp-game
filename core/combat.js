@@ -6,10 +6,10 @@
 // thin limb.
 const combatKit = (() => {
     const C = () => gameConfig.combat;
-    // The rules of whoever is struck: a fighter, the training dummy or a
-    // monster. Each kit has hurtboxes(sim, body) and struck(sim, body,
-    // { amount, stagger, by }).
-    const kitOf = body => body.kind === 'fighter' ? fighterKit : body.kind === 'dummy' ? dummyKit : monsterKit;
+    // The rules of whoever is struck: a fighter, or an entity that can be
+    // hit (the training dummy, a monster: core/entity.js). Each kit has
+    // hurtboxes(sim, body) and struck(sim, body, { amount, stagger, by }).
+    const kitOf = body => body.kind === 'fighter' ? fighterKit : entityKit.kitOf(body);
 
     function defended(raw, def = 0) {
         return Math.max(1, Math.round(raw * (1 - def / (def + C().damage.defenseConstant))));

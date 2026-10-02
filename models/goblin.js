@@ -39,7 +39,17 @@ const goblinModel = (() => {
             { bone: `leg${side}`, size: [0.2, 0.09, 0.27], at: [0, -0.455, 0.035], color: 'goblinFoot', kind: 'deco' }
         );
     }
-    return Object.freeze({ bones, parts, mounts: { handR: { bone: 'wristR', at: [0, 0, 0] } } });
+    return Object.freeze({
+        bones, parts,
+        mounts: { handR: { bone: 'wristR', at: [0, 0, 0] }, head: { bone: 'head', at: [0, 0.42, 0.02] } },
+        // Colour swaps by kind: the goblin chief (a boss).
+        looks: {
+            chief: {
+                goblin: 'chiefSkin', goblinLight: 'chiefSkinLight', goblinDark: 'chiefSkinDark', goblinFoot: 'chiefRagDark',
+                rag: 'chiefRag', ragDark: 'chiefRagDark', ragLight: 'chiefRagLight', club: 'chiefClub', clubGrip: 'chiefRagDark'
+            }
+        }
+    });
 })();
 
 // The goblin's club and key poses. `walk` is a formula, not keys: each
@@ -57,6 +67,19 @@ const goblinPoses = Object.freeze({
             ]
         };
     },
+    // The chief's horned helmet: only drawn.
+    helmet() {
+        return {
+            id: 'helmet', mount: 'head', parts: [
+                { size: [0.54, 0.12, 0.48], at: [0, 0, 0], color: 'helmet', kind: 'deco' },
+                { size: [0.36, 0.1, 0.32], at: [0, 0.1, 0], color: 'helmet', kind: 'deco' },
+                { size: [0.08, 0.2, 0.08], at: [-0.3, 0.12, 0], color: 'horn', kind: 'deco' },
+                { size: [0.08, 0.2, 0.08], at: [0.3, 0.12, 0], color: 'horn', kind: 'deco' },
+                { size: [0.07, 0.12, 0.07], at: [-0.33, 0.27, 0], color: 'horn', kind: 'deco' },
+                { size: [0.07, 0.12, 0.07], at: [0.33, 0.27, 0], color: 'horn', kind: 'deco' }
+            ]
+        };
+    },
     idle: { spine: { rx: 0.1 }, shoulderR: { rx: -0.75, ry: 0.15, rz: -0.08 }, wristR: { rx: 1.15 }, shoulderL: { rx: -0.25, rz: 0.15 } },
     walk: {
         leg: { length: 0.5, amp: 0.55 },
@@ -68,6 +91,11 @@ const goblinPoses = Object.freeze({
         flail: {
             a: { spine: { rx: 0.05, ry: -0.5 }, shoulderR: { rx: -1.35, ry: -0.8 }, wristR: { rx: 1.25 }, shoulderL: { rx: -0.4, ry: 0.3, rz: 0.15 }, legR: { rx: -0.15 }, legL: { rx: 0.2 } },
             b: { spine: { rx: 0.1, ry: 0.55 }, shoulderR: { rx: -1.3, ry: 0.7 }, wristR: { rx: 1.25 }, shoulderL: { rx: -0.3, ry: -0.2, rz: 0.15 }, legR: { rx: 0.2 }, legL: { rx: -0.25 } }
+        },
+        // Both hands overhead, then down in front with the whole body (the chief).
+        slam: {
+            a: { hips: { py: -0.04 }, spine: { rx: -0.3 }, shoulderR: { rx: -2.9, ry: 0.15 }, wristR: { rx: 1.2 }, shoulderL: { rx: -2.7, ry: -0.35 }, legR: { rx: -0.2 }, legL: { rx: 0.25 } },
+            b: { hips: { py: -0.08 }, spine: { rx: 0.5 }, shoulderR: { rx: -0.75, ry: 0.15 }, wristR: { rx: 1.0 }, shoulderL: { rx: -0.8, ry: -0.2 }, legR: { rx: -0.35 }, legL: { rx: 0.4 } }
         },
         // Leaps in with the club overhead and brings it down in front.
         pounce: {

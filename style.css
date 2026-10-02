@@ -125,6 +125,37 @@ html, body {
 .float.block { color: #c9cfd5; font-size: 13px; }
 .float.parry { color: #ffe066; font-size: 15px; }
 
+/* The world: a tag over the interact key's target, the region's name (or a
+   boss down) in the middle of the screen, and what is picked up. */
+.hud-tag {
+    position: absolute; z-index: 2; left: 0; top: 0; pointer-events: none; display: grid; justify-items: center; gap: 1px;
+    padding: 3px 8px; border-radius: 6px; background: var(--hud); white-space: nowrap; text-align: center;
+}
+.hud-tag[hidden] { display: none; }
+.hud-tag b { font-size: 13px; font-weight: 600; }
+.hud-tag span { font-size: 11px; color: #ffb4a6; }
+.hud-tag span:empty { display: none; }
+.hud-region {
+    position: absolute; z-index: 3; pointer-events: none; left: 50%; top: 24%; transform: translate(-50%, -50%);
+    display: grid; justify-items: center; gap: 4px; text-align: center; white-space: nowrap;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.75); transition: opacity 0.5s;
+}
+.hud-region[hidden] { display: none; }
+.hud-region.fade { opacity: 0; }
+.hud-region b { font-size: 26px; font-weight: 700; letter-spacing: 0.08em; }
+.hud-region span { font-size: 13px; color: var(--muted); }
+.hud-region span:empty { display: none; }
+.hud-toasts {
+    position: absolute; z-index: 3; pointer-events: none; display: grid; gap: 4px; justify-items: start;
+    left: calc(env(safe-area-inset-left, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 58px);
+}
+.toast { font-size: 13px; padding: 2px 8px; border-radius: 4px; background: var(--hud); transition: opacity 0.5s; }
+.toast.fade { opacity: 0; }
+.target-boss { font-style: normal; font-size: 11px; padding: 1px 4px; border-radius: 3px; background: var(--accent); color: #1d1606; text-shadow: none; }
+.target-boss[hidden] { display: none; }
+.mob.boss { width: 64px; }
+.mob.boss .mob-bar { height: 6px; }
+
 /* A duel: the countdown in the middle, and an arrow on the screen's edge
    towards the rival while it is in sight but off screen. */
 .hud-banner {
@@ -197,8 +228,18 @@ html, body {
 .ctl-offhand svg { width: 52%; height: 52%; }
 .shield-face { fill: #8a5a2e; stroke: rgba(255, 255, 255, 0.85); stroke-width: 1.2; }
 .shield-band { fill: #c9cfd5; }
-.ctl-interact { font-size: 14px; letter-spacing: 0.05em; }
+.ctl-interact { font-size: 14px; letter-spacing: 0.05em; --hold: 0; white-space: nowrap; }
 .ctl.idle { opacity: 0.5; }
+.ctl-interact:not(.idle) { border-color: var(--accent); }
+.ctl-interact.blocked { border-color: var(--ctl-line); color: var(--muted); }
+/* A hold under way (opening a chest): a ring fills round the key. */
+.ctl-interact::after {
+    content: ''; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: conic-gradient(var(--accent) calc(var(--hold) * 360deg), rgba(255, 255, 255, 0.15) 0);
+    -webkit-mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3.5px));
+    mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3.5px));
+}
+.ctl-interact.holding::after { opacity: 1; }
 .ctl.disabled { opacity: 0.28; filter: grayscale(1); cursor: default; }
 
 /* Portrait: cover everything and ask for landscape. */

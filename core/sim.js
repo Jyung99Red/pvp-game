@@ -2,55 +2,85 @@
 // five controls (move stick, A, B, offhand, interact) and nothing about the
 // screen. Every value is serialisable except `terrain` and `rigs`, which are
 // shared data derived from the map and the models. The fighters' rules are
-// in core/fighter.js, the training dummy's in core/dummy.js, the monsters'
-// in core/monster.js; `events` is what happened, for sounds and effects to
+// in core/fighter.js; everything else in the world is an entity
+// (core/entity.js): the training dummy, monsters, buildings, portals,
+// chests and drops. `events` is what happened, for sounds and effects to
 // read and drain.
 //
 // `fighters` are the people playing: one in PVE ('player'), two in a duel
 // ('host' and 'guest', rebuild-plan.md M4). sim.player, sim.input and
-// sim.stats are the first fighter's own (getters, left out of snapshots).
-// `result` is null until the fight is decided. PVE: { outcome: 'win'
-// (every monster down) | 'lose' (the player down), at }; a duel:
-// { winner: 'host' | 'guest' | null (both fell in the same step), at,
-// conceded? }.
+// sim.stats are the first fighter's own; sim.monsters and sim.dummy are the
+// entities of those types (getters, left out of snapshots).
+// `region` is the map's key in gameConfig.maps; `progress` the world's
+// progress carried between regions (core/save.js: bosses down, chests
+// opened, what is carried), never part of a duel's snapshot.
+// `result` is null until the fight is decided. PVE: { outcome: 'lose'
+// (the player down), at }; a duel: { winner: 'host' | 'guest' | null (both
+// fell in the same step), at, conceded? }.
 const worldSim = (() => {
     const BUTTONS = fighterKit.BUTTONS;
     const DUEL_IDS = Object.freeze(['host', 'guest']);
-    const FIRST = { player: s => s.fighters[0], input: s => s.fighters[0].input, stats: s => s.fighters[0].stats };
+    const FIRST = {
+        player: { get: s => s.fighters[0] }, input: { get: s => s.fighters[0].input }, stats: { get: s => s.fighters[0].stats },
+        dummy: { get: s => s.entities.find(e => e.type === 'dummy') || null },
+        // Setting the list replaces every monster (tests keep only some).
+        monsters: { get: s => s.entities.filter(e => e.type === 'monster'), set: (s, list) => { s.entities = [...s.entities.filter(e => e.type !== 'monster'), ...list]; } }
+    };
     function aliases(sim) {
-        for (const [key, get] of Object.entries(FIRST)) Object.defineProperty(sim, key, { get() { return get(this); }, enumerable: false, configurable: true });
+        for (const [key, { get, set }] of Object.entries(FIRST)) {
+            Object.defineProperty(sim, key, { get() { return get(this); }, set: set ? function (v) { set(this, v); } : undefined, enumerable: false, configurable: true });
+        }
         return sim;
     }
+    const regionOf = map => Object.keys(gameConfig.maps).find(id => gameConfig.maps[id] === map) || '';
 
+    // A world for map `region` (a key of gameConfig.maps; or `map` itself).
+    // progress: the save (core/save.js) -- bosses down stay down, opened
+    // chests stay open, saved terrain edits are put back. arrival: the region
+    // just left, to stand at the portal back there (else the map's spawn).
+    // carry: { hp } brought along. seed: the world's dice.
     // A duel puts one fighter on each of the map's first two spawns, each
     // facing the other, with the same fixed stats and loadout (a fair fight;
     // no potions: controls-landscape-concept.md 8, item 5).
-    function create({ map = gameConfig.maps.clearing, loadout = { main: 'sword', offhand: 'shield' }, duel = false } = {}) {
+    function create({ map = null, region = null, progress = null, arrival = null, carry = null, seed = 1, loadout = { main: 'sword', offhand: 'shield' }, duel = false } = {}) {
+        if (!map) map = gameConfig.maps[region || 'clearing'];
+        if (!map) throw new Error(`Unknown map ${region}`);
+        region = region || regionOf(map);
         const terrain = terrainKit.fromRows(map.rows);
         if (duel && terrain.spawns.length < 2) throw new Error('A duel needs a map with two spawns');
-        if (duel) loadout = { main: 'sword', offhand: 'shield' };
+        if (duel) { loadout = { main: 'sword', offhand: 'shield' }; progress = null; }
+        if (progress?.edits?.[region]) terrainKit.applyEdits(terrain, progress.edits[region]);
         const rig = rigKit.build(playerModel, { scale: gameConfig.models.playerScale, equipment: equipmentModels.forLoadout(loadout) });
         const ids = duel ? DUEL_IDS : ['player'];
         const spots = ids.map((_, i) => terrainKit.cellCentre(terrain, terrain.spawns[i].col, terrain.spawns[i].row));
+        const entry = !duel && arrival ? propKit.arrival(map, terrain, arrival) : null;
+        if (entry) spots[0] = entry;
         const fighters = ids.map((id, i) => {
             const at = spots[i], other = spots[1 - i];
             return fighterKit.init({
                 x: at.x, y: at.y, h: space.groundHeight(at.x, at.y),
-                facing: duel ? Math.atan2(other.y - at.y, other.x - at.x) : Math.PI / 2, radius: gameConfig.player.radius,
+                facing: duel ? Math.atan2(other.y - at.y, other.x - at.x) : entry ? entry.facing : Math.PI / 2, radius: gameConfig.player.radius,
                 // gait: walk/run cycle phase, in cycles. moveTime: seconds of
                 // unbroken walking, which turns into a run.
                 speed: 0, gait: 0, moveBlend: 0, runBlend: 0, moveTime: 0,
                 loadout: { ...loadout }
             }, { id, endless: !duel && !!map.training });
         });
+        if (carry && Number.isFinite(carry.hp)) fighters[0].hp = Math.max(1, Math.min(fighters[0].maxHp, Math.round(carry.hp)));
+        const saved = progress || {};
+        const world = {
+            bosses: { ...saved.bosses }, chests: { ...saved.chests },
+            inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }
+        };
         const dummy = dummyKit.create(terrain, map.dummyFacing ?? Math.PI);
-        const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i));
-        const kinds = [...new Set(monsters.map(m => m.kind))];
+        // A boss once down stays down.
+        const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i)).filter(m => !(m.boss && world.bosses[m.kind]));
+        const kinds = [...new Set(terrain.monsters.map(m => m.kind))];
         return aliases({
-            time: 0, tick: 0, terrain, map: map.name || '', duel,
+            time: 0, tick: 0, terrain, map: map.name || '', region, duel, seed: seed >>> 0, serial: 0,
             rigs: { player: rig, dummy: dummy ? dummyKit.rig() : null, monsters: Object.fromEntries(kinds.map(k => [k, monsterKit.rig(k)])) },
-            fighters, dummy, monsters,
-            events: [], result: null
+            fighters, entities: [...(dummy ? [dummy] : []), ...monsters, ...propKit.place(map, terrain, saved, region)],
+            progress: world, events: [], result: null
         });
     }
 
@@ -100,8 +130,7 @@ const worldSim = (() => {
         sim.time += dt; sim.tick++;
         for (const f of sim.fighters) fighterKit.tick(sim, f, dt);
         fighterKit.settle(sim, judge);
-        dummyKit.tick(sim, dt);
-        monsterKit.tick(sim, dt);
+        entityKit.tick(sim, dt);
         for (const f of sim.fighters) f.h = space.groundHeight(f.x, f.y);
         if (!sim.result && judge) decide(sim);
     }
@@ -113,9 +142,8 @@ const worldSim = (() => {
             combatKit.emit(sim, 'result', { winner: sim.result.winner });
             return;
         }
-        const p = sim.player;
-        const outcome = p.down ? 'lose' : sim.monsters.length && !sim.monsters.some(monsterKit.living) ? 'win' : null;
-        if (outcome) { sim.result = { outcome, at: sim.time }; combatKit.emit(sim, 'result', { outcome }); }
+        // A world has no end to win; falling is the one way a trip ends.
+        if (sim.player.down) { sim.result = { outcome: 'lose', at: sim.time }; combatKit.emit(sim, 'result', { outcome: 'lose' }); }
     }
     // A duel given up by fighter `id`: the other one wins.
     function concede(sim, id) {
@@ -133,9 +161,9 @@ const worldSim = (() => {
     }
 
     // The state as plain data (what a duel's host sends), and back. A
-    // snapshot has everything but the terrain, the rigs and the events;
-    // restoring keeps the world it is written into.
-    const STATIC = new Set(['terrain', 'rigs', 'events']);
+    // snapshot has everything but the terrain, the rigs, the progress and
+    // the events; restoring keeps the world it is written into.
+    const STATIC = new Set(['terrain', 'rigs', 'events', 'progress']);
     function snapshot(sim) {
         const out = {};
         for (const [key, value] of Object.entries(sim)) if (!STATIC.has(key)) out[key] = value;

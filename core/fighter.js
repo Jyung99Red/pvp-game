@@ -23,6 +23,7 @@
 //   guard  { state: down|raising|up, t, readyAt, bar, locked, queued }
 //   stun, freeze (hitstop), push (knockback), bPress: { at, held, upAt }
 //   down, downT  fallen (HP emptied where nobody is `endless`), and since when
+//   focus, using  the interact key's target and a hold under way (core/interact.js)
 //
 // Swings are settled once every fighter has moved (`settle`): each is
 // sampled against everyone as they stand after the step, and only then are
@@ -45,19 +46,20 @@ const fighterKit = (() => {
             id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
-            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0,
+            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0, focus: null, using: null,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
         });
     }
     // Everyone a fighter can hit: the training dummy, living monsters, and
     // the other fighters still standing.
     function foes(sim, p) {
-        const out = sim.dummy ? [sim.dummy] : [];
-        for (const m of sim.monsters) if (monsterKit.living(m)) out.push(m);
+        const out = [];
+        for (const e of sim.entities) if (e.type === 'dummy' || (e.type === 'monster' && monsterKit.living(e))) out.push(e);
         for (const f of sim.fighters) if (f !== p && !f.down) out.push(f);
         return out;
     }
-    const obstacles = foes;
+    // Bodies in the way: other fighters and solid entities.
+    const obstacles = (sim, p) => entityKit.obstacles(sim, p);
     // The fighter's body as judged now.
     function solve(sim, p) {
         const rig = sim.rigs.player;
@@ -241,7 +243,8 @@ const fighterKit = (() => {
         if (button === 'b') p.bPress = { at: sim.time, held: true, upAt: null };
         if (button === 'a' || button === 'b') return pressAttack(sim, p, button);
         if (button === 'offhand') { const o = offhandOf(p); return o ? o.press(sim, p) : false; }
-        return true; // interact: nothing to interact with yet
+        // Interact works alongside the shield (controls-landscape-concept.md 4.4).
+        return interactKit.press(sim, p);
     }
     function release(sim, p, button) {
         if (p.down) return;
@@ -251,13 +254,14 @@ const fighterKit = (() => {
             if (p.act?.phase === 'charge' && p.act.pressAt === p.bPress.at) beginSwing(sim, p, true);
         }
         if (button === 'offhand') offhandOf(p)?.release(sim, p);
+        if (button === 'interact') interactKit.release(sim, p);
     }
 
     // ---- being struck (combatKit.strike, or a parry thrown back) ----
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0 });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, runBlend: 0, moveTime: 0, focus: null, using: null });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }
@@ -321,6 +325,7 @@ const fighterKit = (() => {
         if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
         free(sim, p);
         offhandOf(p)?.tick(sim, p, dt);
+        interactKit.tick(sim, p, dt);
         motion(sim, p, dt);
         tickAct(sim, p, dt);
         free(sim, p);

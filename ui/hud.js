@@ -1,10 +1,14 @@
 // Heads-up display over the 3D view: this fighter's HP and guard bar, the
-// foe being fought (its HP, stagger, enrage), small HP bars and a "!" over
-// monsters in a fight, how many are left, the running combo with the
-// move's name, and floating damage numbers. In a duel: the rival's HP in
-// the foe panel and over its head, the countdown, and an arrow at the edge
-// of the screen while the rival is in sight but off it. Reads the
-// simulation; never writes it.
+// foe being fought (its HP, stagger, enrage, a boss tag), small HP bars and
+// a "!" over monsters in a fight, the region and the gold carried, the
+// running combo with the move's name, and floating damage numbers. The
+// world (rebuild-plan.md M5): the interact key names what it would do (dim
+// with nothing in reach, greyed when it cannot now, a ring filling while a
+// hold runs) and a tag over the target says what it is and why not; the
+// region's name as it is entered, a banner when a boss falls, and what is
+// picked up. In a duel: the rival's HP in the foe panel and over its head,
+// the countdown, and an arrow at the edge of the screen while the rival is
+// in sight but off it. Reads the simulation; never writes it.
 const hud = (() => {
     const FIGHTING = new Set(['alert', 'chase', 'windup', 'swing', 'recover', 'reel']);
     function attach(root) {
@@ -14,21 +18,48 @@ const hud = (() => {
             target: $('[data-hud="target"]'), targetName: $('[data-hud="target-name"]'), rage: $('[data-hud="rage"]'),
             targetHp: $('[data-hud="target-hp"]'), pipBox: $('[data-hud="pips"]'), pips: [...root.querySelectorAll('[data-hud="pip"]')],
             combo: $('[data-hud="combo"]'), chips: $('[data-hud="chips"]'), move: $('[data-hud="move"]'),
-            floats: $('[data-hud="floats"]'), mobs: $('[data-hud="mobs"]'), banner: $('[data-hud="banner"]'), arrow: $('[data-hud="arrow"]')
+            floats: $('[data-hud="floats"]'), mobs: $('[data-hud="mobs"]'), banner: $('[data-hud="banner"]'), arrow: $('[data-hud="arrow"]'),
+            boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
+            tag: $('[data-hud="tag"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
+            region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]')
         };
+        let toasts = [], notice = null;
         let comboKey = '', comboShownAt = -1, floats = [], focus = null, mobs = new Map(), fightAt = null, selfId = 'player';
         const width = (el, share) => { el.style.width = `${(Math.max(0, Math.min(1, share)) * 100).toFixed(1)}%`; };
         const LABEL = { a: 'A', b: 'B', '-': '·' };
         const nameOf = body => body.kind === 'fighter' ? '对手' : body.kind === 'dummy' ? gameConfig.dummy.name : gameConfig.monsters[body.kind].name;
-        const topOf = body => body.kind === 'fighter' ? 2.15 : body.kind === 'wolf' ? 1.25 : 1.65;
-        // A new world: forget the last one's foes.
-        function reset() {
+        const topOf = body => body.kind === 'fighter' ? 2.15 : body.kind === 'dummy' ? 1.95 : monsterKit.height(body.kind) + 0.25;
+        // Where a target's tag floats, in blocks above its spot.
+        const TAG = { building: 2.7, portal: 3.6, chest: 1.2 };
+        // A line in the middle of the screen for `seconds`: the region
+        // entered, a boss down.
+        function announce(title, note, seconds, now) {
+            notice = { until: now + seconds };
+            els.regionTitle.textContent = title; els.regionNote.textContent = note;
+            els.region.hidden = false; els.region.classList.remove('fade');
+        }
+        // A new world: forget the last one's foes; name the region entered.
+        function reset(sim = null, now = 0) {
             focus = null; comboKey = ''; fightAt = null;
             for (const m of mobs.values()) m.el.remove();
             mobs = new Map();
             for (const f of floats) f.el.remove();
             floats = [];
-            els.banner.hidden = true; els.arrow.hidden = true;
+            for (const t of toasts) t.el.remove();
+            toasts = [];
+            els.banner.hidden = true; els.arrow.hidden = true; els.tag.hidden = true;
+            els.region.hidden = true; notice = null;
+            if (sim && !sim.duel) {
+                const map = gameConfig.maps[sim.region], boss = sim.monsters.find(m => m.boss);
+                const note = map?.safe ? '安全区' : map?.training ? '训练场里不会倒下' : boss ? `首领：${gameConfig.monsters[boss.kind].name}` : '首领已被击败';
+                announce(map?.name || sim.map, note, 2.2, now);
+            }
+        }
+        // The regions a boss opens, by name.
+        function opens(kind) {
+            const names = new Set();
+            for (const map of Object.values(gameConfig.maps)) for (const p of map.portals || []) if (p.requires === kind) names.add(gameConfig.maps[p.to].name);
+            return [...names];
         }
         // The foe the top-right panel shows: the rival in a duel; the
         // training dummy; else the one last traded blows with, while it
@@ -76,6 +107,23 @@ const hud = (() => {
             els.arrow.hidden = false;
             els.arrow.style.transform = `translate(${(cx + dx * k).toFixed(1)}px, ${(cy + dy * k).toFixed(1)}px) translate(-50%, -50%) rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
         }
+        // The interact key and the tag over its target.
+        function interaction(sim, p, view) {
+            const t = sim.duel || p.down ? null : interactKit.target(sim, p);
+            els.key.classList.toggle('idle', !t);
+            els.key.classList.toggle('blocked', !!t && !t.offer.ready);
+            els.key.style.setProperty('--hold', String(t ? t.progress : 0));
+            els.key.classList.toggle('holding', !!t && t.progress > 0);
+            els.keyText.textContent = t ? t.offer.verb : '交互';
+            els.key.setAttribute('aria-label', t ? `${t.offer.verb} ${t.offer.name}` : '交互');
+            els.tag.hidden = !t;
+            if (!t) return;
+            els.tagName.textContent = t.offer.name;
+            els.tagWhy.textContent = t.offer.ready ? '' : t.offer.why;
+            const e = t.entity, at = space.toBlocks(e.x, e.y, e.h);
+            at[1] += TAG[e.type] ?? 1.5;
+            els.tag.hidden = !place(els.tag, view, at);
+        }
         // duel (optional): { countdown, phase } from the duel session.
         function update(sim, view, now, bodies = null, { self = 'player', duel = null } = {}) {
             selfId = self;
@@ -84,13 +132,24 @@ const hud = (() => {
             width(els.hp, p.hp / p.maxHp);
             width(els.guard, p.guard.bar / G.max);
             els.guardBar.classList.toggle('locked', p.guard.locked);
-            const total = sim.monsters.length, left = sim.monsters.filter(m => m.phase !== 'dead').length;
-            els.goal.hidden = !total;
-            if (total) els.goal.textContent = `剩余怪物 ${left} / ${total}`;
+            // The region and what is carried.
+            const map = gameConfig.maps[sim.region];
+            els.goal.hidden = !!sim.duel || !map;
+            if (!els.goal.hidden) els.goal.textContent = map.training ? map.name : `${map.name} · ${gameConfig.items.gold.icon} ${sim.progress?.inventory.gold ?? 0}`;
+            interaction(sim, p, view);
+            if (notice) {
+                els.region.classList.toggle('fade', now > notice.until - 0.5);
+                if (now > notice.until) { els.region.hidden = true; notice = null; }
+            }
+            toasts = toasts.filter(t => {
+                if (now - t.born < 2.4) { t.el.classList.toggle('fade', now - t.born > 1.9); return true; }
+                t.el.remove(); return false;
+            });
             const d = target(sim, p);
             els.target.hidden = !d;
             if (d) {
                 els.targetName.textContent = nameOf(d);
+                els.boss.hidden = !d.boss;
                 els.rage.hidden = !d.enraged;
                 width(els.targetHp, d.hp / d.maxHp);
                 els.pipBox.hidden = d.kind === 'fighter';
@@ -106,8 +165,11 @@ const hud = (() => {
                 if (mob.el.hidden) continue;
                 mob.alert.hidden = m.phase !== 'alert';
                 mob.el.classList.toggle('enraged', m.enraged);
+                mob.el.classList.toggle('boss', m.boss);
                 width(mob.fill, m.hp / m.maxHp);
             }
+            // Bars of bodies no longer in this world go.
+            for (const [id, mob] of mobs) if (!sim.monsters.some(m => m.id === id) && !sim.fighters.some(f => f.id === id)) { mob.el.remove(); mobs.delete(id); }
             // Over the rival, while it is in sight; an arrow when off screen.
             els.arrow.hidden = true;
             for (const f of sim.fighters) {
@@ -151,8 +213,30 @@ const hud = (() => {
                 return true;
             });
         }
+        // Something picked up: one toast per item, counting up while fresh.
+        function picked(e, now) {
+            const item = gameConfig.items[e.item];
+            if (!item) return;
+            let t = toasts.find(x => x.item === e.item && now - x.born < 1.2);
+            if (!t) {
+                const el = document.createElement('div');
+                el.className = 'toast';
+                els.toasts.appendChild(el);
+                t = { item: e.item, amount: 0, el, born: now };
+                toasts.push(t);
+                if (toasts.length > 4) toasts.shift().el.remove();
+            }
+            t.amount += e.amount; t.born = now;
+            t.el.textContent = `${item.icon} ${item.name} +${t.amount}`;
+        }
         function events(list, now) {
             for (const e of list) {
+                if (e.type === 'pickup' && e.side === selfId) picked(e, now);
+                if (e.type === 'boss_defeated') {
+                    const names = opens(e.kind);
+                    announce(`击败首领 · ${e.name}`, names.length ? `${names.join('、')}的大门已开启` : '这一带平定了', 3.5, now);
+                }
+                if (e.type === 'rest' && e.side === selfId) announce('生命回满了', '', 1.6, now);
                 // Whoever this fighter last traded blows with stays in the panel.
                 if (e.type === 'hit' || e.type === 'parry' || e.type === 'block') {
                     const other = e.target === selfId || e.type === 'block' ? e.source : e.target;

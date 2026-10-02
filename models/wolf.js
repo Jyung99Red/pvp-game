@@ -29,7 +29,14 @@ const wolfModel = (() => {
         bones.push({ name, parent: 'body', at: [x, -0.18, z] });
         parts.push({ bone: name, size: [0.13, 0.46, 0.13], at: [0, -0.21, 0], color: 'wolfLeg' });
     }
-    return Object.freeze({ bones, parts, mounts: {} });
+    return Object.freeze({
+        bones, parts,
+        mounts: { neck: { bone: 'body', at: [0, 0.16, 0.36] } },
+        // Colour swaps by kind: the wolf king (a boss).
+        looks: {
+            king: { wolf: 'kingFur', wolfLight: 'kingFurLight', wolfHead: 'kingHead', wolfMuzzle: 'kingMuzzle', wolfDark: 'kingDark', wolfLeg: 'kingLeg', wolfEye: 'kingEye' }
+        }
+    });
 })();
 
 // The wolf's key poses; see models/goblin.js for the layout. Diagonal legs
@@ -38,6 +45,15 @@ const wolfModel = (() => {
 const wolfPoses = (() => {
     const legs = (front, back) => ({ legFR: { rx: front }, legFL: { rx: front }, legBR: { rx: back }, legBL: { rx: back } });
     return Object.freeze({
+        // The king's mane: only drawn.
+        mane() {
+            return {
+                id: 'mane', mount: 'neck', parts: [
+                    { size: [0.56, 0.34, 0.3], at: [0, 0.02, 0], color: 'mane', kind: 'deco' },
+                    { size: [0.44, 0.2, 0.26], at: [0, 0.2, -0.08], color: 'mane', kind: 'deco' }
+                ]
+            };
+        },
         idle: { head: { rx: 0.05 }, tail: { rx: -0.45 } },
         walk: {
             leg: { length: 0.44, amp: 0.6 },

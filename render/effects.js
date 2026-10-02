@@ -94,8 +94,11 @@ const renderEffects = (() => {
 
         // ---- flashes, shake and glow, driven by events ----
         const flash = new Map(); // id -> seconds left
-        const FALLEN = { goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'] };
-        let shake = 0, cue = 0;
+        const FALLEN = {
+            goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'],
+            goblinChief: ['#5f8a34', '#8a2f2a', '#7d8088', '#d8b04a'], wolfKing: ['#4c4d55', '#2c2d33', '#ff7a3a', '#d8b04a']
+        };
+        let shake = 0, cue = 0, rested = 0;
         function onEvents(events, selfId = 'player') {
             for (const e of events) {
                 if (e.type === 'hit' && e.target === selfId) {
@@ -107,7 +110,10 @@ const renderEffects = (() => {
                     else burst(e.at, 7, ['#ffffff', '#f4f1e6', '#d9dee3'], 1.5, 2.8, 0.06);
                 } else if (e.type === 'block') burst(e.at, 5, ['#d9dee3', '#9aa2aa'], 1.2, 2.2, 0.05);
                 else if (e.type === 'parry') { burst(e.at, 12, ['#fff3b0', '#ffd84a', '#ffffff'], 2, 3.6, 0.07); flash.set(e.target, 0.12); shake = Math.max(shake, 0.1); }
-                else if (e.type === 'defeated') burst(e.at, 14, FALLEN[e.kind] || ['#ffffff'], 1.2, 2.6, 0.08);
+                else if (e.type === 'defeated') burst(e.at, e.boss ? 30 : 14, FALLEN[e.kind] || ['#ffffff'], 1.2, e.boss ? 3.4 : 2.6, e.boss ? 0.1 : 0.08);
+                else if (e.type === 'chest_open') burst(e.at, 16, ['#ffe066', '#d8b04a', '#ffffff'], 1.2, 3, 0.06);
+                else if (e.type === 'pickup' && e.side === selfId) burst(e.at, 3, ['#fff3b0', '#ffffff'], 0.6, 1.2, 0.04);
+                else if (e.type === 'rest' && e.side === selfId) rested = 0.9;
                 else if (e.type === 'enrage') burst(e.at, 8, ['#ff6a4a', '#d9473f'], 1, 2, 0.06);
                 else if (e.type === 'pause_ready' && e.side === selfId) cue = 0.14;
             }
@@ -123,9 +129,15 @@ const renderEffects = (() => {
             const lit = id => (flash.get(id) || 0) / 0.12;
             cue = Math.max(0, cue - dt);
             const drawn = new Set();
+            rested = Math.max(0, rested - dt);
             for (const f of view.fighters) {
                 const a = f.body.act, trail = trailOf(f.id);
                 drawn.add(f.id);
+                // Resting at the hot spring: green motes rise round the body.
+                if (rested > 0 && f.id === view.selfId && rnd() < 0.5) {
+                    const [x, , z] = space.toBlocks(f.shown.x, f.shown.y, f.shown.h), a2 = rnd() * Math.PI * 2;
+                    burst([x + Math.cos(a2) * 0.4, 0.2 + rnd() * 1.4, z + Math.sin(a2) * 0.4], 1, ['#9ff0a0', '#e8ffd8'], 0.2, 0.6, 0.05);
+                }
                 if (a?.phase === 'swing') sampleBlade(trail, view.playerRig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
                 drawTrail(trail); trail.mesh.visible = true;
                 for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));

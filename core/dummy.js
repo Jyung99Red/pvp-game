@@ -4,7 +4,8 @@
 // box test as the player's sword, and the blow is settled by
 // combatKit.strike. Hits on it stagger it like any fighter.
 //
-// sim.dummy: { id, kind, x, y, h, facing, radius, hp, maxHp, atk, def, anchored,
+// An entity (core/entity.js) of type 'dummy', found as sim.dummy:
+//   { id, kind, x, y, h, facing, radius, solid, hp, maxHp, atk, def, anchored,
 //   phase: idle|windup|swing|recover|reel, t, move (index), seq, wait,
 //   struck (this swing already hit), stagger (points), flinch, freeze }
 const dummyKit = (() => {
@@ -20,7 +21,7 @@ const dummyKit = (() => {
         if (!terrain.dummy) return null;
         const at = terrainKit.cellCentre(terrain, terrain.dummy.col, terrain.dummy.row), S = D();
         return {
-            id: 'dummy', kind: 'dummy', side: 'dummy', x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing, radius: S.radius,
+            id: 'dummy', type: 'dummy', kind: 'dummy', side: 'dummy', solid: true, x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing, radius: S.radius,
             hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, anchored: true, endless: true,
             phase: 'idle', t: 0, move: 0, seq: 0, wait: S.firstDelay, struck: false, stagger: 0, flinch: 0, freeze: 0, push: null
         };

@@ -6,19 +6,30 @@
 // player's sword (3d-migration-concept.md 4.4); the wolf's leap rams with
 // its whole body along its path. How far a move reaches, and the warning
 // on the ground, are swept out of its key poses once (`reach`).
+// Bosses (rebuild-plan.md M5) are the same skeletons made bigger, with a
+// look and moves of their own; a boss down stays down (the save), and the
+// portals and chests waiting on it open. A fallen monster drops its loot
+// (core/props.js). One that gives up the chase and gets home is whole
+// again.
 //
-// A monster on sim.monsters: { id, kind, side: 'monster', x, y, h, facing,
-//   radius, hp, maxHp, atk, def, home: { x, y }, phase, t, move (index of
-//   the move under way), seq (moves started), wait, struck, stopped (a
-//   leap that has met something), stagger, flinch, freeze, push, enraged,
-//   patrolAt (angle of the next waypoint), rest, gait, speed, moveBlend }
+// A monster is an entity (core/entity.js) of type 'monster': { id, kind,
+//   side: 'monster', boss, x, y, h, facing, radius, solid, hp, maxHp, atk,
+//   def, home: { x, y }, phase, t, move (index of the move under way), seq
+//   (moves started), wait, struck, stopped (a leap that has met something),
+//   stagger, flinch, freeze, push, enraged, patrolAt (angle of the next
+//   waypoint), rest, gait, speed, moveBlend }
 // phase: patrol | alert | chase | windup | swing | recover | reel | return | dead
+// A kind's `model` names the skeleton it is built on (its own kind if not
+// given), `scale` sizes it and `look` swaps colours (models/).
 const monsterKit = (() => {
     const M = () => gameConfig.monsters, F = () => gameConfig.combat;
     const UNIT = () => gameConfig.world.unitsPerBlock;
     const MODELS = { goblin: () => goblinModel, wolf: () => wolfModel };
     const POSES = { goblin: () => goblinPoses, wolf: () => wolfPoses };
-    const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [] };
+    // What a kind carries or wears: by kind, else by model.
+    const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [], goblinChief: () => [goblinPoses.club(), goblinPoses.helmet()], wolfKing: () => [wolfPoses.mane()] };
+    // Phases in which a monster is in a fight.
+    const FIGHTING = new Set(['alert', 'chase', 'windup', 'swing', 'recover', 'reel']);
     const emit = (sim, m, type, data) => combatKit.emit(sim, type, { side: 'monster', id: m.id, kind: m.kind, ...data });
     const clamp01 = v => Math.min(1, Math.max(0, v));
     const easeOut = t => 1 - (1 - t) * (1 - t);
@@ -27,19 +38,24 @@ const monsterKit = (() => {
     const approach = (value, target, rate) => target > value ? Math.min(target, value + rate) : Math.max(target, value - rate);
     const configOf = kind => {
         const S = M()[kind];
-        if (!S || !MODELS[kind]) throw new Error(`Unknown monster ${kind}`);
+        if (!S || !MODELS[S.model || kind]) throw new Error(`Unknown monster ${kind}`);
         return S;
     };
+    const modelOf = kind => configOf(kind).model || kind;
+    const posesOf = kind => POSES[modelOf(kind)]();
     const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const living = m => m.phase !== 'dead';
+    const engaged = m => FIGHTING.has(m.phase);
     // Distance walked by the monster being ticked, for its gait.
     let walked = 0;
 
-    function rig(kind) { configOf(kind); return rigKit.build(MODELS[kind](), { equipment: GEAR[kind]() }); }
+    function rig(kind) { const S = configOf(kind), model = modelOf(kind); return rigKit.build(MODELS[model](), { scale: S.scale || 1, equipment: (GEAR[kind] || GEAR[model])() }); }
+    // The colours a kind swaps (models/: a model's `looks`).
+    function look(kind) { const S = configOf(kind); return S.look ? MODELS[modelOf(kind)]().looks[S.look] : {}; }
     function create(terrain, spawn, index) {
         const S = configOf(spawn.kind), at = terrainKit.cellCentre(terrain, spawn.col, spawn.row);
         return {
-            id: `m${index}`, kind: spawn.kind, side: 'monster',
+            id: `m${index}`, type: 'monster', kind: spawn.kind, side: 'monster', boss: !!S.boss, solid: true,
             x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing: Math.PI / 2 + index * 1.3, radius: S.radius,
             hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, home: { x: at.x, y: at.y },
             phase: 'patrol', t: 0, move: 0, seq: 0, wait: 0, struck: false, stopped: false,
@@ -53,8 +69,8 @@ const monsterKit = (() => {
     // World units covered by one gait cycle (two steps): each leg swings
     // `amp` either side, so a planted foot travels 2 L sin(amp) a step.
     function cycleLength(kind) {
-        const leg = POSES[kind]().walk.leg;
-        return 4 * leg.length * Math.sin(leg.amp) * UNIT();
+        const leg = posesOf(kind).walk.leg;
+        return 4 * leg.length * (configOf(kind).scale || 1) * Math.sin(leg.amp) * UNIT();
     }
     function locomotion(P, m) {
         const out = {}, phase = m.gait * Math.PI * 2;
@@ -68,7 +84,7 @@ const monsterKit = (() => {
         return rigKit.add(pose, { base: { py: -low / rigData.scale } });
     }
     function pose(rigData, m) {
-        const P = POSES[m.kind](), S = configOf(m.kind), move = S.moves[m.move], K = move && P.moves[move.id];
+        const P = posesOf(m.kind), S = configOf(m.kind), move = S.moves[m.move], K = move && P.moves[move.id];
         const walk = locomotion(P, m), B = gameConfig.animation.blendSeconds;
         let pose = walk, hop = 0;
         if (m.phase === 'alert') pose = rigKit.add(walk, rigKit.scale(P.alert, clamp01(Math.min(m.t, S.alertSeconds - m.t) / B)));
@@ -149,20 +165,32 @@ const monsterKit = (() => {
     function defeat(sim, m, by) {
         m.phase = 'dead'; m.t = 0; m.stagger = 0; m.flinch = 0; m.hp = 0;
         if (by?.stats) by.stats.kills++;
-        emit(sim, m, 'defeated', { at: chest(m) });
+        emit(sim, m, 'defeated', { at: chest(m), boss: m.boss });
+        const S = configOf(m.kind);
+        if (S.loot) propKit.drop(sim, S.loot, m.x, m.y);
+        if (m.boss) {
+            propKit.progressOf(sim).bosses[m.kind] = true;
+            emit(sim, m, 'boss_defeated', { name: S.name });
+        }
+    }
+    // The top of a kind's body at rest, in blocks (for bars over its head).
+    const heights = new Map();
+    function height(kind) {
+        if (!heights.has(kind)) {
+            const r = rig(kind), solved = rigKit.solve(r, pose(r, { kind, phase: 'patrol', t: 0, move: 0, flinch: 0, gait: 0, moveBlend: 0 }));
+            let top = 0;
+            r.parts.forEach((part, i) => { if (part.kind === 'body') for (const c of math3d.corners(math3d.obb(solved.parts[i], part.size.map(v => v / 2)))) top = Math.max(top, c[1]); });
+            heights.set(kind, top);
+        }
+        return heights.get(kind);
     }
     // About the middle of the body, in blocks, for effects.
     function chest(m) { const at = space.toBlocks(m.x, m.y, m.h); return [at[0], at[1] + 0.6, at[2]]; }
 
     // ---- moving ----
-    // Bodies a monster cannot walk through: fighters (unless fallen), the
-    // training dummy, the other living monsters.
-    function obstacles(sim, m) {
-        const out = sim.fighters.filter(f => !f.down);
-        if (sim.dummy) out.push(sim.dummy);
-        for (const o of sim.monsters) if (o !== m && living(o)) out.push(o);
-        return out;
-    }
+    // Bodies a monster cannot walk through: fighters (unless fallen) and
+    // solid entities (the training dummy, other living monsters, chests).
+    function obstacles(sim, m) { return entityKit.obstacles(sim, m); }
     function face(m, at, rate, dt) { m.facing = space.turn(m.facing, Math.atan2(at.y - m.y, at.x - m.x), rate * dt); }
     // Step towards (x, y) at `speed`; true once there.
     function walkTo(sim, m, x, y, speed, dt, turn = true) {
@@ -224,7 +252,8 @@ const monsterKit = (() => {
                 if (m.t >= F().stagger.duration - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = S.delay; emit(sim, m, 'recovered'); }
                 return;
             case 'return':
-                if (walkTo(sim, m, m.home.x, m.home.y, S.speed, dt)) { m.phase = 'patrol'; m.t = 0; m.rest = S.patrolRest; }
+                // Home again: whole, calm, and back on its rounds.
+                if (walkTo(sim, m, m.home.x, m.home.y, S.speed, dt)) Object.assign(m, { phase: 'patrol', t: 0, rest: S.patrolRest, hp: m.maxHp, enraged: false, stagger: 0 });
                 return;
         }
     }
@@ -267,5 +296,5 @@ const monsterKit = (() => {
         m.h = space.groundHeight(m.x, m.y);
     }
     function tick(sim, dt) { for (const m of sim.monsters) tickOne(sim, m, dt); }
-    return { rig, create, pose, solve, hurtboxes, struck, stagger, reach, cycleLength, tick, living };
+    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, reach, cycleLength, height, tick, living, engaged, present: living, modelOf };
 })();

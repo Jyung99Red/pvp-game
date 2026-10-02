@@ -1,16 +1,23 @@
 // Starts the game once every script is loaded: simulation, 3D view, input
 // and the frame loop, plus the landscape shell (fullscreen on Android's
-// first touch), the menu and the result panel. The map comes from ?map=
-// (field or clearing; the field by default); switching maps or restarting
-// rebuilds the world in place, so fullscreen survives it. A duel
-// (rebuild-plan.md M4) starts from the room screen (ui/room.js): its world
-// belongs to the duel session (core/duel.js), which this loop feeds with
-// time and controls; panels never pause it.
+// first touch), the menu and the panels. The world (rebuild-plan.md M5):
+// a game starts in the base; a portal's `travel` builds the next region in
+// place (fullscreen survives it), bringing the HP along; the save
+// (core/save.js, in localStorage) is written on every trip, when a boss
+// falls or a chest opens, a moment after loot is picked up, and when the
+// page goes to the background. Falling ends the trip: back to the base,
+// whole, keeping what was picked up. ?map= starts in another region
+// (testing). A duel (rebuild-plan.md M4) starts from the room screen
+// (ui/room.js): its world belongs to the duel session (core/duel.js),
+// which this loop feeds with time and controls; panels never pause it.
 // window.game is for tests and debugging: game.pause() stops the real-time
-// clock, game.run(seconds) steps exactly, game.load(map) starts a map,
-// game.duel is the duel session (or null).
+// clock, game.run(seconds) steps exactly, game.load(region) starts a
+// region afresh, game.save is the save, game.duel the duel session (or
+// null).
 const app = (() => {
-    const MAPS = ['field', 'clearing'];
+    const MAPS = Object.keys(gameConfig.maps).filter(id => !gameConfig.maps[id].duel);
+    // Saving after loot is picked up waits this long, to write once for a handful.
+    const SAVE_DELAY = 2;
     // How long the end of a fight plays on before the result is shown.
     const RESULT_DELAY = 1.4;
     // Why a duel ended, for the panel ('closed' is this phone leaving).
@@ -22,7 +29,13 @@ const app = (() => {
         left: '对方离开了房间。'
     };
     // Panel buttons and their usual labels.
-    const LABELS = { resume: '继续', restart: '重新开始', rematch: '再来一局', field: '去野外', clearing: '去训练场', duel: '联机对战', surrender: '认输', leave: '离开对战' };
+    const LABELS = { resume: '继续', home: '回到据点', rematch: '再来一局', duel: '联机对战', surrender: '认输', leave: '离开对战', reset: '重新开始冒险', erase: '清除并重新开始' };
+    // What a building's panel says until its trade arrives (rebuild-plan.md M6).
+    const BUILDINGS = {
+        storage: { note: '带回来的东西都在这里。' },
+        shop: { note: '买卖在后面的版本（M6）开放。现在带着：' },
+        smithy: { note: '打造和强化在后面的版本（M6）开放。现在带着：' }
+    };
     function fallback(root, text) {
         const box = root.querySelector('[data-fallback]');
         box.textContent = text; box.hidden = false;
@@ -44,13 +57,22 @@ const app = (() => {
     }
     const mapFromAddress = () => {
         const id = new URLSearchParams(window.location.search).get('map');
-        return MAPS.includes(id) ? id : 'field';
+        return MAPS.includes(id) ? id : 'base';
     };
+    const storage = () => { try { return window.localStorage; } catch (_) { return null; } };
+    const seed = () => Math.floor(Math.random() * 0x100000000);
+    // What is carried, as panel rows: [label, count].
+    function carried(inventory) {
+        const I = gameConfig.items, rows = [[`${I.gold.icon} ${I.gold.name}`, inventory.gold]];
+        for (const [id, n] of Object.entries(inventory.items)) if (I[id] && n > 0) rows.push([`${I[id].icon} ${I[id].name}`, n]);
+        return rows;
+    }
     const clockText = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
     function start() {
         const root = document.getElementById('game'), canvas = root.querySelector('canvas');
-        let mapId = mapFromAddress(), sim = worldSim.create({ map: gameConfig.maps[mapId] });
+        let save = saveKit.load(storage()), saveAt = null;
+        let mapId = mapFromAddress(), sim = worldSim.create({ region: mapId, progress: save, seed: seed() });
         let view = null, paused = false, panel = null, resultSeen = null;
         // The duel under way: { session, link, code, outcome, resultAt, shown, ended }.
         let duel = null;
@@ -92,32 +114,41 @@ const app = (() => {
             press: button => blocked() ? false : act({ type: 'press', button }),
             release: button => act({ type: 'release', button })
         });
-        // Nothing to interact with yet, so that key stays dim; the offhand
-        // key greys out when nothing is carried there.
-        root.querySelector('[data-button="interact"]').classList.add('idle');
+        // The offhand key greys out when nothing is carried there; the
+        // interact key is the HUD's (ui/hud.js): it names what it would do.
         const offhandKey = root.querySelector('[data-button="offhand"]');
         const display = hud.attach(root);
+        display.reset(sim, 0);
         const room = roomScreen.attach(root, { connected: beginDuel, closed: () => openPanel('menu') });
         function blocked() { return !!panel || room.isOpen(); }
 
         // ---- the menu and the result panels ----
         const panelEl = root.querySelector('[data-panel]'), $p = sel => panelEl.querySelector(sel);
         const actions = Object.fromEntries([...panelEl.querySelectorAll('[data-action]')].map(b => [b.dataset.action, b]));
-        const otherMap = () => mapId === 'field' ? 'clearing' : 'field';
         // Per panel: title, note, stats, and the buttons shown (the first is
         // the main one), each with its label if not the usual one.
         function content(kind) {
             const w = world(), me = w.fighters.find(f => f.id === selfId()) || sim.player, S = me.stats;
             if (kind === 'menu') {
-                return { title: '暂停', note: `当前场地：${gameConfig.maps[mapId].name}`, stats: [], buttons: [['resume'], ['restart'], [otherMap()], ['duel']] };
-            }
-            if (kind === 'win' || kind === 'lose') {
+                const fighting = interactKit.inCombat(sim, sim.player);
                 return {
-                    title: kind === 'win' ? '胜利' : '失败', tone: kind, note: kind === 'win' ? '野外的怪物都被打倒了。' : '生命耗尽。',
-                    stats: [['用时', clockText(sim.result.at)], ['击倒', `${sim.monsters.filter(m => m.phase === 'dead').length} / ${sim.monsters.length}`], ['命中', S.hits],
-                        ['格挡', S.blocks], ['弹反', S.parries], ['受伤', S.hurt]],
-                    buttons: [['restart', '再来一次'], [otherMap()]]
+                    title: '暂停', note: `当前：${gameConfig.maps[mapId].name}${fighting && mapId !== 'base' ? ' · 战斗中不能回到据点' : ''}`, stats: [],
+                    buttons: [['resume'], ...(mapId !== 'base' ? [['home']] : []), ['duel'], ['reset']], disable: fighting ? ['home'] : []
                 };
+            }
+            if (kind === 'reset') {
+                return { title: '重新开始冒险？', tone: 'lose', note: '存档会被清除：打倒的首领、开过的宝箱和带着的东西都没了。', stats: [], buttons: [['erase'], ['resume', '取消']] };
+            }
+            if (kind === 'lose') {
+                return {
+                    title: '倒下了', tone: kind, note: '回到据点休息。捡到的东西都还在。',
+                    stats: [['用时', clockText(sim.result.at)], ['击倒', S.kills], ['命中', S.hits], ['格挡', S.blocks], ['弹反', S.parries], ['受伤', S.hurt]],
+                    buttons: [['home']]
+                };
+            }
+            if (BUILDINGS[kind]) {
+                const rows = carried(sim.progress.inventory);
+                return { title: gameConfig.buildings[kind].name, note: BUILDINGS[kind].note, stats: rows, buttons: [['resume', '离开']] };
             }
             const s = duel.session;
             if (kind === 'duelMenu') return { title: '对战中', note: `竞技场 · 房间 ${duel.code} · 对局不会暂停`, stats: [], buttons: [['resume'], ['surrender'], ['leave']] };
@@ -131,7 +162,7 @@ const app = (() => {
                     buttons: [['rematch', s.rematchSent ? '等待对方…' : null], ['leave', '离开']], disable: s.rematchSent ? ['rematch'] : []
                 };
             }
-            return { title: '联机结束', note: ENDED[duel.ended] || '', stats: [], buttons: [['field', '回到野外'], ['clearing']] };
+            return { title: '联机结束', note: ENDED[duel.ended] || '', stats: [], buttons: [['home']] };
         }
         function openPanel(kind) {
             panel = kind;
@@ -157,25 +188,44 @@ const app = (() => {
             panel = null; panelEl.hidden = true; loop.reset();
         }
 
-        function load(id = mapId) {
+        // ---- the save ----
+        function persist() {
+            if (!duel) save = saveKit.merge(save, sim);
+            saveKit.write(storage(), save);
+            saveAt = null;
+        }
+        // ---- regions: `arrival` the region left (to stand at the portal
+        // back), `carry` the HP brought along ----
+        // keep: false drops this world's progress instead of saving it (the
+        // save was just erased).
+        function load(id = mapId, { arrival = null, carry = null, keep = true } = {}) {
             if (!MAPS.includes(id)) throw new Error(`Unknown map ${id}`);
+            if (!duel && keep) persist();
             leaveDuel();
             input.releaseAll();
-            mapId = id; sim = worldSim.create({ map: gameConfig.maps[id] });
+            mapId = id; sim = worldSim.create({ region: id, progress: save, arrival, carry, seed: seed() });
             before = snapshot(); resultSeen = null;
             view?.load(sim);
-            display.reset();
+            display.reset(sim, clock);
             offhandKey.classList.toggle('disabled', !sim.player.loadout.offhand);
-            const url = new URL(window.location.href);
-            url.searchParams.set('map', id);
-            history.replaceState(null, '', url);
             closePanel();
+        }
+        // What the world asks of the page: travel, a building's panel, saving.
+        function react(events) {
+            for (const e of events) {
+                if (e.side !== 'player' && e.type !== 'boss_defeated') continue;
+                if (e.type === 'travel') { load(e.to, { arrival: e.from, carry: { hp: sim.player.hp } }); return; }
+                if (e.type === 'open') openPanel(e.what);
+                else if (e.type === 'boss_defeated' || e.type === 'chest_open') persist();
+                else if (e.type === 'pickup' && saveAt === null) saveAt = clock + SAVE_DELAY;
+            }
         }
 
         // ---- a duel ----
         let lastBeat = null;
         function beginDuel({ link, role, code, on }) {
             input.releaseAll();
+            persist();
             const session = duelKit.create({
                 role, now: () => performance.now() / 1000, send: msg => link.send(msg),
                 on: {
@@ -218,18 +268,21 @@ const app = (() => {
         root.querySelector('[data-menu]').addEventListener('click', menuKey);
         window.addEventListener('keydown', e => { if (e.code === 'Escape' && !e.repeat) menuKey(); });
         actions.resume.addEventListener('click', closePanel);
-        actions.restart.addEventListener('click', () => load());
-        actions.field.addEventListener('click', () => load('field'));
-        actions.clearing.addEventListener('click', () => load('clearing'));
+        actions.home.addEventListener('click', () => load('base'));
+        actions.reset.addEventListener('click', () => openPanel('reset'));
+        actions.erase.addEventListener('click', () => { save = saveKit.erase(storage()); load('base', { keep: false }); });
         actions.duel.addEventListener('click', () => { closePanel(); room.open(); });
         actions.surrender.addEventListener('click', () => { duel?.session.surrender(); closePanel(); });
-        actions.leave.addEventListener('click', () => load('field'));
+        actions.leave.addEventListener('click', () => load('base'));
         // Asking first shows "waiting"; agreeing starts the match at once.
         actions.rematch.addEventListener('click', () => { if (duel?.session.rematch() && duel.session.phase === 'over') openPanel('duelResult'); });
         // A duel cannot wait for a phone in the background: going there ends
         // the match (the other phone is told); closing the page leaves.
         document.addEventListener('visibilitychange', () => { if (document.hidden && live()) duel.session.abort(); });
         window.addEventListener('pagehide', () => { if (live()) duel.session.leave(); });
+        // The save is written whenever the page may be going away.
+        document.addEventListener('visibilitychange', () => { if (document.hidden && !duel) persist(); });
+        window.addEventListener('pagehide', () => { if (!duel) persist(); });
 
         // Held controls survive a resize: going fullscreen on the first
         // touch must not drop a thumb that is still walking. A real rotation
@@ -262,7 +315,9 @@ const app = (() => {
             } else {
                 if (!paused && !blocked()) loop.advance(seconds);
                 events = worldSim.drain(sim);
+                react(events);
                 bodies = shownBodies(paused || blocked() ? 1 : loop.alpha());
+                if (saveAt !== null && clock >= saveAt) persist();
             }
             const w = world(), me = selfId();
             for (const e of events) sfx.play(e, me, worldSim.outcome(w, me));
@@ -275,7 +330,7 @@ const app = (() => {
                 if (duel.outcome && !duel.shown && !duel.ended && clock - duel.resultAt >= RESULT_DELAY) { duel.shown = true; openPanel('duelResult'); }
             } else if (sim.result && !panel) {
                 if (resultSeen === null) resultSeen = clock;
-                else if (clock - resultSeen >= RESULT_DELAY) openPanel(sim.result.outcome);
+                else if (clock - resultSeen >= RESULT_DELAY) { persist(); openPanel(sim.result.outcome); }
             }
             frames++; perfTime += seconds;
             if (perfTime >= 0.5) {
@@ -288,8 +343,8 @@ const app = (() => {
         requestAnimationFrame(frame);
         window.game = {
             get sim() { return world(); }, get map() { return duel ? 'arena' : mapId; }, get panel() { return panel; },
-            get duel() { return duel?.session || null; }, room,
-            view, input, load,
+            get duel() { return duel?.session || null; }, get save() { return save; }, room,
+            view, input, load, persist,
             pause(flag = true) { paused = flag; loop.reset(); },
             run: seconds => loop.run(seconds)
         };

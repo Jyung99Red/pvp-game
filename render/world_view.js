@@ -49,6 +49,8 @@ const worldView = (() => {
             info: () => renderer.info.render,
             get scene() { return world.scene; },
             get playerRig() { return world.playerRig; },
+            // The terrain's chunk meshes and the camera cut (render/terrain_mesh.js).
+            get ground() { return world.ground; },
             // Was fighter `id` drawn last frame? (In a duel the rival behind
             // a wall is not.)
             seen: id => world.seen.has(id)
@@ -82,7 +84,7 @@ const worldView = (() => {
             sun.position.copy(sun.target.position).addScaledVector(lightDir, 25);
         }
 
-        const tx = renderTextures.create(T), rnd = renderTextures.rng(7);
+        const tx = renderTextures.create(T);
         const lambert = (color, map) => new T.MeshLambertMaterial({ color: map ? '#ffffff' : color, map: map || null });
         // Box whose faces carry 16 texels per block, like Minecraft.
         function boxGeo(w, h, d) {
@@ -92,49 +94,9 @@ const worldView = (() => {
             return g;
         }
 
-        // ---- terrain ----
-        const unitBox = boxGeo(1, 1, 1), dummy = new T.Object3D(), tint = new T.Color();
-        function blocks(material, cells, { cast = true, receive = true, vary = 0.07 } = {}) {
-            if (!cells.length) return null;
-            const mesh = new T.InstancedMesh(unitBox, material, cells.length);
-            cells.forEach(([x, y, z], i) => {
-                dummy.position.set(x, y, z); dummy.updateMatrix();
-                mesh.setMatrixAt(i, dummy.matrix);
-                const k = 1 - vary + rnd() * vary * 1.6;
-                mesh.setColorAt(i, tint.setRGB(k, k, k));
-            });
-            mesh.castShadow = cast; mesh.receiveShadow = receive;
-            scene.add(mesh);
-            return mesh;
-        }
-        const t = sim.terrain, K = terrainKit.KIND;
-        const grass = [], path = [], stone = [], moss = [], bark = [], leaves = [];
-        for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) {
-            const kind = terrainKit.kindAt(t, c, r), x = c + 0.5, z = r + 0.5;
-            // Paths are flush with the grass: the ground query says 0 everywhere.
-            (kind === K.path ? path : grass).push([x, -0.5, z]);
-            if (kind === K.stone) for (let y = 0; y < terrainKit.levelAt(t, c, r); y++) (rnd() < 0.3 ? moss : stone).push([x, y + 0.5, z]);
-            if (kind === K.tree) {
-                const h = terrainKit.levelAt(t, c, r);
-                for (let y = 0; y < h; y++) bark.push([x, y + 0.5, z]);
-                for (let y = h - 2; y <= h + 1; y++) {
-                    const rad = y >= h ? 1 : 2;
-                    for (let dx = -rad; dx <= rad; dx++) for (let dz = -rad; dz <= rad; dz++) {
-                        if (dx === 0 && dz === 0 && y < h) continue;
-                        if (Math.abs(dx) === rad && Math.abs(dz) === rad && (rad === 2 || y === h + 1 || rnd() < 0.5)) continue;
-                        if (y === h + 1 && Math.abs(dx) + Math.abs(dz) > 1) continue;
-                        leaves.push([x + dx, y + 0.5, z + dz]);
-                    }
-                }
-            }
-        }
-        const grassSide = lambert(null, tx.grassSide);
-        blocks([grassSide, grassSide, lambert(null, tx.grassTop), lambert(null, tx.dirt), grassSide, grassSide], grass, { cast: false, vary: 0.06 });
-        blocks(lambert(null, tx.path), path, { cast: false, vary: 0.05 });
-        blocks(lambert(null, tx.stone), stone);
-        blocks(lambert(null, tx.mossy), moss);
-        blocks(lambert(null, tx.bark), bark);
-        blocks(lambert(null, tx.leaves), leaves, { vary: 0.12 });
+        // ---- terrain: chunk meshes (render/terrain_mesh.js) ----
+        const t = sim.terrain;
+        const ground = terrainMesh.create(T, scene, sim, tx);
         // Grass beyond the map edge, so the world does not end in sky. It
         // lies just under the block tops, which cover it inside the map.
         {
@@ -144,29 +106,6 @@ const worldView = (() => {
             skirt.rotation.x = -Math.PI / 2; skirt.position.set(t.width / 2, -0.01, t.height / 2);
             skirt.receiveShadow = true;
             scene.add(skirt);
-        }
-        // Flowers and tufts on open grass: tiny boxes, never textured. None
-        // where a fighter or a monster starts.
-        {
-            const items = [], clear = [...t.spawns, ...t.monsters];
-            for (let i = 0; i < t.width * t.height * 0.18; i++) {
-                const x = rnd() * t.width, z = rnd() * t.height, c = Math.floor(x), r = Math.floor(z);
-                if (terrainKit.kindAt(t, c, r) !== K.grass || clear.some(s => Math.hypot(c - s.col, r - s.row) < 2)) continue;
-                if (rnd() < 0.55) {
-                    for (let k = 0; k < 3; k++) items.push({ p: [x + (k - 1) * 0.09, 0.12 + k % 2 * 0.04, z + (rnd() - 0.5) * 0.1], s: [0.05, 0.24 + k % 2 * 0.08, 0.05], c: P.stem });
-                } else {
-                    items.push({ p: [x, 0.15, z], s: [0.05, 0.3, 0.05], c: P.stem });
-                    items.push({ p: [x, 0.34, z], s: [0.15, 0.13, 0.15], c: [P.flowerRed, P.flowerYellow, P.flowerWhite, P.flowerViolet][rnd() * 4 | 0] });
-                }
-            }
-            const mesh = new T.InstancedMesh(unitBox, new T.MeshLambertMaterial(), items.length);
-            items.forEach((it, i) => {
-                dummy.position.set(...it.p); dummy.scale.set(...it.s); dummy.rotation.y = rnd() * Math.PI * 2; dummy.updateMatrix();
-                mesh.setMatrixAt(i, dummy.matrix); mesh.setColorAt(i, tint.set(it.c));
-            });
-            dummy.scale.set(1, 1, 1); dummy.rotation.set(0, 0, 0);
-            mesh.castShadow = true;
-            scene.add(mesh);
         }
 
         // ---- characters ----
@@ -245,7 +184,56 @@ const worldView = (() => {
             lastFacing: f.facing, lean: 0
         }]));
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
-        const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: character(sim.rigs.monsters[m.kind]), warning: null }]));
+        const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null }]));
+        // Characters this far (blocks) from the camera's focus cannot be on
+        // screen: they are neither posed nor drawn.
+        const FAR = 18;
+
+        // ---- props: portal openings, chests, loot on the ground ----
+        const portals = sim.entities.filter(e => e.type === 'portal').map(e => {
+            const plane = new T.Mesh(new T.PlaneGeometry(0.98, terrainKit.PORTAL_HEIGHT - 0.04), new T.MeshBasicMaterial({ transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false }));
+            const [x, , z] = space.toBlocks(e.x, e.y);
+            plane.position.set(x, terrainKit.PORTAL_HEIGHT / 2, z);
+            if (e.side === 'east' || e.side === 'west') plane.rotation.y = Math.PI / 2;
+            scene.add(plane);
+            return { body: e, plane };
+        });
+        const chestRig = rigKit.build(propModels.chest), chests = new Map();
+        for (const e of sim.entities) if (e.type === 'chest') chests.set(e.id, character(chestRig));
+        const unitBox = new T.BoxGeometry(1, 1, 1), DROPS = 64, drops = new T.InstancedMesh(unitBox, new T.MeshLambertMaterial({ map: tx.grain }), DROPS);
+        drops.castShadow = true; drops.frustumCulled = false; drops.count = 0;
+        scene.add(drops);
+        const place = new T.Object3D(), tint = new T.Color();
+        function props(current, me) {
+            for (const { body, plane } of portals) {
+                const locked = body.requires && !current.progress?.bosses?.[body.requires];
+                plane.material.color.set(P[propModels.portal[locked ? 'locked' : 'open']]);
+                plane.material.opacity = locked ? 0.42 : 0.55 + 0.12 * Math.sin(clock * 2.4);
+            }
+            for (const e of current.entities) {
+                if (e.type !== 'chest') continue;
+                const view = chests.get(e.id);
+                if (!view) continue;
+                const k = e.open ? Math.min(1, e.t / 0.45) : 0, lid = rigKit.scale(propModels.chest.open, 1 - (1 - k) * (1 - k));
+                view.place(rigKit.solve(chestRig, lid, space.toBlocks(e.x, e.y, e.h), space.yawOf(e.facing)));
+            }
+            let n = 0;
+            for (const e of current.entities) {
+                if (e.type !== 'drop' || n >= DROPS) continue;
+                const look = propModels.drops[e.item] || propModels.drops.gold, [x, y, z] = space.toBlocks(e.x, e.y, e.h);
+                if (Math.hypot(x - me[0], z - me[2]) > FAR) continue;
+                const bob = e.h === 0 ? 0.04 + 0.04 * Math.sin(clock * 3 + e.facing * 5) : 0;
+                place.position.set(x, y + look.size[1] / 2 + bob, z);
+                place.rotation.set(0, e.facing + clock * 1.6, 0);
+                place.scale.set(...look.size);
+                place.updateMatrix();
+                drops.setMatrixAt(n, place.matrix); drops.setColorAt(n, tint.set(P[look.color]));
+                n++;
+            }
+            drops.count = n;
+            drops.instanceMatrix.needsUpdate = true;
+            if (drops.instanceColor) drops.instanceColor.needsUpdate = true;
+        }
         // ---- range warnings: the swept outline of a monster's move on the
         // ground (core/monster.js reach), fading in through its windup ----
         const warnShapes = new Map();
@@ -343,27 +331,33 @@ const worldView = (() => {
             }
             const foes = [];
             if (dummyView && current.dummy) { dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
+            const focus = space.toBlocks(me.x, me.y, me.h);
             for (const m of current.monsters) {
                 const entry = monsters.get(m.id);
                 if (!entry) continue;
-                const shown = shownOf(m), rig = current.rigs.monsters[m.kind];
+                const shown = shownOf(m), rig = current.rigs.monsters[m.kind], root = space.toBlocks(shown.x, shown.y, shown.h);
                 // A fallen monster lies a while, then sinks into the ground.
                 const sink = m.phase === 'dead' ? Math.max(0, m.t - C.monsters.corpseSeconds) * 0.5 : 0;
-                entry.view.show(sink < 1.2);
-                if (sink < 1.2) {
-                    const root = space.toBlocks(shown.x, shown.y, shown.h);
+                const near = Math.hypot(root[0] - focus[0], root[2] - focus[2]) < FAR;
+                entry.view.show(sink < 1.2 && near);
+                if (sink < 1.2 && near) {
                     root[1] -= sink;
                     entry.view.place(rigKit.solve(rig, monsterKit.pose(rig, shown), root, space.yawOf(shown.facing)));
                 }
                 warn(entry, m);
-                foes.push({ body: m, view: entry.view, top: m.kind === 'wolf' ? 1.25 : 1.65, shown });
+                if (near) foes.push({ body: m, view: entry.view, top: monsterKit.height(m.kind) + 0.25, shown });
             }
+            props(current, focus);
+            ground.update();
             effects.onEvents(events, selfId);
             effects.update(frameSeconds, current, { selfId, playerRig, fighters: drawn, foes });
             const at = space.toBlocks(me.x, me.y, me.h);
             if (shade) shade(at[0], at[2]);
             placeCamera(at[0], at[1], at[2]);
             placeSun(at[0], at[1], at[2]);
+            // Cut the blocks between the camera and this fighter's chest.
+            ground.cut.center.value.set(at[0], at[1] + 1, at[2]);
+            ground.cut.eye.value.copy(camera.position);
         }
         function dispose() {
             const seen = new Set();
@@ -374,11 +368,12 @@ const worldView = (() => {
                 if (o.isSkinnedMesh) o.skeleton.dispose();
             });
             for (const g of warnShapes.values()) once(g, () => g.dispose());
-            for (const texture of Object.values(tx)) once(texture, () => texture.dispose());
+            for (const texture of Object.values(tx)) if (texture?.isTexture) once(texture, () => texture.dispose());
+            ground.dispose();
             // The shadow map is the light's own render target.
             sun.dispose();
         }
-        return { scene, render, dispose, playerRig, seen };
+        return { scene, render, dispose, playerRig, seen, ground };
     }
     return { create };
 })();

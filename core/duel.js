@@ -13,7 +13,7 @@
 // beat (nothing else to say), surrender, rematch, abort (the match is off),
 // leave (the room is closed). Everything after hello names its battle.
 const duelKit = (() => {
-    const PROTOCOL = 1;
+    const PROTOCOL = 2;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -66,6 +66,8 @@ const duelKit = (() => {
         if (f.bPress !== null && !(obj(f.bPress) && num(f.bPress.at) && bool(f.bPress.held) && (f.bPress.upAt === null || num(f.bPress.upAt)))) return false;
         if (f.buffer !== null && !(obj(f.buffer) && ['a', 'b'].includes(f.buffer.input) && num(f.buffer.at) && num(f.buffer.age))) return false;
         if (!Array.isArray(f.combo) || f.combo.length > 32 || !f.combo.every(c => ['a', 'b', '-'].includes(c))) return false;
+        // Nothing in the arena to interact with.
+        if (f.focus !== null || f.using !== null) return false;
         if (f.chain !== null && !(obj(f.chain) && moveId(f.chain.move) && num(f.chain.at) && bool(f.chain.cued))) return false;
         const a = f.act;
         if (a === null) return true;
@@ -74,8 +76,8 @@ const duelKit = (() => {
             (a.from === null || (obj(a.from) && moveId(a.from.move) && num(a.from.t)));
     }
     function validSnapshot(sim, s) {
-        if (!obj(s) || !num(s.time) || s.time < 0 || !count(s.tick) || s.map !== sim.map || s.duel !== true || s.dummy !== null) return false;
-        if (!Array.isArray(s.monsters) || s.monsters.length || !Array.isArray(s.fighters) || s.fighters.length !== sim.fighters.length) return false;
+        if (!obj(s) || !num(s.time) || s.time < 0 || !count(s.tick) || s.map !== sim.map || s.region !== sim.region || s.duel !== true || !count(s.seed) || !count(s.serial)) return false;
+        if (!Array.isArray(s.entities) || s.entities.length || !Array.isArray(s.fighters) || s.fighters.length !== sim.fighters.length) return false;
         if (!s.fighters.every((f, i) => validFighter(f, sim.fighters[i], sim.terrain))) return false;
         const r = s.result;
         return r === null || (obj(r) && [...worldSim.DUEL_IDS, null].includes(r.winner) && num(r.at) && (r.conceded === undefined || worldSim.DUEL_IDS.includes(r.conceded)));

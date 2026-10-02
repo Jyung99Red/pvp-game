@@ -158,7 +158,8 @@ test('snapshot checks turn away broken or foreign state', () => {
         s => { s.fighters[0].x = NaN; }, s => { s.fighters[1].hp = 1e6; }, s => { s.fighters[0].act.move = 'teleport'; },
         s => { s.fighters[1].guard.bar = 1e6; }, s => { s.fighters[0].atk = 999; }, s => { s.fighters.pop(); },
         s => { s.fighters[1].input.buttons.skill = { held: true, presses: 1 }; }, s => { s.result = { winner: 'nobody', at: 1 }; },
-        s => { s.fighters[0].id = 'guest'; }, s => { s.monsters.push({}); }, s => { s.fighters[0].x = -500; }
+        s => { s.fighters[0].id = 'guest'; }, s => { s.entities.push({}); }, s => { s.fighters[0].x = -500; },
+        s => { s.fighters[0].focus = 'p-base'; }, s => { s.region = 'field'; }
     ];
     for (const corrupt of bad) { const s = plain(good); corrupt(s); assert.equal(duelKit.validSnapshot(sim, s), false, String(corrupt)); }
 });

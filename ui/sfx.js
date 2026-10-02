@@ -1,6 +1,7 @@
 // Procedural combat sounds (Web Audio, no asset files), carried over from
-// the 2D version, plus monsters noticing, enraging and falling, and the
-// end of a fight. Presentation only: the simulation never waits on or reads
+// the 2D version, plus monsters noticing, enraging and falling, the end of
+// a fight, and the world's: loot picked up, a chest opening, a rest, a
+// building entered, a boss down. Presentation only: the simulation never waits on or reads
 // anything here. Mobile browsers keep audio locked until the first touch,
 // so the context is created and resumed on the first pointer press.
 const sfx = (() => {
@@ -57,7 +58,12 @@ const sfx = (() => {
         win: () => { tone('sine', 660, 660, 0.16, 0.06); tone('sine', 880, 880, 0.26, 0.06, 0.14); },
         draw: () => { tone('sine', 520, 520, 0.2, 0.05); tone('sine', 520, 500, 0.3, 0.05, 0.18); },
         countdown: last => tone('sine', last ? 990 : 660, last ? 990 : 660, last ? 0.22 : 0.09, 0.05),
-        lose: () => { tone('triangle', 330, 300, 0.2, 0.06); tone('triangle', 220, 180, 0.4, 0.06, 0.18); }
+        lose: () => { tone('triangle', 330, 300, 0.2, 0.06); tone('triangle', 220, 180, 0.4, 0.06, 0.18); },
+        pickup: gold => gold ? tone('sine', 1320, 1760, 0.07, 0.035) : tone('triangle', 880, 1100, 0.08, 0.04),
+        chest: () => { hiss(500, 260, 0.2, 0.04, 0.9); tone('sine', 660, 660, 0.12, 0.05, 0.16); tone('sine', 990, 990, 0.22, 0.05, 0.26); },
+        rest: () => { tone('sine', 523, 523, 0.3, 0.04); tone('sine', 659, 659, 0.3, 0.035, 0.08); tone('sine', 784, 784, 0.4, 0.035, 0.16); },
+        door: () => tone('square', 300, 220, 0.06, 0.03),
+        boss: () => { tone('sine', 523, 523, 0.18, 0.06); tone('sine', 659, 659, 0.18, 0.06, 0.16); tone('sine', 784, 784, 0.18, 0.06, 0.32); tone('sine', 1047, 1047, 0.5, 0.06, 0.48); }
     };
     // Simulation events carry who they belong to (`side`); `selfId` is the
     // fighter this phone plays. A duel's result says who won; `outcome`
@@ -75,6 +81,11 @@ const sfx = (() => {
         else if (e.type === 'enrage') sounds.enrage();
         else if (e.type === 'defeated') sounds.fallen();
         else if (e.type === 'result') sounds[e.outcome || outcome]?.();
+        else if (e.type === 'pickup' && own) sounds.pickup(e.item === 'gold');
+        else if (e.type === 'chest_open') sounds.chest();
+        else if (e.type === 'rest' && own) sounds.rest();
+        else if (e.type === 'open' && own) sounds.door();
+        else if (e.type === 'boss_defeated') sounds.boss();
     }
     // A beat of the duel's countdown; `last` is the start itself.
     function tick(last = false) { if (enabled && ctx && ctx.state === 'running') sounds.countdown(last); }

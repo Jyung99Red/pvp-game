@@ -129,11 +129,16 @@ const gameConfig = (() => {
         // danger (combat-combo-concept.md 13). Moves: seconds; ratio per
         // ATK; step: world units lunged during the swing; ram: the body
         // itself is the weapon (the wolf's leap). corpseSeconds: a fallen
-        // monster lies this long, then sinks away.
+        // monster lies this long, then sinks away. loot: the table rolled
+        // when it falls (`loot` below). A monster that gets home after
+        // giving up a chase is whole again.
+        // Bosses (rebuild-plan.md M5): `model` is the skeleton they are
+        // built on, `scale` how much bigger, `look` their colours
+        // (models/); a boss down stays down and opens what waits on it.
         monsters: {
             corpseSeconds: 2.5,
             goblin: {
-                name: '哥布林', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
+                name: '哥布林', loot: 'goblin', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: [
@@ -142,14 +147,80 @@ const gameConfig = (() => {
                 ]
             },
             wolf: {
-                name: '野狼', maxHp: 90, atk: 54, def: 2, radius: 16, speed: 78, turnRate: 3, trackTurn: 1.6,
+                name: '野狼', loot: 'wolf', maxHp: 90, atk: 54, def: 2, radius: 16, speed: 78, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: [
                     { id: 'bite', name: '撕咬', windup: 1.05, lock: 0.3, swing: 0.14, recovery: 0.75, ratio: 0.6, step: 14 },
                     { id: 'leap', name: '扑击', windup: 1.15, lock: 0.35, swing: 0.54, recovery: 1.35, ratio: 0.9, step: 150, ram: true }
                 ]
+            },
+            goblinChief: {
+                name: '哥布林头目', model: 'goblin', scale: 1.45, look: 'chief', boss: true, loot: 'goblinChief',
+                maxHp: 450, atk: 48, def: 5, radius: 18, speed: 50, turnRate: 2.6, trackTurn: 1.4,
+                patrolRadius: 0, patrolSpeed: 16, patrolRest: 2, alertRange: 190, alertSeconds: 0.7, leash: 360, standOff: 0.85,
+                firstDelay: 0.5, delay: 0.6, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.2 },
+                moves: [
+                    { id: 'flail', name: '横扫', windup: 1.2, lock: 0.35, swing: 0.2, recovery: 0.9, ratio: 0.6, step: 10 },
+                    { id: 'slam', name: '震地', windup: 1.7, lock: 0.5, swing: 0.18, recovery: 1.3, ratio: 1.0, step: 6 },
+                    { id: 'pounce', name: '猛扑', windup: 1.5, lock: 0.45, swing: 0.24, recovery: 1.2, ratio: 0.85, step: 60 }
+                ]
+            },
+            wolfKing: {
+                name: '狼王', model: 'wolf', scale: 1.4, look: 'king', boss: true, loot: 'wolfKing',
+                maxHp: 420, atk: 60, def: 4, radius: 22, speed: 88, turnRate: 3, trackTurn: 1.8,
+                patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
+                firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
+                moves: [
+                    { id: 'bite', name: '撕咬', windup: 0.95, lock: 0.3, swing: 0.14, recovery: 0.7, ratio: 0.6, step: 18 },
+                    { id: 'bite', name: '撕咬', windup: 0.8, lock: 0.25, swing: 0.14, recovery: 0.8, ratio: 0.6, step: 18 },
+                    { id: 'leap', name: '扑击', windup: 1.1, lock: 0.35, swing: 0.6, recovery: 1.4, ratio: 0.9, step: 190, ram: true }
+                ]
             }
+        },
+
+        // 4f. Loot (rebuild-plan.md M5). items: what can be carried, with its
+        // name and icon for the screen. loot: tables rolled when a monster
+        // falls or a chest opens; each entry drops `item` with `chance`, a
+        // whole amount from amount[0] to amount[1].
+        items: {
+            gold: { name: '金币', icon: '🪙' },
+            goblin_ear: { name: '哥布林耳', icon: '👂' },
+            wolf_pelt: { name: '狼皮', icon: '🐺' },
+            chief_tusk: { name: '头目獠牙', icon: '🦷' },
+            king_fang: { name: '狼王之牙', icon: '🦴' }
+        },
+        loot: {
+            goblin: [{ item: 'gold', chance: 1, amount: [2, 5] }, { item: 'goblin_ear', chance: 0.85, amount: [1, 2] }],
+            wolf: [{ item: 'gold', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 0.9, amount: [1, 2] }],
+            goblinChief: [{ item: 'gold', chance: 1, amount: [20, 30] }, { item: 'chief_tusk', chance: 1, amount: [1, 1] }],
+            wolfKing: [{ item: 'gold', chance: 1, amount: [25, 35] }, { item: 'king_fang', chance: 1, amount: [1, 1] }],
+            chiefChest: [{ item: 'gold', chance: 1, amount: [40, 60] }, { item: 'goblin_ear', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 1, amount: [1, 2] }],
+            kingChest: [{ item: 'gold', chance: 1, amount: [60, 90] }, { item: 'wolf_pelt', chance: 1, amount: [3, 5] }]
+        },
+        // Loot on the ground (world units, seconds). It pops out at
+        // popSpeed[0..1] and up to popHeight over popSeconds, lies still,
+        // and once restSeconds old flies to a fighter within pickupRange at
+        // pullSpeed (lifting to pullHeight), picked up within
+        // collectDistance. radius: wall collision while it pops.
+        drops: { radius: 4, popSeconds: 0.45, popHeight: 24, popSpeed: [30, 80], restSeconds: 0.5, pickupRange: 64, pullSpeed: 280, pullHeight: 14, collectDistance: 10 },
+
+        // 4g. The interact key (controls-landscape-concept.md 4.4). A target
+        // is picked within `reach` of the fighter (world units), scored by
+        // distance plus facingWeight per radian off the facing; the target
+        // already picked keeps it out to `release` and scores holdBonus
+        // better. chestHold: seconds the key is held to open a chest.
+        interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6 },
+        // Props: chestRadius (a chest is solid); arriveDistance, how far
+        // in front of the portal back someone arriving stands.
+        props: { chestRadius: 14, arriveDistance: 64 },
+        // Buildings of the base: name, the interact key's verb, and what it
+        // does -- `rest` refills HP, `open` opens the building's panel.
+        buildings: {
+            hotSpring: { name: '温泉', verb: '泡温泉', action: 'rest' },
+            smithy: { name: '铁匠铺', verb: '进入', action: 'open' },
+            shop: { name: '商店', verb: '进入', action: 'open' },
+            storage: { name: '仓库', verb: '进入', action: 'open' }
         },
 
         // 5. Fixed oblique camera (3d-migration-concept.md 7). yaw 0 keeps
@@ -192,43 +263,160 @@ const gameConfig = (() => {
             stick: { zoneWidth: 250, zoneHeight: 190, restX: 120, restY: 96 }
         },
 
-        // 9. Maps. One character per block: `.` grass, `:` path, `1`-`9`
-        // stone wall of that many blocks, `T` tree, `@` grass where the
-        // player starts (a duel: the host on the first, the guest on the
-        // second, in reading order), `D` grass with the training dummy on it
-        // (facing `dummyFacing`, radians), `g` a goblin's home, `w` a wolf's.
-        // Rows run north (screen top) to south. `training`: nobody falls
-        // there (an emptied HP bar refills); elsewhere the player can lose.
-        // `duel`: the map is for PVP only.
+        // 9. Maps (rebuild-plan.md M5: the base, two regions, the training
+        // ground and the PVP arena). One character per block: `.` grass,
+        // `:` path, `=` cobble, `;` gravel, `1`-`9` stone wall of that many
+        // blocks, `T` tree, `H` a building's wall (3 high), `#` a portal's
+        // pillar (3 high), `P` a portal's opening, `C` a chest, `@` grass
+        // where the player starts when not arriving through a portal (a
+        // duel: the host on the first, the guest on the second, in reading
+        // order), `D` the training dummy (facing `dummyFacing`, radians),
+        // and monster homes: `g` goblin, `w` wolf, `G` the goblin chief, `K`
+        // the wolf king. Rows run north (screen top) to south.
+        // Next to the rows: `buildings` ({ kind, at: [col, row, width,
+        // depth] over its H blocks, door: side, south by default}),
+        // `portals` ({ at: [col, row] of its P, to: map, facing: the side
+        // that leads into this map, requires: a boss to be down first }),
+        // `chests` ({ at, loot, requires }). Someone arriving stands in front
+        // of the portal that leads back. `training`: nobody falls there (an
+        // emptied HP bar refills); elsewhere the player can fall. `safe`: no
+        // monsters. `duel`: the map is for PVP only.
         maps: {
-            field: {
-                name: '野外',
+            // The base (rebuild-plan.md M5): no monsters. Four buildings, the
+            // north gate to the field, the west gate to the training ground,
+            // and the east gate straight to the valley once the goblin chief
+            // is down.
+            base: {
+                name: '曙光据点', safe: true,
                 rows: [
-                    '........T....T..T..............TTT...TT.',
-                    '...T..TT.......T.TTT.T.....TT.T.T.......',
-                    '.....T.............T..........T.....T.T.',
-                    '...2212222122221222212222122221222211...',
-                    '.T.1................................2...',
-                    '.T.2......................11........2.T.',
-                    '...2........11......................1...',
-                    '...2.........................w......2...',
-                    '...1.............g..................2...',
-                    '.T.2...................11...........1...',
-                    '...2..........::::::::...........1..2.T.',
-                    '...2........:::::::::::............:2...',
-                    '...1...@...::::......::::........:::1...',
-                    '...2.....::::.........::::......::::2...',
-                    '...2::::::::............::::::::::..2...',
-                    '.T.2::::::.....1.........::::::::...1.T.',
-                    '...1...............g...........w....2...',
-                    '...2.......1.............11.........2...',
-                    '...2................................1...',
-                    '.T.2................................2.T.',
-                    '...1121111211112111121111211112111122...',
-                    '........................................',
-                    '........................................',
-                    '........................................'
+                    '.....TT........T.....T...T........',
+                    '...TTT...............T.....T...T..',
+                    'T................................T',
+                    '...333333333333#P#3333333333333..T',
+                    '.T.3............:.............3...',
+                    '...3..HHHH......:....HHHH.....3...',
+                    '.T.3..HHHH......:....HHHH.....3..T',
+                    'T..3..HHHH......:....HHHH.....3..T',
+                    'T..3....================......#...',
+                    '...3....================::::::P...',
+                    '...3....================......#...',
+                    '...#....================HHHH..3...',
+                    '...P::::================HHHH..3...',
+                    '...#....================HHHH..3...',
+                    'T..3....================......3..T',
+                    '...3........:.................3...',
+                    '...3..HHHH..:...@.............3.TT',
+                    '...3..HHHH..:.................3...',
+                    '...3..HHHH..:.................3...',
+                    '...3.....::::.................3...',
+                    '.T.3222222222222222222222222223...',
+                    '..................................',
+                    '..................................',
+                    '..................................'
+                ],
+                buildings: [
+                    { kind: 'hotSpring', at: [6, 5, 4, 3] }, { kind: 'smithy', at: [21, 5, 4, 3] },
+                    { kind: 'shop', at: [24, 11, 4, 3] }, { kind: 'storage', at: [6, 16, 4, 3] }
+                ],
+                portals: [
+                    { at: [16, 3], to: 'field', facing: 'south' },
+                    { at: [3, 12], to: 'clearing', facing: 'east' },
+                    { at: [30, 9], to: 'valley', facing: 'west', requires: 'goblinChief' }
                 ]
+            },
+            // The first region: goblins and wolves; the goblin chief keeps the
+            // walled north-east corner, the gate to the valley and a chest.
+            field: {
+                name: '晨雾原野',
+                rows: [
+                    '......T....T....T....T.T.TT................TTT..T...',
+                    '.....T.T..T...TTT.T.......T...T.T..........T..TT....',
+                    '....................................................',
+                    'T..3323332333233323332333233323332333233#P#332333.T.',
+                    '.T.3.......................T......3.....:.......3...',
+                    '...3.T.................w.......T..3.....:.....C.3.T.',
+                    'T..2..T...........22..............3.....:.......2...',
+                    '...3...............1..............3.....:.......3...',
+                    '...3....11........................3......G......3...',
+                    '.T.3.........................g....3.............3...',
+                    '...2..........g...................3.............2...',
+                    'T..3..............................3.............3...',
+                    '...3......................1.......3.............3...',
+                    '...3..............................3.............3...',
+                    '...2..............................33333..33333332...',
+                    '...3.T.........1.......................::.......3...',
+                    'T..3...................................::.......3...',
+                    '...3..................g................::......T3...',
+                    '...2..1........................2.......::...2...2...',
+                    '...3...........................2.......::.......3...',
+                    '...3...................................::.......3...',
+                    'T..3.........g...1.....................::w......3...',
+                    '...2........................g..........::.......2..T',
+                    '...3...................................::.......3...',
+                    '...3...................................::.......3...',
+                    'TT.3......:::::::::::::::::::::::::::::::.......3...',
+                    '...2......:::::::::::::::::::::::::::::::.......2..T',
+                    '...3......::................................w...3.TT',
+                    '.T.3......::........................1...........3.TT',
+                    '...3......::.@........11....1...................3...',
+                    '...2......::.................................1..2.T.',
+                    '...3......::....................................3.T.',
+                    '.T.321222#P#2122212221222122212221222122212221223..T',
+                    '....................................................',
+                    '....................................................',
+                    '....................................................'
+                ],
+                portals: [
+                    { at: [10, 32], to: 'base', facing: 'north' },
+                    { at: [41, 3], to: 'valley', facing: 'south', requires: 'goblinChief' }
+                ],
+                chests: [{ at: [46, 5], loot: 'chiefChest', requires: 'goblinChief' }]
+            },
+            // The second region: rocks and gravel, a wolf pack; the wolf king
+            // keeps the north-east corner and its chest.
+            valley: {
+                name: '灰岩山谷',
+                rows: [
+                    '..T.T..T..T....T.T......T....T.......T..T..T.T..',
+                    '.TT.TT.....T.T..T..T...T....T....T.......T......',
+                    'T.............................................T.',
+                    'T..334333433343334333433343334333433343334333...',
+                    '...4..........................3.............4...',
+                    '...3.T;;;;.;;T............T...3...........C.3...',
+                    '...3...;;;;.;......12...;;.;;.3.............3..T',
+                    '...3..;.;;;;............;;;.;.3.............3.T.',
+                    'T..4..;;.;;;;.......w...;;;;..3......K......4...',
+                    'TT.3..;;;.;;;.........w..;;;;.3..1..........3...',
+                    '...3.............1......;.;;;.3.............3..T',
+                    '.T.3.................w........3.............3.T.',
+                    '.T.4......23..................3.............4...',
+                    '...3.......2..................33333..33333333..T',
+                    '...3............;;;.;;;;...........::.......3...',
+                    'TT.3............;;;;.;;;;.21.......::.......3..T',
+                    '.T.4..2..........;;;;.;;;..........::.......4...',
+                    'TT.3..1.....g...;.;;;;.;;..........::....1..3...',
+                    '.T.3............;;.;;;;.;.......;.;::;.;;...3...',
+                    '...3............;;;.;;;;..g.....;;.::;;.;...3.T.',
+                    '...4T..........1.............2..;;;::;;;w...4...',
+                    '.T.3.........................32.;;;::;;;;...3...',
+                    '...3....;;;;.;......w...1........;;::.;;;..T3..T',
+                    '...3.....;;;;...................;.;::;.;;...3...',
+                    'T..4....:::::::::::::::::::::::::::::.......4...',
+                    '...3....:;.;;;:...........................1.3...',
+                    '.T.3....:;;.;;:...................g.........3...',
+                    '...3....:.....:.......1...............21....3.T.',
+                    '...4....:..@..:.............................4.T.',
+                    '...3....:.....:.............................3.T.',
+                    '...3122#P#221#P#12221222122212221222122212223.T.',
+                    '................................................',
+                    '................................................',
+                    '................................................'
+                ],
+                portals: [
+                    { at: [8, 30], to: 'field', facing: 'north' },
+                    { at: [14, 30], to: 'base', facing: 'north' }
+                ],
+                chests: [{ at: [42, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
             clearing: {
                 name: '训练场', training: true,
@@ -241,9 +429,9 @@ const gameConfig = (() => {
                     '.T..2.....................:..2....',
                     '....1.....................:..2.T..',
                     '..T.2...1.................:..1....',
-                    '....1.....................:..2..T.',
-                    '.T..2.............@...D..::..1....',
-                    '....1..................::....2.T..',
+                    '....#.....................:..2..T.',
+                    '.T..P.............@...D..::..1....',
+                    '....#..................::....2.T..',
                     '..T.2...............:::......1....',
                     '....1.........1....::........2..T.',
                     '.T..2..............:.........1....',
@@ -252,7 +440,8 @@ const gameConfig = (() => {
                     '..................................',
                     '..................................',
                     '..................................'
-                ]
+                ],
+                portals: [{ at: [4, 8], to: 'base', facing: 'east' }]
             },
             // The PVP arena (rebuild-plan.md M4): 20 x 11 blocks inside a
             // wall, the same seen from either spawn (point symmetric). Walls

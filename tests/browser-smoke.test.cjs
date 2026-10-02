@@ -1,9 +1,10 @@
 // Browser smoke test (rebuild-plan.md 5): the real page in headless Chromium
 // as a landscape phone. Boots without console errors, draws the world, lays
 // out the controls, covers portrait with the rotate hint, two real touch
-// points (stick + A) drive the simulation together, and a field fight runs
-// to its result panel, from where the menu switches maps. Two pages of one
-// browser play a whole duel over ?link=local (rebuild-plan.md M4).
+// points (stick + A) drive the simulation together; the world (M5): from
+// the base through a portal by touch, a fight, falling and home, walls in
+// front cut open, the save across a reload. Two pages of one browser play
+// a whole duel over ?link=local (rebuild-plan.md M4).
 //
 // Skipped when Playwright is not available. It is looked up as
 // PLAYWRIGHT_MODULE (a path), then `playwright`, `playwright-core`, then the
@@ -196,21 +197,55 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
     } finally { await context.close(); }
 });
 
-test('the field: monsters drawn, a fight to the result panel, the menu switches maps', { timeout: 240000 }, async t => {
+test('the world: the base, through the north gate by touch, a fight, falling and home again; walls in front go see-through; the save keeps it', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390, '');
     try {
         const start = await page.evaluate(() => {
             const g = window.game;
             g.view.render(g.sim, 0);
-            return { map: g.map, kinds: g.sim.monsters.map(m => m.kind).sort(), calls: g.view.info().calls, goal: document.querySelector('[data-hud="goal"]').textContent, dummy: !!g.sim.dummy };
+            return {
+                map: g.map, monsters: g.sim.monsters.length, buildings: g.sim.entities.filter(e => e.type === 'building').map(e => e.kind).sort(),
+                calls: g.view.info().calls, goal: document.querySelector('[data-hud="goal"]').textContent, banner: document.querySelector('[data-hud="region-title"]').textContent,
+                key: document.querySelector('[data-hud="interact"]').textContent, idle: document.querySelector('[data-button="interact"]').classList.contains('idle')
+            };
         });
-        assert.equal(start.map, 'field', 'the field is the default map');
-        assert.deepEqual(start.kinds, ['goblin', 'goblin', 'wolf', 'wolf']);
-        assert.equal(start.dummy, false);
-        assert.ok(start.calls > 0 && start.calls < 80, `${start.calls} draw calls: a character is one skinned mesh`);
-        assert.match(start.goal, /4 \/ 4/);
-        // Walk up to a goblin: it notices and a "!" shows over it.
+        assert.deepEqual({ ...start, calls: undefined }, {
+            map: 'base', monsters: 0, buildings: ['hotSpring', 'shop', 'smithy', 'storage'], calls: undefined, goal: '曙光据点 · 🪙 0', banner: '曙光据点', key: '交互', idle: true
+        });
+        assert.ok(start.calls > 0 && start.calls < 60, `${start.calls} draw calls: terrain is a mesh per chunk`);
+        await shot(page, 'base');
+        // The storage: the key names it, a tap opens its panel.
+        const key = await page.evaluate(() => {
+            const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === 'storage');
+            Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
+            const r = document.querySelector('[data-button="interact"]').getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        });
+        await page.waitForFunction(() => document.querySelector('[data-hud="interact"]').textContent === '进入' && document.querySelector('[data-hud="tag-name"]').textContent === '仓库', null, { timeout: 10000 });
+        await page.touchscreen.tap(key.x, key.y);
+        await page.waitForFunction(() => window.game.panel === 'storage', null, { timeout: 10000 });
+        assert.match(await page.evaluate(() => document.querySelector('[data-panel-stats]').textContent), /金币0/);
+        await shot(page, 'storage');
+        await page.click('[data-action="resume"]');
+        // The north gate, by touch: off to the field, standing at the gate back.
+        await page.evaluate(() => {
+            const g = window.game, p = g.sim.player, gate = g.sim.entities.find(e => e.id === 'p-field');
+            Object.assign(p, { x: gate.x, y: gate.y + 40, facing: -Math.PI / 2 }); g.run(0.05);
+        });
+        await page.waitForFunction(() => document.querySelector('[data-hud="interact"]').textContent === '前往', null, { timeout: 10000 });
+        await page.touchscreen.tap(key.x, key.y);
+        await page.waitForFunction(() => window.game.map === 'field', null, { timeout: 10000 });
+        const field = await page.evaluate(() => {
+            const g = window.game, s = g.sim, p = s.player, gate = s.entities.find(e => e.id === 'p-base');
+            g.view.render(s, 0);
+            return { kinds: [...new Set(s.monsters.map(m => m.kind))].sort(), near: Math.hypot(p.x - gate.x, p.y - gate.y), calls: g.view.info().calls, banner: document.querySelector('[data-hud="region-title"]').textContent };
+        });
+        assert.deepEqual(field.kinds, ['goblin', 'goblinChief', 'wolf']);
+        assert.ok(field.near < 80, `arrived ${field.near} from the gate back`);
+        assert.equal(field.banner, '晨雾原野');
+        assert.ok(field.calls > 0 && field.calls < 100, `${field.calls} draw calls`);
+        // Walk up to a goblin: it notices and a "!" shows over it; its windup shows its warning.
         const alert = await page.evaluate(() => {
             const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'goblin'), p = s.player;
             p.x = m.x - 120; p.y = m.y; p.facing = 0;
@@ -219,68 +254,72 @@ test('the field: monsters drawn, a fight to the result panel, the menu switches 
         });
         assert.equal(alert, 'alert');
         await page.waitForFunction(() => document.querySelectorAll('.mob:not([hidden]) .mob-alert:not([hidden])').length === 1, null, { timeout: 10000 });
-        // It chases and winds up, with its warning on the ground.
         const fight = await page.evaluate(() => {
-            const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'goblin');
+            const g = window.game, s = g.sim, m = s.monsters.find(x => x.phase === 'alert');
             for (let i = 0; i < 300 && m.phase !== 'windup'; i++) g.run(0.01);
             g.run(0.5);
             g.view.render(s, 0.016);
             const warning = g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a');
-            return { phase: m.phase, opacity: warning ? warning.material.opacity : 0 };
+            return { phase: m.phase, opacity: warning ? warning.material.opacity : 0, key: document.querySelector('[data-button="interact"]').className };
         });
         assert.equal(fight.phase, 'windup');
         assert.ok(fight.opacity > 0.1, `the warning shows through the windup: ${JSON.stringify(fight)}`);
         await page.waitForFunction(() => document.querySelector('[data-hud="target-name"]').textContent === '哥布林', null, { timeout: 10000 });
         await shot(page, 'field-windup');
-        // Cut every monster down: the result panel comes up with the stats.
-        await page.evaluate(() => {
-            const g = window.game, s = g.sim;
-            for (const m of s.monsters) { m.hp = 1; m.atk = 0; }
-            for (let k = 0; k < 20 && !s.result; k++) {
-                const m = s.monsters.find(x => x.phase !== 'dead'), p = s.player;
-                Object.assign(m, { phase: 'patrol', t: 0, rest: 99 });
-                Object.assign(p, { x: m.x - 50, y: m.y, facing: 0, push: null, stun: 0, act: null });
-                g.run(0.01);
-                worldSim.command(s, { type: 'press', button: 'a' }); worldSim.command(s, { type: 'release', button: 'a' });
-                g.run(0.4);
-            }
+        // A wall in front of the player is cut open round them: the pixel at
+        // their chest is the shirt with the cut, the stone without it.
+        const cut = await page.evaluate(() => {
+            const g = window.game, s = g.sim, p = s.player;
+            s.monsters = s.monsters.filter(m => m.boss);
+            Object.assign(p, { x: 36.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
+            const gl = g.view.renderer.getContext(), N = 8, px = new Uint8Array(N * N * 4), ground = g.view.ground;
+            // Share of bluish pixels in a small square at the chest (the cut is a dither).
+            const sample = on => {
+                ground.cut.on.value = on;
+                g.view.render(s, 0);
+                const at = g.view.project([p.x / 40, 1.05, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
+                gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                let blue = 0;
+                for (let i = 0; i < N * N; i++) if (px[i * 4 + 2] > px[i * 4] + 10 && px[i * 4 + 2] > px[i * 4 + 1]) blue++;
+                return blue / (N * N);
+            };
+            const off = sample(0), on = sample(1);
+            ground.cut.on.value = 1;
+            return { off, on };
         });
-        await page.waitForFunction(() => window.game.panel === 'win', null, { timeout: 30000 });
-        const result = await page.evaluate(() => ({
-            title: document.querySelector('[data-panel-title]').textContent,
-            stats: document.querySelector('[data-panel-stats]').textContent,
-            buttons: [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent),
-            kills: window.game.sim.stats.kills
-        }));
-        await shot(page, 'field-win');
-        assert.equal(result.title, '胜利');
-        assert.equal(result.kills, 4);
-        assert.match(result.stats, /击倒4 \/ 4/);
-        assert.deepEqual(result.buttons, ['再来一次', '去训练场']);
-        // To the training ground, in place: no reload, the dummy is there, the address says so.
-        await page.click('[data-action="clearing"]');
-        const training = await page.evaluate(() => ({ map: window.game.map, dummy: !!window.game.sim.dummy, monsters: window.game.sim.monsters.length, panel: window.game.panel, url: location.search }));
-        assert.deepEqual(training, { map: 'clearing', dummy: true, monsters: 0, panel: null, url: '?map=clearing' });
-        await page.waitForFunction(() => document.querySelector('[data-hud="goal"]').hidden && document.querySelector('[data-hud="target-name"]').textContent === '训练木桩', null, { timeout: 10000 });
-        // The menu key pauses; from there to the field again, then a loss.
-        await page.click('[data-menu]');
-        assert.equal(await page.evaluate(() => window.game.panel), 'menu');
-        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '暂停');
-        await shot(page, 'menu');
-        await page.click('[data-action="field"]');
+        await shot(page, 'cutaway');
+        assert.ok(cut.on > 0.5, `the blue shirt shows through the wall: ${JSON.stringify(cut)}`);
+        assert.ok(cut.off < 0.1, `without the cut, the stone hides it: ${JSON.stringify(cut)}`);
+        // Falling: the trip ends; home to the base, whole.
         await page.evaluate(() => {
-            const g = window.game, s = g.sim, m = s.monsters.find(x => x.kind === 'wolf'), p = s.player;
-            p.hp = 1; p.x = m.x - 50; p.y = m.y; p.facing = Math.PI; m.phase = 'chase'; m.wait = 0;
-            for (let i = 0; i < 400 && !s.result; i++) g.run(0.01);
+            const g = window.game, s = g.sim, m = s.monsters[0], p = s.player;
+            p.hp = 1; p.x = m.x - 60; p.y = m.y; p.facing = Math.PI; m.phase = 'chase'; m.wait = 0;
+            for (let i = 0; i < 500 && !s.result; i++) g.run(0.01);
         });
         await page.waitForFunction(() => window.game.panel === 'lose', null, { timeout: 30000 });
-        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '失败');
-        await shot(page, 'field-lose');
-        await page.click('[data-action="restart"]');
-        assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['field', null, 360, null]);
+        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '倒下了');
+        await shot(page, 'fallen');
+        await page.click('[data-action="home"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
+        // The menu: home is not offered in the base; resetting asks first.
+        await page.click('[data-menu]');
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-panel] [data-action]')].filter(b => !b.hidden).map(b => b.textContent)), ['继续', '联机对战', '重新开始冒险']);
+        await page.click('[data-action="reset"]');
+        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
+        await page.click('[data-action="resume"]');
+        // Loot picked up is in the save and survives a reload.
+        await page.evaluate(() => {
+            const g = window.game;
+            g.sim.progress.inventory.gold = 42; g.sim.progress.inventory.items.wolf_pelt = 2;
+            g.persist();
+        });
+        await page.reload({ waitUntil: 'load' });
+        await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
+        assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.sim.progress.inventory.gold, window.game.save.inventory.items.wolf_pelt]), ['base', 42, 2]);
         // Rebuilding a world frees the last one: GPU memory does not grow.
         const memory = await page.evaluate(() => {
             const g = window.game, out = [];
+            g.pause(true);
             for (const id of ['clearing', 'field', 'clearing', 'field']) { g.load(id); g.view.render(g.sim, 0.016); out.push({ ...g.view.renderer.info.memory }); }
             return out;
         });
@@ -342,7 +381,7 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         await A.page.click('[data-menu]');
         assert.equal(await text(A.page, '[data-panel-title]'), '对战中');
         await A.page.click('[data-action="leave"]');
-        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel]), ['field', null, null]);
+        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel]), ['base', null, null]);
         await B.page.waitForFunction(() => window.game.panel === 'duelEnded', null, { timeout: 30000 });
         assert.match(await text(B.page, '[data-panel-note]'), /对方离开了房间/);
         await shot(B.page, 'duel-ended');
