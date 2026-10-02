@@ -170,18 +170,30 @@ test('while charging the body walks slower; it cannot walk during any other move
     assert.ok(moving.player.x - x1 <= M.slash.step + 1e-6, 'the windup and swing stand still but for the lunge');
 });
 
-test('inside a move the stick neither walks nor turns, recovery included (user, 2026-10-02); still pushed when the recovery ends, the body walks off', () => {
+test('inside a move the stick never walks; it turns the body only in a windup, slower, and the swing locks it (user, 2026-10-02); still pushed when the recovery ends, the body walks off', () => {
     const sim = setup(); sim.player.facing = -Math.PI / 2; tap(sim); until(sim, 'recover:slash');
     const { x, y } = sim.player; W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, 0.1);
     assert.equal(phase(sim), 'recover:slash');
     assert.ok(Math.abs(sim.player.x - x) < 1e-9 && Math.abs(sim.player.y - y) < 1e-9, 'no walking in the recovery');
     assert.equal(sim.player.facing, -Math.PI / 2, 'and no turning');
     step(sim, 0.3); assert.equal(phase(sim), 'idle'); assert.ok(sim.player.x > x); assert.equal(sim.player.chain, null);
-    // The stick held through a recovery, then A: the next move goes the same way as the last.
-    const c = setup(); c.player.facing = -Math.PI / 2; tap(c); until(c, 'recover:slash');
-    W.command(c, { type: 'move', x: 1, y: 0 }); step(c, 0.1); W.command(c, { type: 'move', x: 0, y: 0 });
-    tap(c); until(c, 'windup:backslash');
-    assert.equal(c.player.act.facing, -Math.PI / 2);
+    // The stick held from the press: the windup turns at the slower rate, the swing goes that way and stays.
+    const c = setup(), P = gameConfig.player; c.player.facing = -Math.PI / 2;
+    const cx = c.player.x, cy = c.player.y;
+    W.command(c, { type: 'move', x: 1, y: 0 }); tap(c); step(c, 0.05);
+    assert.equal(phase(c), 'windup:slash');
+    assert.ok(Math.hypot(c.player.x - cx, c.player.y - cy) < 1e-9, 'no walking in the windup');
+    const turned = c.player.facing - -Math.PI / 2;
+    assert.ok(Math.abs(turned - P.turnRate * K.windupTurnMultiplier * 0.05) < 0.03, `windup turned ${turned.toFixed(3)}`);
+    until(c, 'swing:slash');
+    const locked = c.player.facing;
+    assert.equal(c.player.act.facing, locked, 'the swing goes where the windup turned to');
+    step(c, 0.03); assert.equal(c.player.facing, locked, 'and does not turn on');
+    // The stick let go through a recovery, then A: the next move starts the same way as the last.
+    const d = setup(); d.player.facing = -Math.PI / 2; tap(d); until(d, 'recover:slash');
+    W.command(d, { type: 'move', x: 1, y: 0 }); step(d, 0.1); W.command(d, { type: 'move', x: 0, y: 0 });
+    tap(d); until(d, 'windup:backslash');
+    assert.equal(d.player.act.facing, -Math.PI / 2);
 });
 
 test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {

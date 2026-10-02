@@ -120,13 +120,12 @@ const app = (() => {
         const menu = menuScreen.attach(root, {
             progress: () => sim.progress,
             player: () => sim.player,
-            place: () => ({ name: gameConfig.maps[mapId].name, base: mapId === 'base', fighting: interactKit.inCombat(sim, sim.player) }),
+            place: () => ({ name: gameConfig.maps[mapId].name }),
             canChange: () => !duel && mapId === 'base',
             changed: () => persist(),
             act: name => {
                 menu.close();
                 if (name === 'pause') openPanel('pause');
-                else if (name === 'home') load('base');
                 else if (name === 'duel') room.open();
                 else if (name === 'reset') openPanel('reset');
             },

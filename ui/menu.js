@@ -2,11 +2,13 @@
 // running game, which goes on (user, 2026-10-02: like Minecraft's
 // inventory; the pause is a button of its own). Three columns: the main
 // character in what is worn, turned by dragging (render/figure_view.js);
-// HP, stats, the four gear slots and the bag (one bag: the base's storage
-// opens this too), gear changed in the base only (design.md 7.2); and the
-// side: pause, home, the duel room, this phone's settings, a new
-// adventure. Gear changes go through core/inventory.js on the world's
-// progress and take effect when the menu closes (`closed`).
+// HP and stats over the four gear slots (a column) and the bag beside
+// them, the picked item below (one bag: the base's storage opens this
+// too), gear changed in the base only (design.md 7.2); and the side:
+// pause, the duel room, this phone's settings (folded away), a new
+// adventure. The close key has the corner to itself. Gear changes go
+// through core/inventory.js on the world's progress and take effect when
+// the menu closes (`closed`).
 const menuScreen = (() => {
     const K = inventoryKit, { SLOT_NAMES, STAT_NAMES } = itemScreens;
     // Radians the figure turns per CSS pixel dragged.
@@ -14,17 +16,17 @@ const menuScreen = (() => {
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
     // hooks: progress() the world's progress; player() the fighter shown
-    // (HP); place() { name, base, fighting }; canChange() gear may be
-    // changed now; changed('gear'); act(name) for the side's buttons
-    // (pause, home, duel, reset); closed({ gearChanged }).
+    // (HP); place() { name }; canChange() gear may be changed now;
+    // changed('gear'); act(name) for the side's buttons (pause, duel,
+    // reset); closed({ gearChanged }).
     function attach(root, hooks) {
         const el = root.querySelector('[data-menu-screen]'), $ = sel => el.querySelector(sel);
         const figureBox = $('[data-menu-figure]'), slotsEl = $('[data-menu-slots]'), bagEl = $('[data-menu-bag]'), detailEl = $('[data-menu-detail]');
         const hpFill = $('[data-menu-hp]'), hpText = $('[data-menu-hp-text]'), statsEl = $('[data-menu-stats]');
-        const whereEl = $('[data-menu-where]'), goldEl = $('[data-menu-gold]'), settingsEl = $('[data-menu-settings]');
+        const whereEl = $('[data-menu-where]'), settingsEl = $('[data-menu-settings]');
         const acts = Object.fromEntries([...el.querySelectorAll('[data-menu-act]')].map(b => [b.dataset.menuAct, b]));
         const I = gameConfig.items;
-        let open = false, picked = null, message = '', gearChanged = false, raf = 0, drag = null, fig = null, shownHp = '';
+        let open = false, picked = null, message = '', gearChanged = false, raf = 0, drag = null, fig = null, shownHp = '', folded = true;
 
         const owned = id => K.count(hooks.progress(), id);
         const statLine = stats => K.STATS.filter(k => stats?.[k]).map(k => `${STAT_NAMES[k]} +${stats[k]}`).join('，');
@@ -53,35 +55,36 @@ const menuScreen = (() => {
                 lines.unshift(`${slotLine(item)}${item.stats ? ' · ' + statLine(item.stats) : ''}${item.kind === 'supply' ? ` · 有 ${owned(picked)}` : ''}`);
                 const now = K.statsOf(p.loadout), next = K.statsOf({ ...p.loadout, [slot]: worn ? null : picked });
                 if (!(worn && slot === 'main')) compare = K.STATS.map(k => [STAT_NAMES[k], now[k], next[k]]).filter(([, a, b]) => a !== b)
-                    .map(([k, a, b]) => `<span>${k} ${a} → <b class="${b > a ? 'up' : 'down'}">${b}</b></span>`).join('');
+                    .map(([k, a, b]) => `<span>${k} ${a}→<b class="${b > a ? 'up' : 'down'}">${b}</b></span>`).join('');
                 actions = worn
                     ? (slot === 'main' ? [] : [{ id: 'unequip', label: '卸下', why: lock }])
-                    : [{ id: 'equip', label: p.loadout[slot] ? `换上（替下${I[p.loadout[slot]].name}）` : '装上', why: lock, primary: true }];
+                    : [{ id: 'equip', label: p.loadout[slot] ? '换上' : '装上', why: lock, primary: true }];
             } else lines.unshift(`有 ${owned(picked)} 个${item.sell ? ` · 商店收每个 ${item.sell} 金币` : ''}`);
             const why = actions.find(a => a.why)?.why || '';
             return `<div class="detail-top"><h3>${itemScreens.iconHtml(picked)}${esc(item.name)}</h3>
+                ${compare ? `<span class="detail-compare">${compare}</span>` : ''}
                 <div class="detail-actions">${actions.map(a => `<button type="button" data-act="${a.id}" class="${a.primary ? 'primary' : ''}" ${a.why ? 'disabled' : ''}>${esc(a.label)}</button>`).join('')}</div></div>
-                ${compare ? `<p class="detail-compare">${compare}</p>` : ''}
-                ${lines.map(l => `<p>${esc(l)}</p>`).join('')}
-                <p class="detail-note">${esc(message || why)}</p>`;
+                <p class="detail-note">${esc(message || why)}</p>
+                ${lines.map(l => `<p>${esc(l)}</p>`).join('')}`;
         }
         function render() {
             const p = hooks.progress(), place = hooks.place(), stats = K.statsOf(p.loadout);
             whereEl.textContent = `${place.name} · 游戏没有暂停`;
-            goldEl.innerHTML = `${itemScreens.iconHtml('gold')} ${p.inventory.gold}`;
-            statsEl.innerHTML = K.STATS.map(k => `<div><dt>${STAT_NAMES[k]}</dt><dd>${stats[k]}</dd></div>`).join('');
+            statsEl.innerHTML = ['atk', 'def', 'maxHp'].map(k => `<div><dt>${k === 'maxHp' ? '生命上限' : STAT_NAMES[k]}</dt><dd>${stats[k]}</dd></div>`).join('')
+                + `<div class="menu-gold"><dt aria-label="金币">${itemScreens.iconHtml('gold')}</dt><dd>${p.inventory.gold}</dd></div>`;
             slotsEl.innerHTML = K.SLOTS.map(slot => {
                 const id = p.loadout[slot];
-                return `<div class="slot"><span class="slot-name">${SLOT_NAMES[slot]}</span>${id ? cell(id) : '<span class="cell empty" aria-label="空">空</span>'}</div>`;
+                return `<div class="slot">${id ? cell(id) : '<span class="cell empty" aria-label="空">空</span>'}<span class="slot-name">${SLOT_NAMES[slot]}</span></div>`;
             }).join('');
             const items = bagItems();
             bagEl.innerHTML = items.length ? items.map(id => cell(id)).join('') : '<p class="bag-empty">背包里没有别的东西</p>';
             detailEl.innerHTML = detail();
-            acts.home.hidden = place.base;
-            acts.home.disabled = place.fighting;
-            acts.home.title = place.fighting ? '战斗中不能回到据点' : '';
-            settingsEl.innerHTML = Object.entries(gameSettings.CHOICES).map(([key, c]) => `<div class="setting"><span>${c.label}</span><div class="setting-options" role="radiogroup" aria-label="${c.label}">${c.options.map(([value, label]) =>
-                `<button type="button" role="radio" data-setting="${key}" data-value="${String(value)}" aria-checked="${gameSettings.get(key) === value}" class="${gameSettings.get(key) === value ? 'on' : ''}">${label}</button>`).join('')}</div></div>`).join('');
+            settingsEl.hidden = folded;
+            acts.settings.setAttribute('aria-expanded', String(!folded));
+            settingsEl.innerHTML = Object.entries(gameSettings.CHOICES).map(([key, c]) => {
+                const now = c.options.find(([v]) => v === gameSettings.get(key))?.[1] ?? '';
+                return `<button type="button" class="setting" data-setting="${key}" aria-label="${c.label}：${now}，点一下换">${c.label}<b>${now}</b></button>`;
+            }).join('');
             if (fig) fig.show(p.loadout);
             life(true);
         }
@@ -134,16 +137,18 @@ const menuScreen = (() => {
                 render();
                 return;
             }
+            // A setting's key moves it on to its next choice.
             const s = e.target.closest('[data-setting]');
             if (s) {
-                const c = gameSettings.CHOICES[s.dataset.setting], value = c.options.find(([v]) => String(v) === s.dataset.value)?.[0];
-                gameSettings.set(s.dataset.setting, value);
+                const key = s.dataset.setting, options = gameSettings.CHOICES[key].options, at = options.findIndex(([v]) => v === gameSettings.get(key));
+                gameSettings.set(key, options[(at + 1) % options.length][0]);
                 render();
                 return;
             }
             const act = e.target.closest('[data-menu-act]');
             if (!act || act.disabled) return;
             if (act.dataset.menuAct === 'close') close();
+            else if (act.dataset.menuAct === 'settings') { folded = !folded; render(); }
             else hooks.act(act.dataset.menuAct);
         });
         // Dragging the figure turns it.

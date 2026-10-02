@@ -366,9 +366,12 @@ const fighterKit = (() => {
             // An unbroken walk turns into a run: stick well pushed, free
             // walking (no shield, no charge), and really getting somewhere.
             striding = !guarding && !drinking && !a && mag >= P.runStick - 1e-9 && moved >= 0.5 * P.speed * dt;
+        } else if (mag > 1e-6 && a?.phase === 'windup' && !p.stun) {
+            // A windup lets the stick turn the body, slower, to aim the
+            // move; the swing locks it, and the recovery does not turn at
+            // all (user, 2026-10-02).
+            p.facing = space.turn(p.facing, Math.atan2(mv.y, mv.x), P.turnRate * K().windupTurnMultiplier * dt);
         }
-        // Inside a move, recovery included, the stick neither walks nor
-        // turns (user, 2026-10-02): a combo goes the way it started.
         if (p.speed === 0) p.pace = 0;
         p.moveTime = striding ? p.moveTime + dt : 0;
         p.runBlend = approach(p.runBlend, p.moveTime >= P.runAfter - 1e-9 ? 1 : 0, dt / P.runRampSeconds);

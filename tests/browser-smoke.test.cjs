@@ -306,9 +306,15 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         await shot(page, 'fallen');
         await page.click('[data-action="home"]');
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
-        // The menu: home is not offered in the base; resetting asks first.
+        // The menu: no way home from it (user, 2026-10-02); the settings
+        // fold open, a tap moves one on; resetting asks first.
         await page.click('[data-menu]');
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side > [data-menu-act]')].filter(b => !b.hidden).map(b => b.textContent)), ['关闭', '暂停', '联机对战', '重新开始冒险']);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side > [data-menu-act]')].map(b => b.textContent)), ['暂停', '联机对战', '设定', '重新开始冒险']);
+        assert.equal(await page.evaluate(() => document.querySelector('[data-menu-settings]').hidden), true);
+        await page.click('[data-menu-act="settings"]');
+        await page.click('[data-setting="camera"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-menu-settings]').hidden, document.querySelector('[data-setting="camera"] b').textContent, JSON.parse(localStorage.getItem('blocky-rpg-settings')).camera]), [false, '远', 'far']);
+        await page.click('[data-setting="camera"]'); await page.click('[data-setting="camera"]');
         await page.click('[data-menu-act="reset"]');
         assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
         await page.click('[data-action="resume"]');

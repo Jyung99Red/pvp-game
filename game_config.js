@@ -25,7 +25,7 @@ const gameConfig = (() => {
         // with the stick pushed at least `runStick` of the way, speed eases up
         // to speed * runMultiplier over runRampSeconds, and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 128, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 1.97, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
+        player: { speed: 128, turnRate: 8, radius: 12, runAfter: 2, runMultiplier: 1.9375, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -102,10 +102,11 @@ const gameConfig = (() => {
         // recovery ends (the sword's a little sooner, user 2026-10-02);
         // windowAfterRecovery: the chain resets this long after;
         // bufferSeconds: an input pressed ahead that has not run within this
-        // long is dropped. Inside a move, recovery included, the body does
-        // not turn (user, 2026-10-02).
+        // long is dropped. windupTurnMultiplier: in a windup the stick turns
+        // the body at this share of player.turnRate; the swing locks the
+        // facing and the recovery does not turn (user, 2026-10-02).
         combo: {
-            windowAfterRecovery: 0.7, bufferSeconds: 0.5,
+            windowAfterRecovery: 0.7, bufferSeconds: 0.5, windupTurnMultiplier: 0.5,
             weapons: {
                 // Heavy and far-reaching: everything a beat slower than the dagger.
                 sword: { name: '剑', root: { a: 'slash', b: 'charged' }, standard: 60, pauseAfterRecovery: 0.15 },

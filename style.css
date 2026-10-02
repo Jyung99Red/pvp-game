@@ -337,18 +337,20 @@ html, body {
 @media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; transform: rotate(-90deg); } }
 @media (orientation: portrait) { .rotate-hint { display: grid; } }
 
-/* The menu (ui/menu.js): three columns over the running game -- the
-   figure (its canvas, render/figure_view.js), HP, stats, gear and the bag,
-   then the side with pause, the room, settings. */
+/* The menu (ui/menu.js): a window of about 78% of the screen over the
+   running game, three columns -- the figure (its canvas,
+   render/figure_view.js); HP and stats over the gear slots (a column, as
+   in Minecraft) and the bag, the picked item below; the side with pause,
+   the room, folded settings. The close key stands apart in the corner. */
 .menu {
     position: absolute; inset: 0; z-index: 9; display: grid; place-items: center; box-sizing: border-box;
-    padding: calc(env(safe-area-inset-top, 0px) + 8px) calc(env(safe-area-inset-right, 0px) + 12px) calc(env(safe-area-inset-bottom, 0px) + 8px) calc(env(safe-area-inset-left, 0px) + 12px);
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) calc(env(safe-area-inset-right, 0px) + 8px) calc(env(safe-area-inset-bottom, 0px) + 6px) calc(env(safe-area-inset-left, 0px) + 8px);
     background: rgba(10, 13, 17, 0.45);
 }
 .menu[hidden] { display: none; }
 .menu-card {
-    width: min(880px, 100%); height: min(420px, 100%); box-sizing: border-box; overflow: hidden;
-    display: grid; grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1.75fr) minmax(124px, 0.72fr);
+    position: relative; width: min(78vw, 860px); height: min(80vh, 420px); max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;
+    display: grid; grid-template-columns: minmax(96px, 0.62fr) minmax(0, 2fr) minmax(108px, 0.62fr);
     border-radius: 10px; background: rgba(20, 25, 31, 0.96); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 .menu-figure {
@@ -357,28 +359,32 @@ html, body {
     border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 .figure-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.menu-figure-note { position: absolute; left: 0; right: 0; bottom: 6px; margin: 0; text-align: center; font-size: 11px; color: var(--muted); pointer-events: none; }
+.menu-figure-note { position: absolute; left: 0; right: 0; bottom: 5px; margin: 0; text-align: center; font-size: 10px; color: var(--muted); pointer-events: none; }
 .menu-figure.none::after { content: '无法显示 3D 人物'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 .menu-gear {
-    min-height: 0; display: grid; grid-template-rows: auto auto auto minmax(48px, 1fr) auto; gap: 6px; padding: 8px 10px;
+    --cell: clamp(30px, 9.5vh, 40px);
+    min-height: 0; min-width: 0; display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 4px; padding: 6px 9px;
     border-right: 1px solid rgba(255, 255, 255, 0.12);
 }
 .menu-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.menu-title { margin: 0; font-size: 17px; white-space: nowrap; }
-.menu-where { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.menu-gold { margin-left: auto; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.menu-life { display: grid; grid-template-columns: minmax(60px, 1fr) auto auto; gap: 8px; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; }
-.menu-life .bar { height: 10px; }
-.menu-stats { margin: 0 0 0 4px; display: flex; gap: 10px; font-size: 12px; white-space: nowrap; }
-.menu-stats div { display: flex; gap: 5px; }
+.menu-title { margin: 0; font-size: 16px; white-space: nowrap; }
+.menu-where { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.menu-life { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; font-size: 11px; font-variant-numeric: tabular-nums; }
+.menu-life > b { font-weight: 500; color: var(--muted); }
+.menu-life .bar { height: 9px; }
+.menu-stats { margin: 0; display: flex; align-items: center; gap: 12px; font-size: 12px; white-space: nowrap; }
+.menu-stats div { display: flex; gap: 4px; }
 .menu-stats dt { color: var(--muted); }
 .menu-stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.menu-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.slot { display: grid; justify-items: center; gap: 2px; }
-.slot-name { font-size: 10px; line-height: 1; color: var(--muted); }
+.menu-stats .menu-gold { margin-left: auto; align-items: center; }
+/* Gear slots in a column on the left, the bag beside them. */
+.menu-pack { min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+.menu-slots { display: grid; grid-auto-rows: max-content; gap: 4px; align-content: start; padding-right: 8px; border-right: 1px solid rgba(255, 255, 255, 0.1); }
+.slot { display: flex; align-items: center; gap: 5px; }
+.slot-name { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .cell {
-    position: relative; width: 42px; height: 42px; box-sizing: border-box; padding: 3px; margin: 0; border-radius: 7px;
-    display: grid; place-items: center; font: 20px/1 var(--font); color: var(--fg); cursor: pointer; touch-action: manipulation;
+    position: relative; width: var(--cell, 38px); height: var(--cell, 38px); box-sizing: border-box; padding: 3px; margin: 0; border-radius: 7px; flex: none;
+    display: grid; place-items: center; font: 19px/1 var(--font); color: var(--fg); cursor: pointer; touch-action: manipulation;
     border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06);
 }
 .cell.on { border-color: var(--accent); background: rgba(242, 181, 68, 0.16); box-shadow: 0 0 0 1px var(--accent) inset; }
@@ -386,44 +392,54 @@ html, body {
 .cell .item-icon { width: 100%; height: 100%; object-fit: contain; display: grid; place-items: center; }
 .cell-count { position: absolute; right: 3px; bottom: 2px; font: 600 11px/1 var(--font); color: #fff; text-shadow: 0 1px 2px #000; }
 .menu-bag {
-    min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 42px); gap: 6px; align-content: start;
-    padding: 6px; border-radius: 8px; background: rgba(0, 0, 0, 0.22);
+    min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, var(--cell)); gap: 5px; align-content: start;
+    padding: 5px; border-radius: 8px; background: rgba(0, 0, 0, 0.22);
 }
 .bag-empty { grid-column: 1 / -1; margin: 6px; font-size: 12px; color: var(--muted); }
-.menu-detail { min-height: 58px; max-height: 118px; overflow-y: auto; display: grid; gap: 3px; align-content: start; font-size: 12px; }
+/* The picked item: one line with its name, what it changes and the key; then what it is. */
+.menu-detail {
+    min-height: 36px; max-height: 60px; overflow-y: auto; display: grid; gap: 2px; align-content: start; font-size: 11px;
+    padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
 .menu-detail .detail-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.menu-detail h3 { margin: 0; font-size: 14px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
-.menu-detail h3 .item-icon { width: 22px; height: 22px; font-size: 18px; object-fit: contain; }
-.menu-detail p { margin: 0; line-height: 1.4; }
-.menu-detail p + p { color: var(--muted); }
-.menu-detail .detail-compare { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--fg); }
+.menu-detail h3 { margin: 0; font-size: 13px; display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+.menu-detail h3 .item-icon { width: 20px; height: 20px; font-size: 16px; object-fit: contain; }
+.menu-detail .detail-compare { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--fg); min-width: 0; }
 .detail-compare b.up { color: #8be07a; }
 .detail-compare b.down { color: #ff8a7a; }
-.menu-detail .detail-hint { color: var(--muted); }
+.menu-detail p { margin: 0; line-height: 1.35; color: var(--muted); }
 .menu-detail .detail-actions { margin: 0 0 0 auto; flex-wrap: nowrap; }
-.menu-detail .detail-actions button { min-height: 34px; padding: 0 12px; font-size: 13px; white-space: nowrap; }
+.menu-detail .detail-actions button { min-height: 30px; padding: 0 11px; font-size: 13px; white-space: nowrap; }
 .menu-detail .detail-note:empty { display: none; }
-.menu-side { min-height: 0; overflow-y: auto; display: grid; gap: 6px; align-content: start; padding: 8px; }
+.menu-detail .detail-note { color: var(--accent); }
+/* The side: a column of keys under the close key's corner; settings fold away. */
+.menu-side { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 52px 8px 8px; }
 .menu-side > button {
-    min-height: 36px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    flex: none; min-height: 34px; padding: 0 10px; border-radius: 8px; font: 500 14px/1 var(--font); cursor: pointer; touch-action: manipulation;
     border: 1px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.07); color: var(--fg);
 }
-.menu-side > button[hidden] { display: none; }
 .menu-side > button:disabled { opacity: 0.45; cursor: default; }
-.menu-side .menu-close { border-color: var(--accent); background: var(--accent); color: #1d1606; }
-.menu-side-title { margin: 4px 0 0; font-size: 12px; color: var(--muted); font-weight: 500; }
-.menu-settings { display: grid; gap: 5px; }
-.setting { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; font-size: 12px; }
-.setting-options { display: flex; gap: 3px; justify-content: flex-end; flex-wrap: wrap; }
-.setting-options button {
-    min-height: 28px; min-width: 30px; padding: 0 6px; border-radius: 6px; font: 12px/1 var(--font); cursor: pointer; touch-action: manipulation;
-    border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.05); color: var(--fg);
+.menu-side .menu-fold { display: flex; align-items: center; justify-content: space-between; }
+.menu-side .menu-fold::after { content: '▸'; font-size: 12px; color: var(--muted); transition: transform 0.15s; }
+.menu-side .menu-fold[aria-expanded="true"]::after { transform: rotate(90deg); }
+.menu-settings { display: grid; gap: 4px; padding: 0 0 2px 8px; border-left: 2px solid rgba(255, 255, 255, 0.12); }
+.menu-settings[hidden] { display: none; }
+/* One key per setting: a tap moves it on to the next choice. */
+.setting {
+    min-height: 30px; padding: 0 8px; border-radius: 7px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    font: 12px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.05); color: var(--muted);
 }
-.setting-options button.on { border-color: var(--accent); background: var(--accent); color: #1d1606; }
-.menu-side .menu-reset { margin-top: 4px; font-size: 13px; color: #ffb4a6; }
+.setting b { font-weight: 600; color: var(--accent); }
+.menu-side .menu-reset { margin-top: auto; font-size: 13px; color: #ffb4a6; }
+.menu-close {
+    position: absolute; top: 9px; right: 9px; z-index: 1; width: 36px; height: 36px; margin: 0; padding: 0; border-radius: 50%;
+    display: grid; place-items: center; font: 600 17px/1 var(--font); cursor: pointer; touch-action: manipulation;
+    border: 1px solid var(--accent); background: var(--accent); color: #1d1606; box-shadow: 0 0 0 5px rgba(20, 25, 31, 0.96);
+}
 /* Item pictures (drawn from models) in the shop, smithy and room. */
 img.item-icon { object-fit: contain; vertical-align: middle; }
 .row-icon img.item-icon { width: 28px; height: 28px; }
 .screen-detail h3 img.item-icon { width: 26px; height: 26px; }
-.detail-needs img.item-icon, .screen-gold img.item-icon, .menu-gold img.item-icon { width: 18px; height: 18px; }
+.detail-needs img.item-icon, .screen-gold img.item-icon, .menu-gold .item-icon { width: 16px; height: 16px; font-size: 13px; }
 .room-weapons .weapon-icon img.item-icon { width: 30px; height: 30px; display: block; }
