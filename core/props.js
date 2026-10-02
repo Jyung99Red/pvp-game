@@ -11,6 +11,12 @@
 // - brush: a dry thicket (a `B` block). The interact key with a lit torch
 //   sets it alight; fire spreads to the thickets next to it, and each burns
 //   away to bare ground. The terrain change is an edit, so it stays burnt.
+// - node: a resource (`O` iron ore, `X` crystal, `h` herb; design.md 6.5).
+//   Holding the interact key gathers it: it throws out its loot and is gone
+//   -- rubble where a boulder stood, bare ground for a herb -- until it grows
+//   back: once gather.regrowSeconds of play (the progress `clock`) have
+//   passed, the next visit to the region finds it again. Where and when it
+//   was gathered is kept in the progress (`gathered`), not as an edit.
 // A map lists its buildings, portals and chests next to its rows; each entry
 // must sit on the letters that draw it, so a map cannot disagree with itself.
 const propKit = (() => {
@@ -22,7 +28,21 @@ const propKit = (() => {
     const isBoss = kind => !!gameConfig.monsters[kind]?.boss;
     // Progress of the world (core/save.js): bosses down, chests opened, what
     // is carried. Duels and tests may have none.
-    const progressOf = sim => sim.progress || (sim.progress = { bosses: {}, chests: {}, inventory: { gold: 0, items: {} } });
+    const progressOf = sim => sim.progress || (sim.progress = { bosses: {}, chests: {}, inventory: { gold: 0, items: {} }, clock: 0, gathered: {} });
+    const nodeKey = (region, c, r) => `${region}/${c},${r}`;
+    // What a gathered resource leaves: rubble for a boulder, the map's floor for a plant.
+    const spentOf = (terrain, kind) => terrainKit.isSolid(kind) ? terrainKit.KIND.gravel : terrain.floor;
+    // Resources of `region` gathered too recently to be back: gone from the
+    // terrain before anything is placed on it.
+    function regrow(terrain, progress, region) {
+        const clock = progress?.clock || 0, wait = gameConfig.gather.regrowSeconds;
+        for (const [key, at] of Object.entries(progress?.gathered || {})) {
+            const [where, cell] = key.split('/'), [c, r] = (cell || '').split(',').map(Number);
+            if (where !== region || clock - at >= wait) continue;
+            const [kind] = terrainKit.generated(terrain, c, r);
+            if (terrainKit.isResource(kind)) terrainKit.set(terrain, c, r, spentOf(terrain, kind), 0);
+        }
+    }
     const downed = (sim, kind) => !!progressOf(sim).bosses[kind];
 
     // ---- placing what a map lists ----
@@ -84,11 +104,12 @@ const propKit = (() => {
             });
         }
         for (const { col, row } of terrain.chests) if (!chests.has(`${col},${row}`)) throw new Error(`${map.name}: C at ${col},${row} is in no chest list`);
-        // Thickets still standing (saved edits may have burnt some).
+        // Thickets still standing (saved edits may have burnt some), and
+        // resources not gathered lately.
         for (let r = 0; r < terrain.height; r++) for (let c = 0; c < terrain.width; c++) {
-            if (terrainKit.kindAt(terrain, c, r) !== terrainKit.KIND.brush) continue;
-            const at = centre(c, r);
-            out.push({ id: `brush-${c}-${r}`, type: 'brush', col: c, row: r, x: at.x, y: at.y, h: 0, facing: 0, radius: 0, solid: false, burning: -1, spread: false });
+            const kind = terrainKit.kindAt(terrain, c, r), at = centre(c, r);
+            if (kind === terrainKit.KIND.brush) out.push({ id: `brush-${c}-${r}`, type: 'brush', col: c, row: r, x: at.x, y: at.y, h: 0, facing: 0, radius: 0, solid: false, burning: -1, spread: false });
+            else if (terrainKit.isResource(kind)) out.push({ id: `node-${c}-${r}`, type: 'node', kind: terrainKit.NAMES[kind], col: c, row: r, x: at.x, y: at.y, h: 0, facing: 0, radius: 0, solid: false });
         }
         return out;
     }
@@ -121,6 +142,9 @@ const propKit = (() => {
             if (e.burning >= 0) return null;
             const torch = inventoryKit.offhandOf(p.loadout) === 'torch';
             out = { verb: '点燃', name: '枯木丛', hold: 0, ready: torch && p.lit, why: !torch ? '要用火把点燃' : p.lit ? '' : '先点燃火把' };
+        } else if (e.type === 'node') {
+            const G = gameConfig.gather[e.kind];
+            out = { verb: G.verb, name: G.name, hold: G.hold, ready: true, why: '' };
         }
         if (out && out.ready && interactKit.inCombat(sim, p)) Object.assign(out, { ready: false, why: '战斗中' });
         return out;
@@ -140,6 +164,16 @@ const propKit = (() => {
             drop(sim, e.loot, e.x + Math.cos(e.facing) * ahead, e.y + Math.sin(e.facing) * ahead);
             emit(sim, 'chest_open', { side: p.id, target: e.id, at: space.toBlocks(e.x, e.y, 24) });
         } else if (e.type === 'brush') ignite(sim, e, p.id);
+        else if (e.type === 'node') gather(sim, e, p);
+    }
+    // ---- gathering ----
+    function gather(sim, e, p) {
+        const bag = progressOf(sim), kind = terrainKit.KIND[e.kind];
+        terrainKit.set(sim.terrain, e.col, e.row, spentOf(sim.terrain, kind), 0);
+        entityKit.remove(sim, e);
+        bag.gathered = { ...bag.gathered, [nodeKey(sim.region, e.col, e.row)]: bag.clock || 0 };
+        drop(sim, gameConfig.gather[e.kind].loot, e.x, e.y);
+        emit(sim, 'gather', { side: p.id, target: e.id, kind: e.kind, at: space.toBlocks(e.x, e.y, terrainKit.isSolid(kind) ? 24 : 8) });
     }
     // ---- fire ----
     function ignite(sim, e, by = null) {
@@ -218,5 +252,5 @@ const propKit = (() => {
             else if (e.type === 'chest' && e.open && e.t < 99) e.t = Math.min(99, e.t + dt);
         }
     }
-    return { DIRS, angleOf, place, arrival, offer, use, drop, tick, doorOf, progressOf };
+    return { DIRS, angleOf, place, regrow, arrival, offer, use, drop, tick, doorOf, progressOf, nodeKey };
 })();

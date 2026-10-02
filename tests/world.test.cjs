@@ -338,7 +338,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     const store = storage(), START = { wooden_sword: 1, wooden_shield: 1, cloth_armor: 1 }, WORN = plain(gameConfig.gear.starter);
     const fresh = plain(saveKit.load(store));
     assert.deepEqual(fresh, plain(saveKit.fresh()));
-    assert.deepEqual(fresh, { v: 2, bosses: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {} }, 'a new game owns and wears the starter gear');
+    assert.deepEqual(fresh, { v: 2, bosses: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {}, clock: 0, gathered: {} }, 'a new game owns and wears the starter gear');
     const sim = W.create({ region: 'field' });
     sim.progress.bosses.goblinChief = true;
     sim.progress.inventory.gold = 12; sim.progress.inventory.items.goblin_ear = 3; sim.progress.inventory.items.iron_armor = 1;
@@ -346,7 +346,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     T.set(sim.terrain, 20, 20, 'stone', 2);
     assert.equal(saveKit.write(store, saveKit.merge(saveKit.fresh(), sim)), true);
     const back = saveKit.load(store), items = { ...START, goblin_ear: 3, iron_armor: 1 };
-    assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] } });
+    assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] }, clock: 0, gathered: {} });
     // A region made from the save has the edit back, carries what was carried and wears what was worn.
     const again = W.create({ region: 'field', progress: back });
     assert.equal(T.levelAt(again.terrain, 20, 20), 2);
@@ -361,7 +361,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     };
     assert.deepEqual(plain(saveKit.clean(junk)), {
         v: 2, bosses: { goblinChief: true }, chests: { 'field/chest-46-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
-        loadout: WORN, edits: { field: [[1, 1, 'stone', 1]] }
+        loadout: WORN, edits: { field: [[1, 1, 'stone', 1]] }, clock: 0, gathered: {}
     });
     // Gear worn but not owned, or in the wrong slot, falls back to the starter piece; the main hand is never empty.
     const worn = saveKit.clean({ ...fresh, loadout: { main: null, offhand: 'iron_shield', armor: 'wooden_sword', accessory: 'chief_charm' } });

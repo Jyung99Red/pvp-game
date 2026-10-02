@@ -68,6 +68,8 @@ const sfx = (() => {
         empty: () => tone('square', 180, 160, 0.05, 0.025),
         torch: lit => lit ? hiss(400, 1400, 0.25, 0.05, 0.6) : hiss(900, 300, 0.15, 0.03, 0.8),
         burn: () => { hiss(1500, 600, 0.5, 0.05, 0.5); hiss(300, 200, 0.6, 0.04, 1.2); },
+        // Stone cracking (ore, crystal) or leaves rustling (a herb).
+        gather: kind => kind === 'herb' ? hiss(2400, 1400, 0.16, 0.04, 0.5) : (tone('square', 220, 140, 0.08, 0.05), hiss(900, 400, 0.18, 0.05, 0.9), kind === 'crystal' && tone('sine', 1760, 1980, 0.18, 0.03, 0.05)),
         boss: () => { tone('sine', 523, 523, 0.18, 0.06); tone('sine', 659, 659, 0.18, 0.06, 0.16); tone('sine', 784, 784, 0.18, 0.06, 0.32); tone('sine', 1047, 1047, 0.5, 0.06, 0.48); }
     };
     // Simulation events carry who they belong to (`side`); `selfId` is the
@@ -96,6 +98,7 @@ const sfx = (() => {
         else if (e.type === 'potion_empty' && own) sounds.empty();
         else if ((e.type === 'torch_lit' || e.type === 'torch_out') && own) sounds.torch(e.type === 'torch_lit');
         else if (e.type === 'burn' && e.side) sounds.burn();
+        else if (e.type === 'gather' && own) sounds.gather(e.kind);
     }
     // A beat of the duel's countdown; `last` is the start itself.
     function tick(last = false) { if (enabled && ctx && ctx.state === 'running') sounds.countdown(last); }

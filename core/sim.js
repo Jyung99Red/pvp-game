@@ -54,6 +54,7 @@ const worldSim = (() => {
         if (duel) progress = null;
         loadout = { ...(duel ? inventoryKit.starter() : loadout || progress?.loadout || inventoryKit.starter()) };
         if (progress?.edits?.[region]) terrainKit.applyEdits(terrain, progress.edits[region]);
+        propKit.regrow(terrain, progress, region);
         const ids = duel ? DUEL_IDS : ['player'];
         const gear = ids.map((_, i) => ({ ...(duel ? loadouts?.[i] || inventoryKit.starter() : loadout) }));
         // Each fighter's skeleton carries its own gear (the blade decides reach).
@@ -75,9 +76,11 @@ const worldSim = (() => {
         });
         if (carry && Number.isFinite(carry.hp)) fighters[0].hp = Math.max(1, Math.min(fighters[0].maxHp, Math.round(carry.hp)));
         const saved = progress || {};
+        // clock: seconds played (outside duels), which grows resources back.
         const world = {
             bosses: { ...saved.bosses }, chests: { ...saved.chests },
-            inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }, loadout: { ...loadout }
+            inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }, loadout: { ...loadout },
+            clock: saved.clock || 0, gathered: { ...saved.gathered }
         };
         const dummy = dummyKit.create(terrain, map.dummyFacing ?? Math.PI);
         // A boss once down stays down.
@@ -135,6 +138,7 @@ const worldSim = (() => {
     // (a duel's guest predicting between the host's snapshots).
     function step(sim, dt, { judge = true } = {}) {
         sim.time += dt; sim.tick++;
+        if (!sim.duel && sim.progress) sim.progress.clock += dt;
         for (const f of sim.fighters) fighterKit.tick(sim, f, dt);
         fighterKit.settle(sim, judge);
         entityKit.tick(sim, dt);

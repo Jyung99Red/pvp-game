@@ -24,7 +24,7 @@ const terrainMesh = (() => {
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
     // Tile and shade spread per solid kind (by name).
-    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1] };
+    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05] };
 
     // Drawn-only blocks: { 'x,y,z': { tile, tint } } for the whole map.
     function decor(sim) {
@@ -173,12 +173,14 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
             for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
                 const k = terrainKit.kindAt(t, c, r), name = terrainKit.NAMES[k];
                 if (!terrainKit.isSolid(k)) {
-                    // Ground, shaded at corners that meet a wall.
+                    // Ground, shaded at corners that meet a wall; a herb
+                    // grows on the map's own floor.
                     const shades = [[0, 1], [1, 1], [1, 0], [0, 0]].map(([sx, sz]) => {
                         const dx = sx ? 1 : -1, dz = sz ? 1 : -1, s1 = column(c + dx, r), s2 = column(c, r + dz), corner = column(c + dx, r + dz);
                         return AO[s1 && s2 ? 0 : 3 - s1 - s2 - corner];
                     });
-                    b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[GROUND[k]], tintOf(WHITE, c, -1, r, 0.06), shades);
+                    b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[GROUND[k === K.herb ? t.floor : k]], tintOf(WHITE, c, -1, r, 0.06), shades);
+                    if (k === K.herb) { herb(b, c, r); continue; }
                     if (k === K.grass && hash(c, r, 7) < 0.18 && !clear.some(s => Math.abs(c - s.col) <= 1 && Math.abs(r - s.row) <= 1)) flower(b, c, r);
                     continue;
                 }
@@ -193,6 +195,7 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
                         b.quad(F.at(c, y, r), F.n, tiles[fronts.get(`${c},${y},${r},${side}`) || own], rgb);
                     }
                 }
+                if (k === K.crystal) crystals(b, c, level, r);
             }
             // Decor that belongs to this chunk (by the cell under it; decor
             // off the map's edge goes to the nearest chunk).
@@ -219,6 +222,27 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
                 smallBox(b, [x, 0.15, z], [0.05, 0.3, 0.05], turn, tiles.white, stem);
                 const petal = [palette.flowerRed, palette.flowerYellow, palette.flowerWhite, palette.flowerViolet][hash(c, r, 15) * 4 | 0];
                 smallBox(b, [x, 0.34, z], [0.15, 0.13, 0.15], turn, tiles.white, colour.set(petal).toArray());
+            }
+        }
+        // A herb on cell (c, r): a leafy clump with red berries.
+        function herb(b, c, r) {
+            const leaf = colour.set(palette.herb).toArray(), light = colour.set(palette.herbLight).toArray(), berry = colour.set(palette.berry).toArray();
+            const x = c + 0.5, z = r + 0.5, turn = hash(c, r, 31) * Math.PI;
+            for (let k = 0; k < 5; k++) {
+                const a = turn + k * 1.26, d = k ? 0.17 : 0;
+                smallBox(b, [x + Math.cos(a) * d, 0.14 + (k ? 0 : 0.08), z + Math.sin(a) * d], [0.2, 0.28 + (k ? 0 : 0.14), 0.2], a, tiles.white, k % 2 ? light : leaf);
+            }
+            for (let k = 0; k < 3; k++) {
+                const a = turn + 0.6 + k * 2.1;
+                smallBox(b, [x + Math.cos(a) * 0.2, 0.33, z + Math.sin(a) * 0.2], [0.08, 0.08, 0.08], a, tiles.white, berry);
+            }
+        }
+        // Crystals standing on a crystal boulder's top (`level` high).
+        function crystals(b, c, level, r) {
+            const glow = colour.set(palette.crystal).toArray(), deep = colour.set(palette.crystalDeep).toArray();
+            for (let k = 0; k < 3; k++) {
+                const x = c + 0.25 + hash(c, r, 40 + k) * 0.5, z = r + 0.25 + hash(c, r, 50 + k) * 0.5, h = 0.25 + hash(c, r, 60 + k) * 0.3;
+                smallBox(b, [x, level + h / 2, z], [0.13, h, 0.13], hash(c, r, 70 + k) * Math.PI, tiles.white, k === 1 ? deep : glow);
             }
         }
         function mesh(b) {

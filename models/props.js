@@ -29,7 +29,10 @@ const propModels = Object.freeze({
         goblin_ear: { size: [0.22, 0.1, 0.14], color: 'earItem' },
         wolf_pelt: { size: [0.3, 0.06, 0.24], color: 'peltItem' },
         chief_tusk: { size: [0.1, 0.1, 0.3], color: 'tuskItem' },
-        king_fang: { size: [0.08, 0.08, 0.26], color: 'fangItem' }
+        king_fang: { size: [0.08, 0.08, 0.26], color: 'fangItem' },
+        iron_ore: { size: [0.2, 0.16, 0.18], color: 'ore' },
+        crystal: { size: [0.1, 0.24, 0.1], color: 'crystal' },
+        herb: { size: [0.22, 0.08, 0.16], color: 'herbLight' }
     },
     // Roof colour by building kind (multiplies the roof tile).
     roofs: { hotSpring: 'roofSpring', smithy: 'roofSmithy', shop: 'roofShop', storage: 'roofStorage' },

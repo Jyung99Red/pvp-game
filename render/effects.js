@@ -117,11 +117,14 @@ const renderEffects = (() => {
                 else if (e.type === 'drink' && e.side === selfId) rested = 0.5;
                 else if (e.type === 'burn') burst(e.at, 6, ['#ffb13b', '#ff6a2a', '#fff1a8'], 0.6, 1.4, 0.06);
                 else if (e.type === 'burned') burst(e.at, 8, ['#3a3430', '#5a5048', '#ff8a3a'], 0.4, 1.2, 0.07);
+                else if (e.type === 'gather') burst(e.at, 12, GATHERED[e.kind] || GATHERED.ore, 0.8, 2.2, 0.07);
                 else if (e.type === 'enrage') burst(e.at, 8, ['#ff6a4a', '#d9473f'], 1, 2, 0.06);
                 else if (e.type === 'pause_ready' && e.side === selfId) cue = 0.14;
             }
         }
         const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24');
+        // Chips thrown up by gathering, by resource.
+        const GATHERED = { ore: [palette.stone, palette.ore, palette.stoneDark], crystal: [palette.crystal, palette.crystalDeep, '#ffffff'], herb: [palette.herb, palette.herbLight, palette.berry] };
         // Per frame. `view`: { selfId, fighters: [{ id, body, rig,
         // solved, blade, materials }] (those drawn), foes: [{ body, view:
         // { materials }, top, shown }] }.

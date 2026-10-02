@@ -6,17 +6,21 @@
 // x..x+1, z..z+1. The ground is flat (design.md 1: no height
 // differences); solid kinds stand as columns `level` blocks high.
 //
-// The terrain can change at run time (`set`, reserved for placing and
-// breaking blocks). Changes are kept as `edits` against the map they were
+// The terrain can change at run time (`set`: thickets burnt away, ore and
+// herbs gathered). Changes are kept as `edits` against the map they were
 // generated from, so a save stores only what differs.
 const terrainKit = (() => {
     const CHUNK = 16, MAX_LEVEL = 15;
     // `portal` is a portal's pillar; `gate` the glowing opening between two
     // pillars, which nobody walks through (the interact key travels).
     // `brush` is a dry thicket a lit torch burns away (core/props.js).
-    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8, brush: 9 });
+    // `ore`, `crystal` and `herb` are resources gathered with the interact
+    // key (gameConfig.gather): the first two a boulder, the herb a plant
+    // walked through.
+    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8, brush: 9, ore: 10, crystal: 11, herb: 12 });
     const NAMES = Object.freeze(Object.fromEntries(Object.entries(KIND).map(([name, k]) => [k, name])));
-    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate, KIND.brush]);
+    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate, KIND.brush, KIND.ore, KIND.crystal]);
+    const RESOURCE = new Set([KIND.ore, KIND.crystal, KIND.herb]);
     const TREE_HEIGHT = 4, HOUSE_HEIGHT = 3, PORTAL_HEIGHT = 3, BRUSH_HEIGHT = 2;
     // Map letters that put a monster's home on a grass block.
     const MONSTERS = Object.freeze({ g: 'goblin', w: 'wolf', G: 'goblinChief', K: 'wolfKing' });
@@ -38,6 +42,9 @@ const terrainKit = (() => {
         if (ch === 'H') return [KIND.wood, HOUSE_HEIGHT];
         if (ch === '#') return [KIND.portal, PORTAL_HEIGHT];
         if (ch === 'B') return [KIND.brush, BRUSH_HEIGHT];
+        if (ch === 'O') return [KIND.ore, 1];
+        if (ch === 'X') return [KIND.crystal, 1];
+        if (ch === 'h') return [KIND.herb, 0];
         if (ch >= '1' && ch <= '9') return [KIND.stone, Number(ch)];
         return null;
     }
@@ -45,7 +52,8 @@ const terrainKit = (() => {
     // Rows run north (screen top) to south, one letter per cell:
     // `.` grass, `:` path, `=` cobble, `;` gravel, `1`-`9` stone wall of
     // that many blocks, `T` tree, `H` a building's wall, `#` a portal's
-    // pillar, `P` a portal's opening, `B` a dry thicket, `C` a chest, `@` a
+    // pillar, `P` a portal's opening, `B` a dry thicket, `O` iron ore, `X`
+    // crystal, `h` a herb, `C` a chest, `@` a
     // spawn, `D` the training dummy, and the monster letters (MONSTERS).
     // A portal's opening is solid: it is used from in front, not walked into.
     // Markers are collected for the world to place what stands on them.
@@ -88,6 +96,9 @@ const terrainKit = (() => {
     // Outside the map counts as wall.
     function solidAt(t, c, r) { return !inside(t, c, r) || SOLID.has(chunkAt(t, c, r).kind[slot(c, r)]); }
     const isSolid = kind => SOLID.has(kind);
+    const isResource = kind => RESOURCE.has(kind);
+    // What the map drew at a cell, before any change: [kind, level].
+    function generated(t, c, r) { return cellOf(t.rows[r]?.[c] ?? '1', t.floor) || [KIND.stone, 1]; }
     function cellCentre(t, c, r) { return { x: (c + 0.5) * t.unit, y: (r + 0.5) * t.unit }; }
 
     // ---- changes at run time ----
@@ -118,9 +129,11 @@ const terrainKit = (() => {
         return true;
     }
     // The changes as a list [[col, row, kind name, level]], for a save; and
-    // back. Entries that do not fit the map are skipped.
+    // back. Entries that do not fit the map are skipped. Gathered resources
+    // are left out: they grow back (the save keeps them apart, core/props.js).
     function edits(t) {
-        return Object.entries(t.edits).map(([key, [kind, level]]) => { const [c, r] = key.split(',').map(Number); return [c, r, kind, level]; });
+        return Object.entries(t.edits).map(([key, [kind, level]]) => { const [c, r] = key.split(',').map(Number); return [c, r, kind, level]; })
+            .filter(([c, r]) => !RESOURCE.has(generated(t, c, r)[0]));
     }
     function applyEdits(t, list) {
         let n = 0;
@@ -210,7 +223,7 @@ const terrainKit = (() => {
     }
     return {
         CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, BRUSH_HEIGHT, MONSTERS,
-        cellOf, fromRows, inside, kindAt, levelAt, solidAt, isSolid, cellCentre,
+        cellOf, fromRows, inside, kindAt, levelAt, solidAt, isSolid, isResource, generated, cellCentre,
         chunkIndex, chunkCells, set, edits, applyEdits,
         blocked, lineClear, sightClear, moveCircle
     };

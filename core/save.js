@@ -1,10 +1,12 @@
 // The save (design.md 6.6; the 2D version's saves are not read):
 // { v, bosses: { kind: true }, chests: { 'region/chest id': true },
 //   inventory: { gold, items: { id: count } }, loadout: { main, offhand,
-//   armor, accessory }, edits: { region: [[col, row, kind, level]] } }.
+//   armor, accessory }, edits: { region: [[col, row, kind, level]] },
+//   clock, gathered: { 'region/col,row': clock when gathered } }.
 // `edits` are the terrain's changes against the map it was generated from
-// (core/terrain.js): a burnt thicket stays burnt, and placed blocks will
-// go there later. Where the player stands and their HP are not saved: a
+// (core/terrain.js): a burnt thicket stays burnt. Gathered resources are not
+// edits: `gathered` says when, against `clock` (seconds played), and they
+// grow back (core/props.js). Where the player stands and their HP are not saved: a
 // game always starts in the base, whole. A version 1 save (M5, before
 // gear) is read with the starter gear added.
 // Pure data in and out; the storage (localStorage in the page, a stand-in
@@ -17,7 +19,7 @@ const saveKit = (() => {
     function fresh() {
         const loadout = inventoryKit.starter(), items = {};
         for (const id of Object.values(loadout)) if (id) items[id] = 1;
-        return { v: VERSION, bosses: {}, chests: {}, inventory: { gold: 0, items }, loadout, edits: {} };
+        return { v: VERSION, bosses: {}, chests: {}, inventory: { gold: 0, items }, loadout, edits: {}, clock: 0, gathered: {} };
     }
     // Whatever came out of storage, made safe: unknown bosses, items and
     // maps are dropped, counts must be whole, not negative and within an
@@ -47,6 +49,14 @@ const saveKit = (() => {
                 if (!inventoryKit.canEquip(out, slot, id)) out.loadout[slot] = id;
             }
         }
+        if (Number.isFinite(data.clock) && data.clock >= 0) out.clock = data.clock;
+        // Only resources still regrowing are worth keeping.
+        if (obj(data.gathered)) {
+            for (const [key, at] of Object.entries(data.gathered)) {
+                const region = key.split('/')[0];
+                if (gameConfig.maps[region] && !gameConfig.maps[region].duel && key.length < 40 && Number.isFinite(at) && at <= out.clock && out.clock - at < gameConfig.gather.regrowSeconds) out.gathered[key] = at;
+            }
+        }
         if (obj(data.edits)) {
             for (const [region, list] of Object.entries(data.edits)) {
                 if (!gameConfig.maps[region] || gameConfig.maps[region].duel || !Array.isArray(list)) continue;
@@ -65,6 +75,8 @@ const saveKit = (() => {
             out.chests = { ...out.chests, ...p.chests };
             out.inventory = { gold: p.inventory.gold, items: { ...p.inventory.items } };
             if (p.loadout) out.loadout = { ...p.loadout };
+            if (Number.isFinite(p.clock)) out.clock = Math.max(out.clock, p.clock);
+            if (p.gathered) out.gathered = { ...out.gathered, ...p.gathered };
         }
         if (sim.region && !sim.duel) {
             const list = terrainKit.edits(sim.terrain);

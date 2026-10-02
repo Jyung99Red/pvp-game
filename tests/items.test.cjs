@@ -80,7 +80,7 @@ test('the shop sells potions (five at most) and a torch, and buys materials, one
     assert.equal(K.sell(p, 'wooden_sword'), '不收这个');
     assert.equal(p.inventory.gold, 200 - 5 * I.potion.price - I.torch.price + I.goblin_ear.sell + 2 * I.wolf_pelt.sell);
     assert.deepEqual(plain(K.forSale()), ['potion', 'torch']);
-    assert.deepEqual(plain(K.wanted()), ['goblin_ear', 'wolf_pelt', 'chief_tusk', 'king_fang']);
+    assert.deepEqual(plain(K.wanted()), ['goblin_ear', 'wolf_pelt', 'chief_tusk', 'king_fang', 'iron_ore', 'crystal', 'herb']);
 });
 
 test('the smithy makes gear from materials and gold, once each', () => {
@@ -268,4 +268,77 @@ test('the dark cave hangs off the valley, and the valley is reached only past th
     assert.ok(gameConfig.maps.valley.portals.some(p => p.to === 'cave'));
     const sim = W.create({ region: 'cave', arrival: 'valley' });
     assert.equal(T.kindAt(sim.terrain, Math.floor(sim.monsters[0].x / U), Math.floor(sim.monsters[0].y / U)), T.KIND.gravel, 'monsters stand on the cave floor');
+});
+
+// ---- gathering (design.md 6.5) ----
+test('ore, crystal and herbs stand on the region maps, and what they give goes into gear', () => {
+    const count = (map, ch) => map.rows.join('').split(ch).length - 1;
+    const M = gameConfig.maps;
+    assert.ok(count(M.field, 'O') >= 2 && count(M.valley, 'O') >= 3, 'iron ore in the field and the valley');
+    assert.ok(count(M.field, 'h') >= 3 && count(M.valley, 'h') >= 2, 'herbs out in the open');
+    assert.ok(count(M.cave, 'X') >= 3, 'crystal in the cave');
+    for (const [kind, G] of Object.entries(gameConfig.gather)) {
+        if (kind === 'regrowSeconds') continue;
+        assert.ok(T.KIND[kind] !== undefined && T.isResource(T.KIND[kind]), kind);
+        assert.ok(gameConfig.loot[G.loot]?.length, `${kind} loot`);
+        assert.ok(G.hold > 0 && G.verb && G.name);
+    }
+    assert.equal(T.isSolid(T.KIND.ore) && T.isSolid(T.KIND.crystal), true, 'boulders stand in the way');
+    assert.equal(T.isSolid(T.KIND.herb), false, 'a herb is walked through');
+    // Each new material is wanted by the smithy.
+    for (const id of ['iron_ore', 'crystal', 'herb']) assert.ok(K.recipes().some(g => I[g].recipe.materials[id]), `${id} is used`);
+});
+
+test('holding interact on ore mines it: loot pops out, rubble is left, and it grows back after a while of play, on the next visit', () => {
+    const save = fresh(), sim = W.create({ region: 'field', progress: save }), p = sim.player, t = sim.terrain, G = gameConfig.gather;
+    sim.monsters = [];
+    const ore = sim.entities.find(e => e.type === 'node' && e.kind === 'ore');
+    put(p, ore.x, ore.y + 36, -Math.PI / 2); step(sim, 0.02);
+    assert.deepEqual(plain(interactKit.target(sim, p).offer), { verb: '采矿', name: '铁矿', hold: G.ore.hold, ready: true, why: '' });
+    press(sim, 'interact'); step(sim, G.ore.hold / 2); release(sim, 'interact');
+    assert.ok(sim.entities.includes(ore), 'let go too early: nothing');
+    W.drain(sim);
+    press(sim, 'interact'); step(sim, G.ore.hold + 0.05); release(sim, 'interact');
+    assert.ok(!sim.entities.includes(ore), 'mined');
+    assert.equal(T.kindAt(t, ore.col, ore.row), T.KIND.gravel, 'rubble where it stood');
+    assert.equal(events(sim, 'gather').length, 1);
+    step(sim, 1.5);
+    const got = K.count(sim.progress, 'iron_ore');
+    assert.ok(got >= 1 && got <= 2, `picked up ${got} iron ore`);
+    const key = `field/${ore.col},${ore.row}`;
+    assert.ok(Number.isFinite(sim.progress.gathered[key]));
+    // Not a terrain edit: the save keeps when it was mined instead.
+    const after = saveKit.merge(save, sim);
+    assert.equal((after.edits.field || []).length, 0);
+    assert.ok(after.gathered[key] >= 0 && after.clock >= after.gathered[key]);
+    // Coming back soon: still gone. After regrowSeconds of play: back.
+    const soon = W.create({ region: 'field', progress: saveKit.clean(after) });
+    assert.equal(T.kindAt(soon.terrain, ore.col, ore.row), T.KIND.gravel);
+    assert.ok(!soon.entities.some(e => e.id === ore.id));
+    const later = saveKit.clean({ ...after, clock: after.clock + G.regrowSeconds });
+    assert.deepEqual(plain(later.gathered), {}, 'the save forgets what has grown back');
+    const back = W.create({ region: 'field', progress: later });
+    assert.equal(T.kindAt(back.terrain, ore.col, ore.row), T.KIND.ore);
+    assert.ok(back.entities.some(e => e.id === ore.id));
+    // The clock runs while playing (never in a duel).
+    const c0 = sim.progress.clock; step(sim, 0.5);
+    assert.ok(Math.abs(sim.progress.clock - c0 - 0.5) < 1e-6);
+});
+
+test('a herb is picked in a moment and leaves bare ground; nothing is gathered in a fight', () => {
+    const sim = W.create({ region: 'field' }), p = sim.player, t = sim.terrain, G = gameConfig.gather;
+    const herb = sim.entities.find(e => e.type === 'node' && e.kind === 'herb');
+    sim.monsters = [];
+    put(p, herb.x, herb.y + 30, -Math.PI / 2); step(sim, 0.02);
+    assert.equal(interactKit.target(sim, p).offer.verb, '采集');
+    press(sim, 'interact'); step(sim, G.herb.hold + 0.05); release(sim, 'interact');
+    assert.equal(T.kindAt(t, herb.col, herb.row), T.KIND.grass);
+    step(sim, 1.5);
+    assert.ok(K.count(sim.progress, 'herb') >= 1);
+    // With a monster coming for the player, the key cannot gather.
+    const fight = W.create({ region: 'field' }), f = fight.player, h2 = fight.entities.find(e => e.type === 'node' && e.kind === 'herb');
+    put(f, h2.x, h2.y + 30, -Math.PI / 2);
+    const m = fight.monsters[0]; m.phase = 'chase'; m.wait = 99; put(m, f.x + 120, f.y);
+    step(fight, 0.02);
+    assert.equal(interactKit.target(fight, f).offer.why, '战斗中');
 });

@@ -17,7 +17,7 @@ const renderTextures = (() => {
     const rgbOf = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
     const shade = (c, k) => `rgb(${Math.min(255, c[0] * k) | 0},${Math.min(255, c[1] * k) | 0},${Math.min(255, c[2] * k) | 0})`;
     // Atlas tiles, in order; the atlas is ATLAS_COLS wide.
-    const TILES = ['grassTop', 'dirt', 'path', 'stone', 'mossy', 'bark', 'barkTop', 'leaves', 'cobble', 'gravel', 'plank', 'roof', 'door', 'window', 'portalStone', 'white', 'brush'];
+    const TILES = ['grassTop', 'dirt', 'path', 'stone', 'mossy', 'bark', 'barkTop', 'leaves', 'cobble', 'gravel', 'plank', 'roof', 'door', 'window', 'portalStone', 'white', 'brush', 'ore', 'crystalRock'];
     const ATLAS_COLS = 8, ATLAS_ROWS = 4, TILE = 16;
 
     // Drawing of every tile on a 16x16 context; `rnd` is the shared stream.
@@ -112,6 +112,21 @@ const renderTextures = (() => {
                     for (let k = 0; k < len; k++) fill(g, P.brush, (x + k * dx + 16) % 16, (y + (k >> 1)) % 16, 1, 1, 0.85 + rnd() * 0.3);
                 }
                 dots(g, '#c9a66b', 1, 6);
+            },
+            // Iron ore: stone with rusty lumps.
+            ore: g => {
+                speckle(g, P.stone, 0.72, 0.98);
+                for (const [x, y, w, h] of [[2, 2, 3, 2], [9, 1, 3, 3], [5, 7, 4, 3], [12, 8, 2, 3], [1, 11, 3, 3], [8, 12, 4, 2]]) {
+                    speckle(g, P.ore, 0.8, 1.1, x, y, w, h);
+                    fill(g, P.oreLight, x, y, 1, 1);
+                }
+                dots(g, P.stoneDark, 1, 10);
+            },
+            // Dark rock with veins of crystal.
+            crystalRock: g => {
+                speckle(g, P.stoneDark, 0.6, 0.85);
+                for (const [x, y, len, dx] of [[2, 13, 6, 1], [10, 14, 5, -1], [6, 6, 5, 1], [13, 3, 4, -1]]) for (let k = 0; k < len; k++) fill(g, P.crystal, x + k * dx, y - k, 1, 1, 0.75 + rnd() * 0.35);
+                dots(g, P.crystalDeep, 1, 8);
             },
             // Fine grain on character boxes, tinted by the box colour.
             grain: g => { speckle(g, '#ffffff', 0.84, 1.0); dots(g, '#ffffff', 0.74, 10); }
