@@ -31,13 +31,11 @@
 
     <button type="button" class="ctl ctl-a" data-button="a" aria-label="A">A</button>
     <button type="button" class="ctl ctl-b" data-button="b" aria-label="B">B</button>
-    <button type="button" class="ctl ctl-offhand" data-button="offhand" data-kind="shield" aria-label="副手">
+    <button type="button" class="ctl ctl-guard" data-button="guard" data-kind="shield" aria-label="格挡">
         <svg class="icon-shield" viewBox="0 0 24 24" aria-hidden="true"><path class="shield-face" d="M12 2.5 4.5 5.2v6.1c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.2z"/><path class="shield-band" d="M11 3h2v18h-2zM5 10h14v2H5z"/></svg>
-        <svg class="icon-torch" viewBox="0 0 24 24" aria-hidden="true"><path class="torch-stick" d="M10.5 10h3l-1 12h-1z"/><path class="torch-head" d="M9 7h6v4H9z"/><path class="torch-flame" d="M12 1c2 2.5 3.5 3.8 3.5 5.6 0 .3 0 .3-.1.4H8.6c-.1-.1-.1-.1-.1-.4C8.5 4.8 10 3.5 12 1z"/></svg>
-        <svg class="icon-potion" viewBox="0 0 24 24" aria-hidden="true"><path class="potion-glass" d="M9.5 2h5v2h-1v4.2c3 1.2 5 3.8 5 7 0 4.2-2.9 6.8-6.5 6.8S5.5 19.4 5.5 15.2c0-3.2 2-5.8 5-7V4h-1z"/><path class="potion-liquid" d="M7 15h10c0 3-2 5.3-5 5.3S7 18 7 15z"/></svg>
-        <span class="ctl-count" data-hud="offhand-count" hidden></span>
+        <svg class="icon-blade" viewBox="0 0 24 24" aria-hidden="true"><path class="blade-steel" d="M8 10.6h11.5l3 1.4-3 1.4H8z"/><path class="blade-guard" d="M6 6.5h2.2v11H6z"/><path class="blade-grip" d="M1.5 10.9H6v2.2H1.5z"/></svg>
     </button>
-    <button type="button" class="ctl ctl-interact idle" data-button="interact" aria-label="交互"><span data-hud="interact">交互</span></button>
+    <button type="button" class="ctl ctl-interact idle" data-button="interact" aria-label="交互"><span data-hud="interact">交互</span><span class="ctl-count" data-hud="item-count" hidden></span></button>
     <button type="button" class="hud-menu" data-menu aria-label="菜单"><i></i><i></i></button>
 
     <div class="panel" data-panel hidden>

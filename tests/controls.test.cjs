@@ -23,7 +23,7 @@ test('keyboard: WASD and arrows make a unit vector; opposite keys cancel', () =>
     assert.deepEqual(v(['KeyA', 'KeyD']), [0, 0]);
     assert.deepEqual(v([]), [0, 0]);
     const keys = I.keys;
-    assert.deepEqual([keys.a[0], keys.b[0], keys.offhand[0], keys.interact[0]], ['KeyJ', 'KeyK', 'KeyL', 'KeyE']);
+    assert.deepEqual([keys.a[0], keys.b[0], keys.guard[0], keys.interact[0]], ['KeyJ', 'KeyK', 'KeyL', 'KeyE']);
 });
 
 test('screen directions map to the ground for the fixed camera', () => {
@@ -49,10 +49,10 @@ test('controls fit every common landscape phone without overlapping', () => {
     for (const [name, w, h, insets] of PHONES) {
         assert.deepEqual(K.check(w, h, insets).length, 0, `${name}: ${K.check(w, h, insets).join('; ')}`);
         const { buttons: b, stickRest, stickZone } = K.layout(w, h, insets);
-        // Right cluster: A biggest and lowest-right, B above it, offhand to its left.
-        assert.ok(b.a.size > b.b.size && b.a.size > b.offhand.size, name);
-        assert.ok(b.b.y < b.a.y && b.offhand.x < b.a.x, name);
-        const cluster = ['a', 'b', 'offhand'].map(id => b[id]);
+        // Right cluster: A biggest and lowest-right, B above it, guard to its left.
+        assert.ok(b.a.size > b.b.size && b.a.size > b.guard.size, name);
+        assert.ok(b.b.y < b.a.y && b.guard.x < b.a.x, name);
+        const cluster = ['a', 'b', 'guard'].map(id => b[id]);
         const height = Math.max(...cluster.map(c => c.y + c.r)) - Math.min(...cluster.map(c => c.y - c.r));
         assert.ok(height <= 200, `${name}: right cluster ${height}px tall`);
         // The stick zone is a small bottom-left patch around where the stick rests.
@@ -66,7 +66,7 @@ test('controls fit every common landscape phone without overlapping', () => {
 });
 
 test('first sizes follow parameters.md 9', () => {
-    assert.deepEqual([L.buttons.a.size, L.buttons.b.size, L.buttons.offhand.size, L.buttons.interact.size], [84, 72, 72, 56]);
+    assert.deepEqual([L.buttons.a.size, L.buttons.b.size, L.buttons.guard.size, L.buttons.interact.size], [84, 72, 72, 56]);
     assert.equal(L.minGap, 10);
     assert.equal(I.maxTouches, 2);
     assert.deepEqual([I.deadZone, I.ramp], [12, 32]);

@@ -216,11 +216,11 @@ test('interacting works with the shield up, and not at all in a fight', () => {
     const sim = W.create({ region: 'field' }), p = sim.player;
     const portal = sim.entities.find(e => e.id === 'p-base');
     before(p, portal, -Math.PI / 2);
-    press(sim, 'offhand'); step(sim, 0.3);
+    press(sim, 'guard'); step(sim, 0.3);
     assert.equal(p.guard.state, 'up');
     tap(sim, 'interact');
     assert.equal(events(sim, 'travel').length, 1, 'shield and interact together');
-    release(sim, 'offhand');
+    release(sim, 'guard');
     const m = sim.monsters.find(x => x.kind === 'goblin');
     put(m, p.x + 100, p.y - 60); m.phase = 'chase'; m.wait = 99;
     step(sim, 0.02);

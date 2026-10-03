@@ -43,11 +43,15 @@ const combatKit = (() => {
     }
 
     // ---- guard bar (design.md 4.5) ----
-    function guardCost(raw, maxHp, parry) {
+    // What a fighter guards with: the shield when one is carried, else the
+    // weapon. Its numbers (combat.guard.shield / .weapon).
+    function guardOf(body) { return inventoryKit.offhandOf(body.loadout) === 'shield' ? 'shield' : 'weapon'; }
+    const guardBy = body => C().guard[guardOf(body)];
+    function guardCost(raw, body, parry) {
         const G = C().guardBar;
-        return raw / maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
+        return raw / body.maxHp * guardBy(body).blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
     }
-    // Every guard cost goes through here. An empty bar drops the shield and
+    // Every guard cost goes through here. An empty bar drops the guard and
     // locks it until the bar refills to unlockRatio.
     function spendGuard(sim, body, amount) {
         const g = body.guard;
@@ -64,15 +68,15 @@ const combatKit = (() => {
         if (g.locked && g.bar >= G.max * G.unlockRatio - 1e-9) { g.locked = false; emit(sim, 'guard_ready', { side: body.side }); }
     }
 
-    // ---- a blow meets a fighter: shield, perfect parry, or a hit ----
+    // ---- a blow meets a fighter: a block, a perfect parry, or a hit ----
     // `raw` is the blow before DEF; `point` (blocks) is only for effects.
     // blow: { move, heavy, stun (a hit breaks the combo), knockback (how far
     // a hit pushes) }. A foe's blow always stuns and pushes the standard
     // distance; a fighter's own move says (fighterKit, a duel).
     function strike(sim, victim, attacker, raw, point, { move, heavy = false, stun = true, knockback = C().impact.knockback.hit } = {}) {
-        const v = victim, G = C().guard, fighter = attacker.kind === 'fighter';
+        const v = victim, fighter = attacker.kind === 'fighter';
         if (v.guard.state === 'up' && inFront(v, attacker)) {
-            const parry = sim.time - v.guard.readyAt <= G.parryWindow + 1e-9;
+            const G = guardBy(v), parry = sim.time - v.guard.readyAt <= G.parryWindow + 1e-9;
             if (parry) {
                 const counter = defended(v.atk * C().damage.parryAtkRatio, attacker.def);
                 v.stats.parries++;
@@ -80,14 +84,14 @@ const combatKit = (() => {
                 kitOf(attacker).struck(sim, attacker, { amount: counter, stagger: C().stagger.parry, by: v });
                 if (!(fighter && attacker.down)) impact(sim, attacker, v, 'parry');
             } else {
-                const amount = Math.round(defended(raw, v.def) * C().damage.blockMultiplier);
+                const amount = Math.round(defended(raw, v.def) * G.blockMultiplier);
                 damage(sim, v, amount);
                 v.stats.blocks++;
-                emit(sim, 'block', { side: v.side, source: attacker.id, damage: amount, at: point });
+                emit(sim, 'block', { side: v.side, source: attacker.id, damage: amount, at: point, with: guardOf(v) });
                 impact(sim, v, attacker, 'block');
             }
             // Paid after the hit is settled: the block that empties the bar still counts.
-            spendGuard(sim, v, guardCost(raw, v.maxHp, parry));
+            spendGuard(sim, v, guardCost(raw, v, parry));
             if (v.hp === 0) fighterKit.fall(sim, v);
             return;
         }
@@ -153,5 +157,5 @@ const combatKit = (() => {
         const toward = Math.atan2(from.y - body.y, from.x - body.x);
         return Math.abs(space.wrapAngle(toward - body.facing)) <= C().guard.frontAngle + 1e-9;
     }
-    return { kitOf, defended, emit, damage, impact, tickPush, guardCost, spendGuard, tickGuardBar, strike, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
+    return { kitOf, defended, emit, damage, impact, tickPush, guardOf, guardCost, spendGuard, tickGuardBar, strike, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
 })();

@@ -76,7 +76,7 @@ test('a heavy hit breaks the combo, stuns and pushes by the move', () => {
 test('the shield blocks and parries the same for host and guest', () => {
     for (const defender of [0, 1]) for (const parry of [true, false]) {
         const sim = facing(duel()), d = sim.fighters[defender], a = sim.fighters[1 - defender];
-        W.command(sim, { type: 'press', button: 'offhand' }, defender);
+        W.command(sim, { type: 'press', button: 'guard' }, defender);
         step(sim, parry ? F.guard.startup + 0.01 - M.slash.windup - 0.04 : 0.5);
         tap(sim, 1 - defender);
         step(sim, 0.25);
@@ -87,7 +87,7 @@ test('the shield blocks and parries the same for host and guest', () => {
             assert.ok(a.hp < a.maxHp && a.stun > 0 || a.stats.hurt === 1, 'the attacker eats the counter');
         } else {
             assert.equal(d.stats.blocks, 1);
-            assert.equal(d.hp, d.maxHp - Math.round(Math.max(1, Math.round(raw * (1 - d.def / (d.def + F.damage.defenseConstant)))) * F.damage.blockMultiplier));
+            assert.equal(d.hp, d.maxHp - Math.round(Math.max(1, Math.round(raw * (1 - d.def / (d.def + F.damage.defenseConstant)))) * F.guard.shield.blockMultiplier));
             assert.equal(a.hp, a.maxHp);
         }
     }
@@ -143,7 +143,7 @@ test('with judge off (the guest predicting) swings pass through and nothing is d
 
 test('a duel snapshot restores into a fresh world and plays on the same', () => {
     const sim = facing(duel());
-    W.command(sim, { type: 'press', button: 'b' }, 0); tap(sim, 1); step(sim, 0.13); W.command(sim, { type: 'press', button: 'offhand' }, 1);
+    W.command(sim, { type: 'press', button: 'b' }, 0); tap(sim, 1); step(sim, 0.13); W.command(sim, { type: 'press', button: 'guard' }, 1);
     const copy = W.restore(duel(), plain(W.snapshot(sim)));
     assert.equal(duelKit.validSnapshot(copy, W.snapshot(sim)), true);
     for (const s of [sim, copy]) { step(s, 0.5); W.command(s, { type: 'release', button: 'b' }, 0); step(s, 1); }

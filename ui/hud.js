@@ -22,7 +22,7 @@ const hud = (() => {
             boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
             tag: $('[data-hud="tag"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
             region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]'),
-            offhand: $('[data-button="offhand"]'), offhandCount: $('[data-hud="offhand-count"]')
+            guardKey: $('[data-button="guard"]'), itemCount: $('[data-hud="item-count"]')
         };
         let toasts = [], notice = null;
         let comboKey = '', comboShownAt = -1, floats = [], focus = null, mobs = new Map(), fightAt = null, selfId = 'player';
@@ -110,9 +110,32 @@ const hud = (() => {
             els.arrow.hidden = false;
             els.arrow.style.transform = `translate(${(cx + dx * k).toFixed(1)}px, ${(cy + dy * k).toFixed(1)}px) translate(-50%, -50%) rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
         }
-        // The interact key and the tag over its target.
+        // What the interact key would do with the offhand item, or null:
+        // { verb, ready, count (potions left, or null) }.
+        function itemUse(sim, p) {
+            const kind = inventoryKit.offhandOf(p.loadout);
+            if (kind === 'torch') return { verb: p.lit ? '熄灭' : '点燃', ready: true, count: null };
+            if (kind !== 'potion') return null;
+            const count = inventoryKit.count(sim.progress || { inventory: { gold: 0, items: {} } }, 'potion');
+            if (p.drink?.phase === 'wait') return { verb: '取消', ready: true, count };
+            return { verb: '喝药', ready: count > 0 && !p.drink, count };
+        }
+        // The interact key and the tag over its target; with nothing in
+        // reach, or in a fight, the offhand item (core/interact.js).
         function interaction(sim, p, view) {
-            const t = sim.duel || p.down ? null : interactKit.target(sim, p);
+            const busy = sim.duel || p.down, item = busy || !interactKit.usesItem(sim, p) ? null : itemUse(sim, p);
+            els.itemCount.hidden = !item || item.count === null;
+            if (item) {
+                els.itemCount.textContent = String(item.count);
+                els.key.classList.toggle('idle', !item.ready);
+                els.key.classList.remove('blocked', 'holding');
+                els.key.style.setProperty('--hold', '0');
+                els.keyText.textContent = item.verb;
+                els.key.setAttribute('aria-label', item.verb);
+                els.tag.hidden = true;
+                return;
+            }
+            const t = busy ? null : interactKit.target(sim, p);
             els.key.classList.toggle('idle', !t);
             els.key.classList.toggle('blocked', !!t && !t.offer.ready);
             els.key.style.setProperty('--hold', String(t ? t.progress : 0));
@@ -135,15 +158,8 @@ const hud = (() => {
             width(els.hp, p.hp / p.maxHp);
             width(els.guard, p.guard.bar / G.max);
             els.guardBar.classList.toggle('locked', p.guard.locked);
-            // The offhand key shows what is carried there (the guard bar
-            // only with a shield); potions left on it, greyed with none.
-            const kind = inventoryKit.offhandOf(p.loadout), potions = kind === 'potion' ? inventoryKit.count(sim.progress || { inventory: { gold: 0, items: {} } }, 'potion') : 0;
-            els.guardBar.hidden = kind !== 'shield';
-            els.offhand.dataset.kind = kind || 'none';
-            els.offhand.classList.toggle('lit', !!p.lit);
-            els.offhand.classList.toggle('disabled', !kind || (kind === 'potion' && potions < 1));
-            els.offhandCount.hidden = kind !== 'potion';
-            els.offhandCount.textContent = String(potions);
+            // The guard key shows what it guards with: the shield, or the blade.
+            els.guardKey.dataset.kind = combatKit.guardOf(p);
             // The region and what is carried.
             const map = gameConfig.maps[sim.region];
             els.goal.hidden = !!sim.duel || !map;

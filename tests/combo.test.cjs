@@ -198,13 +198,13 @@ test('inside a move the stick never walks; it turns the body only in a windup, s
 
 test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {
     const P = gameConfig.player;
-    for (const button of ['a', 'offhand']) {
+    for (const button of ['a', 'guard']) {
         const sim = setup(); sim.player.y += 3 * gameConfig.world.unitsPerBlock; sim.player.facing = 0;
         W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, P.runAfter + P.runRampSeconds + P.startSeconds + 0.05);
         assert.equal(sim.player.runBlend, 1);
         press(sim, button); step(sim, 0.02);
         assert.equal(sim.player.runBlend, 0, `${button}: the run is over at once`);
-        if (button === 'offhand') {
+        if (button === 'guard') {
             const x0 = sim.player.x; step(sim, 0.5);
             const speed = (sim.player.x - x0) / 0.5, G = gameConfig.combat.guard;
             assert.ok(Math.abs(speed - P.speed * G.moveMultiplier) < 1, `shield up walks slowly: ${speed}`);
@@ -333,7 +333,7 @@ test('an input the move does not derive waits for the recovery: no endless loops
 test('the same inputs give the same fight', () => {
     const play = () => {
         const sim = setup({ near: true }); sim.dummy.wait = 0.3;
-        const script = { 0: ['press', 'a'], 5: ['release', 'a'], 20: ['press', 'b'], 22: ['release', 'b'], 90: ['press', 'offhand'], 200: ['release', 'offhand'], 230: ['press', 'b'], 330: ['release', 'b'] };
+        const script = { 0: ['press', 'a'], 5: ['release', 'a'], 20: ['press', 'b'], 22: ['release', 'b'], 90: ['press', 'guard'], 200: ['release', 'guard'], 230: ['press', 'b'], 330: ['release', 'b'] };
         for (let t = 0; t < 600; t++) {
             if (script[t]) W.command(sim, { type: script[t][0], button: script[t][1] });
             W.step(sim, 0.01);

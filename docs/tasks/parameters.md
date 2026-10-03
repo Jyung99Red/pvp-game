@@ -39,7 +39,6 @@
 | `hitStun` | 0.35 | 主角被打中（没挡住）的硬直；对战里只有 B 招才会 |
 | `weaponPad` | 8 | 判定时武器盒各方向外扩 0.2 格 |
 | `damage.defenseConstant` | 17.5 | 伤害 = 原始 × (1 - 防御 / (防御 + 17.5))，至少 1 |
-| `damage.blockMultiplier` | 0.4 | 挡住的一击只受四成 |
 | `damage.parryAtkRatio` | 0.5 | 完美弹反的反击 = 攻击 × 0.5 |
 | `impact.hitstop` | 命中 0.06、格挡 0.04、弹反 0.08 | 卡肉 |
 | `impact.knockback` | 命中 10、格挡 5、弹反 8 | 怪物打主角、格挡、弹反的击退；主角招式的击退在招式表 |
@@ -48,12 +47,19 @@
 | `stagger.duration` / `parry` | 1.5 / 1 | 失衡多久；完美弹反给几点 |
 | `charge.threshold` / `full` | 0.3 / 2.3 | 剑的蓄力：按下 0.3 秒后伤害开始涨，2.3 秒满 |
 | `charge.moveMultiplier` / `turnMultiplier` | 0.6 / 0.65 | 蓄力时走和转的倍率 |
-| `guard.startup` / `parryWindow` | 0.16 / 0.18 | 盾举起要多久；举起后多久内挡下算完美弹反 |
-| `guard.moveMultiplier` / `turnMultiplier` | 0.3 / 0.5 | 举盾时走和转的倍率 |
+| `guard.startup` | 0.16 | 格挡键按下到挡住要多久 |
+| `guard.shield` / `guard.weapon` | 见下表 | 带盾用盾挡，没带盾用武器挡（用户 2026-10-03：盾 120 分、武器 80 分，旧的盾算 100 分） |
+| `guard.moveMultiplier` / `turnMultiplier` | 0.3 / 0.5 | 格挡时走和转的倍率 |
 | `guard.frontAngle` | π/2 | 正面左右各 90° 以内才挡得住 |
 | `guardBar.max` / `raiseCost` / `holdDrain` | 100 / 10 / 10 | 格挡条：满 100，举盾扣 10，按住每秒扣 10 |
-| `guardBar.blockCostScale` / `parryCostRatio` | 6 / 0.5 | 挡下扣 原始伤害 ÷ 最大生命 × 600；弹反扣一半 |
-| `guardBar.refillSeconds` / `unlockRatio` | 3 / 0.4 | 放下盾 3 秒回满；扣空后回到 40% 才能再举 |
+| `guardBar.parryCostRatio` | 0.5 | 挡下扣 原始伤害 ÷ 最大生命 × `blockCostScale` × 100；弹反扣一半 |
+| `guardBar.refillSeconds` / `unlockRatio` | 3 / 0.4 | 放下格挡 3 秒回满；扣空后回到 40% 才能再挡 |
+
+| 用什么挡 | 挡住还受多少伤害 `blockMultiplier` | 格挡条消耗 `blockCostScale` | 完美弹反窗口 `parryWindow` | 一条格挡条约挡几下狼咬 |
+|---|---:|---:|---:|---:|
+| 盾 `shield` | 0.2 | 2 | 0.22 | 约 5 |
+| 武器 `weapon`（副手是火把、药水或空着） | 0.3 | 3 | 0.15 | 约 3 |
+| 改之前的盾（参考） | 0.4 | 6 | 0.18 | 约 1.7 |
 | `potion.seconds` / `heal` | 0.8 / 0.3 | 喝一口多久；回复最大生命的三成 |
 | `potion.moveMultiplier` / `turnMultiplier` | 0.3 / 0.5 | 喝的时候走和转的倍率 |
 
@@ -255,7 +261,7 @@
 | `graphics.shadowMapSmall` / `Large` / `shadowExtent` | 1024 / 2048 / 13 | 阴影贴图（短边小于 700 像素用小的）；阴影范围半宽（格） |
 | `input.deadZone` / `ramp` / `stickRadius` | 12 / 32 / 52 | 摇杆死区、再拖多少到满速、底座半径 |
 | `input.maxTouches` | 2 | 同时有效的触点 |
-| `input.keys` | WASD/方向键、J、K、L、E | 移动、A、B、副手、交互 |
+| `input.keys` | WASD/方向键、J、K、L、E | 移动、A、B、格挡、交互 |
 
-**按钮** `controlsLayout`（圆心到所在一侧和底部安全区边缘的距离、直径）：A 右 78/72 直径 84；B 右 70/162 直径 72；副手 右 176/56 直径 72；交互 左 64/196 直径 56。
+**按钮** `controlsLayout`（圆心到所在一侧和底部安全区边缘的距离、直径）：A 右 78/72 直径 84；B 右 70/162 直径 72；格挡 右 176/56 直径 72；交互 左 64/196 直径 56。
 按钮间距至少 10；摇杆在左下角 250×190 的区域里按下出现，没按时停在 (120, 96)。

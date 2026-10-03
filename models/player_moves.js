@@ -105,6 +105,13 @@ const playerMoves = (() => {
             upperArmL: { rx: -1.25, ry: -0.95, rz: 0.1 }, forearmL: { rx: -0.35 }, handL: { ry: -0.3 },
             upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
+        // Guarding with the weapon (no shield carried): the blade held
+        // across the chest, edge out, tip to the left. The right arm only:
+        // the left keeps whatever it carries.
+        guardWeapon: {
+            chest: { ry: -0.36 },
+            upperArmR: { rx: -0.5, ry: 0.8, rz: -0.83 }, forearmR: { rx: -0.71 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
+        },
         // Drinking a potion: the flask up to the mouth, the head tipped
         // back. Upper body only: legs keep walking underneath.
         drink: {

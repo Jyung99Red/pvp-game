@@ -6,6 +6,8 @@
 // action with a `hold` (opening a chest) starts filling a bar that runs
 // while the key stays down and the target stays the same and ready.
 // Nothing works in a fight: a monster after the fighter greys it out.
+// With nothing in reach, or in a fight, the key uses the offhand item
+// instead (a potion, a torch: core/fighter.js).
 //
 // On a fighter: focus (the target's id, or null) and using ({ id, t } while
 // a hold fills, else null).
@@ -46,6 +48,8 @@ const interactKit = (() => {
         entityKit.kitOf(t.entity).use(sim, t.entity, p);
         return true;
     }
+    // Whether a press goes to the offhand item rather than a target.
+    function usesItem(sim, p) { return inCombat(sim, p) || !target(sim, p); }
     function release(sim, p) { p.using = null; }
     function tick(sim, p, dt) {
         const e = pick(sim, p);
@@ -57,5 +61,5 @@ const interactKit = (() => {
         u.t += dt;
         if (u.t >= t.offer.hold - 1e-9) { p.using = null; entityKit.kitOf(t.entity).use(sim, t.entity, p); }
     }
-    return { inCombat, pick, target, press, release, tick };
+    return { inCombat, pick, target, usesItem, press, release, tick };
 })();

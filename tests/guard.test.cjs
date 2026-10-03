@@ -1,10 +1,10 @@
-// The offhand key with a shield (design.md 3.4) and the
+// The guard key -- with the shield, or the weapon without one -- and the
 // guard bar (design.md 4.5), carried over from the 2D version
 // and played against the training dummy's real attacks.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, gameConfig, fighterKit, inventoryKit } = load();
+const g = load(), { worldSim: W, gameConfig, inventoryKit } = g;
 const G = gameConfig.combat.guardBar, GU = gameConfig.combat.guard, D = gameConfig.dummy, F = gameConfig.combat;
 // The player's stats: the base plus the starter gear (core/inventory.js).
 const S = inventoryKit.statsOf(inventoryKit.starter());
@@ -25,10 +25,10 @@ const impactTime = (() => {
     for (let i = 0; i < 400; i++) { W.step(sim, 0.01); if (sim.stats.hurt) return sim.time; }
     throw new Error('the dummy never reached the player');
 })();
-const swipeRaw = D.atk * D.moves[0].ratio, cost = parry => swipeRaw / S.maxHp * G.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
+const swipeRaw = D.atk * D.moves[0].ratio, cost = (parry, by = GU.shield) => swipeRaw / S.maxHp * by.blockCostScale * G.max * (parry ? G.parryCostRatio : 1);
 // Run to `t`, raise the shield then, and run through the impact.
 function guardAt(sim, t) {
-    step(sim, t - sim.time); press(sim, 'offhand');
+    step(sim, t - sim.time); press(sim, 'guard');
     step(sim, impactTime + 0.05 - sim.time);
     return sim;
 }
@@ -51,7 +51,7 @@ test('the dummy attacks in reach, its swipe lands during its swing, and an ungua
 });
 
 test('raising costs a little, holding drains, a block costs more than a parry of the same hit', () => {
-    const sim = setup(); sim.dummy.wait = 1e9; press(sim, 'offhand');
+    const sim = setup(); sim.dummy.wait = 1e9; press(sim, 'guard');
     assert.equal(sim.player.guard.bar, G.max - G.raiseCost);
     step(sim, 0.5); assert.ok(Math.abs(sim.player.guard.bar - (G.max - G.raiseCost - G.holdDrain * 0.5)) < 1e-6);
     // Raised long before: a block.
@@ -65,13 +65,13 @@ test('raising costs a little, holding drains, a block costs more than a parry of
     assert.ok(parry.dummy.hp < parry.dummy.maxHp, 'the parry hits back');
     assert.equal(parry.dummy.stagger, F.stagger.parry);
     // The bar refills only with the shield down.
-    release(parry, 'offhand'); const low = parry.player.guard.bar; step(parry, 0.3);
+    release(parry, 'guard'); const low = parry.player.guard.bar; step(parry, 0.3);
     assert.ok(Math.abs(parry.player.guard.bar - low - G.max / G.refillSeconds * 0.3) < 1e-6);
 });
 
 test('a blocked hit does a share of the damage and no stun; from behind the shield does nothing', () => {
     const block = guardAt(setup(), impactTime - 0.8);
-    assert.ok(block.player.hp < block.player.maxHp && block.player.maxHp - block.player.hp <= Math.ceil(swipeRaw * F.damage.blockMultiplier));
+    assert.ok(block.player.hp < block.player.maxHp && block.player.maxHp - block.player.hp <= Math.ceil(swipeRaw * GU.shield.blockMultiplier));
     assert.equal(block.player.stun, 0);
     const behind = guardAt(setup({ facingAway: true }), impactTime - 0.8);
     assert.equal(behind.stats.blocks, 0); assert.equal(behind.stats.hurt, 1);
@@ -79,19 +79,19 @@ test('a blocked hit does a share of the damage and no stun; from behind the shie
 });
 
 test('an empty bar drops the shield and locks it until the bar is back to the unlock ratio', () => {
-    const sim = setup(); sim.dummy.wait = 1e9; sim.player.guard.bar = 15; press(sim, 'offhand');
+    const sim = setup(); sim.dummy.wait = 1e9; sim.player.guard.bar = 15; press(sim, 'guard');
     for (let i = 0; i < 100 && !sim.player.guard.locked; i++) W.step(sim, 0.01);
     assert.ok(Math.abs(sim.time - (15 - G.raiseCost) / G.holdDrain) < 0.011, 'the hold drains the last 5 points in 0.5 s');
     assert.equal(sim.player.guard.state, 'down');
     assert.ok(W.drain(sim).some(e => e.type === 'guard_broken'));
-    release(sim, 'offhand'); press(sim, 'offhand');
+    release(sim, 'guard'); press(sim, 'guard');
     assert.equal(sim.player.guard.state, 'down', 'locked: no shield, so no parry either');
-    release(sim, 'offhand');
+    release(sim, 'guard');
     step(sim, G.refillSeconds * G.unlockRatio - 0.05); assert.equal(sim.player.guard.locked, true);
     step(sim, 0.06); assert.equal(sim.player.guard.locked, false);
-    press(sim, 'offhand'); assert.equal(sim.player.guard.state, 'raising');
+    press(sim, 'guard'); assert.equal(sim.player.guard.state, 'raising');
     // The block that empties the bar still counts as a block.
-    const last = setup(); step(last, impactTime - 0.8); press(last, 'offhand'); step(last, 0.6); last.player.guard.bar = 5;
+    const last = setup(); step(last, impactTime - 0.8); press(last, 'guard'); step(last, 0.6); last.player.guard.bar = 5;
     step(last, impactTime + 0.05 - last.time);
     assert.equal(last.stats.blocks, 1); assert.equal(last.player.guard.locked, true); assert.equal(last.player.stun, 0);
 });
@@ -103,7 +103,7 @@ test('a move plays out whole before the shield goes up; a charge is dropped at o
     const M = gameConfig.combo.moves;
     for (const at of [0.05, 0.15, 0.25]) { // windup, swing, recovery
         const sim = quiet(); press(sim, 'a'); release(sim, 'a'); step(sim, at);
-        press(sim, 'offhand'); assert.equal(sim.player.guard.queued, true); assert.notEqual(sim.player.act, null);
+        press(sim, 'guard'); assert.equal(sim.player.guard.queued, true); assert.notEqual(sim.player.act, null);
         let upAt = null;
         for (let i = 0; i < 100 && upAt == null; i++) { W.step(sim, 0.01); if (sim.player.guard.state !== 'down') upAt = sim.time; }
         assert.ok(Math.abs(upAt - (M.slash.windup + M.slash.swing + M.slash.recovery)) < 0.011, `pressed at ${at}: up at ${upAt}, when the recovery ends`);
@@ -111,31 +111,49 @@ test('a move plays out whole before the shield goes up; a charge is dropped at o
     }
     // A or B pressed while the shield waits do nothing, so the move cannot chain on.
     const waiting = quiet(); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.15);
-    press(waiting, 'offhand'); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.6);
+    press(waiting, 'guard'); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.6);
     assert.equal(waiting.stats.attacks, 1); assert.notEqual(waiting.player.guard.state, 'down');
     // Let go before the move ends: nothing goes up.
     const changed = quiet(); press(changed, 'a'); release(changed, 'a'); step(changed, 0.15);
-    press(changed, 'offhand'); step(changed, 0.1); release(changed, 'offhand'); step(changed, 0.5);
+    press(changed, 'guard'); step(changed, 0.1); release(changed, 'guard'); step(changed, 0.5);
     assert.equal(changed.player.guard.state, 'down'); assert.equal(changed.player.guard.bar, G.max);
     // Pressed in the charged windup with B still held, it drops the charge when the windup ends.
-    const held = quiet(); press(held, 'b'); step(held, 0.2); press(held, 'offhand');
+    const held = quiet(); press(held, 'b'); step(held, 0.2); press(held, 'guard');
     step(held, gameConfig.combo.moves.charged.windup - 0.2 + 0.02);
     assert.equal(held.player.act, null); assert.equal(held.player.guard.state, 'raising');
     release(held, 'b'); step(held, 0.5); assert.equal(held.stats.attacks, 1, 'the charge never cut');
     const charge = quiet(); press(charge, 'b'); step(charge, 0.6); assert.equal(charge.player.act.phase, 'charge');
-    press(charge, 'offhand'); release(charge, 'b'); step(charge, 1);
+    press(charge, 'guard'); release(charge, 'b'); step(charge, 1);
     assert.equal(charge.player.act, null); assert.equal(charge.stats.attacks, 1, 'the charge is dropped, not fired');
 });
 
-test('with the shield up A and B do nothing; the offhand key needs something in the offhand', () => {
-    const sim = setup(); sim.dummy.wait = 1e9; press(sim, 'offhand'); step(sim, 0.3);
+test('with the guard up A and B do nothing', () => {
+    const sim = setup(); sim.dummy.wait = 1e9; press(sim, 'guard'); step(sim, 0.3);
     press(sim, 'a'); release(sim, 'a'); press(sim, 'b'); release(sim, 'b'); step(sim, 0.5);
     assert.equal(sim.stats.attacks, 0);
-    release(sim, 'offhand'); press(sim, 'a'); assert.equal(sim.player.act.move, 'slash');
-    const empty = setup({ loadout: { main: 'wooden_sword', offhand: null } }); empty.dummy.wait = 1e9;
-    press(empty, 'offhand'); step(empty, 0.3);
-    assert.equal(empty.player.guard.state, 'down'); assert.equal(empty.player.guard.bar, G.max);
-    assert.equal(fighterKit.OFFHAND.shield.press.length, 2, 'press(sim, fighter)');
+    release(sim, 'guard'); press(sim, 'a'); assert.equal(sim.player.act.move, 'slash');
+});
+
+test('without a shield the weapon guards, weaker: more damage and guard bar per block, a shorter parry window (user, 2026-10-03)', () => {
+    assert.ok(GU.weapon.blockMultiplier > GU.shield.blockMultiplier && GU.weapon.blockCostScale > GU.shield.blockCostScale && GU.weapon.parryWindow < GU.shield.parryWindow);
+    for (const offhand of [null, 'torch', 'potion']) {
+        const loadout = { ...gameConfig.gear.starter, offhand }, sim = setup({ loadout }), p = sim.player;
+        assert.equal(g.combatKit.guardOf(p), 'weapon', String(offhand));
+        const raisedAt = impactTime - 0.8;
+        guardAt(sim, raisedAt);
+        assert.equal(sim.stats.blocks, 1, `${offhand}: the blade blocks`); assert.equal(p.stun, 0);
+        const statsOf = inventoryKit.statsOf(loadout);
+        const taken = Math.round(Math.max(1, Math.round(swipeRaw * (1 - statsOf.def / (statsOf.def + F.damage.defenseConstant)))) * GU.weapon.blockMultiplier);
+        assert.equal(p.maxHp - p.hp, taken);
+        const spent = G.max - p.guard.bar - G.raiseCost - G.holdDrain * (sim.time - raisedAt), want = swipeRaw / p.maxHp * GU.weapon.blockCostScale * G.max;
+        assert.ok(Math.abs(spent - want) < 0.2, `${spent} vs ${want}`);
+    }
+    // A hit midway between the two windows after the guard is up: the
+    // shield parries it, the blade only blocks it.
+    const mid = (GU.weapon.parryWindow + GU.shield.parryWindow) / 2;
+    const shield = guardAt(setup(), impactTime - GU.startup - mid), blade = guardAt(setup({ loadout: { ...gameConfig.gear.starter, offhand: null } }), impactTime - GU.startup - mid);
+    assert.equal(shield.stats.parries, 1);
+    assert.equal(blade.stats.parries, 0); assert.equal(blade.stats.blocks, 1);
 });
 
 test('training is deathless: a fall refills the player', () => {
@@ -146,10 +164,10 @@ test('training is deathless: a fall refills the player', () => {
 });
 
 test('an A pressed during the hitstop of a block runs once the hitstop is over', () => {
-    const sim = setup(); step(sim, impactTime - 0.8); press(sim, 'offhand');
+    const sim = setup(); step(sim, impactTime - 0.8); press(sim, 'guard');
     for (let i = 0; i < 200 && !sim.stats.blocks; i++) W.step(sim, 0.01);
     assert.ok(sim.player.freeze > 0, 'held by the block');
-    release(sim, 'offhand'); press(sim, 'a'); release(sim, 'a');
+    release(sim, 'guard'); press(sim, 'a'); release(sim, 'a');
     step(sim, 0.1);
     assert.equal(sim.stats.attacks, 1); assert.equal(sim.player.act?.move, 'slash');
 });

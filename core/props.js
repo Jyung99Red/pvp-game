@@ -8,9 +8,10 @@
 //   down; it throws out its loot. Opened stays opened (the save).
 // - drop: loot on the ground. It pops out, settles, and is picked up by
 //   walking near it: it flies to the one who came close.
-// - brush: a dry thicket (a `B` block). The interact key with a lit torch
-//   sets it alight; fire spreads to the thickets next to it, and each burns
-//   away to bare ground. The terrain change is an edit, so it stays burnt.
+// - brush: a dry thicket (a `B` block). The interact key, a torch carried,
+//   lights the torch and sets the thicket alight; fire spreads to the
+//   thickets next to it, and each burns away to bare ground. The terrain
+//   change is an edit, so it stays burnt.
 // - node: a resource (`O` iron ore, `X` crystal, `h` herb; design.md 6.5).
 //   Holding the interact key gathers it: it throws out its loot and is gone
 //   -- rubble where a boulder stood, bare ground for a herb -- until it grows
@@ -140,8 +141,9 @@ const propKit = (() => {
             if (e.requires && !downed(sim, e.requires)) Object.assign(out, { ready: false, why: `${bossName(e.requires)}守着它` });
         } else if (e.type === 'brush') {
             if (e.burning >= 0) return null;
+            // A torch carried does it: one press lights the torch and the thicket.
             const torch = inventoryKit.offhandOf(p.loadout) === 'torch';
-            out = { verb: '点燃', name: '枯木丛', hold: 0, ready: torch && p.lit, why: !torch ? '要用火把点燃' : p.lit ? '' : '先点燃火把' };
+            out = { verb: '点燃', name: '枯木丛', hold: 0, ready: torch, why: torch ? '' : '要用火把点燃' };
         } else if (e.type === 'node') {
             const G = gameConfig.gather[e.kind];
             out = { verb: G.verb, name: G.name, hold: G.hold, ready: true, why: '' };
@@ -163,7 +165,7 @@ const propKit = (() => {
             const ahead = gameConfig.props.chestRadius + 6;
             drop(sim, e.loot, e.x + Math.cos(e.facing) * ahead, e.y + Math.sin(e.facing) * ahead);
             emit(sim, 'chest_open', { side: p.id, target: e.id, at: space.toBlocks(e.x, e.y, 24) });
-        } else if (e.type === 'brush') ignite(sim, e, p.id);
+        } else if (e.type === 'brush') { fighterKit.light(sim, p, true); ignite(sim, e, p.id); }
         else if (e.type === 'node') gather(sim, e, p);
     }
     // ---- gathering ----

@@ -508,7 +508,7 @@ test('a block and a perfect parry work against a monster as against the dummy', 
         m.phase = 'chase'; m.wait = 0;
         W.step(sim, 0.01);
         step(sim, mv.windup - raiseBefore);
-        press(sim, 'offhand');
+        press(sim, 'guard');
         step(sim, raiseBefore + mv.swing + 0.1);
         return sim;
     };
@@ -524,7 +524,7 @@ test('the wolf\'s leap rams with its body along the path, sub-stepped, and stops
     const S = MON.wolf, mv = S.moves.leap;
     const leap = (playerDist, guard = false) => {
         const sim = field('wolf'), m = sim.monsters[0], p = sim.player;
-        if (guard) { press(sim, 'offhand'); step(sim, 0.4); }
+        if (guard) { press(sim, 'guard'); step(sim, 0.4); }
         put(m, 400, 400, 0); put(p, 400 + playerDist, 400, Math.PI);
         m.phase = 'windup'; m.move = 'leap'; m.t = mv.windup - 0.005;
         const x0 = m.x;

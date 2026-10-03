@@ -1,6 +1,8 @@
 // A fighter: the move tree on A and B (pre-input, derive points, the pause
 // line, the opening charge; the tree is the main weapon's type,
-// design.md 4.2), the offhand (shield, potion, torch), being struck, and
+// design.md 4.2), the guard key (with the shield if one is carried, else
+// the weapon), the offhand items the interact key uses (potion, torch),
+// being struck, and
 // moving between all of that. Rules carried over from the 2D version
 // (tag v1-2d, pve/spatial_engine.js) with the input layer of
 // design.md 3.3: A and B are separate keys, A or B start
@@ -10,7 +12,7 @@
 // State on a fighter:
 //   id, side   who it is ('player'; a duel's 'host' and 'guest'); events
 //          carry it as `side`
-//   input  its five controls: { move: { x, y }, buttons: { a, b, offhand,
+//   input  its five controls: { move: { x, y }, buttons: { a, b, guard,
 //          interact: { held, presses } } }
 //   stats  attacks, hits, misses, blocks, parries, hurt, kills
 //   act    the move under way: { move, phase: windup|charge|swing|recover,
@@ -33,7 +35,7 @@
 // the hits applied, so two fighters cutting each other in the same step
 // both land, whoever is ticked first.
 const fighterKit = (() => {
-    const BUTTONS = Object.freeze(['a', 'b', 'offhand', 'interact']);
+    const BUTTONS = Object.freeze(['a', 'b', 'guard', 'interact']);
     const K = () => gameConfig.combo, F = () => gameConfig.combat;
     const moveOf = id => gameConfig.combo.moves[id];
     const emit = (sim, p, type, data) => combatKit.emit(sim, type, { side: p.id, ...data });
@@ -206,46 +208,50 @@ const fighterKit = (() => {
         combatKit.impact(sim, foe, p, 'hit', m.knockback);
     }
 
-    // ---- the offhand: what the key does depends on what is carried ----
+    // ---- the guard key: always there (user, 2026-10-03: guarding is the
+    // defence, there is no dodge). It guards with the shield when one is
+    // carried, else with the weapon, weaker (combatKit.guardOf).
     function raise(sim, p) {
         const g = p.guard;
         g.queued = false; g.state = 'raising'; g.t = 0;
         p.chain = null; p.combo = []; p.buffer = null;
         p.runBlend = 0; p.moveTime = 0;
-        emit(sim, p, 'guard_raise');
+        emit(sim, p, 'guard_raise', { with: combatKit.guardOf(p) });
         combatKit.spendGuard(sim, p, F().guardBar.raiseCost);
     }
-    const OFFHAND = {
-        shield: {
-            // It drops a charge at once. Any other move plays out whole --
-            // windup, swing and recovery (user, 2026-10-01) -- and the
-            // shield goes up as it ends; a stun is waited out the same way.
-            press(sim, p) {
-                const g = p.guard;
-                if (g.locked) { emit(sim, p, 'guard_locked'); return false; }
-                if (g.state !== 'down' || g.queued) return false;
-                if (p.act?.phase === 'charge') { p.act = null; emit(sim, p, 'charge_dropped'); }
-                p.buffer = null;
-                if (p.act || p.stun > 0) { g.queued = true; return true; }
-                raise(sim, p);
-                return true;
-            },
-            release(sim, p) {
-                const g = p.guard;
-                g.queued = false;
-                if (g.state !== 'down') { g.state = 'down'; emit(sim, p, 'guard_lower'); }
-            },
-            tick(sim, p, dt) {
-                const g = p.guard;
-                if (g.state === 'raising') {
-                    g.t += dt;
-                    if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
-                }
-            }
+    const GUARD = {
+        // It drops a charge at once. Any other move plays out whole --
+        // windup, swing and recovery (user, 2026-10-01) -- and the guard
+        // goes up as it ends; a stun is waited out the same way.
+        press(sim, p) {
+            const g = p.guard;
+            if (g.locked) { emit(sim, p, 'guard_locked'); return false; }
+            if (g.state !== 'down' || g.queued) return false;
+            if (p.act?.phase === 'charge') { p.act = null; emit(sim, p, 'charge_dropped'); }
+            p.buffer = null;
+            if (p.act || p.stun > 0) { g.queued = true; return true; }
+            raise(sim, p);
+            return true;
         },
+        release(sim, p) {
+            const g = p.guard;
+            g.queued = false;
+            if (g.state !== 'down') { g.state = 'down'; emit(sim, p, 'guard_lower'); }
+        },
+        tick(sim, p, dt) {
+            const g = p.guard;
+            if (g.state === 'raising') {
+                g.t += dt;
+                if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
+            }
+        }
+    };
+    // ---- offhand items, used with the interact key when it has nothing
+    // else to do (core/interact.js) ----
+    const ITEMS = {
         // A potion (design.md 3.4): a press drinks one, if any are
         // left -- at once when free, else as soon as the move or stun is
-        // over (like the shield, and meanwhile A and B do nothing; another
+        // over (like the guard, and meanwhile A and B do nothing; another
         // press calls it off). The drink takes potion.seconds; a blow that
         // gets through spills it and the potion is kept.
         potion: {
@@ -259,7 +265,6 @@ const fighterKit = (() => {
                 if (!p.act && p.stun <= 0) startDrink(sim, p);
                 return true;
             },
-            release() {},
             tick(sim, p, dt) {
                 const d = p.drink;
                 if (!d) return;
@@ -282,25 +287,33 @@ const fighterKit = (() => {
         // A torch: each press lights it or puts it out. It lights the dark
         // (drawn) and sets thickets alight (core/props.js).
         torch: {
-            press(sim, p) { p.lit = !p.lit; emit(sim, p, p.lit ? 'torch_lit' : 'torch_out'); return true; },
-            release() {},
+            press(sim, p) { light(sim, p, !p.lit); return true; },
             tick() {}
         }
     };
+    function light(sim, p, on) {
+        if (p.lit === on) return;
+        p.lit = on;
+        emit(sim, p, on ? 'torch_lit' : 'torch_out');
+    }
     function startDrink(sim, p) {
         p.drink = { phase: 'drink', t: 0 };
         p.chain = null; p.combo = []; p.buffer = null;
         p.runBlend = 0; p.moveTime = 0;
         emit(sim, p, 'drink_start');
     }
-    const offhandOf = p => OFFHAND[inventoryKit.offhandOf(p.loadout)] || null;
+    // The offhand item the interact key uses, or null (a shield is the
+    // guard key's).
+    const itemOf = p => ITEMS[inventoryKit.offhandOf(p.loadout)] || null;
 
     function press(sim, p, button) {
         if (p.down) return false;
         if (button === 'b') p.bPress = { at: sim.time, held: true, upAt: null };
         if (button === 'a' || button === 'b') return pressAttack(sim, p, button);
-        if (button === 'offhand') { const o = offhandOf(p); return o ? o.press(sim, p) : false; }
-        // Interact works alongside the shield (design.md 3.5).
+        if (button === 'guard') return GUARD.press(sim, p);
+        // The interact key: what is in reach, or with nothing there (or in a
+        // fight) the offhand item. It works alongside the guard.
+        if (interactKit.usesItem(sim, p)) { const item = itemOf(p); return item ? item.press(sim, p) : false; }
         return interactKit.press(sim, p);
     }
     function release(sim, p, button) {
@@ -310,7 +323,7 @@ const fighterKit = (() => {
             // Letting go of a charge cuts.
             if (p.act?.phase === 'charge' && p.act.pressAt === p.bPress.at) beginSwing(sim, p, true);
         }
-        if (button === 'offhand') offhandOf(p)?.release(sim, p);
+        if (button === 'guard') GUARD.release(sim, p);
         if (button === 'interact') interactKit.release(sim, p);
     }
 
@@ -332,8 +345,8 @@ const fighterKit = (() => {
         if (p.drink) { p.drink = null; emit(sim, p, 'drink_spilled'); }
         p.act = null; p.chain = null; p.combo = [];
         if (p.guard.state !== 'down') p.guard.state = 'down';
-        // Still holding the shield key: it goes back up once the stun is over.
-        p.guard.queued = p.input.buttons.offhand.held && !!offhandOf(p) && !p.guard.locked;
+        // Still holding the guard key: it goes back up once the stun is over.
+        p.guard.queued = p.input.buttons.guard.held && !p.guard.locked;
         p.stun = F().hitStun;
         p.runBlend = 0; p.moveTime = 0;
     }
@@ -390,7 +403,8 @@ const fighterKit = (() => {
         if (p.push) combatKit.tickPush(sim, p, dt, obstacles(sim, p));
         if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
         free(sim, p);
-        offhandOf(p)?.tick(sim, p, dt);
+        GUARD.tick(sim, p, dt);
+        itemOf(p)?.tick(sim, p, dt);
         interactKit.tick(sim, p, dt);
         motion(sim, p, dt);
         tickAct(sim, p, dt);
@@ -447,5 +461,5 @@ const fighterKit = (() => {
             }
         }
     }
-    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, rigOf, OFFHAND };
+    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, rigOf, light, ITEMS };
 })();

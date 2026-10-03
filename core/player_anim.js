@@ -1,5 +1,5 @@
 // The main character's pose as a pure function of simulation state
-// (design.md 2.3): stance, walk, run, moves, shield and
+// (design.md 2.3): stance, walk, run, moves, guard (shield or blade) and
 // flinch depend only on what the simulation holds, so the host and a guest
 // pose a body the same way, and a hit test sees what is drawn. `present`
 // adds what is drawn but never tested (breathing, leaning, trembling).
@@ -147,8 +147,10 @@ const playerAnim = (() => {
             }
             pose = rigKit.mix(pose, moving, w);
         }
+        // Guarding: the shield up if one is carried, else the blade across
+        // the chest (the left arm keeps what it holds).
         if (body.guardBlend > 0) {
-            const raised = { ...rigKit.pick(pose, lowerBody), ...playerMoves.guard };
+            const raised = inventoryKit.offhandOf(body.loadout) === 'shield' ? { ...rigKit.pick(pose, lowerBody), ...playerMoves.guard } : { ...pose, ...playerMoves.guardWeapon };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }
         // Drinking: the flask comes up over a fifth of a second, stays, and

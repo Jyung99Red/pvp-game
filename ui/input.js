@@ -1,5 +1,5 @@
 // Touch, mouse and keyboard to the five controls (design.md
-// 3.2): a floating stick on the left, A, B and offhand on the right,
+// 3.2): a floating stick on the left, A, B and guard on the right,
 // interact on the left. One pointer per control and at most
 // input.maxTouches at once (two thumbs). Movement leaves here already turned
 // into a ground direction; the simulation never sees pixels.

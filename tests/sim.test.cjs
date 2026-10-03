@@ -16,7 +16,7 @@ test('a new world puts the player on the spawn block, on the ground, nothing hel
     assert.deepEqual(plain({ x: p.x, y: p.y }), plain(terrainKit.cellCentre(t, t.spawn.col, t.spawn.row)));
     assert.equal(p.h, 0);
     assert.ok(Object.values(sim.input.buttons).every(b => !b.held && b.presses === 0));
-    assert.deepEqual(plain(Object.keys(sim.input.buttons)), ['a', 'b', 'offhand', 'interact']);
+    assert.deepEqual(plain(Object.keys(sim.input.buttons)), ['a', 'b', 'guard', 'interact']);
 });
 
 test('the fixed-step clock: whole steps, carried remainders, long frames capped', () => {
@@ -73,12 +73,12 @@ test('two thumbs: walking with the shield up, interact on top; A stands the walk
     const { sim, loop, p } = running(), G = gameConfig.combat.guard, x0 = p.x, P = gameConfig.player;
     p.facing = 0;
     W.command(sim, { type: 'move', x: 1, y: 0 });
-    W.command(sim, { type: 'press', button: 'offhand' });
+    W.command(sim, { type: 'press', button: 'guard' });
     W.command(sim, { type: 'press', button: 'interact' });
     loop.run(0.5);
-    assert.ok(sim.input.buttons.offhand.held && sim.input.buttons.interact.held);
+    assert.ok(sim.input.buttons.guard.held && sim.input.buttons.interact.held);
     assert.ok(Math.abs(p.x - x0 - SPEED * G.moveMultiplier * (0.5 - (P.startSeconds - 0.01) / 2)) < 1, `walked ${p.x - x0} with the shield up`);
-    W.command(sim, { type: 'release', button: 'offhand' });
+    W.command(sim, { type: 'release', button: 'guard' });
     W.command(sim, { type: 'press', button: 'a' });
     const x1 = p.x;
     loop.run(gameConfig.combo.moves.slash.windup);

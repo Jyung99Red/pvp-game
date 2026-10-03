@@ -108,8 +108,8 @@ const app = (() => {
             press: button => blocked() ? false : act({ type: 'press', button }),
             release: button => act({ type: 'release', button })
         });
-        // The offhand and interact keys are the HUD's (ui/hud.js): they show
-        // what is carried and what the key would do.
+        // The guard and interact keys are the HUD's (ui/hud.js): they show
+        // what guards and what the key would do.
         const display = hud.attach(root);
         display.reset(sim, 0);
         const room = roomScreen.attach(root, { connected: beginDuel, closed: () => { if (!duel) menu.open(); } });

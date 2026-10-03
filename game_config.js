@@ -46,8 +46,8 @@ const gameConfig = (() => {
         // controls this long. weaponPad: weapon boxes grow by this much on
         // every side for hit tests only (design.md 4.3).
         // Damage = max(1, round(raw * (1 - DEF / (DEF + defenseConstant)))).
-        // A blocked hit does blockMultiplier of that; a perfect parry hits
-        // back for atk * parryAtkRatio. Impact: on contact both fighters'
+        // A blocked hit does the guard's blockMultiplier of that (`guard`);
+        // a perfect parry hits back for atk * parryAtkRatio. Impact: on contact both fighters'
         // clocks stop for `hitstop`; then the one struck is pushed
         // `knockback` units over knockbackSeconds. Player moves carry their
         // own knockback in the combo table; these are for hits on the
@@ -56,24 +56,34 @@ const gameConfig = (() => {
         combat: {
             fighters: { base: { maxHp: 340, atk: 22, def: 4 } },
             hitStun: 0.35, weaponPad: 8,
-            damage: { defenseConstant: 17.5, blockMultiplier: 0.4, parryAtkRatio: 0.5 },
+            damage: { defenseConstant: 17.5, parryAtkRatio: 0.5 },
             impact: { hitstop: { hit: 0.06, block: 0.04, parry: 0.08 }, knockback: { hit: 10, block: 5, parry: 8 }, knockbackSeconds: 0.12 },
             stagger: { threshold: 3, duration: 1.5, parry: 1 },
             // The opening B: held past its windup it charges. Charge time
             // counts from the press; damage grows from `threshold` to `full`
             // seconds. While charging the body walks and turns slower.
             charge: { threshold: 0.3, full: 2.3, moveMultiplier: 0.6, turnMultiplier: 0.65 },
-            // The shield: `startup` from press to up; a hit within
-            // parryWindow of the shield coming up is a perfect parry. Only
-            // hits from within frontAngle of facing are blocked.
-            guard: { startup: 0.16, parryWindow: 0.18, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 2 },
+            // The guard key: guarding is the defence, there is no dodge
+            // (user, 2026-10-03). `startup` from press to up; only hits from
+            // within frontAngle of facing are blocked. What it guards with
+            // decides the rest: the shield when one is carried, else the
+            // weapon, weaker (user: shield 120, weapon 80 against the old
+            // shield's 100). blockMultiplier: the share of the damage a
+            // block lets through; blockCostScale: what a block costs of the
+            // guard bar; a hit within parryWindow of the guard coming up is a
+            // perfect parry.
+            guard: {
+                startup: 0.16, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 2,
+                shield: { blockMultiplier: 0.2, blockCostScale: 2, parryWindow: 0.22 },
+                weapon: { blockMultiplier: 0.3, blockCostScale: 3, parryWindow: 0.15 }
+            },
             // Guard bar (points). Raising costs raiseCost, holding drains
             // holdDrain a second, a blocked hit costs
             // raw / maxHp * blockCostScale * max (a parry parryCostRatio of
-            // that). Down, it refills in refillSeconds; emptied, the shield
+            // that). Down, it refills in refillSeconds; emptied, the guard
             // stays locked until it is back to unlockRatio.
-            guardBar: { max: 100, raiseCost: 10, holdDrain: 10, blockCostScale: 6, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 },
-            // A potion in the offhand (design.md 3.4): a drink takes
+            guardBar: { max: 100, raiseCost: 10, holdDrain: 10, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 },
+            // A potion in the offhand, drunk with the interact key: a drink takes
             // `seconds`, walking and turning slowed meanwhile, and heals
             // `heal` of max HP at the end; a blow that gets through spills
             // it (the potion is kept). Pressed in a move or a stun, it waits
@@ -243,8 +253,10 @@ const gameConfig = (() => {
         // kind: gold | material | gear | supply. Gear goes in a `slot`
         // (main, offhand, armor, accessory) and adds its `stats`; a weapon's
         // `blade` (blocks) decides its reach (the two swords share one size,
-        // only their colours differ: user 2026-10-02); an offhand item's `offhand` is
-        // what the offhand key does with it (shield, torch, potion). `max`:
+        // only their colours differ: user 2026-10-02); an offhand item's
+        // `offhand` is what it is for: a shield is what the guard key guards
+        // with (the weapon guards without one), a torch or a potion is used
+        // with the interact key. `max`:
         // how many can be owned. `price`: what the shop sells it for;
         // `sell`: what it pays for one. `recipe`: what the smithy wants for
         // it (gold and materials). Gear is never lost; potions are used up.
@@ -257,12 +269,12 @@ const gameConfig = (() => {
             iron_ore: { kind: 'material', name: '铁矿石', icon: '🪨', sell: 3, desc: '原野和山谷的铁矿石块里采来的。铁匠铺打造铁器要用。' },
             crystal: { kind: 'material', name: '晶石', icon: '💎', sell: 10, desc: '幽暗洞穴里采来的晶石。能镶在饰品上。' },
             herb: { kind: 'material', name: '草药', icon: '🌿', sell: 2, desc: '野外的草药丛采来的。能编进护符，商店也收。' },
-            potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按副手键喝一口，回复三成生命；挨打会洒掉这一口（药水还在）。' },
-            torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处，能烧掉枯木丛。不能挡，也不能拿来打。' },
+            potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按交互键喝一口（附近没东西可交互，或者在战斗中），回复三成生命；挨打会洒掉这一口（药水还在）。' },
+            torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按交互键点燃或熄灭，照亮暗处，能烧掉枯木丛。拿着火把时只能用武器挡，也不能拿火把打。' },
             wooden_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
             assassin_dagger: { kind: 'gear', slot: 'main', weapon: 'dagger', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { wolf_pelt: 2, iron_ore: 2 } }, desc: '短刃。比剑短，要贴得更近；出招快，连段最长六段，起手 B 是往前冲的突刺。' },
             iron_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 0.92, max: 1, recipe: { gold: 80, materials: { iron_ore: 5, goblin_ear: 2 } }, desc: '和木剑一样长，铁打的刃，攻击高得多。' },
-            wooden_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '木盾', icon: '🛡️', stats: { def: 2 }, max: 1, desc: '开局带着的盾。按住副手键举盾。' },
+            wooden_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '木盾', icon: '🛡️', stats: { def: 2 }, max: 1, desc: '开局带着的盾。按住格挡键用盾挡，比用武器挡更稳。' },
             iron_shield: { kind: 'gear', slot: 'offhand', offhand: 'shield', name: '铁盾', icon: '🔰', stats: { def: 6 }, max: 1, recipe: { gold: 80, materials: { iron_ore: 4, wolf_pelt: 2 } }, desc: '更结实的盾。' },
             cloth_armor: { kind: 'gear', slot: 'armor', name: '布甲', icon: '👕', stats: { def: 2, maxHp: 20 }, max: 1, desc: '开局穿着的衣服。' },
             iron_armor: { kind: 'gear', slot: 'armor', name: '铁甲', icon: '🥋', stats: { def: 7, maxHp: 40 }, max: 1, recipe: { gold: 100, materials: { iron_ore: 6, wolf_pelt: 3 } }, desc: '加了肩甲和胸甲。' },
@@ -342,7 +354,7 @@ const gameConfig = (() => {
             keys: {
                 up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
                 left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-                a: ['KeyJ'], b: ['KeyK'], offhand: ['KeyL'], interact: ['KeyE']
+                a: ['KeyJ'], b: ['KeyK'], guard: ['KeyL'], interact: ['KeyE']
             }
         },
 
@@ -357,7 +369,7 @@ const gameConfig = (() => {
             buttons: {
                 a: { side: 'right', x: 78, y: 72, size: 84 },
                 b: { side: 'right', x: 70, y: 162, size: 72 },
-                offhand: { side: 'right', x: 176, y: 56, size: 72 },
+                guard: { side: 'right', x: 176, y: 56, size: 72 },
                 interact: { side: 'left', x: 64, y: 196, size: 56 }
             },
             stick: { zoneWidth: 250, zoneHeight: 190, restX: 120, restY: 96 }
