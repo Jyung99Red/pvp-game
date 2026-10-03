@@ -15,6 +15,7 @@
 // A monster is an entity (core/entity.js) of type 'monster': { id, kind,
 //   side: 'monster', boss, x, y, h, facing, radius, solid, hp, maxHp, atk,
 //   def, home: { x, y }, phase, t, move (name of the move under way),
+//   flip (that move drawn mirrored: its key poses say `either`),
 //   cooldowns ({ move: seconds left }), wait, struck, stopped (a leap that
 //   has met something), stagger, flinch, freeze, push, enraged, patrolAt
 //   (angle of the next waypoint), rest, gait, speed, moveBlend }
@@ -59,7 +60,7 @@ const monsterKit = (() => {
             id: `m${index}`, type: 'monster', kind: spawn.kind, side: 'monster', boss: !!S.boss, solid: true,
             x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing: Math.PI / 2 + index * 1.3, radius: S.radius,
             hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, home: { x: at.x, y: at.y },
-            phase: 'patrol', t: 0, move: null, cooldowns: {}, wait: 0, struck: false, stopped: false,
+            phase: 'patrol', t: 0, move: null, flip: false, cooldowns: {}, wait: 0, struck: false, stopped: false,
             stagger: 0, flinch: 0, freeze: 0, push: null, enraged: false,
             patrolAt: index * 1.7, rest: 0.4 * index, gait: 0, speed: 0, moveBlend: 0
         };
@@ -84,8 +85,15 @@ const monsterKit = (() => {
         const low = rigKit.lowest(rigData, rigKit.solve(rigData, pose), part => part.kind !== 'weapon');
         return rigKit.add(pose, { base: { py: -low / rigData.scale } });
     }
+    // A move's key poses, mirrored left for right when `flip`.
+    const mirrored = new WeakMap();
+    function keysOf(K, flip) {
+        if (!K || !flip) return K;
+        if (!mirrored.has(K)) mirrored.set(K, { ...K, a: rigKit.mirror(K.a), b: rigKit.mirror(K.b) });
+        return mirrored.get(K);
+    }
     function pose(rigData, m) {
-        const P = posesOf(m.kind), S = configOf(m.kind), move = S.moves[m.move], K = move && P.moves[move.pose || m.move];
+        const P = posesOf(m.kind), S = configOf(m.kind), move = S.moves[m.move], K = keysOf(move && P.moves[move.pose || m.move], m.flip);
         const walk = locomotion(P, m), B = gameConfig.animation.blendSeconds;
         let pose = walk, hop = 0;
         if (m.phase === 'alert') pose = rigKit.add(walk, rigKit.scale(P.alert, clamp01(Math.min(m.t, S.alertSeconds - m.t) / B)));
@@ -115,7 +123,8 @@ const monsterKit = (() => {
     // warning; wider rather than narrower); `forward`, in world units, how
     // far ahead of the monster's centre it reaches; `stand`, how far it
     // would reach without the lunge (where a near move starts from: the
-    // lunge is there to catch a player stepping back, design.md 5.2).
+    // lunge is there to catch a player stepping back, design.md 5.2). A
+    // move drawn either way round warns of both.
     const reaches = new Map();
     function reach(kind, name) {
         const key = `${kind}:${name}`;
@@ -130,6 +139,7 @@ const monsterKit = (() => {
                 for (const c of math3d.corners(box)) { points.push([c[0], c[2]]); forward = Math.max(forward, c[2]); stand = Math.max(stand, c[2] - ahead); }
             }
         }
+        if (posesOf(kind).moves[move.pose || name].either) for (const [x, z] of [...points]) points.push([-x, z]);
         const out = Object.freeze({ hull: Object.freeze(hull(points)), forward: forward * UNIT(), stand: stand * UNIT() });
         reaches.set(key, out);
         return out;
@@ -235,6 +245,8 @@ const monsterKit = (() => {
     function begin(sim, m, name) {
         const move = configOf(m.kind).moves[name];
         m.move = name; m.phase = 'windup'; m.t = 0; m.struck = false; m.stopped = false;
+        // Which way round a move drawn either way goes: the world's dice.
+        m.flip = !!posesOf(m.kind).moves[move.pose || name].either && entityKit.random(sim) < 0.5;
         if (move.cooldown) m.cooldowns[name] = move.cooldown;
         emit(sim, m, 'windup', { move: name });
     }

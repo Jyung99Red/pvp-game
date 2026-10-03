@@ -2,8 +2,8 @@
 // cuts landing on a short monster (design.md 4.3), their own
 // blows as bone hits with reach and warning swept from the key poses
 // (4.3, 4.4), and the AI: patrol, alert, the distance-band tables
-// (design.md 5.2), every blow walked out of (5.1), enrage, leash; then a
-// whole fight to a result.
+// (design.md 5.2), every blow blocked and the bite's fan (5.1), enrage,
+// leash; then a whole fight to a result.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
@@ -20,6 +20,8 @@ const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
 const standing = kind => ({ kind, phase: 'patrol', t: 0, move: null, flinch: 0, gait: 0, moveBlend: 0 });
 const KINDS = ['goblin', 'wolf', 'goblinChief', 'wolfKing'];
 const rigs = Object.fromEntries(KINDS.map(k => [k, monsterKit.rig(k)]));
+// Moves drawn either way round, mirrored at random (models/: `either`).
+const either = (kind, name) => !!{ goblin: g.goblinPoses, wolf: g.wolfPoses }[monsterKit.modelOf(kind)].moves[MON[kind].moves[name].pose || name].either;
 const extent = (rig, solved, kinds) => {
     let top = -Infinity, low = Infinity;
     rig.parts.forEach((p, i) => {
@@ -103,10 +105,11 @@ function playerAt(dist, angle) {
     return combatKit.hurtboxes(player, R.solve(player, playerAnim.pose(player, still), space.toBlocks(x, y, 0), space.yawOf(Math.atan2(-y, -x))));
 }
 // The monster at the origin facing +x; returns the first contact with a
-// player standing `dist` away at `angle`, lunge included, or null.
-function blow(kind, name, dist, angle = 0) {
+// player standing `dist` away at `angle`, lunge included, or null. `flip`:
+// the move drawn mirrored.
+function blow(kind, name, dist, angle = 0, flip = false) {
     const rig = rigs[kind], mv = MON[kind].moves[name], lunge = u => mv.step * (1 - (1 - u) * (1 - u));
-    const at = u => R.solve(rig, monsterKit.pose(rig, { ...standing(kind), phase: 'swing', t: u * mv.swing, move: name }), [lunge(u) / U, 0, 0], space.yawOf(0));
+    const at = u => R.solve(rig, monsterKit.pose(rig, { ...standing(kind), phase: 'swing', t: u * mv.swing, move: name, flip }), [lunge(u) / U, 0, 0], space.yawOf(0));
     const opts = mv.ram ? { kinds: ['body', 'weapon'], pad: 0 } : undefined, n = Math.ceil(mv.swing / 0.01), boxes = playerAt(dist, angle);
     for (let k = 0; k < n; k++) { const hit = combatKit.sweep(rig, at, k / n, (k + 1) / n, [{ id: 'p', boxes }], opts); if (hit) return hit; }
     return null;
@@ -118,9 +121,10 @@ test('each monster move reaches as far as its key poses carry it, in front only,
     for (const kind of KINDS) for (const [i, mv] of Object.entries(MON[kind].moves)) {
         const r = monsterKit.reach(kind, i);
         assert.ok(r.forward > 40 && r.forward < 260, `${kind} ${i} reach ${r.forward}`);
-        // Where the AI attacks from, and closer, the blow lands on a player in front.
-        for (const d of [30, MON[kind].standOff * r.forward, r.forward]) {
-            const hit = blow(kind, i, d);
+        // Where the AI attacks from, and closer, the blow lands on a player in
+        // front, either way round for a move drawn both ways.
+        for (const d of [30, MON[kind].standOff * r.forward, r.forward]) for (const flip of either(kind, i) ? [false, true] : [false]) {
+            const hit = blow(kind, i, d, 0, flip);
             assert.ok(hit, `${kind} ${i} misses at ${d.toFixed(0)}`);
             // The warning, in the monster's frame (+z ahead): the contact is inside it.
             assert.ok(inside(r.hull, -hit.point[2], hit.point[0]), `${kind} ${i} lands outside its warning`);
@@ -238,11 +242,11 @@ test('the windup turns to follow the player until `lock` before the swing, then 
 // ---- choosing what to do (design.md 5.2) ----
 // An open walled square with one monster of `kind` at home in its middle.
 const LETTER = { goblin: 'g', wolf: 'w', goblinChief: 'G', wolfKing: 'K' }, HOME = { x: 820, y: 620 };
-function open(kind, seed = 1) {
+function open(kind, seed = 1, loadout = null) {
     const rows = Array.from({ length: 30 }, (_, r) => r === 0 || r === 29 ? '1'.repeat(40) : '1' + '.'.repeat(38) + '1');
     const mark = (r, c, ch) => { rows[r] = rows[r].slice(0, c) + ch + rows[r].slice(c + 1); };
     mark(2, 2, '@'); mark(15, 20, LETTER[kind]);
-    return W.create({ map: { name: '空地', rows }, seed });
+    return W.create({ map: { name: '空地', rows }, seed, loadout });
 }
 // The monster at home, free to decide and facing +x; the player `d` away,
 // `angle` off its facing, looking at it.
@@ -361,46 +365,76 @@ test('in the gap after a move it faces the player and creeps to its near band at
     assert.ok(dist(m, HOME) < 1e-9);
 });
 
-// Does a player `d` in front and `off` its facing, starting to walk
-// `way` from straight away reactSeconds after the windup shows, get clear?
-function escapes(kind, name, d, off, way, enraged = false) {
-    const sim = open(kind), m = ready(sim, d, off), mv = MON[kind].moves[name], react = Math.round(MON.reactSeconds / 0.01);
+// A blow under way at a player `d` in front and `off` its facing, looking
+// at it: the move `name` starts its windup, drawn mirrored with `flip`;
+// `act(sim, i)` runs before each step i. The player's stats after the
+// swing, and when the blow first got through (or null).
+function face(kind, name, d, off, { enraged = false, flip = false, loadout = null, act = () => {} } = {}) {
+    const sim = open(kind, 1, loadout), m = ready(sim, d, off), mv = MON[kind].moves[name];
     const tempo = enraged ? MON[kind].enrage.tempo : 1;
-    m.phase = 'windup'; m.move = name; m.t = 0; m.enraged = enraged;
+    Object.assign(m, { phase: 'windup', move: name, t: 0, enraged, flip });
+    let hurtAt = null;
     for (let i = 0; i < Math.round((mv.windup + mv.swing) / tempo / 0.01) + 5; i++) {
-        if (i === react) W.command(sim, { type: 'move', x: Math.cos(off + way), y: Math.sin(off + way) });
+        act(sim, i);
         W.step(sim, 0.01);
+        if (hurtAt === null && sim.stats.hurt) hurtAt = i + 1;
     }
-    return sim.stats.hurt === 0;
+    return { ...sim.stats, hurtAt };
 }
-test('every blow can be walked out of, starting reactSeconds after its warning shows, enraged too (no dodge: user, 2026-10-02)', () => {
-    const WAYS = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2];
+const REACT = Math.round(MON.reactSeconds / 0.01);
+const at = (step, command) => (sim, i) => { if (i === step) W.command(sim, command); };
+const guardAt = step => at(step, { type: 'press', button: 'guard' });
+// Starting to walk `way` from straight away reactSeconds after the warning shows.
+const walk = (off, way) => at(REACT, { type: 'move', x: Math.cos(off + way), y: Math.sin(off + way) });
+const TORCH = { ...gameConfig.gear.starter, offhand: 'torch' };
+
+test('every blow can be blocked, with the shield or with the weapon, raised reactSeconds after its warning shows, enraged too; and parried (no dodge: user, 2026-10-03)', () => {
     for (const kind of KINDS) {
         const S = MON[kind], edge = monsterKit.bands(kind), close = S.radius + gameConfig.player.radius + 4;
         for (const band of ['near', 'mid']) for (const name of Object.keys(S[band]).filter(n => S.moves[n])) {
             // Where the AI starts it from: a near move within its reach without the lunge.
             const r = monsterKit.reach(kind, name), lo = band === 'near' ? close : edge.near + 1, hi = band === 'near' ? r.stand : r.forward;
-            for (const d of [lo, (lo + hi) / 2, hi]) for (const off of [0, MON.turnFirst]) for (const enraged of [false, true]) {
-                assert.ok(WAYS.some(way => escapes(kind, name, d, off, way, enraged)), `${kind} ${name} from ${(d / U).toFixed(2)} blocks, ${off.toFixed(2)} off${enraged ? ', enraged' : ''}: no way out`);
+            const flip = either(kind, name);
+            for (const d of [lo, hi]) {
+                const where = `${kind} ${name} from ${(d / U).toFixed(2)} blocks`;
+                for (const off of [0, MON.turnFirst]) for (const enraged of [false, true]) {
+                    // A quick blow met by a guard just up is parried, which is fine too. A
+                    // move drawn either way round comes the other way when enraged.
+                    const s = face(kind, name, d, off, { enraged, flip: flip && enraged, act: guardAt(REACT) });
+                    assert.ok(s.hurt === 0 && s.blocks + s.parries === 1, `${where}, ${off.toFixed(2)} off${enraged ? ', enraged' : ''}: ${JSON.stringify(s)}`);
+                }
+                // A torch in the offhand: the weapon guards (weaker, a shorter parry window).
+                const w = face(kind, name, d, MON.turnFirst, { enraged: true, loadout: TORCH, act: guardAt(REACT) });
+                assert.ok(w.hurt === 0 && w.blocks + w.parries === 1, `${where} with the weapon: ${JSON.stringify(w)}`);
             }
+            // Raised just in time for the parry window, it parries -- the weapon's narrower one too.
+            const contact = face(kind, name, hi, 0).hurtAt, G = F.guard.weapon;
+            assert.ok(contact, `${kind} ${name} lands on a player standing still`);
+            const parry = face(kind, name, hi, 0, { loadout: TORCH, act: guardAt(contact - Math.round((F.guard.startup + G.parryWindow / 2) / 0.01)) });
+            assert.ok(parry.parries === 1 && parry.hurt === 0, `${kind} ${name} not parried: ${JSON.stringify(parry)}`);
         }
     }
-    // Standing still is no way out.
-    const sim = open('goblin'), m = ready(sim, 40);
-    m.phase = 'windup'; m.move = 'flail';
-    step(sim, MON.goblin.moves.flail.windup + 0.2);
-    assert.equal(sim.stats.hurt, 1);
 });
 
-test('a bite is a straight-line question: a step back does not clear it, a step aside does (user, 2026-10-03)', () => {
+test('the bite sweeps its head across a small fan, from either side at random: neither a step back nor a step aside clears it (user, 2026-10-03)', () => {
     for (const [kind, name] of [['wolf', 'bite'], ['wolfKing', 'bite'], ['wolfKing', 'quickBite']]) {
-        const r = monsterKit.reach(kind, name);
+        const r = monsterKit.reach(kind, name), close = MON[kind].radius + gameConfig.player.radius + 4;
+        assert.ok(either(kind, name), `${kind} ${name} sweeps either way`);
         assert.ok(r.forward - r.stand > 0.9 * U, `${kind} ${name} lunges ${((r.forward - r.stand) / U).toFixed(2)} blocks`);
-        for (const d of [r.stand, (r.stand + MON[kind].radius + gameConfig.player.radius) / 2]) {
-            assert.ok(!escapes(kind, name, d, 0, 0), `${kind} ${name}: backing off from ${(d / U).toFixed(2)} blocks clears it`);
-            assert.ok(escapes(kind, name, d, 0, Math.PI / 2) || escapes(kind, name, d, 0, -Math.PI / 2), `${kind} ${name}: no step aside from ${(d / U).toFixed(2)} blocks`);
+        // The warning: a fan either side of straight ahead, the same both ways round.
+        const side = Math.max(...r.hull.map(p => p[0]));
+        assert.ok(side > 0.6 && Math.abs(side + Math.min(...r.hull.map(p => p[0]))) < 1e-6, `${kind} ${name} sweeps ${side.toFixed(2)} blocks to the side`);
+        for (const d of [close, r.stand]) for (const [way, label] of [[0, 'back'], [Math.PI / 2, 'aside'], [-Math.PI / 2, 'aside']]) {
+            // Not knowing which way round it comes, a walk is caught one way or the other.
+            assert.ok([false, true].some(flip => face(kind, name, d, 0, { flip, act: walk(0, way) }).hurt), `${kind} ${name}: ${label} from ${(d / U).toFixed(2)} blocks clears it`);
         }
     }
+    // A monster starting a move drawn either way round rolls which way: both come up.
+    const sim = open('wolf'), seen = new Set();
+    for (let i = 0; i < 20; i++) { ready(sim, 40); W.step(sim, 0.01); seen.add(sim.monsters[0].flip); }
+    assert.deepEqual([...seen].sort(), [false, true]);
+    // Standing still is no way out.
+    assert.equal(face('goblin', 'flail', 40, 0).hurt, 1);
 });
 
 // Seconds a sword combo keeps the player from walking: every move up to its

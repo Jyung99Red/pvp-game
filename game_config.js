@@ -173,14 +173,16 @@ const gameConfig = (() => {
         // all) or far. Far, it closes in at `speed`; near or mid it rolls
         // that band's table (move: weight), leaving out moves that do not
         // reach the player that way or are cooling down (`cooldown` seconds
-        // from the windup). Short windups, long recoveries: a step back is
-        // not enough and a combo fits the gap (user, 2026-10-03). `approach` walks at `speed`
-        // for up to approachSeconds or until the player is near, then
-        // decides again. In the gap after a move it faces the player and
+        // from the windup). Light moves are quick and leave a short gap, heavy
+        // ones slow with a long one (user, 2026-10-03: a wider range); every
+        // gap still holds a combo, and every windup leaves time to guard.
+        // `approach` walks at `speed` for up to approachSeconds or until
+        // the player is near, then decides again. In the gap after a move it faces the player and
         // creeps at patrolSpeed to standOff of its near band's edge. A
         // move's reach comes from its key poses (core/monster.js), never
         // from here. During a windup the body keeps turning to the player
-        // at trackTurn until `lock` seconds before the swing. Past `leash`
+        // at trackTurn until `lock` seconds before the swing (a bite only
+        // the last moment: it follows a step aside). Past `leash`
         // from home with the player out of alertRange it walks back home.
         // At enrage.threshold of its HP it enrages for good: damage times
         // enrage.atk, its whole clock (cooldowns too) times enrage.tempo.
@@ -190,7 +192,8 @@ const gameConfig = (() => {
         // step: world units lunged during the swing; ram: the body itself
         // is the weapon (the wolf's leap). reactSeconds: how soon a player
         // is taken to react to a warning; only the tests read it (every
-        // blow can be walked out of, user 2026-10-02). corpseSeconds: a
+        // blow can be guarded, the guard pressed this long after the
+        // warning shows: user 2026-10-03, no dodge). corpseSeconds: a
         // fallen monster lies this long, then sinks away. loot: the table
         // rolled when it falls (`loot` below). stagger: points that make it
         // reel (else combat.stagger.threshold; bosses take 10, user
@@ -206,8 +209,8 @@ const gameConfig = (() => {
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    flail: { name: '乱挥', windup: 0.85, lock: 0.3, swing: 0.16, recovery: 1.5, ratio: 0.6, step: 8 },
-                    pounce: { name: '猛扑', windup: 1.0, lock: 0.35, swing: 0.2, recovery: 1.8, ratio: 0.9, step: 36, cooldown: 5 }
+                    flail: { name: '乱挥', windup: 0.75, lock: 0.3, swing: 0.16, recovery: 1.45, ratio: 0.6, step: 8 },
+                    pounce: { name: '猛扑', windup: 1.25, lock: 0.35, swing: 0.2, recovery: 2.0, ratio: 0.9, step: 36, cooldown: 5 }
                 },
                 near: { flail: 1 },
                 mid: { pounce: 1, approach: 2 }
@@ -217,8 +220,8 @@ const gameConfig = (() => {
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.7, lock: 0.3, swing: 0.14, recovery: 1.1, ratio: 0.6, step: 40 },
-                    leap: { name: '扑击', windup: 0.9, lock: 0.3, swing: 0.54, recovery: 2.0, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
+                    bite: { name: '撕咬', windup: 0.62, lock: 0.12, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 40 },
+                    leap: { name: '扑击', windup: 1.15, lock: 0.3, swing: 0.54, recovery: 2.2, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
                 },
                 near: { bite: 1 },
                 mid: { leap: 1, approach: 2 }
@@ -229,9 +232,9 @@ const gameConfig = (() => {
                 patrolRadius: 0, patrolSpeed: 16, patrolRest: 2, alertRange: 190, alertSeconds: 0.7, leash: 360, standOff: 0.85,
                 firstDelay: 0.5, delay: 0.6, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.2 },
                 moves: {
-                    flail: { name: '横扫', windup: 1.0, lock: 0.3, swing: 0.2, recovery: 1.4, ratio: 0.6, step: 10 },
-                    slam: { name: '震地', windup: 1.1, lock: 0.4, swing: 0.18, recovery: 2.2, ratio: 1.0, step: 6, cooldown: 4 },
-                    pounce: { name: '猛扑', windup: 1.0, lock: 0.35, swing: 0.24, recovery: 2.0, ratio: 0.85, step: 60, cooldown: 6 }
+                    flail: { name: '横扫', windup: 0.8, lock: 0.3, swing: 0.2, recovery: 1.2, ratio: 0.6, step: 10 },
+                    slam: { name: '震地', windup: 1.5, lock: 0.4, swing: 0.18, recovery: 2.4, ratio: 1.0, step: 6, cooldown: 4 },
+                    pounce: { name: '猛扑', windup: 1.25, lock: 0.35, swing: 0.24, recovery: 2.2, ratio: 0.85, step: 60, cooldown: 6 }
                 },
                 near: { flail: 3, slam: 2 },
                 mid: { pounce: 1, approach: 2 }
@@ -242,10 +245,10 @@ const gameConfig = (() => {
                 patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
                 firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.85, lock: 0.3, swing: 0.14, recovery: 1.1, ratio: 0.6, step: 64 },
+                    bite: { name: '撕咬', windup: 0.85, lock: 0.12, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 64 },
                     // The same bite, sooner and with a longer recovery.
-                    quickBite: { name: '快咬', pose: 'bite', windup: 0.75, lock: 0.3, swing: 0.14, recovery: 1.3, ratio: 0.6, step: 64 },
-                    leap: { name: '扑击', windup: 0.9, lock: 0.3, swing: 0.6, recovery: 2.1, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
+                    quickBite: { name: '快咬', pose: 'bite', windup: 0.65, lock: 0.12, swing: 0.16, recovery: 1.3, ratio: 0.6, step: 64 },
+                    leap: { name: '扑击', windup: 1.15, lock: 0.3, swing: 0.6, recovery: 2.3, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
                 },
                 near: { bite: 1, quickBite: 1 },
                 mid: { leap: 1, approach: 2 }

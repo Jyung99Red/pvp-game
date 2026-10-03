@@ -41,7 +41,8 @@ const wolfModel = (() => {
 
 // The wolf's key poses; see models/goblin.js for the layout. Diagonal legs
 // step together. The leap adds `hop` blocks of height on a sine over its
-// swing (a jump, not a pose).
+// swing (a jump, not a pose). A move marked `either` is drawn left for
+// right half the time (core/monster.js), so its keys mirror each other.
 const wolfPoses = (() => {
     const legs = (front, back) => ({ legFR: { rx: front }, legFL: { rx: front }, legBR: { rx: back }, legBL: { rx: back } });
     return Object.freeze({
@@ -61,10 +62,15 @@ const wolfPoses = (() => {
         },
         alert: { body: { rx: -0.08 }, head: { rx: -0.3 }, tail: { rx: 0.5 } },
         moves: {
-            // Draws back with the head up, then snaps forward and down.
+            // Draws back with the head up and turned to one side, then snaps
+            // forward and down, sweeping across to the other: the warning is
+            // a small fan, so a step aside does not clear it (user,
+            // 2026-10-03). `either`: drawn mirrored at random, so which side
+            // it sweeps from cannot be learnt.
             bite: {
-                a: { body: { rx: -0.12, pz: -0.06 }, head: { rx: -0.35 }, ...legs(-0.25, 0.2), tail: { rx: -0.2 } },
-                b: { body: { rx: 0.12, pz: 0.1 }, head: { rx: 0.35, pz: 0.06 }, ...legs(-0.45, 0.35), tail: { rx: -0.3 } }
+                a: { body: { rx: -0.12, ry: 0.2, pz: -0.06 }, head: { rx: -0.35, ry: 0.55 }, ...legs(-0.25, 0.2), tail: { rx: -0.2, ry: -0.3 } },
+                b: { body: { rx: 0.12, ry: -0.2, pz: 0.1 }, head: { rx: 0.35, ry: -0.55, pz: 0.06 }, ...legs(-0.45, 0.35), tail: { rx: -0.3, ry: 0.3 } },
+                either: true
             },
             // Crouches, then flies at the target legs stretched.
             leap: {
