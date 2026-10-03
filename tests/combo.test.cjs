@@ -1,7 +1,6 @@
 // The move tree on A and B, carried over from the 2D version's tests
-// (tag v1-2d, tests/spatial-engine.test.cjs) and rewritten for separate A and
-// B keys (design.md 3.3): no tap/hold detection, no
-// poise, A or B start a move the moment they are pressed.
+// (tag v1-2d, tests/spatial-engine.test.cjs), played on the one attack key
+// (user, 2026-10-03): a tap is an A, a hold of combo.holdSeconds a B.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
@@ -20,7 +19,11 @@ function setup({ near = false, main = null } = {}) {
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
 const press = (sim, button) => W.command(sim, { type: 'press', button });
 const release = (sim, button) => W.command(sim, { type: 'release', button });
-const tap = (sim, button = 'a') => { press(sim, button); release(sim, button); };
+const HOLD = K.holdSeconds;
+// The attack key: a tap is an A at once; held HOLD it is a B (that time
+// passes here). holdB keeps it held: a charge.
+const tap = (sim, input = 'a') => { press(sim, 'attack'); if (input === 'b') step(sim, HOLD); release(sim, 'attack'); };
+const holdB = sim => { press(sim, 'attack'); step(sim, HOLD); };
 const phase = sim => sim.player.act ? `${sim.player.act.phase}:${sim.player.act.move}` : 'idle';
 // Step until `done` (or a limit), logging each phase change with its time.
 function run(sim, done, limit = 3) {
@@ -50,7 +53,7 @@ test('A walks the A chain; a buffered A starts the next move at the derive point
 
 test('pressing A starts the windup at once; without a next input the recovery plays out and the window closes', () => {
     const sim = setup();
-    tap(sim); assert.equal(phase(sim), 'windup:slash', 'no waiting for the key to come up');
+    tap(sim); assert.equal(phase(sim), 'windup:slash', 'a tap is an A at once');
     const log = run(sim, () => phase(sim) === 'idle');
     const swingEnd = log.find(x => x.key === 'recover:slash').time;
     assert.ok(Math.abs(log.at(-1).time - swingEnd - M.slash.recovery) < 0.011);
@@ -60,6 +63,39 @@ test('pressing A starts the windup at once; without a next input the recovery pl
     const walked = setup(); tap(walked); step(walked, M.slash.windup + M.slash.swing + M.slash.recovery + 0.02);
     W.command(walked, { type: 'move', x: 1, y: 0 }); step(walked, 0.05); W.command(walked, { type: 'move', x: 0, y: 0 });
     assert.equal(walked.player.chain, null, 'walking off ends the combo'); tap(walked); assert.equal(walked.player.act.move, 'slash');
+});
+
+test('one attack key (user, 2026-10-03): a tap is an A, a hold a B, and telling them apart costs no time', () => {
+    assert.ok(HOLD > 0 && HOLD <= 0.25, `hold ${HOLD}`);
+    // A tap that took 0.08 s: the slash starts 0.08 s into its windup and swings when a press would have.
+    const sim = setup(); press(sim, 'attack'); step(sim, 0.08);
+    assert.equal(sim.player.act, null, 'not told yet');
+    release(sim, 'attack');
+    assert.equal(phase(sim), 'windup:slash'); assert.ok(Math.abs(sim.player.act.t - 0.08) < 1e-9);
+    const log = until(sim, 'swing:slash');
+    assert.ok(Math.abs(log.at(-1).time - M.slash.windup) < 0.011, `swings at ${log.at(-1).time}`);
+    // Held: a B once HOLD has passed, already HOLD into its windup.
+    const held = setup(); press(held, 'attack'); step(held, HOLD - 0.02);
+    assert.equal(held.player.act, null);
+    step(held, 0.02); assert.equal(phase(held), 'windup:charged'); assert.ok(Math.abs(held.player.act.t - HOLD) < 0.011);
+    // A dagger lunge's windup is shorter than that: it swings the moment it is told.
+    const dagger = setup({ main: 'assassin_dagger' }); press(dagger, 'attack');
+    const dl = until(dagger, 'swing:lunge'); release(dagger, 'attack');
+    assert.ok(M.lunge.windup < HOLD && Math.abs(dl.at(-1).time - HOLD) < 0.021, `lunges at ${dl.at(-1).time}`);
+    // While it tells, the body stands as in a windup: no walking, a slow turn.
+    const still = setup(), P = gameConfig.player; still.player.facing = -Math.PI / 2;
+    const x0 = still.player.x, y0 = still.player.y;
+    W.command(still, { type: 'move', x: 1, y: 0 }); press(still, 'attack'); step(still, 0.1);
+    assert.ok(Math.hypot(still.player.x - x0, still.player.y - y0) < 1e-9, 'no walking while it tells');
+    assert.ok(Math.abs(still.player.facing + Math.PI / 2 - P.turnRate * K.windupTurnMultiplier * 0.1) < 0.03);
+    release(still, 'attack'); W.command(still, { type: 'move', x: 0, y: 0 });
+    // The pause line counts from the press: pressed before it, let go after, it is the ordinary A.
+    const twoA = () => { const s = setup(); tap(s); until(s, 'recover:slash'); tap(s); until(s, 'idle'); return s; };
+    const pause = K.weapons.sword.pauseAfterRecovery, early = twoA();
+    step(early, pause - 0.06); press(early, 'attack'); step(early, 0.1); release(early, 'attack');
+    assert.equal(early.player.act.move, 'spin');
+    const late = twoA(); step(late, pause + 0.02); tap(late);
+    assert.equal(late.player.act.move, 'thrust');
 });
 
 test('pre-input: a press during the windup is kept and still runs only at the derive point', () => {
@@ -112,59 +148,59 @@ test('a pause past the recovery takes the pause move; only A is changed by it', 
 
 test('opening B: windup at once, charges while held, cuts on release; A then follows up', () => {
     const C = gameConfig.combat.charge;
-    const sim = setup(); press(sim, 'b');
+    const sim = setup(); holdB(sim);
     assert.equal(phase(sim), 'windup:charged');
     until(sim, 'charge:charged');
     assert.ok(Math.abs(sim.time - M.charged.windup) < 0.011, 'held past the windup, it charges');
     step(sim, 1); assert.equal(phase(sim), 'charge:charged', 'a charge never fires by itself');
-    release(sim, 'b'); assert.equal(phase(sim), 'swing:charged');
+    release(sim, 'attack'); assert.equal(phase(sim), 'swing:charged');
     const share = (1 + M.charged.windup - C.threshold) / (C.full - C.threshold);
     assert.ok(Math.abs(sim.player.act.share - share) < 0.02, `charge share ${sim.player.act.share}`);
     until(sim, 'recover:charged'); tap(sim); until(sim, 'windup:follow');
-    // Let go before the windup ends: it cuts as soon as the windup is over, uncharged.
-    const quick = setup(); press(quick, 'b'); step(quick, 0.1); release(quick, 'b');
+    // Let go before the windup ends (a B already): it cuts as soon as the windup is over, uncharged.
+    const quick = setup(); holdB(quick); step(quick, 0.1); release(quick, 'attack');
     until(quick, 'swing:charged');
     assert.ok(Math.abs(quick.time - M.charged.windup) < 0.011);
     assert.equal(quick.player.act.share, 0);
     // A charge lunges further than a quick cut.
-    const lunge = held => { const s = setup(); const x0 = s.player.x; s.player.facing = 0; press(s, 'b'); step(s, held); release(s, 'b'); until(s, 'recover:charged'); return s.player.x - x0; };
-    assert.ok(Math.abs(lunge(0.1) - M.charged.step) < 0.5 && Math.abs(lunge(C.full + 0.1) - M.charged.step - M.charged.chargeStep) < 0.5);
+    const lunge = held => { const s = setup(); const x0 = s.player.x; s.player.facing = 0; press(s, 'attack'); step(s, held); release(s, 'attack'); until(s, 'recover:charged'); return s.player.x - x0; };
+    assert.ok(Math.abs(lunge(HOLD + 0.1) - M.charged.step) < 0.5 && Math.abs(lunge(C.full + 0.1) - M.charged.step - M.charged.chargeStep) < 0.5);
 });
 
 test('a charge turns slower, and the cut goes where the charge turned to', () => {
     const P = gameConfig.player, C = gameConfig.combat.charge;
     // Facing away from the dummy, charge, turn round to it, let go: it lands.
     const sim = setup({ near: true }); sim.player.facing = Math.PI;
-    press(sim, 'b'); until(sim, 'charge:charged');
+    press(sim, 'attack'); until(sim, 'charge:charged');
     W.command(sim, { type: 'move', x: 1, y: 0.0001 }); step(sim, 0.1);
     assert.ok(Math.abs(Math.PI - Math.abs(sim.player.facing) - P.turnRate * C.turnMultiplier * 0.1) < 0.02, `turned ${Math.PI - Math.abs(sim.player.facing)}`);
     step(sim, 0.6); W.command(sim, { type: 'move', x: 0, y: 0 });
     assert.ok(Math.abs(sim.player.facing) < 0.01, 'faces the dummy now');
-    const x0 = sim.player.x; release(sim, 'b'); until(sim, 'recover:charged');
+    const x0 = sim.player.x; release(sim, 'attack'); until(sim, 'recover:charged');
     assert.equal(sim.stats.hits, 1, 'the cut lands where the body turned');
     assert.ok(sim.player.x > x0, 'and lunges that way');
     // Let go before the windup is over: the minimum charge, nothing added.
-    const early = setup(); press(early, 'b'); step(early, M.charged.windup - 0.02); release(early, 'b');
+    const early = setup(); press(early, 'attack'); step(early, M.charged.windup - 0.02); release(early, 'attack');
     until(early, 'swing:charged'); assert.equal(early.player.act.share, 0);
 });
 
 test('a held B waits its turn as an opening charge; an A after a landed charged cut still follows up', () => {
     const sim = setup(); tap(sim); until(sim, 'recover:slash'); tap(sim); until(sim, 'recover:backslash'); tap(sim); until(sim, 'swing:spin');
-    press(sim, 'b'); step(sim, M.spin.swing + M.spin.recovery + M.charged.windup + 0.05);
+    press(sim, 'attack'); step(sim, M.spin.swing + M.spin.recovery + M.charged.windup + 0.05);
     assert.equal(phase(sim), 'charge:charged', 'held through the finisher, B starts charging when it is over');
-    release(sim, 'b');
+    release(sim, 'attack');
     // The hitstop of a landed cut does not eat the buffered A's time.
-    const hit = setup({ near: true }); press(hit, 'b'); step(hit, 0.6); release(hit, 'b'); step(hit, 0.02); tap(hit);
+    const hit = setup({ near: true }); press(hit, 'attack'); step(hit, 0.6); release(hit, 'attack'); step(hit, 0.02); tap(hit);
     until(hit, 'windup:follow'); assert.equal(hit.player.act.move, 'follow');
     assert.equal(hit.stats.hits, 1);
 });
 
 test('while charging the body walks slower; it cannot walk during any other move', () => {
     const P = gameConfig.player, C = gameConfig.combat.charge;
-    const sim = setup(); sim.player.facing = 0; press(sim, 'b'); until(sim, 'charge:charged');
+    const sim = setup(); sim.player.facing = 0; press(sim, 'attack'); until(sim, 'charge:charged');
     const x0 = sim.player.x; W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, 0.5);
     assert.ok(Math.abs(sim.player.x - x0 - P.speed * C.moveMultiplier * (0.5 - (P.startSeconds - 0.01) / 2)) < 0.5);
-    release(sim, 'b');
+    release(sim, 'attack');
     const moving = setup(); W.command(moving, { type: 'move', x: 1, y: 0 }); step(moving, 0.3);
     tap(moving); const x1 = moving.player.x; step(moving, 0.15);
     assert.ok(moving.player.x - x1 <= M.slash.step + 1e-6, 'the windup and swing stand still but for the lunge');
@@ -198,12 +234,13 @@ test('inside a move the stick never walks; it turns the body only in a windup, s
 
 test('attacking or raising the shield ends a run (user, 2026-10-01)', () => {
     const P = gameConfig.player;
-    for (const button of ['a', 'guard']) {
+    for (const button of ['attack', 'guard']) {
         const sim = setup(); sim.player.y += 3 * gameConfig.world.unitsPerBlock; sim.player.facing = 0;
         W.command(sim, { type: 'move', x: 1, y: 0 }); step(sim, P.runAfter + P.runRampSeconds + P.startSeconds + 0.05);
         assert.equal(sim.player.runBlend, 1);
         press(sim, button); step(sim, 0.02);
         assert.equal(sim.player.runBlend, 0, `${button}: the run is over at once`);
+        if (button === 'attack') release(sim, button);
         if (button === 'guard') {
             const x0 = sim.player.x; step(sim, 0.5);
             const speed = (sim.player.x - x0) / 0.5, G = gameConfig.combat.guard;
@@ -319,9 +356,9 @@ test('an input the move does not derive waits for the recovery: no endless loops
     const sim = setup({ main: 'assassin_dagger' });
     combo(sim, ['a', 'a', 'a', 'a']);
     assert.equal(sim.player.act.move, 'whirl');
+    const swingEnd = sim.time - sim.player.act.t;
     tap(sim, 'b');
     const log = until(sim, 'windup:lunge');
-    const swingEnd = log.find(x => x.key === 'recover:whirl')?.time ?? log[0].time - sim.player.act.t;
     assert.ok(log.at(-1).time - swingEnd >= M.whirl.recovery - 0.011, 'not cut short at the derive point');
     assert.deepEqual([...sim.player.combo], ['b'], 'and it is a new combo');
     // A derived input still cuts the recovery short.
@@ -333,7 +370,7 @@ test('an input the move does not derive waits for the recovery: no endless loops
 test('the same inputs give the same fight', () => {
     const play = () => {
         const sim = setup({ near: true }); sim.dummy.wait = 0.3;
-        const script = { 0: ['press', 'a'], 5: ['release', 'a'], 20: ['press', 'b'], 22: ['release', 'b'], 90: ['press', 'guard'], 200: ['release', 'guard'], 230: ['press', 'b'], 330: ['release', 'b'] };
+        const script = { 0: ['press', 'attack'], 5: ['release', 'attack'], 20: ['press', 'attack'], 45: ['release', 'attack'], 90: ['press', 'guard'], 200: ['release', 'guard'], 230: ['press', 'attack'], 330: ['release', 'attack'] };
         for (let t = 0; t < 600; t++) {
             if (script[t]) W.command(sim, { type: script[t][0], button: script[t][1] });
             W.step(sim, 0.01);
@@ -346,9 +383,9 @@ test('the same inputs give the same fight', () => {
 
 test('a fight survives a JSON round trip mid-swing and plays on the same (PVP snapshots)', () => {
     const sim = setup({ near: true }); sim.dummy.wait = 0.2;
-    press(sim, 'a'); release(sim, 'a'); step(sim, 0.13); press(sim, 'b');
+    tap(sim); step(sim, 0.13); press(sim, 'attack');
     const copy = W.restore(W.create(), JSON.parse(JSON.stringify(W.snapshot(sim))));
-    for (const s of [sim, copy]) { step(s, 0.6); release(s, 'b'); step(s, 1.5); }
+    for (const s of [sim, copy]) { step(s, 0.6); release(s, 'attack'); step(s, 1.5); }
     assert.equal(JSON.stringify(W.snapshot(copy)), JSON.stringify(W.snapshot(sim)));
     assert.ok(sim.stats.hits >= 2);
 });

@@ -118,7 +118,7 @@ test('only the swing hits: a blade resting on the target through the windup does
     }
     assert.ok(spot, 'some spot has the windup blade in the dummy');
     p.x = spot.x; p.y = spot.y;
-    W.command(sim, { type: 'press', button: 'a' });
+    W.command(sim, { type: 'press', button: 'attack' }); W.command(sim, { type: 'release', button: 'attack' });
     for (let i = 0; i < Math.round(MOVES.slash.windup / 0.01); i++) W.step(sim, 0.01);
     assert.equal(sim.stats.hits, 0, 'nothing during the windup, though the blade is in the dummy');
     assert.equal(sim.player.act.phase, 'swing');

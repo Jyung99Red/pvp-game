@@ -19,6 +19,8 @@ function setup({ facingAway = false, loadout } = {}) {
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
 const press = (sim, b) => W.command(sim, { type: 'press', button: b });
 const release = (sim, b) => W.command(sim, { type: 'release', button: b });
+// The attack key: a tap is an A.
+const tap = sim => { press(sim, 'attack'); release(sim, 'attack'); };
 // When the dummy's first swipe lands on an unguarded player.
 const impactTime = (() => {
     const sim = setup();
@@ -43,7 +45,7 @@ test('the dummy attacks in reach, its swipe lands during its swing, and an ungua
     assert.equal(sim.player.hp, hp - Math.max(1, Math.round(swipeRaw * (1 - S.def / (S.def + F.damage.defenseConstant)))));
     assert.ok(sim.player.stun > 0 && sim.player.act === null && sim.player.chain === null, 'a hit stuns and ends the combo');
     // An A pressed during the stun runs once it is over.
-    press(sim, 'a'); release(sim, 'a'); assert.equal(sim.player.act, null);
+    tap(sim); assert.equal(sim.player.act, null);
     step(sim, F.hitStun + 0.05); assert.equal(sim.player.act?.move, 'slash');
     // Out of reach, the dummy does not even start.
     const far = setup(); far.player.x -= D.engageRange; step(far, 2);
@@ -102,7 +104,7 @@ test('a move plays out whole before the shield goes up; a charge is dropped at o
     const quiet = () => { const s = setup(); s.dummy.wait = 1e9; s.dummy.x += 400; return s; };
     const M = gameConfig.combo.moves;
     for (const at of [0.05, 0.15, 0.25]) { // windup, swing, recovery
-        const sim = quiet(); press(sim, 'a'); release(sim, 'a'); step(sim, at);
+        const sim = quiet(); tap(sim); step(sim, at);
         press(sim, 'guard'); assert.equal(sim.player.guard.queued, true); assert.notEqual(sim.player.act, null);
         let upAt = null;
         for (let i = 0; i < 100 && upAt == null; i++) { W.step(sim, 0.01); if (sim.player.guard.state !== 'down') upAt = sim.time; }
@@ -110,28 +112,30 @@ test('a move plays out whole before the shield goes up; a charge is dropped at o
         assert.equal(sim.player.act, null); assert.equal(sim.player.chain, null); assert.equal(sim.stats.attacks, 1);
     }
     // A or B pressed while the shield waits do nothing, so the move cannot chain on.
-    const waiting = quiet(); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.15);
-    press(waiting, 'guard'); press(waiting, 'a'); release(waiting, 'a'); step(waiting, 0.6);
+    const waiting = quiet(); tap(waiting); step(waiting, 0.15);
+    press(waiting, 'guard'); tap(waiting); step(waiting, 0.6);
     assert.equal(waiting.stats.attacks, 1); assert.notEqual(waiting.player.guard.state, 'down');
     // Let go before the move ends: nothing goes up.
-    const changed = quiet(); press(changed, 'a'); release(changed, 'a'); step(changed, 0.15);
+    const changed = quiet(); tap(changed); step(changed, 0.15);
     press(changed, 'guard'); step(changed, 0.1); release(changed, 'guard'); step(changed, 0.5);
     assert.equal(changed.player.guard.state, 'down'); assert.equal(changed.player.guard.bar, G.max);
     // Pressed in the charged windup with B still held, it drops the charge when the windup ends.
-    const held = quiet(); press(held, 'b'); step(held, 0.2); press(held, 'guard');
-    step(held, gameConfig.combo.moves.charged.windup - 0.2 + 0.02);
+    const told = gameConfig.combo.holdSeconds + 0.05;
+    const held = quiet(); press(held, 'attack'); step(held, told); press(held, 'guard');
+    assert.equal(held.player.act?.move, 'charged');
+    step(held, gameConfig.combo.moves.charged.windup - told + 0.02);
     assert.equal(held.player.act, null); assert.equal(held.player.guard.state, 'raising');
-    release(held, 'b'); step(held, 0.5); assert.equal(held.stats.attacks, 1, 'the charge never cut');
-    const charge = quiet(); press(charge, 'b'); step(charge, 0.6); assert.equal(charge.player.act.phase, 'charge');
-    press(charge, 'guard'); release(charge, 'b'); step(charge, 1);
+    release(held, 'attack'); step(held, 0.5); assert.equal(held.stats.attacks, 1, 'the charge never cut');
+    const charge = quiet(); press(charge, 'attack'); step(charge, 0.6); assert.equal(charge.player.act.phase, 'charge');
+    press(charge, 'guard'); release(charge, 'attack'); step(charge, 1);
     assert.equal(charge.player.act, null); assert.equal(charge.stats.attacks, 1, 'the charge is dropped, not fired');
 });
 
 test('with the guard up A and B do nothing', () => {
     const sim = setup(); sim.dummy.wait = 1e9; press(sim, 'guard'); step(sim, 0.3);
-    press(sim, 'a'); release(sim, 'a'); press(sim, 'b'); release(sim, 'b'); step(sim, 0.5);
+    tap(sim); press(sim, 'attack'); step(sim, 0.5); release(sim, 'attack');
     assert.equal(sim.stats.attacks, 0);
-    release(sim, 'guard'); press(sim, 'a'); assert.equal(sim.player.act.move, 'slash');
+    release(sim, 'guard'); tap(sim); assert.equal(sim.player.act.move, 'slash');
 });
 
 test('without a shield the weapon guards, weaker: more damage and guard bar per block, a shorter parry window (user, 2026-10-03)', () => {
@@ -167,7 +171,7 @@ test('an A pressed during the hitstop of a block runs once the hitstop is over',
     const sim = setup(); step(sim, impactTime - 0.8); press(sim, 'guard');
     for (let i = 0; i < 200 && !sim.stats.blocks; i++) W.step(sim, 0.01);
     assert.ok(sim.player.freeze > 0, 'held by the block');
-    release(sim, 'guard'); press(sim, 'a'); release(sim, 'a');
+    release(sim, 'guard'); tap(sim);
     step(sim, 0.1);
     assert.equal(sim.stats.attacks, 1); assert.equal(sim.player.act?.move, 'slash');
 });

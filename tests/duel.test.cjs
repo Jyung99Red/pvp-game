@@ -20,7 +20,7 @@ function facing(sim, gap = 60) {
     return sim;
 }
 const step = (sim, seconds, opts) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01, opts); };
-const tap = (sim, who, button = 'a') => { W.command(sim, { type: 'press', button }, who); W.command(sim, { type: 'release', button }, who); };
+const tap = (sim, who, button = 'attack') => { W.command(sim, { type: 'press', button }, who); W.command(sim, { type: 'release', button }, who); };
 
 test('a duel: two mortal fighters with the same stats, on the arena spawns, face to face, in sight', () => {
     const sim = duel(), [h, g] = sim.fighters, S = inventoryKit.statsOf(inventoryKit.starter());
@@ -63,8 +63,10 @@ test('a light (A) hit only hurts: no stun, no push, the struck fighter cuts back
 
 test('a heavy hit breaks the combo, stuns and pushes by the move', () => {
     const sim = facing(duel()), [h, g] = sim.fighters;
-    W.command(sim, { type: 'press', button: 'b' }, 0); W.command(sim, { type: 'release', button: 'b' }, 0);
-    step(sim, M.charged.windup - 0.02); tap(sim, 1); const x0 = g.x;
+    // A B: the attack key held till it is told, then let go (the least charge).
+    const HOLD = gameConfig.combo.holdSeconds;
+    W.command(sim, { type: 'press', button: 'attack' }, 0); step(sim, HOLD); W.command(sim, { type: 'release', button: 'attack' }, 0);
+    step(sim, M.charged.windup - HOLD - 0.02); tap(sim, 1); const x0 = g.x;
     for (let i = 0; i < 40 && g.hp === g.maxHp; i++) W.step(sim, 0.01);
     assert.ok(g.hp < g.maxHp);
     assert.equal(g.act, null, 'its slash is cut off');
@@ -143,10 +145,10 @@ test('with judge off (the guest predicting) swings pass through and nothing is d
 
 test('a duel snapshot restores into a fresh world and plays on the same', () => {
     const sim = facing(duel());
-    W.command(sim, { type: 'press', button: 'b' }, 0); tap(sim, 1); step(sim, 0.13); W.command(sim, { type: 'press', button: 'guard' }, 1);
+    W.command(sim, { type: 'press', button: 'attack' }, 0); tap(sim, 1); step(sim, 0.13); W.command(sim, { type: 'press', button: 'guard' }, 1);
     const copy = W.restore(duel(), plain(W.snapshot(sim)));
     assert.equal(duelKit.validSnapshot(copy, W.snapshot(sim)), true);
-    for (const s of [sim, copy]) { step(s, 0.5); W.command(s, { type: 'release', button: 'b' }, 0); step(s, 1); }
+    for (const s of [sim, copy]) { step(s, 0.5); W.command(s, { type: 'release', button: 'attack' }, 0); step(s, 1); }
     assert.equal(JSON.stringify(W.snapshot(copy)), JSON.stringify(W.snapshot(sim)));
     assert.equal(copy.player, copy.fighters[0]);
 });
@@ -205,7 +207,7 @@ test('two phones: hello, start, ready, a countdown, then the fight on both', () 
     p.run(0.1);
     assert.equal(p.host.phase, 'countdown'); assert.equal(p.guest.phase, 'countdown');
     assert.ok(Math.abs(p.guest.countdown - (PV.countdown - 0.1)) < 0.03);
-    assert.equal(press(p.guest, 'a'), false, 'no moves before the fight');
+    assert.equal(press(p.guest, 'attack'), false, 'no moves before the fight');
     assert.equal(p.guest.command({ type: 'move', x: 1, y: 0 }), true, 'the stick is taken');
     fightNow(p);
     assert.deepEqual([p.host.selfId, p.guest.selfId], ['host', 'guest']);
@@ -235,7 +237,7 @@ test('each side picks its weapon: a dagger against a sword, the same on both pho
         assert.equal(end.sim.fighters[1].atk, inventoryKit.statsOf(duelKit.loadoutFor('assassin_dagger')).atk);
     }
     // Each plays its own tree.
-    press(p.guest, 'a'); release(p.guest, 'a'); press(p.host, 'a'); release(p.host, 'a'); p.run(0.1);
+    press(p.guest, 'attack'); release(p.guest, 'attack'); press(p.host, 'attack'); release(p.host, 'attack'); p.run(0.1);
     assert.deepEqual([p.host.sim.fighters[0].act?.move, p.host.sim.fighters[1].act?.move], ['slash', 'cut']);
     assert.equal(p.guest.sim.fighters[1].act?.move, 'cut');
     // A snapshot giving the dagger a sword move is refused.
@@ -263,9 +265,9 @@ test('the guest walks at once on its own phone; only the host moves the host cop
 
 test('a guest combo reaches the same move on both phones, over latency', () => {
     const p = pair({ latency: 0.04 }); fightNow(p);
-    press(p.guest, 'a'); release(p.guest, 'a');
+    press(p.guest, 'attack'); release(p.guest, 'attack');
     assert.equal(p.guest.sim.fighters[1].act.move, 'slash', 'predicted at once');
-    p.run(0.2); press(p.guest, 'a'); release(p.guest, 'a'); p.run(M.slash.windup + M.slash.swing + M.slash.derive - 0.2 + 0.03);
+    p.run(0.2); press(p.guest, 'attack'); release(p.guest, 'attack'); p.run(M.slash.windup + M.slash.swing + M.slash.derive - 0.2 + 0.03);
     assert.equal(p.host.sim.fighters[1].act.move, 'backslash');
     assert.equal(p.guest.sim.fighters[1].act.move, 'backslash');
     p.run(1.2);
@@ -277,7 +279,7 @@ test('a guest combo reaches the same move on both phones, over latency', () => {
 test('only the host changes HP; the guest sees it with the next snapshot', () => {
     const p = pair({ latency: 0.03 }); fightNow(p); closeIn(p);
     const hp = () => p.guest.sim.fighters.map(f => f.hp);
-    press(p.guest, 'a'); release(p.guest, 'a');
+    press(p.guest, 'attack'); release(p.guest, 'attack');
     for (let i = 0; i < 25; i++) p.guest.frame(0.01);
     assert.deepEqual(plain(hp()), [360, 360], 'the guest\'s own cut decides nothing');
     p.run(0.4);
@@ -291,11 +293,11 @@ test('stale, foreign, duplicate and broken messages change nothing', () => {
     const p = pair(); fightNow(p);
     const battle = p.host.battle, hostGuest = p.host.sim.fighters[1];
     p.guest.command({ type: 'move', x: 0, y: 0.5 }); p.run(0.05);
-    p.host.receive({ t: 'input', battle, seq: 1, cmd: { type: 'press', button: 'a' } });
+    p.host.receive({ t: 'input', battle, seq: 1, cmd: { type: 'press', button: 'attack' } });
     assert.equal(hostGuest.act, null, 'seq 1 was already used by the stick');
     const seq = p.log.guest.sent.filter(m => m.t === 'input').length;
     p.host.receive({ t: 'input', battle, seq: seq + 1, cmd: { type: 'teleport', x: 0 } });
-    p.host.receive({ t: 'input', battle: 'old', seq: seq + 2, cmd: { type: 'press', button: 'a' } });
+    p.host.receive({ t: 'input', battle: 'old', seq: seq + 2, cmd: { type: 'press', button: 'attack' } });
     assert.equal(hostGuest.act, null);
     const snap = p.log.host.sent.filter(m => m.t === 'snap').at(-1);
     p.run(0.1);
@@ -309,10 +311,10 @@ test('stale, foreign, duplicate and broken messages change nothing', () => {
 test('a knock-out and a surrender each give one result on both phones', () => {
     const p = pair(); fightNow(p); closeIn(p);
     p.host.sim.fighters[1].hp = 1;
-    press(p.host, 'a'); release(p.host, 'a'); p.run(0.5);
+    press(p.host, 'attack'); release(p.host, 'attack'); p.run(0.5);
     assert.deepEqual(p.log.host.results, ['win']); assert.deepEqual(p.log.guest.results, ['lose']);
     assert.equal(p.guest.phase, 'over');
-    assert.equal(press(p.host, 'a'), false, 'nothing after the end');
+    assert.equal(press(p.host, 'attack'), false, 'nothing after the end');
     const q = pair(); fightNow(q);
     assert.equal(q.guest.surrender(), true); q.run(0.1);
     assert.deepEqual(q.log.host.results, ['win']); assert.deepEqual(q.log.guest.results, ['lose']);

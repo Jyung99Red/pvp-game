@@ -83,7 +83,7 @@ const gameConfig = (() => {
             // that). Down, it refills in refillSeconds; emptied, the guard
             // stays locked until it is back to unlockRatio.
             guardBar: { max: 100, raiseCost: 10, holdDrain: 10, parryCostRatio: 0.5, refillSeconds: 3, unlockRatio: 0.4 },
-            // A potion in the offhand, drunk with the interact key: a drink takes
+            // A potion in the offhand, drunk with the offhand key: a drink takes
             // `seconds`, walking and turning slowed meanwhile, and heals
             // `heal` of max HP at the end; a blow that gets through spills
             // it (the potion is kept). Pressed in a move or a stun, it waits
@@ -113,11 +113,15 @@ const gameConfig = (() => {
         // recovery ends (the sword's a little sooner, user 2026-10-02);
         // windowAfterRecovery: the chain resets this long after;
         // bufferSeconds: an input pressed ahead that has not run within this
-        // long is dropped. windupTurnMultiplier: in a windup the stick turns
-        // the body at this share of player.turnRate; the swing locks the
-        // facing and the recovery does not turn (user, 2026-10-02).
+        // long is dropped. holdSeconds: one attack key gives A and B (user,
+        // 2026-10-03): let go sooner it is an A, held this long a B; a move
+        // that starts at once begins that far into its windup, so telling
+        // them apart costs no time. windupTurnMultiplier: in a windup the
+        // stick turns the body at this share of player.turnRate; the swing
+        // locks the facing and the recovery does not turn (user,
+        // 2026-10-02).
         combo: {
-            windowAfterRecovery: 0.7, bufferSeconds: 0.5, windupTurnMultiplier: 1 / 3,
+            windowAfterRecovery: 0.7, bufferSeconds: 0.5, holdSeconds: 0.2, windupTurnMultiplier: 1 / 3,
             weapons: {
                 // Heavy and far-reaching: everything a beat slower than the dagger.
                 sword: { name: '剑', root: { a: 'slash', b: 'charged' }, standard: 60, pauseAfterRecovery: 0.15 },
@@ -256,7 +260,7 @@ const gameConfig = (() => {
         // only their colours differ: user 2026-10-02); an offhand item's
         // `offhand` is what it is for: a shield is what the guard key guards
         // with (the weapon guards without one), a torch or a potion is used
-        // with the interact key. `max`:
+        // with the offhand key. `max`:
         // how many can be owned. `price`: what the shop sells it for;
         // `sell`: what it pays for one. `recipe`: what the smithy wants for
         // it (gold and materials). Gear is never lost; potions are used up.
@@ -269,8 +273,8 @@ const gameConfig = (() => {
             iron_ore: { kind: 'material', name: '铁矿石', icon: '🪨', sell: 3, desc: '原野和山谷的铁矿石块里采来的。铁匠铺打造铁器要用。' },
             crystal: { kind: 'material', name: '晶石', icon: '💎', sell: 10, desc: '幽暗洞穴里采来的晶石。能镶在饰品上。' },
             herb: { kind: 'material', name: '草药', icon: '🌿', sell: 2, desc: '野外的草药丛采来的。能编进护符，商店也收。' },
-            potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按交互键喝一口（附近没东西可交互，或者在战斗中），回复三成生命；挨打会洒掉这一口（药水还在）。' },
-            torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按交互键点燃或熄灭，照亮暗处，能烧掉枯木丛。拿着火把时只能用武器挡，也不能拿火把打。' },
+            potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按副手键喝一口，回复三成生命；挨打会洒掉这一口（药水还在）。' },
+            torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处；带着它对枯木丛按交互键就能烧掉。拿着火把时只能用武器挡，也不能拿火把打。' },
             wooden_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '木剑', icon: '🗡️', stats: { atk: 8 }, blade: 0.92, max: 1, desc: '开局带着的剑。' },
             assassin_dagger: { kind: 'gear', slot: 'main', weapon: 'dagger', name: '刺客短刃', icon: '🔪', stats: { atk: 11 }, blade: 0.6, max: 1, recipe: { gold: 40, materials: { wolf_pelt: 2, iron_ore: 2 } }, desc: '短刃。比剑短，要贴得更近；出招快，连段最长六段，起手 B 是往前冲的突刺。' },
             iron_sword: { kind: 'gear', slot: 'main', weapon: 'sword', name: '铁剑', icon: '⚔️', stats: { atk: 16 }, blade: 0.92, max: 1, recipe: { gold: 80, materials: { iron_ore: 5, goblin_ear: 2 } }, desc: '和木剑一样长，铁打的刃，攻击高得多。' },
@@ -354,7 +358,7 @@ const gameConfig = (() => {
             keys: {
                 up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
                 left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-                a: ['KeyJ'], b: ['KeyK'], guard: ['KeyL'], interact: ['KeyE']
+                attack: ['KeyJ'], offhand: ['KeyK'], guard: ['KeyL'], interact: ['KeyE']
             }
         },
 
@@ -367,8 +371,8 @@ const gameConfig = (() => {
         controlsLayout: {
             minGap: 10,
             buttons: {
-                a: { side: 'right', x: 78, y: 72, size: 84 },
-                b: { side: 'right', x: 70, y: 162, size: 72 },
+                attack: { side: 'right', x: 78, y: 72, size: 84 },
+                offhand: { side: 'right', x: 70, y: 162, size: 72 },
                 guard: { side: 'right', x: 176, y: 56, size: 72 },
                 interact: { side: 'left', x: 64, y: 196, size: 56 }
             },

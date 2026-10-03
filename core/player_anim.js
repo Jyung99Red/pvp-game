@@ -113,14 +113,16 @@ const playerAnim = (() => {
         const upper = rigKit.add(rigKit.pick(P.stance, playerModel.layers.upper), rigKit.scale(arms, body.moveBlend));
         return rigKit.add(legs(rig, body.gait, body.moveBlend, run), upper);
     }
-    // A move in progress, `act` = { move, phase, t, from }: the windup eases
-    // from wherever the previous move's recovery had got to (or the stance)
-    // into key `a`; the swing goes `a` to `b`; the recovery back to stance.
+    // A move in progress, `act` = { move, phase, t, lead, from }: the windup
+    // eases from wherever the previous move's recovery had got to (or the
+    // stance) into key `a` -- over what is left of it after `lead`, the time
+    // the attack key took to tell A from B; the swing goes `a` to `b`; the
+    // recovery back to stance.
     function movePose(act) {
         const K = playerMoves.moves[act.move], m = gameConfig.combo.moves[act.move], stance = playerPoses.stance;
         if (act.phase === 'windup') {
-            const from = act.from ? movePose({ move: act.from.move, phase: 'recover', t: act.from.t }) : stance;
-            return rigKit.mix(from, K.a, easeOut(clamp01(m.windup > 0 ? act.t / m.windup : 1)));
+            const from = act.from ? movePose({ move: act.from.move, phase: 'recover', t: act.from.t }) : stance, lead = act.lead || 0;
+            return rigKit.mix(from, K.a, easeOut(clamp01(m.windup > lead ? (act.t - lead) / (m.windup - lead) : 1)));
         }
         if (act.phase === 'charge') return K.a;
         if (act.phase === 'swing') return rigKit.mix(K.a, K.b, smooth(clamp01(act.t / m.swing)));
@@ -136,7 +138,7 @@ const playerAnim = (() => {
         if (!act && inventoryKit.offhandOf(body.loadout) === 'torch') pose = { ...pose, ...playerMoves.torch };
         if (act) {
             // Out of a walk the move cross-fades in; out of a move it does not need to.
-            const w = act.from || act.phase !== 'windup' ? 1 : clamp01(act.t / BLEND());
+            const w = act.from || act.phase !== 'windup' ? 1 : clamp01((act.t - (act.lead || 0)) / BLEND());
             if (act.phase !== 'charge') stepping = 1 - w;
             let moving = movePose(act);
             // Charging may walk: the legs walk under the held charge, like

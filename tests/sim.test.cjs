@@ -16,7 +16,7 @@ test('a new world puts the player on the spawn block, on the ground, nothing hel
     assert.deepEqual(plain({ x: p.x, y: p.y }), plain(terrainKit.cellCentre(t, t.spawn.col, t.spawn.row)));
     assert.equal(p.h, 0);
     assert.ok(Object.values(sim.input.buttons).every(b => !b.held && b.presses === 0));
-    assert.deepEqual(plain(Object.keys(sim.input.buttons)), ['a', 'b', 'guard', 'interact']);
+    assert.deepEqual(plain(Object.keys(sim.input.buttons)), ['attack', 'guard', 'offhand', 'interact']);
 });
 
 test('the fixed-step clock: whole steps, carried remainders, long frames capped', () => {
@@ -62,11 +62,11 @@ test('commands are validated; a long vector is clipped to full speed', () => {
     for (const bad of [null, 5, { type: 'move', x: NaN, y: 0 }, { type: 'jump' }, { type: 'press', button: 'skill' }]) assert.equal(W.command(sim, bad), false);
     assert.equal(W.command(sim, { type: 'move', x: 30, y: 40 }), true);
     assert.deepEqual(plain(sim.input.move), { x: 0.6, y: 0.8 });
-    assert.equal(W.command(sim, { type: 'release', button: 'a' }), false, 'nothing to release');
-    assert.equal(W.command(sim, { type: 'press', button: 'a' }), true);
-    assert.equal(W.command(sim, { type: 'press', button: 'a' }), false, 'already held');
-    assert.equal(W.command(sim, { type: 'release', button: 'a' }), true);
-    assert.equal(sim.input.buttons.a.presses, 1);
+    assert.equal(W.command(sim, { type: 'release', button: 'attack' }), false, 'nothing to release');
+    assert.equal(W.command(sim, { type: 'press', button: 'attack' }), true);
+    assert.equal(W.command(sim, { type: 'press', button: 'attack' }), false, 'already held');
+    assert.equal(W.command(sim, { type: 'release', button: 'attack' }), true);
+    assert.equal(sim.input.buttons.attack.presses, 1);
 });
 
 test('two thumbs: walking with the shield up, interact on top; A stands the walker still for the move', () => {
@@ -79,7 +79,7 @@ test('two thumbs: walking with the shield up, interact on top; A stands the walk
     assert.ok(sim.input.buttons.guard.held && sim.input.buttons.interact.held);
     assert.ok(Math.abs(p.x - x0 - SPEED * G.moveMultiplier * (0.5 - (P.startSeconds - 0.01) / 2)) < 1, `walked ${p.x - x0} with the shield up`);
     W.command(sim, { type: 'release', button: 'guard' });
-    W.command(sim, { type: 'press', button: 'a' });
+    W.command(sim, { type: 'press', button: 'attack' }); W.command(sim, { type: 'release', button: 'attack' });
     const x1 = p.x;
     loop.run(gameConfig.combo.moves.slash.windup);
     assert.ok(p.x - x1 < 1e-9, 'the windup stands still');
@@ -198,7 +198,7 @@ test('walk blend eases in and out over animation.blendSeconds', () => {
 });
 
 test('the same commands give the same world', () => {
-    const script = [[0, { type: 'move', x: 0.3, y: -1 }], [37, { type: 'press', button: 'b' }], [80, { type: 'move', x: -1, y: 0.2 }], [140, { type: 'release', button: 'b' }]];
+    const script = [[0, { type: 'move', x: 0.3, y: -1 }], [37, { type: 'press', button: 'attack' }], [80, { type: 'move', x: -1, y: 0.2 }], [140, { type: 'release', button: 'attack' }]];
     const play = () => {
         const sim = W.create();
         for (let tick = 0; tick < 300; tick++) {

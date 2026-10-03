@@ -90,6 +90,7 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
                 rotateHint: getComputedStyle(document.querySelector('.rotate-hint')).display,
                 interactIdle: document.querySelector('[data-button="interact"]').classList.contains('idle'),
                 guardKind: document.querySelector('[data-button="guard"]').dataset.kind,
+                offhandGrey: document.querySelector('[data-button="offhand"]').classList.contains('disabled'),
                 calls: g.view.info().calls, threeRevision: THREE.REVISION
             };
         });
@@ -107,9 +108,10 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
             const [ia, a] = list[i], [ib, b] = list[j];
             assert.ok(Math.hypot(a.x - b.x, a.y - b.y) >= a.r + b.r + 10 - 0.5, `${ia} and ${ib} overlap`);
         }
-        assert.equal(info.buttons.a.w, 84);
+        assert.equal(info.buttons.attack.w, 84);
         assert.ok(info.interactIdle);
         assert.equal(info.guardKind, 'shield');
+        assert.equal(info.offhandGrey, true, 'with the shield the offhand key is grey');
         // A real-time fight: the frame loop runs, J is A, the dummy swings back.
         await page.evaluate(() => { const g = window.game, d = g.sim.dummy; g.sim.player.x = d.x - 60; g.sim.player.y = d.y; g.sim.player.facing = 0; g.pause(false); });
         for (let i = 0; i < 3; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
@@ -130,12 +132,12 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         const at = await page.evaluate(() => {
             window.game.sim.dummy.wait = 1e9; // keep the dummy out of it
             const c = el => { const r = document.querySelector(el).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
-            return { a: c('[data-button="a"]'), b: c('[data-button="b"]'), shield: c('[data-button="guard"]'), x0: window.game.sim.player.x };
+            return { a: c('[data-button="attack"]'), shield: c('[data-button="guard"]'), x0: window.game.sim.player.x };
         });
         const cdp = await context.newCDPSession(page);
         const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
         const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        const stick = { x: 160, y: 300, id: 1 }, shield = { x: at.shield.x, y: at.shield.y, id: 2 }, a = { x: at.a.x, y: at.a.y, id: 3 }, b = { x: at.b.x, y: at.b.y, id: 4 };
+        const stick = { x: 160, y: 300, id: 1 }, shield = { x: at.shield.x, y: at.shield.y, id: 2 }, a = { x: at.a.x, y: at.a.y, id: 3 };
         await touch('touchStart', [stick]);
         await touch('touchStart', [stick, shield]);
         await touch('touchMove', [{ ...stick, x: 220 }, shield]);
@@ -146,9 +148,9 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         assert.notEqual(during.shield, 'down');
         assert.deepEqual([...during.pointers].sort(), ['guard', 'stick']);
         // A third finger is ignored: two thumbs is the limit.
-        await touch('touchStart', [{ ...stick, x: 220 }, shield, b]);
+        await touch('touchStart', [{ ...stick, x: 220 }, shield, { ...a, id: 4 }]);
         await frame();
-        assert.equal(await page.evaluate(() => window.game.sim.input.buttons.b.held), false);
+        assert.equal(await page.evaluate(() => window.game.sim.input.buttons.attack.held), false);
         const walked = await page.evaluate(() => { window.game.run(1); return window.game.sim.player.x; });
         // Slowly with the shield up (a little less while it turns and gets going).
         const slow = await page.evaluate(() => gameConfig.player.speed * gameConfig.combat.guard.moveMultiplier);
@@ -180,22 +182,25 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
         assert.deepEqual(released.move, { x: 0, y: 0 });
         assert.equal(released.shield, 'down');
         assert.deepEqual(released.pointers, []);
-        // Stick and A: A starts its move at once and the body stands for it.
+        // Stick and a tap of the attack key: an A, and the body stands for it.
         await touch('touchStart', [stick]);
         await touch('touchMove', [{ ...stick, x: 220 }]);
         await page.waitForFunction(() => window.game.sim.input.move.x > 0.99, null, { timeout: 10000 });
         await touch('touchStart', [{ ...stick, x: 220 }, a]);
+        await page.waitForFunction(() => window.game.sim.input.buttons.attack.held, null, { timeout: 10000 });
+        await touch('touchEnd', [a]);
         await page.waitForFunction(() => window.game.sim.player.act !== null, null, { timeout: 10000 });
+        assert.equal(await page.evaluate(() => window.game.sim.input.move.x), 1, 'the stick is still held');
         assert.equal(await page.evaluate(() => window.game.sim.player.act.move), 'slash');
         await touch('touchEnd', []);
         await page.waitForFunction(() => window.game.input.state().pointers.length === 0, null, { timeout: 10000 }).catch(() => {});
         await page.evaluate(() => window.game.run(1));
-        // Desktop keys: D walks east, J is A.
+        // Desktop keys: D walks east, J is the attack key.
         await page.keyboard.down('KeyD');
         assert.equal(await page.evaluate(() => window.game.sim.input.move.x), 1);
         await page.keyboard.up('KeyD');
         await page.keyboard.press('KeyJ');
-        assert.deepEqual(await page.evaluate(() => [window.game.sim.input.move.x, window.game.sim.input.buttons.a.presses, window.game.sim.stats.attacks]), [0, 2, 2]);
+        assert.deepEqual(await page.evaluate(() => [window.game.sim.input.move.x, window.game.sim.input.buttons.attack.presses, window.game.sim.stats.attacks]), [0, 2, 2]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });
@@ -379,12 +384,12 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         const worn = await page.evaluate(() => { const g = window.game, p = g.sim.player; return { map: g.map, parts: g.sim.rigs.fighters.player.parts.length, x: p.x, maxHp: p.maxHp, def: p.def, offhand: p.loadout.offhand, saved: g.save.loadout.armor }; });
         assert.deepEqual({ ...worn, parts: undefined }, { map: 'base', parts: undefined, x: before.x, maxHp: 380, def: 11, offhand: 'potion', saved: 'iron_armor' });
         assert.ok(worn.parts > before.parts, 'the iron armor adds plates to the model');
-        // No shield now: the guard key shows the blade; the interact key, with
-        // nothing in reach, offers a drink and the potions left.
-        await page.waitForFunction(() => document.querySelector('[data-button="guard"]').dataset.kind === 'weapon' && document.querySelector('[data-hud="interact"]').textContent === '喝药' && document.querySelector('[data-hud="item-count"]').textContent === '2', null, { timeout: 10000 });
-        // A drink with the interact key heals 30% of max HP.
+        // No shield now: the guard key shows the blade; the offhand key the
+        // potion and how many are left.
+        await page.waitForFunction(() => document.querySelector('[data-button="guard"]').dataset.kind === 'weapon' && document.querySelector('[data-button="offhand"]').dataset.kind === 'potion' && !document.querySelector('[data-button="offhand"]').classList.contains('disabled') && document.querySelector('[data-hud="offhand-count"]').textContent === '2', null, { timeout: 10000 });
+        // A drink with the offhand key (K) heals 30% of max HP.
         await page.evaluate(() => { window.game.sim.player.hp = 100; });
-        await page.keyboard.press('KeyE');
+        await page.keyboard.press('KeyK');
         await page.evaluate(() => window.game.run(0.9));
         assert.deepEqual(await page.evaluate(() => [window.game.sim.player.hp, window.game.sim.progress.inventory.items.potion]), [214, 1]);
         // Outside the base the bag only shows: no changing gear. The menu
@@ -419,7 +424,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
                 return sum / (N * N * 3);
             };
             const dark = sample();
-            worldSim.command(s, { type: 'press', button: 'interact' }); worldSim.command(s, { type: 'release', button: 'interact' });
+            worldSim.command(s, { type: 'press', button: 'offhand' }); worldSim.command(s, { type: 'release', button: 'offhand' });
             g.run(0.02);
             return { dark, lit: sample(), on: p.lit };
         });

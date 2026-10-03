@@ -10,7 +10,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
 const press = (sim, b) => W.command(sim, { type: 'press', button: b });
 const release = (sim, b) => W.command(sim, { type: 'release', button: b });
-const tap = (sim, b = 'a') => { press(sim, b); release(sim, b); };
+const tap = (sim, b = 'attack') => { press(sim, b); release(sim, b); };
 const events = (sim, type) => W.drain(sim).filter(e => e.type === type);
 const put = (body, x, y, facing) => { body.x = x; body.y = y; if (facing !== undefined) body.facing = facing; };
 const REGIONS = Object.keys(MAPS).filter(id => !MAPS[id].duel);

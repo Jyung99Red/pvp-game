@@ -1,30 +1,32 @@
 // A fighter: the move tree on A and B (pre-input, derive points, the pause
 // line, the opening charge; the tree is the main weapon's type,
-// design.md 4.2), the guard key (with the shield if one is carried, else
-// the weapon), the offhand items the interact key uses (potion, torch),
-// being struck, and
-// moving between all of that. Rules carried over from the 2D version
-// (tag v1-2d, pve/spatial_engine.js) with the input layer of
-// design.md 3.3: A and B are separate keys, A or B start
-// their move the moment they are pressed. Every rule takes the fighter it
-// applies to: PVE has one (sim.player), a duel two (sim.fighters).
+// design.md 4.2), the one attack key that gives A and B (a tap is an A, a
+// hold a B), the guard key (with the shield if one is carried, else the
+// weapon), the offhand key (potion, torch), being struck, and moving
+// between all of that. Rules carried over from the 2D version (tag v1-2d,
+// pve/spatial_engine.js). Every rule takes the fighter it applies to: PVE
+// has one (sim.player), a duel two (sim.fighters).
 //
 // State on a fighter:
 //   id, side   who it is ('player'; a duel's 'host' and 'guest'); events
 //          carry it as `side`
-//   input  its five controls: { move: { x, y }, buttons: { a, b, guard,
-//          interact: { held, presses } } }
+//   input  its five controls: { move: { x, y }, buttons: { attack, guard,
+//          offhand, interact: { held, presses } } }
 //   stats  attacks, hits, misses, blocks, parries, hurt, kills
 //   act    the move under way: { move, phase: windup|charge|swing|recover,
-//          t (seconds into the phase), facing, pressAt, share, stepTotal,
-//          hit: [ids], from: { move, t } | null }
+//          t (seconds into the phase), lead (windup already behind it when
+//          it started: the time the key took to tell A from B), facing,
+//          pressAt, share, stepTotal, hit: [ids], from: { move, t } | null }
 //   chain  the last finished swing, while its combo window is open:
 //          { move, at (time the swing ended), cued }
 //   buffer one input pressed ahead: { input: 'a' | 'b', at, age } (age
 //          counts unfrozen time only, so a hitstop never eats into it)
 //   combo  the inputs of the running combo, for display: 'a', 'b', '-'
 //   guard  { state: down|raising|up, t, readyAt, bar, locked, queued }
-//   stun, freeze (hitstop), push (knockback), bPress: { at, held, upAt }
+//   stun, freeze (hitstop), push (knockback)
+//   press  the attack key's press: null or { at, held, upAt, as (null while
+//          it is still telling, then 'a' or 'b'), free (nothing has stood in
+//          the way of a move since the press) }
 //   down, downT  fallen (HP emptied where nobody is `endless`), and since when
 //   focus, using  the interact key's target and a hold under way (core/interact.js)
 //   drink  a potion: null, or { phase: wait (pressed while busy) | drink, t }
@@ -35,7 +37,7 @@
 // the hits applied, so two fighters cutting each other in the same step
 // both land, whoever is ticked first.
 const fighterKit = (() => {
-    const BUTTONS = Object.freeze(['a', 'b', 'guard', 'interact']);
+    const BUTTONS = Object.freeze(['attack', 'guard', 'offhand', 'interact']);
     const K = () => gameConfig.combo, F = () => gameConfig.combat;
     const moveOf = id => gameConfig.combo.moves[id];
     const emit = (sim, p, type, data) => combatKit.emit(sim, type, { side: p.id, ...data });
@@ -51,7 +53,7 @@ const fighterKit = (() => {
             id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
-            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, bPress: null, down: false, downT: 0, focus: null, using: null, drink: null, lit: false,
+            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, drink: null, lit: false,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
         });
     }
@@ -100,10 +102,11 @@ const fighterKit = (() => {
         const id = paused ? next.pause ?? next.a : next[input];
         return id ? { id, derived: true, paused: paused && !!next.pause } : { id: K().weapons[inventoryKit.weaponOf(p.loadout)].root[input], derived: false, paused: false };
     }
-    function startMove(sim, p, input, at) {
+    // `lead`: seconds of the windup already behind it (see `decide`).
+    function startMove(sim, p, input, at, lead = 0) {
         const d = derive(p, input, at), prev = p.act;
         p.act = {
-            move: d.id, phase: 'windup', t: 0, facing: p.facing, pressAt: at, share: 0, stepTotal: moveOf(d.id).step, hit: [],
+            move: d.id, phase: 'windup', t: lead, lead, facing: p.facing, pressAt: at, share: 0, stepTotal: moveOf(d.id).step, hit: [],
             from: prev && prev.phase === 'recover' ? { move: prev.move, t: prev.t } : null
         };
         p.combo = d.derived ? [...p.combo, ...(d.paused ? ['-'] : []), input] : [input];
@@ -113,19 +116,32 @@ const fighterKit = (() => {
         p.stats.attacks++;
         emit(sim, p, 'attack', { move: d.id });
     }
-    function pressAttack(sim, p, input) {
-        // Shield up (or going up), or a potion at the lips: A and B do nothing.
+    // An A or a B, pressed at `at`.
+    function attack(sim, p, input, at, lead) {
+        // Guard up (or going up), or a potion at the lips: A and B do nothing.
         if (p.guard.state !== 'down' || p.guard.queued || p.drink) return false;
         if (p.act?.phase === 'charge') return false;
         // Pre-input: kept, never dropped; only the latest counts, and it runs
         // at the derive point, so pressing early never makes a move faster.
-        if (p.act || p.stun > 0 || p.freeze > 0) { p.buffer = { input, at: sim.time, age: 0 }; return true; }
-        startMove(sim, p, input, sim.time);
+        if (p.act || p.stun > 0 || p.freeze > 0) { p.buffer = { input, at, age: 0 }; return true; }
+        startMove(sim, p, input, at, lead);
         return true;
+    }
+    // ---- the attack key (user, 2026-10-03): one key for A and B. Let go
+    // before combo.holdSeconds it is an A; held that long, a B. Either
+    // counts from the press (the pause line, the charge). Telling them apart
+    // takes time, and it is not lost: a move that starts at once begins that
+    // far into its windup, so it lands when a key of its own would have.
+    const startable = p => !p.act && p.stun <= 0 && p.freeze <= 0 && p.guard.state === 'down' && !p.guard.queued && !p.drink;
+    const TELLING = Object.freeze({ phase: 'windup' });
+    function decide(sim, p, input) {
+        const k = p.press;
+        k.as = input;
+        return attack(sim, p, input, k.at, k.free && startable(p) ? sim.time - k.at : 0);
     }
     // Charge held so far for the move started by the B press at `act.pressAt`.
     function chargeOf(sim, p, act) {
-        const b = p.bPress, C = F().charge;
+        const b = p.press, C = F().charge;
         if (!b || b.at !== act.pressAt) return 0;
         return Math.min(C.full, (b.held ? sim.time : b.upAt) - b.at);
     }
@@ -246,8 +262,8 @@ const fighterKit = (() => {
             }
         }
     };
-    // ---- offhand items, used with the interact key when it has nothing
-    // else to do (core/interact.js) ----
+    // ---- the offhand key: the item carried there (a shield is the guard
+    // key's; with one, or nothing, the key does nothing) ----
     const ITEMS = {
         // A potion (design.md 3.4): a press drinks one, if any are
         // left -- at once when free, else as soon as the move or stun is
@@ -302,26 +318,32 @@ const fighterKit = (() => {
         p.runBlend = 0; p.moveTime = 0;
         emit(sim, p, 'drink_start');
     }
-    // The offhand item the interact key uses, or null (a shield is the
-    // guard key's).
+    // The offhand item the offhand key uses, or null.
     const itemOf = p => ITEMS[inventoryKit.offhandOf(p.loadout)] || null;
 
     function press(sim, p, button) {
         if (p.down) return false;
-        if (button === 'b') p.bPress = { at: sim.time, held: true, upAt: null };
-        if (button === 'a' || button === 'b') return pressAttack(sim, p, button);
+        if (button === 'attack') {
+            // Free to attack, the body stands at once, as for a windup, while
+            // the key tells A from B; a run is over.
+            const free = startable(p);
+            p.press = { at: sim.time, held: true, upAt: null, as: null, free };
+            if (free) { p.runBlend = 0; p.moveTime = 0; }
+            return true;
+        }
         if (button === 'guard') return GUARD.press(sim, p);
-        // The interact key: what is in reach, or with nothing there (or in a
-        // fight) the offhand item. It works alongside the guard.
-        if (interactKit.usesItem(sim, p)) { const item = itemOf(p); return item ? item.press(sim, p) : false; }
+        if (button === 'offhand') { const item = itemOf(p); return item ? item.press(sim, p) : false; }
+        // Interact works alongside the guard (design.md 3.5).
         return interactKit.press(sim, p);
     }
     function release(sim, p, button) {
         if (p.down) return;
-        if (button === 'b' && p.bPress?.held) {
-            p.bPress.held = false; p.bPress.upAt = sim.time;
+        if (button === 'attack' && p.press?.held) {
+            const k = p.press;
+            k.held = false; k.upAt = sim.time;
+            if (!k.as) decide(sim, p, 'a');
             // Letting go of a charge cuts.
-            if (p.act?.phase === 'charge' && p.act.pressAt === p.bPress.at) beginSwing(sim, p, true);
+            else if (p.act?.phase === 'charge' && p.act.pressAt === k.at) beginSwing(sim, p, true);
         }
         if (button === 'guard') GUARD.release(sim, p);
         if (button === 'interact') interactKit.release(sim, p);
@@ -331,7 +353,7 @@ const fighterKit = (() => {
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, press: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }
@@ -353,7 +375,8 @@ const fighterKit = (() => {
 
     // ---- moving ----
     function motion(sim, p, dt) {
-        const P = gameConfig.player, mv = p.input.move, mag = Math.hypot(mv.x, mv.y), a = p.act;
+        // An attack key still telling A from B stands the body like a windup.
+        const P = gameConfig.player, mv = p.input.move, mag = Math.hypot(mv.x, mv.y), a = p.act || (p.press && !p.press.as && p.press.free ? TELLING : null);
         const guarding = p.guard.state !== 'down', charging = a?.phase === 'charge', drinking = p.drink?.phase === 'drink';
         let striding = false;
         p.speed = 0;
@@ -399,9 +422,15 @@ const fighterKit = (() => {
         // A buffered input expires, unless it is a B still held down: that is
         // an opening charge waiting for its turn, not a stale press.
         const b = p.buffer;
-        if (b && (b.age += dt) > K().bufferSeconds + 1e-9 && !(b.input === 'b' && p.bPress?.held && p.bPress.at === b.at)) p.buffer = null;
+        if (b && (b.age += dt) > K().bufferSeconds + 1e-9 && !(b.input === 'b' && p.press?.held && p.press.at === b.at)) p.buffer = null;
         if (p.push) combatKit.tickPush(sim, p, dt, obstacles(sim, p));
         if (p.stun > 0) p.stun = Math.max(0, p.stun - dt);
+        // The attack key held long enough is a B.
+        const k = p.press;
+        if (k && !k.as) {
+            if (!startable(p)) k.free = false;
+            if (k.held && sim.time - k.at >= K().holdSeconds - 1e-9) decide(sim, p, 'b');
+        }
         free(sim, p);
         GUARD.tick(sim, p, dt);
         itemOf(p)?.tick(sim, p, dt);
@@ -441,7 +470,7 @@ const fighterKit = (() => {
             if (a.t < m.windup - 1e-9) return;
             // Still holding the B that started a charging move: charge -- unless
             // the shield was pressed meanwhile, which drops the charge.
-            if (m.charge && p.bPress?.held && p.bPress.at === a.pressAt) {
+            if (m.charge && p.press?.held && p.press.at === a.pressAt) {
                 if (p.guard.queued) { p.act = null; emit(sim, p, 'charge_dropped'); raise(sim, p); return; }
                 a.phase = 'charge'; a.t = 0; emit(sim, p, 'charge'); return;
             }

@@ -148,7 +148,8 @@ function field(...kinds) {
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
 const press = (sim, b) => W.command(sim, { type: 'press', button: b });
 const release = (sim, b) => W.command(sim, { type: 'release', button: b });
-const tap = (sim, b = 'a') => { press(sim, b); release(sim, b); };
+// The attack key: a tap is an A; held combo.holdSeconds it is a B (that time passes).
+const tap = (sim, input = 'a') => { press(sim, 'attack'); if (input === 'b') step(sim, gameConfig.combo.holdSeconds); release(sim, 'attack'); };
 const events = (sim, type) => W.drain(sim).filter(e => e.type === type);
 const put = (body, x, y, facing) => { body.x = x; body.y = y; if (facing !== undefined) body.facing = facing; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -583,7 +584,7 @@ test('a whole fight: every monster down drops its loot and the world goes on; a 
     for (let i = 0; i < 400 && !lose.result; i++) W.step(lose, 0.01);
     assert.equal(lose.result?.outcome, 'lose');
     assert.ok(q.down && q.hp === 0);
-    assert.equal(W.command(lose, { type: 'press', button: 'a' }), true);
+    assert.equal(W.command(lose, { type: 'press', button: 'attack' }), true);
     assert.equal(q.act, null, 'a fallen player does nothing');
     // Once the blows under way are done (recoveries run up to 2 s).
     step(lose, 3);
@@ -595,7 +596,7 @@ test('a whole fight: every monster down drops its loot and the world goes on; a 
 const fighterFoes = sim => g.fighterKit.foes(sim, sim.player).map(f => f.id);
 
 test('the same inputs give the same field fight, and it survives a JSON round trip (PVP snapshots)', () => {
-    const script = { 0: ['move', 1, 0.2], 150: ['press', 'a'], 152: ['release', 'a'], 300: ['press', 'b'], 340: ['release', 'b'] };
+    const script = { 0: ['move', 1, 0.2], 150: ['press', 'attack'], 152: ['release', 'attack'], 300: ['press', 'attack'], 340: ['release', 'attack'] };
     const play = () => {
         const sim = W.create({ map: FIELD });
         const m = sim.monsters[0]; put(sim.player, m.x - 230, m.y);

@@ -12,7 +12,7 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
 const press = (sim, b) => W.command(sim, { type: 'press', button: b });
 const release = (sim, b) => W.command(sim, { type: 'release', button: b });
-const tap = (sim, b = 'a') => { press(sim, b); release(sim, b); };
+const tap = (sim, b = 'attack') => { press(sim, b); release(sim, b); };
 const events = (sim, type) => W.drain(sim).filter(e => e.type === type);
 const fresh = () => saveKit.fresh();
 const put = (body, x, y, facing) => { body.x = x; body.y = y; if (facing !== undefined) body.facing = facing; };
@@ -142,13 +142,13 @@ test('a potion: a press drinks one over 0.8 s, slowly walking, and heals 30% of 
     p.hp = 100; p.facing = 0;
     W.command(sim, { type: 'move', x: 1, y: 0 });
     const x0 = p.x;
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     assert.equal(p.drink.phase, 'drink');
     step(sim, P.seconds / 2);
     // Slowly, after the walk's short build-up from a standstill.
     const slow = W0.speed * P.moveMultiplier * (P.seconds / 2 - (W0.startSeconds - 0.01) / 2);
     assert.ok(Math.abs(p.x - x0 - slow) < 1, `walks slowly: ${p.x - x0}`);
-    tap(sim, 'a');
+    tap(sim);
     assert.equal(p.act, null, 'no swinging with the flask up');
     assert.equal(p.hp, 100, 'nothing yet');
     step(sim, P.seconds / 2 + 0.02);
@@ -158,32 +158,28 @@ test('a potion: a press drinks one over 0.8 s, slowly walking, and heals 30% of 
     const ev = events(sim, 'drink');
     assert.equal(ev.length, 1);
     assert.deepEqual([ev[0].healed, ev[0].left], [Math.round(p.maxHp * P.heal), 2]);
-    // Never past max HP (back where nothing is in reach: the walk ended by
-    // a herb, which the key would gather instead).
-    W.command(sim, { type: 'move', x: 0, y: 0 }); put(p, x0 - 40, p.y); step(sim, 0.02);
-    assert.equal(p.focus, null);
-    p.hp = p.maxHp - 5; tap(sim, 'interact'); step(sim, P.seconds + 0.02);
+    // Never past max HP.
+    p.hp = p.maxHp - 5; tap(sim, 'offhand'); step(sim, P.seconds + 0.02);
     assert.equal(p.hp, p.maxHp);
 });
 
-test('the interact key uses the offhand item only with nothing in reach, or in a fight (user, 2026-10-03)', () => {
+test('the offhand key uses what the offhand carries, wherever the player stands; with a shield or nothing it does nothing (user, 2026-10-03)', () => {
     const { sim, p } = drinker({ potions: 3 });
-    // By a herb, out of a fight: the key gathers.
+    // By a herb: the interact key gathers, the offhand key drinks.
     const herb = sim.entities.find(e => e.type === 'node');
     put(p, herb.x - 30, herb.y, 0); step(sim, 0.02);
     assert.equal(p.focus, herb.id);
-    assert.equal(interactKit.usesItem(sim, p), false);
-    press(sim, 'interact');
-    assert.equal(p.drink, null); assert.equal(p.using?.id, herb.id);
-    release(sim, 'interact');
-    // The same spot in a fight: the key drinks.
-    const fight = W.create({ region: 'field', progress: sim.progress }), q = fight.player, h = fight.entities.find(e => e.id === herb.id);
-    put(q, h.x - 30, h.y, 0);
-    const m = fight.monsters[0]; m.phase = 'chase'; m.wait = 99; put(m, q.x - 150, q.y);
-    step(fight, 0.02);
-    assert.equal(interactKit.usesItem(fight, q), true);
-    tap(fight, 'interact');
-    assert.equal(q.drink?.phase, 'drink');
+    press(sim, 'interact'); assert.equal(p.drink, null); assert.equal(p.using?.id, herb.id); release(sim, 'interact');
+    tap(sim, 'offhand'); assert.equal(p.drink?.phase, 'drink');
+    // With nothing in reach the interact key does nothing.
+    const bare = drinker({ potions: 3 }); tap(bare.sim, 'interact'); assert.equal(bare.p.drink, null);
+    // A shield, or nothing: the offhand key does nothing.
+    for (const offhand of ['wooden_shield', null]) {
+        const save = fresh(); save.loadout.offhand = offhand;
+        const s = W.create({ region: 'field', progress: save }), q = s.player;
+        tap(s, 'offhand'); step(s, 0.1);
+        assert.deepEqual([q.drink, q.lit, q.guard.state], [null, false, 'down'], String(offhand));
+    }
 });
 
 test('a blow that gets through spills the drink and the potion is kept; with none left the key does nothing', () => {
@@ -191,7 +187,7 @@ test('a blow that gets through spills the drink and the potion is kept; with non
     put(p, d.x - 60, d.y, 0);
     d.phase = 'windup'; d.move = 0; d.t = gameConfig.dummy.moves[0].windup - 0.1;
     p.hp = 200;
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     step(sim, 0.4);
     assert.equal(sim.stats.hurt, 1);
     assert.equal(p.drink, null);
@@ -199,9 +195,9 @@ test('a blow that gets through spills the drink and the potion is kept; with non
     assert.equal(events(sim, 'drink_spilled').length, 1);
     d.wait = 1e9; d.phase = 'idle';
     step(sim, 1);
-    tap(sim, 'interact'); step(sim, F.potion.seconds + 0.02);
+    tap(sim, 'offhand'); step(sim, F.potion.seconds + 0.02);
     assert.ok(!sim.progress.inventory.items.potion, 'the last one drunk');
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     assert.equal(p.drink, null);
     assert.equal(events(sim, 'potion_empty').length, 1);
 });
@@ -209,11 +205,11 @@ test('a blow that gets through spills the drink and the potion is kept; with non
 test('pressed in the middle of a move, the drink waits for the move to end', () => {
     const { sim, p } = drinker();
     p.hp = 100;
-    tap(sim, 'a');
+    tap(sim);
     step(sim, 0.05);
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     assert.equal(p.drink.phase, 'wait');
-    tap(sim, 'a');
+    tap(sim);
     const slash = MOVES.slash;
     step(sim, slash.windup + slash.swing + slash.recovery - 0.05 + 0.03);
     assert.equal(sim.stats.attacks, 1, 'the A pressed while waiting did not chain');
@@ -221,9 +217,9 @@ test('pressed in the middle of a move, the drink waits for the move to end', () 
     step(sim, F.potion.seconds + 0.01);
     assert.equal(p.hp, 100 + Math.round(p.maxHp * F.potion.heal));
     // A second press calls a waiting drink off.
-    tap(sim, 'a'); step(sim, 0.02);
-    tap(sim, 'interact'); assert.equal(p.drink.phase, 'wait');
-    tap(sim, 'interact'); assert.equal(p.drink, null);
+    tap(sim); step(sim, 0.02);
+    tap(sim, 'offhand'); assert.equal(p.drink.phase, 'wait');
+    tap(sim, 'offhand'); assert.equal(p.drink, null);
 });
 
 // ---- the torch, thickets and the dark ----
@@ -234,14 +230,14 @@ function torchBearer(region = 'cave') {
     sim.monsters = [];
     return { sim, p: sim.player, save };
 }
-test('a torch is lit and put out with the interact key (nothing in reach)', () => {
+test('a torch is lit and put out with the offhand key', () => {
     const { sim, p } = torchBearer();
     assert.equal(p.lit, false);
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     assert.equal(p.lit, true);
     assert.equal(p.guard.state, 'down');
     assert.equal(events(sim, 'torch_lit').length, 1);
-    tap(sim, 'interact');
+    tap(sim, 'offhand');
     assert.equal(p.lit, false);
     assert.equal(events(sim, 'torch_out').length, 1);
 });
