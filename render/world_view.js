@@ -10,6 +10,25 @@ const worldView = (() => {
     // the torch's intensity. A torch lights `reach` blocks round it.
     const LIGHT = { day: { sky: 1.9, sun: 2.7, fog: [8, 26], torch: 3 }, dark: { sky: 0.05, sun: 0.03, fog: [1, 9], torch: 9 } };
     const TORCH = { reach: 7, decay: 1.2 };
+    // In a dark region a little daylight comes in by each portal: a soft
+    // light `inside` blocks in from it, so the dark does not shut at the
+    // doorway (user, 2026-10-03).
+    const DOORWAY = { intensity: 4, reach: 6, decay: 1.4, inside: 1, height: 1.6 };
+    // Is the point (blocks) inside a block of the terrain (or off the map)?
+    function inBlock(t, [x, y, z]) {
+        const c = Math.floor(x), r = Math.floor(z);
+        return !terrainKit.inside(t, c, r) || (terrainKit.solidAt(t, c, r) && y < terrainKit.levelAt(t, c, r));
+    }
+    // The last point going from `from` to `to` that is not inside a block.
+    function clearOf(t, from, to, steps = 12) {
+        let last = from;
+        for (let k = 1; k <= steps; k++) {
+            const at = from.map((v, i) => v + (to[i] - v) * k / steps);
+            if (inBlock(t, at)) break;
+            last = at;
+        }
+        return last;
+    }
 
     // opts.selfId: the fighter this phone plays (the camera follows it; in a
     // duel the other one is drawn as the rival).
@@ -95,6 +114,12 @@ const worldView = (() => {
         // rebuild every shader), at zero while no torch burns.
         const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
         scene.add(torchLight);
+        if (dark) for (const e of sim.entities) {
+            if (e.type !== 'portal') continue;
+            const glow = new T.PointLight(P.skyLight, DOORWAY.intensity, DOORWAY.reach, DOORWAY.decay), [x, , z] = space.toBlocks(e.x + Math.cos(e.facing) * DOORWAY.inside * U, e.y + Math.sin(e.facing) * DOORWAY.inside * U);
+            glow.position.set(x, DOORWAY.height, z);
+            scene.add(glow);
+        }
         sun.shadow.mapSize.set(mapSize, mapSize);
         Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: 60 });
         sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
@@ -390,11 +415,14 @@ const worldView = (() => {
                 entry.view.light(!!f.lit);
                 drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials });
             }
-            // The torch light sits on this fighter's flame, flickering a little.
+            // The torch light sits on this fighter's flame, flickering a
+            // little -- short of any block the flame pokes into, or the light
+            // would be shut inside it and the wall's near side go dark.
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
             if (bearer) {
                 const flame = bearer.rig.parts.findIndex(part => part.tag === 'flame'), m = bearer.solved.parts[flame];
-                torchLight.position.set(m[12], m[13] + 0.15, m[14]);
+                const body = space.toBlocks(bearer.shown.x, bearer.shown.y, bearer.shown.h + U);
+                torchLight.position.set(...clearOf(current.terrain, body, [m[12], m[13] + 0.15, m[14]]));
                 torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
             } else torchLight.intensity = 0;
             const foes = [];
