@@ -94,9 +94,10 @@ const renderEffects = (() => {
 
         // ---- flashes, shake and glow, driven by events ----
         const flash = new Map(); // id -> seconds left
-        // A parry flashes the shield and the blade white once, for BLINK
-        // seconds (user, 2026-10-03: the model going white, not a glow; one
-        // flash of 0.2 s, no sparks). id -> seconds left.
+        // A parry flashes what guarded it white once -- the shield, or the
+        // blade without one -- for BLINK seconds (user, 2026-10-03: the
+        // model going white, not a glow; one flash of 0.2 s, no sparks).
+        // id -> seconds left.
         const blinks = new Map(), BLINK = 0.2;
         const blinking = id => (blinks.get(id) || 0) > 0;
         const FALLEN = {
@@ -161,13 +162,12 @@ const renderEffects = (() => {
                 if (a?.phase === 'swing') sampleBlade(trail, f.rig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
                 drawTrail(trail); trail.mesh.visible = true;
                 for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));
-                // A parry flashes the shield (if any) and the blade white.
-                const blink = blinking(f.id);
-                f.flash(blink);
+                // A parry flashes the shield white; with no shield, the blade.
+                const blink = blinking(f.id), shielded = f.flash(blink);
                 // The blade glows gold while charging, flashes white on the pause line and on a parry.
                 const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, f.body, a) / gameConfig.combat.charge.full) : 0;
                 if (f.blade) {
-                    if (blink) f.blade.emissive.copy(white);
+                    if (blink && !shielded) f.blade.emissive.copy(white);
                     else if (cue > 0 && f.id === view.selfId) f.blade.emissive.copy(white).multiplyScalar(0.9);
                     else f.blade.emissive.copy(gold).multiplyScalar(0.9 * charge);
                 }
