@@ -1,6 +1,7 @@
 # AGENTS.md
 
-Browser 3D action RPG in blocky style, landscape only, played on phones.
+Block Knight (方块骑士): a browser 3D action RPG in blocky style, landscape
+only, played on phones; the defence is guarding, there is no dodge.
 No bundler: plain global-scope `<script>` tags loaded in manifest order by
 `core/client_boot.js`; views are fetch-loaded HTML partials. Serve over http
 (`file://` breaks `fetch` and `import()`): `python -m http.server 8422` or
