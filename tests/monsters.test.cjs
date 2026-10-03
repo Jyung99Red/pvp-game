@@ -445,7 +445,7 @@ function locked(...chain) {
 }
 test('the gap after a blow holds a combo: a sword A A and a walk back in after any blow, the whole A A A after a lunge (user, 2026-10-03)', () => {
     const AA = locked('slash', 'backslash'), AAA = locked('slash', 'backslash', 'spin'), WALK_IN = 0.4;
-    assert.ok(Math.abs(AA - 1.05) < 1e-9 && Math.abs(AAA - 1.92) < 1e-9, `${AA} ${AAA}`);
+    assert.ok(Math.abs(AA - 1.00) < 1e-9 && Math.abs(AAA - 1.84) < 1e-9, `${AA} ${AAA}`);
     for (const kind of KINDS) {
         const S = MON[kind];
         for (const name of Object.keys(S.near).filter(n => S.moves[n])) assert.ok(S.moves[name].recovery + S.delay >= AA + WALK_IN - 1e-9, `${kind} ${name}`);

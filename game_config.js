@@ -129,14 +129,14 @@ const gameConfig = (() => {
                 dagger: { name: '短刃', root: { a: 'cut', b: 'lunge' }, standard: 48, pauseAfterRecovery: 0.2 }
             },
             moves: {
-                slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.36, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
-                backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.44, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },
-                spin: { weapon: 'sword', name: '回旋斩', windup: 0.20, swing: 0.22, recovery: 0.72, ratio: 0.66, stagger: 0, knockback: 0, step: 0 },
-                thrust: { weapon: 'sword', name: '连刺', windup: 0.15, swing: 0.08, recovery: 0.66, ratio: 0.72, stagger: 0, knockback: 0, step: 14 },
-                rising: { weapon: 'sword', name: '上挑', windup: 0.36, swing: 0.12, recovery: 0.72, ratio: 0.84, stagger: 2, knockback: 16, step: 4 },
-                cleave: { weapon: 'sword', name: '下劈', windup: 0.36, swing: 0.10, recovery: 0.78, ratio: 0.96, stagger: 2, knockback: 16, step: 7 },
-                charged: { weapon: 'sword', name: '蓄力斩', windup: 0.54, swing: 0.14, recovery: 0.72, derive: 0.30, ratio: 0.36, chargeRatio: 0.96, stagger: 2, knockback: 20, step: 4, chargeStep: 13, charge: true, next: { a: 'follow' } },
-                follow: { weapon: 'sword', name: '追斩', windup: 0.13, swing: 0.10, recovery: 0.54, ratio: 0.48, stagger: 0, knockback: 0, step: 3 },
+                slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.32, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
+                backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.39, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },
+                spin: { weapon: 'sword', name: '回旋斩', windup: 0.22, swing: 0.25, recovery: 0.59, ratio: 0.52, stagger: 0, knockback: 0, step: 0 },
+                thrust: { weapon: 'sword', name: '连刺', windup: 0.18, swing: 0.08, recovery: 0.56, ratio: 0.61, stagger: 0, knockback: 0, step: 15 },
+                rising: { weapon: 'sword', name: '上挑', windup: 0.38, swing: 0.12, recovery: 0.57, ratio: 0.74, stagger: 2, knockback: 16, step: 3 },
+                cleave: { weapon: 'sword', name: '下劈', windup: 0.38, swing: 0.10, recovery: 0.59, ratio: 0.80, stagger: 2, knockback: 16, step: 5 },
+                charged: { weapon: 'sword', name: '蓄力斩', windup: 0.54, swing: 0.14, recovery: 0.63, derive: 0.30, ratio: 0.36, chargeRatio: 0.96, stagger: 2, knockback: 20, step: 4, chargeStep: 13, charge: true, next: { a: 'follow' } },
+                follow: { weapon: 'sword', name: '追斩', windup: 0.13, swing: 0.10, recovery: 0.51, ratio: 0.48, stagger: 0, knockback: 0, step: 3 },
                 cut: { weapon: 'dagger', name: '斜切', windup: 0.10, swing: 0.08, recovery: 0.30, derive: 0.12, ratio: 0.26, stagger: 0, knockback: 0, step: 4, next: { a: 'recut', b: 'flick' } },
                 recut: { weapon: 'dagger', name: '反切', windup: 0.10, swing: 0.08, recovery: 0.32, derive: 0.12, ratio: 0.26, stagger: 0, knockback: 0, step: 4, next: { a: 'stab', b: 'flick', pause: 'retreat' } },
                 stab: { weapon: 'dagger', name: '直刺', windup: 0.10, swing: 0.06, recovery: 0.34, derive: 0.13, ratio: 0.30, stagger: 0, knockback: 0, step: 10, next: { a: 'whirl', b: 'flick' } },
@@ -209,8 +209,8 @@ const gameConfig = (() => {
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    flail: { name: '乱挥', windup: 0.75, lock: 0.3, swing: 0.16, recovery: 1.45, ratio: 0.6, step: 8 },
-                    pounce: { name: '猛扑', windup: 1.25, lock: 0.35, swing: 0.2, recovery: 2.0, ratio: 0.9, step: 36, cooldown: 5 }
+                    flail: { name: '乱挥', windup: 0.85, lock: 0.35, swing: 0.16, recovery: 1.45, ratio: 0.6, step: 8 },
+                    pounce: { name: '猛扑', windup: 1.35, lock: 0.4, swing: 0.2, recovery: 2.0, ratio: 0.9, step: 36, cooldown: 5 }
                 },
                 near: { flail: 1 },
                 mid: { pounce: 1, approach: 2 }
@@ -220,8 +220,8 @@ const gameConfig = (() => {
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.62, lock: 0.12, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 40 },
-                    leap: { name: '扑击', windup: 1.15, lock: 0.3, swing: 0.54, recovery: 2.2, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
+                    bite: { name: '撕咬', windup: 0.72, lock: 0.17, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 40 },
+                    leap: { name: '扑击', windup: 1.25, lock: 0.35, swing: 0.54, recovery: 2.2, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
                 },
                 near: { bite: 1 },
                 mid: { leap: 1, approach: 2 }
