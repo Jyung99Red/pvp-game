@@ -129,7 +129,7 @@ const gameConfig = (() => {
                 dagger: { name: '短刃', root: { a: 'cut', b: 'lunge' }, standard: 48, pauseAfterRecovery: 0.2 }
             },
             moves: {
-                slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.32, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
+                slash: { weapon: 'sword', name: '斜斩', windup: 0.13, swing: 0.10, recovery: 0.32, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
                 backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.39, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'smite', b: 'cleave', pause: 'thrust' } },
                 smite: { weapon: 'sword', name: '重斩', windup: 0.22, swing: 0.25, recovery: 0.59, ratio: 0.52, stagger: 0, knockback: 0, step: 0 },
                 thrust: { weapon: 'sword', name: '连刺', windup: 0.18, swing: 0.08, recovery: 0.56, ratio: 0.61, stagger: 0, knockback: 0, step: 15 },

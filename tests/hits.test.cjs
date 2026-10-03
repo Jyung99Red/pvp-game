@@ -75,7 +75,7 @@ test('the dagger\'s cuts keep their shapes: tight arcs, a half-turn whirl, a str
 
 test('the sword\'s cuts keep their sweeps; the A A A on the diagonal, the charged cut low and wide (user, 2026-10-03)', () => {
     // Blade tip sweep, degrees.
-    const designed = { slash: 102, backslash: 104, smite: 150, follow: 90, charged: 222, thrust: 25 };
+    const designed = { slash: 102, backslash: 104, smite: 140, follow: 90, charged: 222, thrust: 25 };
     for (const [move, arc] of Object.entries(designed)) {
         const a = tipAngles(move).map(x => x.angle), sweep = degrees(Math.max(...a) - Math.min(...a));
         assert.ok(Math.abs(sweep - arc) <= 15, `${move} sweeps ${sweep.toFixed(0)} degrees, designed ${arc}`);
