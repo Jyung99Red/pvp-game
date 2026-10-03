@@ -215,7 +215,7 @@ const worldView = (() => {
             mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
             const grown = new T.Matrix4();
-            // A shield's white double, shown only while a parry blinks it
+            // A shield's white double, shown only while a parry flashes it
             // (render/effects.js): one box round all the shield's boxes, which
             // hang on one bone.
             const shieldParts = rig.parts.map((part, i) => ({ part, i })).filter(({ part }) => C.items[part.owner]?.offhand === 'shield');

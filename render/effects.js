@@ -1,5 +1,5 @@
 // Drawn-only feedback (design.md 2.5): blade
-// trails, block debris, hit flash, a parry's white blink, a small camera shake, stagger stars, the
+// trails, block debris, hit flash, a parry's white flash, a small camera shake, stagger stars, the
 // charge glow, the pause-line cue, a fallen monster's burst and an enraged
 // one's red glow. Reads simulation events and solved rigs; never writes the
 // simulation. Kept low-key on purpose. `selfId` is the fighter this phone
@@ -94,11 +94,11 @@ const renderEffects = (() => {
 
         // ---- flashes, shake and glow, driven by events ----
         const flash = new Map(); // id -> seconds left
-        // A parry blinks what guarded it white -- the shield, or the blade
-        // without one -- on and off over BLINK seconds (user, 2026-10-03:
-        // the model going white, not a glow). id -> seconds left.
-        const blinks = new Map(), BLINK = 0.3, BLINK_STEP = 0.05;
-        const blinking = id => { const left = blinks.get(id) || 0; return left > 0 && Math.floor((BLINK - left) / BLINK_STEP) % 2 === 0; };
+        // A parry flashes what guarded it white once -- the shield, or the
+        // blade without one -- for BLINK seconds (user, 2026-10-03: the
+        // model going white, not a glow; one flash, no sparks). id -> seconds left.
+        const blinks = new Map(), BLINK = 0.12;
+        const blinking = id => (blinks.get(id) || 0) > 0;
         const FALLEN = {
             goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'],
             goblinChief: ['#5f8a34', '#8a2f2a', '#7d8088', '#d8b04a'], wolfKing: ['#4c4d55', '#2c2d33', '#ff7a3a', '#d8b04a']
@@ -115,7 +115,6 @@ const renderEffects = (() => {
                     else burst(e.at, 7, ['#ffffff', '#f4f1e6', '#d9dee3'], 1.5, 2.8, 0.06);
                 } else if (e.type === 'block') burst(e.at, 5, ['#d9dee3', '#9aa2aa'], 1.2, 2.2, 0.05);
                 else if (e.type === 'parry') {
-                    burst(e.at, 18, ['#fff3b0', '#ffd84a', '#ffffff'], 2.2, 4.2, 0.07);
                     flash.set(e.target, 0.12); blinks.set(e.side, BLINK); shake = Math.max(shake, 0.1);
                 }
                 else if (e.type === 'defeated') burst(e.at, e.boss ? 30 : 14, FALLEN[e.kind] || ['#ffffff'], 1.2, e.boss ? 3.4 : 2.6, e.boss ? 0.1 : 0.08);
@@ -162,9 +161,9 @@ const renderEffects = (() => {
                 if (a?.phase === 'swing') sampleBlade(trail, f.rig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
                 drawTrail(trail); trail.mesh.visible = true;
                 for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));
-                // A parry blinks the shield white; with no shield, the blade.
+                // A parry flashes the shield white; with no shield, the blade.
                 const blink = blinking(f.id), shielded = f.flash(blink);
-                // The blade glows gold while charging, flashes white on the pause line and blinks on a parry.
+                // The blade glows gold while charging, flashes white on the pause line and on a parry.
                 const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, f.body, a) / gameConfig.combat.charge.full) : 0;
                 if (f.blade) {
                     if (blink && !shielded) f.blade.emissive.copy(white);
