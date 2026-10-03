@@ -24,11 +24,12 @@ const playerMoves = (() => {
             b: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.8, ry: -0.65 }, handR: { rx: 1.1 }, thighR: { rx: -0.35 }, shinR: { rx: 0.1 }, thighL: { rx: 0.35 }, shinL: { rx: 0.15 } })
         },
         // The finisher, with weight: the upper arm level, out front to the right,
-        // the forearm up and the blade up, leaning right and back from the
-        // wrist; then down hard to the low left (user, 2026-10-03).
+        // the forearm up and the blade leaning well back to the right from
+        // the wrist (the user's own numbers); then down hard to the low left,
+        // on a short step (user, 2026-10-03).
         smite: {
-            a: key({ chest: { ry: -0.4, rx: -0.1 }, upperArmR: { rx: -1.5, ry: -0.85 }, forearmR: { rx: -1.5 }, handR: { rx: 2.05, ry: 0.9 }, thighR: { rx: 0.35 }, shinR: { rx: 0.2 }, thighL: { rx: -0.35 }, shinL: { rx: 0.15 } }),
-            b: key({ pelvis: { py: -0.1 }, chest: { ry: 0.3, rx: 0.3 }, upperArmR: { rx: -0.85, ry: 0.65 }, handR: { rx: 1.0 }, thighR: { rx: 0.55 }, shinR: { rx: 0.35 }, thighL: { rx: -0.7 }, shinL: { rx: 0.3 } })
+            a: key({ chest: { ry: -0.4, rx: -0.1 }, upperArmR: { rx: -1.5, ry: -0.85 }, forearmR: { rx: -1.5 }, handR: { rx: 2.6, ry: 1.3 }, thighR: { rx: 0.2 }, shinR: { rx: 0.1 }, thighL: { rx: -0.2 }, shinL: { rx: 0.1 } }),
+            b: key({ pelvis: { py: -0.06 }, chest: { ry: 0.3, rx: 0.3 }, upperArmR: { rx: -0.85, ry: 0.65 }, handR: { rx: 1.0 }, thighR: { rx: 0.3 }, shinR: { rx: 0.2 }, thighL: { rx: -0.4 }, shinL: { rx: 0.15 } })
         },
         // Straight ahead.
         thrust: {
