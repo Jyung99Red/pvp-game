@@ -147,71 +147,92 @@ const gameConfig = (() => {
             ]
         },
 
-        // 4e. Monsters (design.md 5), on the old minimal AI (tag
-        // v1-2d): patrol from waypoint to waypoint patrolRadius round home
-        // at patrolSpeed, resting patrolRest at each; notice the player
-        // within alertRange and stand alert for alertSeconds; chase at
-        // `speed`, turning at turnRate; attack the moves in turn, `delay`
-        // apart (firstDelay before the first). A move starts once the
-        // player is within its reach, which comes from its key poses
-        // (core/monster.js), never from here; the chase stops at standOff
-        // of that reach. During a windup the body keeps turning to the
-        // player at trackTurn until `lock` seconds before the swing. Past
-        // `leash` from home with the player out of alertRange it walks back
-        // home. At enrage.threshold of its HP it enrages for good: damage
-        // times enrage.atk, its whole clock times enrage.tempo. HP is the
-        // old value times the old hpScale 3, and so is ATK, to keep the old
-        // danger (the 2D version). Moves: seconds; ratio per
-        // ATK; step: world units lunged during the swing; ram: the body
-        // itself is the weapon (the wolf's leap). corpseSeconds: a fallen
-        // monster lies this long, then sinks away. loot: the table rolled
-        // when it falls (`loot` below). stagger: points that make it reel
-        // (else combat.stagger.threshold; bosses take 10, user 2026-10-02).
-        // A monster that gets home after giving up a chase is whole again.
+        // 4e. Monsters (design.md 5): patrol from waypoint to waypoint
+        // patrolRadius round home at patrolSpeed, resting patrolRest at
+        // each; notice the player within alertRange and stand alert for
+        // alertSeconds; then fight (design.md 5.2), turning at turnRate.
+        // Free again (firstDelay after the alert, `delay` after a move or a
+        // reel) it decides: a player more than turnFirst off its facing
+        // first gets turned to; then by distance, `near` (within the reach
+        // of any move of its near table), `mid` (else within the reach of
+        // any move of its mid table) or far. Far, it closes in at `speed`;
+        // near or mid it rolls that band's table (move: weight), leaving
+        // out moves that do not reach the player or are cooling down
+        // (`cooldown` seconds from the windup). `approach` walks at `speed`
+        // for up to approachSeconds or until the player is near, then
+        // decides again. In the gap after a move it faces the player and
+        // creeps at patrolSpeed to standOff of its near band's edge. A
+        // move's reach comes from its key poses (core/monster.js), never
+        // from here. During a windup the body keeps turning to the player
+        // at trackTurn until `lock` seconds before the swing. Past `leash`
+        // from home with the player out of alertRange it walks back home.
+        // At enrage.threshold of its HP it enrages for good: damage times
+        // enrage.atk, its whole clock (cooldowns too) times enrage.tempo.
+        // HP is the old value times the old hpScale 3, and so is ATK, to
+        // keep the old danger (the 2D version). Moves, by name (the key
+        // poses of the same name, or of `pose`): seconds; ratio per ATK;
+        // step: world units lunged during the swing; ram: the body itself
+        // is the weapon (the wolf's leap). reactSeconds: how soon a player
+        // is taken to react to a warning; only the tests read it (every
+        // blow can be walked out of, user 2026-10-02). corpseSeconds: a
+        // fallen monster lies this long, then sinks away. loot: the table
+        // rolled when it falls (`loot` below). stagger: points that make it
+        // reel (else combat.stagger.threshold; bosses take 10, user
+        // 2026-10-02). A monster that gets home after giving up a chase is
+        // whole again.
         // Bosses (design.md 5): `model` is the skeleton they are
         // built on, `scale` how much bigger, `look` their colours
         // (models/); a boss down stays down and opens what waits on it.
         monsters: {
-            corpseSeconds: 2.5,
+            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35,
             goblin: {
                 name: '哥布林', loot: 'goblin', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
-                moves: [
-                    { id: 'flail', name: '乱挥', windup: 1.3, lock: 0.4, swing: 0.16, recovery: 0.85, ratio: 0.6, step: 8 },
-                    { id: 'pounce', name: '猛扑', windup: 1.6, lock: 0.5, swing: 0.2, recovery: 1.15, ratio: 0.9, step: 36 }
-                ]
+                moves: {
+                    flail: { name: '乱挥', windup: 1.3, lock: 0.4, swing: 0.16, recovery: 0.85, ratio: 0.6, step: 8 },
+                    pounce: { name: '猛扑', windup: 1.6, lock: 0.5, swing: 0.2, recovery: 1.15, ratio: 0.9, step: 36, cooldown: 5 }
+                },
+                near: { flail: 1 },
+                mid: { pounce: 1, approach: 2 }
             },
             wolf: {
                 name: '野狼', loot: 'wolf', maxHp: 90, atk: 54, def: 2, radius: 16, speed: 78, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
-                moves: [
-                    { id: 'bite', name: '撕咬', windup: 1.05, lock: 0.3, swing: 0.14, recovery: 0.75, ratio: 0.6, step: 14 },
-                    { id: 'leap', name: '扑击', windup: 1.15, lock: 0.35, swing: 0.54, recovery: 1.35, ratio: 0.9, step: 150, ram: true }
-                ]
+                moves: {
+                    bite: { name: '撕咬', windup: 1.05, lock: 0.3, swing: 0.14, recovery: 0.75, ratio: 0.6, step: 14 },
+                    leap: { name: '扑击', windup: 1.15, lock: 0.35, swing: 0.54, recovery: 1.35, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
+                },
+                near: { bite: 1 },
+                mid: { leap: 1, approach: 2 }
             },
             goblinChief: {
                 name: '哥布林头目', model: 'goblin', scale: 1.45, look: 'chief', boss: true, loot: 'goblinChief', stagger: 10,
                 maxHp: 450, atk: 48, def: 5, radius: 18, speed: 50, turnRate: 2.6, trackTurn: 1.4,
                 patrolRadius: 0, patrolSpeed: 16, patrolRest: 2, alertRange: 190, alertSeconds: 0.7, leash: 360, standOff: 0.85,
                 firstDelay: 0.5, delay: 0.6, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.2 },
-                moves: [
-                    { id: 'flail', name: '横扫', windup: 1.2, lock: 0.35, swing: 0.2, recovery: 0.9, ratio: 0.6, step: 10 },
-                    { id: 'slam', name: '震地', windup: 1.7, lock: 0.5, swing: 0.18, recovery: 1.3, ratio: 1.0, step: 6 },
-                    { id: 'pounce', name: '猛扑', windup: 1.5, lock: 0.45, swing: 0.24, recovery: 1.2, ratio: 0.85, step: 60 }
-                ]
+                moves: {
+                    flail: { name: '横扫', windup: 1.2, lock: 0.35, swing: 0.2, recovery: 0.9, ratio: 0.6, step: 10 },
+                    slam: { name: '震地', windup: 1.7, lock: 0.5, swing: 0.18, recovery: 1.3, ratio: 1.0, step: 6, cooldown: 4 },
+                    pounce: { name: '猛扑', windup: 1.5, lock: 0.45, swing: 0.24, recovery: 1.2, ratio: 0.85, step: 60, cooldown: 6 }
+                },
+                near: { flail: 3, slam: 2 },
+                mid: { pounce: 1, approach: 2 }
             },
             wolfKing: {
                 name: '狼王', model: 'wolf', scale: 1.4, look: 'king', boss: true, loot: 'wolfKing', stagger: 10,
                 maxHp: 420, atk: 60, def: 4, radius: 22, speed: 88, turnRate: 3, trackTurn: 1.8,
                 patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
                 firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
-                moves: [
-                    { id: 'bite', name: '撕咬', windup: 0.95, lock: 0.3, swing: 0.14, recovery: 0.7, ratio: 0.6, step: 18 },
-                    { id: 'bite', name: '撕咬', windup: 0.8, lock: 0.25, swing: 0.14, recovery: 0.8, ratio: 0.6, step: 18 },
-                    { id: 'leap', name: '扑击', windup: 1.1, lock: 0.35, swing: 0.6, recovery: 1.4, ratio: 0.9, step: 190, ram: true }
-                ]
+                moves: {
+                    bite: { name: '撕咬', windup: 0.95, lock: 0.3, swing: 0.14, recovery: 0.7, ratio: 0.6, step: 18 },
+                    // The same bite, sooner and with a longer recovery.
+                    quickBite: { name: '快咬', pose: 'bite', windup: 0.8, lock: 0.25, swing: 0.14, recovery: 0.8, ratio: 0.6, step: 18 },
+                    leap: { name: '扑击', windup: 1.1, lock: 0.35, swing: 0.6, recovery: 1.4, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
+                },
+                near: { bite: 1, quickBite: 1 },
+                mid: { leap: 1, approach: 2 }
             }
         },
 

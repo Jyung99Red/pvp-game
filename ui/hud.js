@@ -10,7 +10,7 @@
 // the countdown, and an arrow at the edge of the screen while the rival is
 // in sight but off it. Reads the simulation; never writes it.
 const hud = (() => {
-    const FIGHTING = new Set(['alert', 'chase', 'windup', 'swing', 'recover', 'reel']);
+    const FIGHTING = monsterKit.FIGHTING;
     function attach(root) {
         const $ = sel => root.querySelector(sel);
         const els = {

@@ -1,10 +1,10 @@
-// Monsters (design.md 5): the goblin and the wolf, on the old
-// minimal AI of the 2D version (tag v1-2d, pve/adventure_world.js and
-// pve/spatial_engine.js): patrol round home, notice the player and stand
-// alert a moment, chase, attack the moves in turn, enrage when low, walk
-// home past the leash. Their blows hit by the same box test as the
-// player's sword (design.md 5); the wolf's leap rams with
-// its whole body along its path. How far a move reaches, and the warning
+// Monsters (design.md 5): the goblin and the wolf. Patrol round home,
+// notice the player and stand alert a moment, then fight: free again, a
+// monster turns to the player if it must and picks what to do from the
+// table of the distance band the player is in (design.md 5.2), on the
+// world's own dice; it enrages when low and walks home past the leash.
+// Their blows hit by the same box test as the player's sword (design.md
+// 5); the wolf's leap rams with its whole body along its path. How far a move reaches, and the warning
 // on the ground, are swept out of its key poses once (`reach`).
 // Bosses (design.md 5) are the same skeletons made bigger, with a
 // look and moves of their own; a boss down stays down (the save), and the
@@ -14,11 +14,12 @@
 //
 // A monster is an entity (core/entity.js) of type 'monster': { id, kind,
 //   side: 'monster', boss, x, y, h, facing, radius, solid, hp, maxHp, atk,
-//   def, home: { x, y }, phase, t, move (index of the move under way), seq
-//   (moves started), wait, struck, stopped (a leap that has met something),
-//   stagger, flinch, freeze, push, enraged, patrolAt (angle of the next
-//   waypoint), rest, gait, speed, moveBlend }
-// phase: patrol | alert | chase | windup | swing | recover | reel | return | dead
+//   def, home: { x, y }, phase, t, move (name of the move under way),
+//   cooldowns ({ move: seconds left }), wait, struck, stopped (a leap that
+//   has met something), stagger, flinch, freeze, push, enraged, patrolAt
+//   (angle of the next waypoint), rest, gait, speed, moveBlend }
+// phase: patrol | alert | chase | approach | windup | swing | recover | reel
+//   | return | dead
 // A kind's `model` names the skeleton it is built on (its own kind if not
 // given), `scale` sizes it and `look` swaps colours (models/).
 const monsterKit = (() => {
@@ -29,7 +30,7 @@ const monsterKit = (() => {
     // What a kind carries or wears: by kind, else by model.
     const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [], goblinChief: () => [goblinPoses.club(), goblinPoses.helmet()], wolfKing: () => [wolfPoses.mane()] };
     // Phases in which a monster is in a fight.
-    const FIGHTING = new Set(['alert', 'chase', 'windup', 'swing', 'recover', 'reel']);
+    const FIGHTING = new Set(['alert', 'chase', 'approach', 'windup', 'swing', 'recover', 'reel']);
     const emit = (sim, m, type, data) => combatKit.emit(sim, type, { side: 'monster', id: m.id, kind: m.kind, ...data });
     const clamp01 = v => Math.min(1, Math.max(0, v));
     const easeOut = t => 1 - (1 - t) * (1 - t);
@@ -58,7 +59,7 @@ const monsterKit = (() => {
             id: `m${index}`, type: 'monster', kind: spawn.kind, side: 'monster', boss: !!S.boss, solid: true,
             x: at.x, y: at.y, h: space.groundHeight(at.x, at.y), facing: Math.PI / 2 + index * 1.3, radius: S.radius,
             hp: S.maxHp, maxHp: S.maxHp, atk: S.atk, def: S.def, home: { x: at.x, y: at.y },
-            phase: 'patrol', t: 0, move: 0, seq: 0, wait: 0, struck: false, stopped: false,
+            phase: 'patrol', t: 0, move: null, cooldowns: {}, wait: 0, struck: false, stopped: false,
             stagger: 0, flinch: 0, freeze: 0, push: null, enraged: false,
             patrolAt: index * 1.7, rest: 0.4 * index, gait: 0, speed: 0, moveBlend: 0
         };
@@ -84,7 +85,7 @@ const monsterKit = (() => {
         return rigKit.add(pose, { base: { py: -low / rigData.scale } });
     }
     function pose(rigData, m) {
-        const P = posesOf(m.kind), S = configOf(m.kind), move = S.moves[m.move], K = move && P.moves[move.id];
+        const P = posesOf(m.kind), S = configOf(m.kind), move = S.moves[m.move], K = move && P.moves[move.pose || m.move];
         const walk = locomotion(P, m), B = gameConfig.animation.blendSeconds;
         let pose = walk, hop = 0;
         if (m.phase === 'alert') pose = rigKit.add(walk, rigKit.scale(P.alert, clamp01(Math.min(m.t, S.alertSeconds - m.t) / B)));
@@ -108,20 +109,20 @@ const monsterKit = (() => {
     const striking = move => move.ram ? { kinds: ['body', 'weapon'], pad: 0 } : { kinds: ['weapon'], pad: F().weaponPad / UNIT() };
 
     // ---- reach, swept out of the key poses (design.md 5) ----
-    // For move `index` of `kind`, in the monster's own frame (blocks, +z
+    // For move `name` of `kind`, in the monster's own frame (blocks, +z
     // ahead, standing at the origin): `hull`, the convex outline on the
     // ground of everything that strikes over the swing, lunge included (the
     // warning; wider rather than narrower); `forward`, in world units, how
     // far ahead of the monster's centre it reaches (when the AI attacks).
     const reaches = new Map();
-    function reach(kind, index) {
-        const key = `${kind}:${index}`;
+    function reach(kind, name) {
+        const key = `${kind}:${name}`;
         if (reaches.has(key)) return reaches.get(key);
-        const S = configOf(kind), move = S.moves[index], r = rig(kind), { kinds, pad } = striking(move), points = [];
+        const S = configOf(kind), move = S.moves[name], r = rig(kind), { kinds, pad } = striking(move), points = [];
         let forward = 0;
         const N = 32;
         for (let k = 0; k <= N; k++) {
-            const u = k / N, body = { kind, phase: 'swing', t: u * move.swing, move: index, flinch: 0, gait: 0, moveBlend: 0 };
+            const u = k / N, body = { kind, phase: 'swing', t: u * move.swing, move: name, flinch: 0, gait: 0, moveBlend: 0 };
             const solved = rigKit.solve(r, pose(r, body), [0, 0, lunge(move, u) / UNIT()], 0);
             for (const box of combatKit.attackBoxes(r, solved, kinds, pad)) {
                 for (const c of math3d.corners(box)) { points.push([c[0], c[2]]); forward = Math.max(forward, c[2]); }
@@ -178,7 +179,7 @@ const monsterKit = (() => {
     const heights = new Map();
     function height(kind) {
         if (!heights.has(kind)) {
-            const r = rig(kind), solved = rigKit.solve(r, pose(r, { kind, phase: 'patrol', t: 0, move: 0, flinch: 0, gait: 0, moveBlend: 0 }));
+            const r = rig(kind), solved = rigKit.solve(r, pose(r, { kind, phase: 'patrol', t: 0, move: null, flinch: 0, gait: 0, moveBlend: 0 }));
             let top = 0;
             r.parts.forEach((part, i) => { if (part.kind === 'body') for (const c of math3d.corners(math3d.obb(solved.parts[i], part.size.map(v => v / 2)))) top = Math.max(top, c[1]); });
             heights.set(kind, top);
@@ -204,11 +205,40 @@ const monsterKit = (() => {
         return false;
     }
 
+    // ---- choosing what to do (design.md 5.2) ----
+    // How far a kind's bands go: `near` as far as any move of its near
+    // table reaches, `mid` as far as any move of its mid table (and never
+    // short of near). Beyond `mid` is far.
+    const edges = new Map();
+    function bands(kind) {
+        if (!edges.has(kind)) {
+            const S = configOf(kind), far = table => Math.max(0, ...Object.keys(table || {}).filter(name => S.moves[name]).map(name => reach(kind, name).forward));
+            const near = far(S.near);
+            edges.set(kind, Object.freeze({ near, mid: Math.max(near, far(S.mid)) }));
+        }
+        return edges.get(kind);
+    }
+    // Roll a band's table at distance d: moves that do not reach the player
+    // or are cooling down are left out, the rest go by weight. A move's
+    // name, 'approach', or null when nothing is left.
+    function roll(sim, m, table, d) {
+        const S = configOf(m.kind), left = Object.entries(table).filter(([name]) => !S.moves[name] || (d <= reach(m.kind, name).forward && !(m.cooldowns[name] > 0)));
+        let die = entityKit.random(sim) * left.reduce((sum, [, weight]) => sum + weight, 0);
+        for (const [name, weight] of left) if ((die -= weight) < 0) return name;
+        return left.length ? left.at(-1)[0] : null;
+    }
+    function begin(sim, m, name) {
+        const move = configOf(m.kind).moves[name];
+        m.move = name; m.phase = 'windup'; m.t = 0; m.struck = false; m.stopped = false;
+        if (move.cooldown) m.cooldowns[name] = move.cooldown;
+        emit(sim, m, 'windup', { move: name });
+    }
+
     // ---- the AI, on the monster's own clock (dt is already times tempo) ----
     // It minds the nearest fighter still standing (in PVE, the player).
     function think(sim, m, dt) {
         const S = configOf(m.kind), p = worldSim.nearestFighter(sim, m) || sim.fighters[0], d = distance(m, p), alive = !p.down;
-        const next = m.seq % S.moves.length;
+        for (const name in m.cooldowns) m.cooldowns[name] = Math.max(0, m.cooldowns[name] - dt);
         switch (m.phase) {
             case 'patrol': {
                 if (alive && d <= S.alertRange) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); return; }
@@ -224,29 +254,42 @@ const monsterKit = (() => {
                 return;
             case 'chase': {
                 if (!alive || (distance(m, m.home) > S.leash && d > S.alertRange)) { m.phase = 'return'; m.t = 0; return; }
-                m.wait = Math.max(0, m.wait - dt);
-                const r = reach(m.kind, next).forward;
+                const edge = bands(m.kind);
                 face(m, p, S.turnRate, dt);
-                if (m.wait === 0 && d <= r) {
-                    m.move = next; m.phase = 'windup'; m.t = 0; m.struck = false; m.stopped = false;
-                    emit(sim, m, 'windup', { move: S.moves[next].id });
+                // The gap after a move: facing the player, it creeps up to the near band.
+                m.wait = Math.max(0, m.wait - dt);
+                if (m.wait > 0) {
+                    if (d > edge.near * S.standOff) walkTo(sim, m, p.x, p.y, S.patrolSpeed, dt, false);
                     return;
                 }
-                if (d > r * S.standOff) walkTo(sim, m, p.x, p.y, S.speed, dt, false);
+                // Free: a player off to the side or behind is turned to first, on the spot.
+                if (Math.abs(space.wrapAngle(Math.atan2(p.y - m.y, p.x - m.x) - m.facing)) > M().turnFirst) return;
+                const choice = d <= edge.mid ? roll(sim, m, d <= edge.near ? S.near : S.mid, d) : null;
+                if (choice === 'approach') { m.phase = 'approach'; m.t = 0; return; }
+                if (choice) { begin(sim, m, choice); return; }
+                // Far, or nothing it can use from here: it closes in.
+                walkTo(sim, m, p.x, p.y, S.speed, dt, false);
                 return;
             }
+            case 'approach':
+                // A stretch of walking in, cut short once the player is near.
+                m.t += dt;
+                face(m, p, S.turnRate, dt);
+                if (!alive || d <= bands(m.kind).near || m.t >= M().approachSeconds - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = 0; return; }
+                walkTo(sim, m, p.x, p.y, S.speed, dt, false);
+                return;
             case 'windup': {
                 const move = S.moves[m.move];
                 // It keeps turning to the player until `lock` before the swing.
                 if (alive && m.t < move.windup - move.lock) face(m, p, S.trackTurn, dt);
                 m.t += dt;
-                if (m.t >= move.windup - 1e-9) { m.phase = 'swing'; m.t = 0; emit(sim, m, 'swing', { move: move.id, heavy: !!move.ram }); }
+                if (m.t >= move.windup - 1e-9) { m.phase = 'swing'; m.t = 0; emit(sim, m, 'swing', { move: m.move, heavy: !!move.ram }); }
                 return;
             }
             case 'swing': swingStep(sim, m, dt); return;
             case 'recover':
                 m.t += dt;
-                if (m.t >= S.moves[m.move].recovery - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = S.delay; m.seq++; }
+                if (m.t >= S.moves[m.move].recovery - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = S.delay; }
                 return;
             case 'reel':
                 m.t += dt;
@@ -277,7 +320,7 @@ const monsterKit = (() => {
             const hit = combatKit.sweep(r, at, u0, u1, [{ id: p.id, boxes: fighterKit.hurtboxes(sim, p) }], striking(move));
             if (hit) {
                 m.struck = true; m.stopped = true;
-                combatKit.strike(sim, p, m, m.atk * move.ratio * (m.enraged ? S.enrage.atk : 1), hit.point, { move: move.id });
+                combatKit.strike(sim, p, m, m.atk * move.ratio * (m.enraged ? S.enrage.atk : 1), hit.point, { move: m.move });
             }
         }
         if (m.phase === 'swing' && m.t >= move.swing - 1e-9) { m.phase = 'recover'; m.t = 0; }
@@ -297,5 +340,5 @@ const monsterKit = (() => {
         m.h = space.groundHeight(m.x, m.y);
     }
     function tick(sim, dt) { for (const m of sim.monsters) tickOne(sim, m, dt); }
-    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, threshold, reach, cycleLength, height, tick, living, engaged, present: living, modelOf };
+    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, threshold, reach, bands, cycleLength, height, tick, living, engaged, present: living, modelOf };
 })();
