@@ -113,22 +113,24 @@ const monsterKit = (() => {
     // ahead, standing at the origin): `hull`, the convex outline on the
     // ground of everything that strikes over the swing, lunge included (the
     // warning; wider rather than narrower); `forward`, in world units, how
-    // far ahead of the monster's centre it reaches (when the AI attacks).
+    // far ahead of the monster's centre it reaches; `stand`, how far it
+    // would reach without the lunge (where a near move starts from: the
+    // lunge is there to catch a player stepping back, design.md 5.2).
     const reaches = new Map();
     function reach(kind, name) {
         const key = `${kind}:${name}`;
         if (reaches.has(key)) return reaches.get(key);
         const S = configOf(kind), move = S.moves[name], r = rig(kind), { kinds, pad } = striking(move), points = [];
-        let forward = 0;
+        let forward = 0, stand = 0;
         const N = 32;
         for (let k = 0; k <= N; k++) {
-            const u = k / N, body = { kind, phase: 'swing', t: u * move.swing, move: name, flinch: 0, gait: 0, moveBlend: 0 };
-            const solved = rigKit.solve(r, pose(r, body), [0, 0, lunge(move, u) / UNIT()], 0);
+            const u = k / N, ahead = lunge(move, u) / UNIT(), body = { kind, phase: 'swing', t: u * move.swing, move: name, flinch: 0, gait: 0, moveBlend: 0 };
+            const solved = rigKit.solve(r, pose(r, body), [0, 0, ahead], 0);
             for (const box of combatKit.attackBoxes(r, solved, kinds, pad)) {
-                for (const c of math3d.corners(box)) { points.push([c[0], c[2]]); forward = Math.max(forward, c[2]); }
+                for (const c of math3d.corners(box)) { points.push([c[0], c[2]]); forward = Math.max(forward, c[2]); stand = Math.max(stand, c[2] - ahead); }
             }
         }
-        const out = Object.freeze({ hull: Object.freeze(hull(points)), forward: forward * UNIT() });
+        const out = Object.freeze({ hull: Object.freeze(hull(points)), forward: forward * UNIT(), stand: stand * UNIT() });
         reaches.set(key, out);
         return out;
     }
@@ -207,22 +209,25 @@ const monsterKit = (() => {
 
     // ---- choosing what to do (design.md 5.2) ----
     // How far a kind's bands go: `near` as far as any move of its near
-    // table reaches, `mid` as far as any move of its mid table (and never
-    // short of near). Beyond `mid` is far.
+    // table reaches without its lunge (a near move starts once the player
+    // is within that, so a step back does not clear it), `mid` as far as
+    // any move of its mid table reaches, lunge and all (and never short of
+    // near). Beyond `mid` is far.
     const edges = new Map();
     function bands(kind) {
         if (!edges.has(kind)) {
-            const S = configOf(kind), far = table => Math.max(0, ...Object.keys(table || {}).filter(name => S.moves[name]).map(name => reach(kind, name).forward));
-            const near = far(S.near);
-            edges.set(kind, Object.freeze({ near, mid: Math.max(near, far(S.mid)) }));
+            const S = configOf(kind), far = (table, key) => Math.max(0, ...Object.keys(table || {}).filter(name => S.moves[name]).map(name => reach(kind, name)[key]));
+            const near = far(S.near, 'stand');
+            edges.set(kind, Object.freeze({ near, mid: Math.max(near, far(S.mid, 'forward')) }));
         }
         return edges.get(kind);
     }
     // Roll a band's table at distance d: moves that do not reach the player
-    // or are cooling down are left out, the rest go by weight. A move's
-    // name, 'approach', or null when nothing is left.
-    function roll(sim, m, table, d) {
-        const S = configOf(m.kind), left = Object.entries(table).filter(([name]) => !S.moves[name] || (d <= reach(m.kind, name).forward && !(m.cooldowns[name] > 0)));
+    // (near ones without their lunge) or are cooling down are left out, the
+    // rest go by weight. A move's name, 'approach', or null when nothing
+    // is left.
+    function roll(sim, m, table, d, key) {
+        const S = configOf(m.kind), left = Object.entries(table).filter(([name]) => !S.moves[name] || (d <= reach(m.kind, name)[key] && !(m.cooldowns[name] > 0)));
         let die = entityKit.random(sim) * left.reduce((sum, [, weight]) => sum + weight, 0);
         for (const [name, weight] of left) if ((die -= weight) < 0) return name;
         return left.length ? left.at(-1)[0] : null;
@@ -264,7 +269,7 @@ const monsterKit = (() => {
                 }
                 // Free: a player off to the side or behind is turned to first, on the spot.
                 if (Math.abs(space.wrapAngle(Math.atan2(p.y - m.y, p.x - m.x) - m.facing)) > M().turnFirst) return;
-                const choice = d <= edge.mid ? roll(sim, m, d <= edge.near ? S.near : S.mid, d) : null;
+                const choice = d > edge.mid ? null : d <= edge.near ? roll(sim, m, S.near, d, 'stand') : roll(sim, m, S.mid, d, 'forward');
                 if (choice === 'approach') { m.phase = 'approach'; m.t = 0; return; }
                 if (choice) { begin(sim, m, choice); return; }
                 // Far, or nothing it can use from here: it closes in.

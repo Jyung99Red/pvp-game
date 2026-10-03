@@ -129,8 +129,10 @@ test('each monster move reaches as far as its key poses carry it, in front only,
         // Behind, out of touch with the body (a boss's body is bigger).
         assert.ok(!blow(kind, i, 40 + 60 * ((MON[kind].scale || 1) - 1), Math.PI), `${kind} ${i} reaches behind`);
     }
-    // The leap flies far and straight; the bite stays close.
-    assert.ok(monsterKit.reach('wolf', 'leap').forward > 4 * U && monsterKit.reach('wolf', 'bite').forward < 2 * U);
+    // The leap flies far and straight; the bite starts close and lunges a block.
+    const leap = monsterKit.reach('wolf', 'leap'), bite = monsterKit.reach('wolf', 'bite');
+    assert.ok(leap.forward > 4 * U && bite.stand < 2 * U && bite.forward < leap.forward / 1.5);
+    assert.ok(Math.abs(bite.forward - bite.stand - MON.wolf.moves.bite.step) < 2, 'the lunge adds its step');
     assert.ok(!blow('wolf', 'leap', 120, Math.PI / 3), 'the leap does not reach far to the side');
     // A move drawn with another's key poses reaches as that one does.
     assert.equal(monsterKit.reach('wolfKing', 'quickBite').forward, monsterKit.reach('wolfKing', 'bite').forward);
@@ -360,23 +362,25 @@ test('in the gap after a move it faces the player and creeps to its near band at
 
 // Does a player `d` in front and `off` its facing, starting to walk
 // `way` from straight away reactSeconds after the windup shows, get clear?
-function escapes(kind, name, d, off, way) {
+function escapes(kind, name, d, off, way, enraged = false) {
     const sim = open(kind), m = ready(sim, d, off), mv = MON[kind].moves[name], react = Math.round(MON.reactSeconds / 0.01);
-    m.phase = 'windup'; m.move = name; m.t = 0;
-    for (let i = 0; i < Math.round((mv.windup + mv.swing) / 0.01) + 5; i++) {
+    const tempo = enraged ? MON[kind].enrage.tempo : 1;
+    m.phase = 'windup'; m.move = name; m.t = 0; m.enraged = enraged;
+    for (let i = 0; i < Math.round((mv.windup + mv.swing) / tempo / 0.01) + 5; i++) {
         if (i === react) W.command(sim, { type: 'move', x: Math.cos(off + way), y: Math.sin(off + way) });
         W.step(sim, 0.01);
     }
     return sim.stats.hurt === 0;
 }
-test('every blow can be walked out of, starting reactSeconds after its warning shows (no dodge: user, 2026-10-02)', () => {
+test('every blow can be walked out of, starting reactSeconds after its warning shows, enraged too (no dodge: user, 2026-10-02)', () => {
     const WAYS = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2];
     for (const kind of KINDS) {
         const S = MON[kind], edge = monsterKit.bands(kind), close = S.radius + gameConfig.player.radius + 4;
         for (const band of ['near', 'mid']) for (const name of Object.keys(S[band]).filter(n => S.moves[n])) {
-            const reach = monsterKit.reach(kind, name).forward, lo = band === 'near' ? close : edge.near + 1, hi = band === 'near' ? Math.min(reach, edge.near) : reach;
-            for (const d of [lo, (lo + hi) / 2, hi]) for (const off of [0, MON.turnFirst]) {
-                assert.ok(WAYS.some(way => escapes(kind, name, d, off, way)), `${kind} ${name} from ${(d / U).toFixed(2)} blocks, ${off.toFixed(2)} off: no way out`);
+            // Where the AI starts it from: a near move within its reach without the lunge.
+            const r = monsterKit.reach(kind, name), lo = band === 'near' ? close : edge.near + 1, hi = band === 'near' ? r.stand : r.forward;
+            for (const d of [lo, (lo + hi) / 2, hi]) for (const off of [0, MON.turnFirst]) for (const enraged of [false, true]) {
+                assert.ok(WAYS.some(way => escapes(kind, name, d, off, way, enraged)), `${kind} ${name} from ${(d / U).toFixed(2)} blocks, ${off.toFixed(2)} off${enraged ? ', enraged' : ''}: no way out`);
             }
         }
     }
@@ -385,6 +389,33 @@ test('every blow can be walked out of, starting reactSeconds after its warning s
     m.phase = 'windup'; m.move = 'flail';
     step(sim, MON.goblin.moves.flail.windup + 0.2);
     assert.equal(sim.stats.hurt, 1);
+});
+
+test('a bite is a straight-line question: a step back does not clear it, a step aside does (user, 2026-10-03)', () => {
+    for (const [kind, name] of [['wolf', 'bite'], ['wolfKing', 'bite'], ['wolfKing', 'quickBite']]) {
+        const r = monsterKit.reach(kind, name);
+        assert.ok(r.forward - r.stand > 0.9 * U, `${kind} ${name} lunges ${((r.forward - r.stand) / U).toFixed(2)} blocks`);
+        for (const d of [r.stand, (r.stand + MON[kind].radius + gameConfig.player.radius) / 2]) {
+            assert.ok(!escapes(kind, name, d, 0, 0), `${kind} ${name}: backing off from ${(d / U).toFixed(2)} blocks clears it`);
+            assert.ok(escapes(kind, name, d, 0, Math.PI / 2) || escapes(kind, name, d, 0, -Math.PI / 2), `${kind} ${name}: no step aside from ${(d / U).toFixed(2)} blocks`);
+        }
+    }
+});
+
+// Seconds a sword combo keeps the player from walking: every move up to its
+// derive point, the last one to the end of its recovery.
+function locked(...chain) {
+    const C = gameConfig.combo.moves;
+    return chain.reduce((sum, id, i) => sum + C[id].windup + C[id].swing + (i < chain.length - 1 ? C[id].derive : C[id].recovery), 0);
+}
+test('the gap after a blow holds a combo: a sword A A and a walk back in after any blow, the whole A A A after a lunge (user, 2026-10-03)', () => {
+    const AA = locked('slash', 'backslash'), AAA = locked('slash', 'backslash', 'spin'), WALK_IN = 0.4;
+    assert.ok(Math.abs(AA - 1.05) < 1e-9 && Math.abs(AAA - 1.92) < 1e-9, `${AA} ${AAA}`);
+    for (const kind of KINDS) {
+        const S = MON[kind];
+        for (const name of Object.keys(S.near).filter(n => S.moves[n])) assert.ok(S.moves[name].recovery + S.delay >= AA + WALK_IN - 1e-9, `${kind} ${name}`);
+        for (const name of Object.keys(S.mid).filter(n => S.moves[n])) assert.ok(S.moves[name].recovery + S.delay >= AAA - 1e-9, `${kind} ${name}`);
+    }
 });
 
 test('walking away ends a fight: it cannot keep up, gives up past its leash and goes home whole (user, 2026-10-02)', () => {
@@ -554,7 +585,8 @@ test('a whole fight: every monster down drops its loot and the world goes on; a 
     assert.ok(q.down && q.hp === 0);
     assert.equal(W.command(lose, { type: 'press', button: 'a' }), true);
     assert.equal(q.act, null, 'a fallen player does nothing');
-    step(lose, 2);
+    // Once the blows under way are done (recoveries run up to 2 s).
+    step(lose, 3);
     assert.ok(lose.monsters.every(m => ['return', 'patrol'].includes(m.phase)), 'the monsters lose interest');
     // Training never ends: the HP bar refills.
     const training = W.create();

@@ -154,11 +154,13 @@ const gameConfig = (() => {
         // Free again (firstDelay after the alert, `delay` after a move or a
         // reel) it decides: a player more than turnFirst off its facing
         // first gets turned to; then by distance, `near` (within the reach
-        // of any move of its near table), `mid` (else within the reach of
-        // any move of its mid table) or far. Far, it closes in at `speed`;
-        // near or mid it rolls that band's table (move: weight), leaving
-        // out moves that do not reach the player or are cooling down
-        // (`cooldown` seconds from the windup). `approach` walks at `speed`
+        // of any move of its near table, not counting its lunge), `mid`
+        // (else within the reach of any move of its mid table, lunge and
+        // all) or far. Far, it closes in at `speed`; near or mid it rolls
+        // that band's table (move: weight), leaving out moves that do not
+        // reach the player that way or are cooling down (`cooldown` seconds
+        // from the windup). Short windups, long recoveries: a step back is
+        // not enough and a combo fits the gap (user, 2026-10-03). `approach` walks at `speed`
         // for up to approachSeconds or until the player is near, then
         // decides again. In the gap after a move it faces the player and
         // creeps at patrolSpeed to standOff of its near band's edge. A
@@ -190,8 +192,8 @@ const gameConfig = (() => {
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    flail: { name: '乱挥', windup: 1.3, lock: 0.4, swing: 0.16, recovery: 0.85, ratio: 0.6, step: 8 },
-                    pounce: { name: '猛扑', windup: 1.6, lock: 0.5, swing: 0.2, recovery: 1.15, ratio: 0.9, step: 36, cooldown: 5 }
+                    flail: { name: '乱挥', windup: 0.85, lock: 0.3, swing: 0.16, recovery: 1.5, ratio: 0.6, step: 8 },
+                    pounce: { name: '猛扑', windup: 1.0, lock: 0.35, swing: 0.2, recovery: 1.8, ratio: 0.9, step: 36, cooldown: 5 }
                 },
                 near: { flail: 1 },
                 mid: { pounce: 1, approach: 2 }
@@ -201,8 +203,8 @@ const gameConfig = (() => {
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    bite: { name: '撕咬', windup: 1.05, lock: 0.3, swing: 0.14, recovery: 0.75, ratio: 0.6, step: 14 },
-                    leap: { name: '扑击', windup: 1.15, lock: 0.35, swing: 0.54, recovery: 1.35, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
+                    bite: { name: '撕咬', windup: 0.7, lock: 0.3, swing: 0.14, recovery: 1.1, ratio: 0.6, step: 40 },
+                    leap: { name: '扑击', windup: 0.9, lock: 0.3, swing: 0.54, recovery: 2.0, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
                 },
                 near: { bite: 1 },
                 mid: { leap: 1, approach: 2 }
@@ -213,9 +215,9 @@ const gameConfig = (() => {
                 patrolRadius: 0, patrolSpeed: 16, patrolRest: 2, alertRange: 190, alertSeconds: 0.7, leash: 360, standOff: 0.85,
                 firstDelay: 0.5, delay: 0.6, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.2 },
                 moves: {
-                    flail: { name: '横扫', windup: 1.2, lock: 0.35, swing: 0.2, recovery: 0.9, ratio: 0.6, step: 10 },
-                    slam: { name: '震地', windup: 1.7, lock: 0.5, swing: 0.18, recovery: 1.3, ratio: 1.0, step: 6, cooldown: 4 },
-                    pounce: { name: '猛扑', windup: 1.5, lock: 0.45, swing: 0.24, recovery: 1.2, ratio: 0.85, step: 60, cooldown: 6 }
+                    flail: { name: '横扫', windup: 1.0, lock: 0.3, swing: 0.2, recovery: 1.4, ratio: 0.6, step: 10 },
+                    slam: { name: '震地', windup: 1.1, lock: 0.4, swing: 0.18, recovery: 2.2, ratio: 1.0, step: 6, cooldown: 4 },
+                    pounce: { name: '猛扑', windup: 1.0, lock: 0.35, swing: 0.24, recovery: 2.0, ratio: 0.85, step: 60, cooldown: 6 }
                 },
                 near: { flail: 3, slam: 2 },
                 mid: { pounce: 1, approach: 2 }
@@ -226,10 +228,10 @@ const gameConfig = (() => {
                 patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
                 firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.95, lock: 0.3, swing: 0.14, recovery: 0.7, ratio: 0.6, step: 18 },
+                    bite: { name: '撕咬', windup: 0.85, lock: 0.3, swing: 0.14, recovery: 1.1, ratio: 0.6, step: 64 },
                     // The same bite, sooner and with a longer recovery.
-                    quickBite: { name: '快咬', pose: 'bite', windup: 0.8, lock: 0.25, swing: 0.14, recovery: 0.8, ratio: 0.6, step: 18 },
-                    leap: { name: '扑击', windup: 1.1, lock: 0.35, swing: 0.6, recovery: 1.4, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
+                    quickBite: { name: '快咬', pose: 'bite', windup: 0.75, lock: 0.3, swing: 0.14, recovery: 1.3, ratio: 0.6, step: 64 },
+                    leap: { name: '扑击', windup: 0.9, lock: 0.3, swing: 0.6, recovery: 2.1, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
                 },
                 near: { bite: 1, quickBite: 1 },
                 mid: { leap: 1, approach: 2 }
