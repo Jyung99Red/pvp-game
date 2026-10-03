@@ -26,7 +26,7 @@ const gameConfig = (() => {
         // to runSpeed over runRampSeconds (set apart from the walk, user
         // 2026-10-02: changing one leaves the other), and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 2, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -130,8 +130,8 @@ const gameConfig = (() => {
             },
             moves: {
                 slash: { weapon: 'sword', name: '横扫', windup: 0.13, swing: 0.10, recovery: 0.32, derive: 0.15, ratio: 0.36, stagger: 0, knockback: 0, step: 3, next: { a: 'backslash', b: 'rising' } },
-                backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.39, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'spin', b: 'cleave', pause: 'thrust' } },
-                spin: { weapon: 'sword', name: '回旋斩', windup: 0.22, swing: 0.25, recovery: 0.59, ratio: 0.52, stagger: 0, knockback: 0, step: 0 },
+                backslash: { weapon: 'sword', name: '回扫', windup: 0.13, swing: 0.10, recovery: 0.39, derive: 0.17, ratio: 0.38, stagger: 0, knockback: 0, step: 3, next: { a: 'smite', b: 'cleave', pause: 'thrust' } },
+                smite: { weapon: 'sword', name: '重斩', windup: 0.22, swing: 0.25, recovery: 0.59, ratio: 0.52, stagger: 0, knockback: 0, step: 0 },
                 thrust: { weapon: 'sword', name: '连刺', windup: 0.18, swing: 0.08, recovery: 0.56, ratio: 0.61, stagger: 0, knockback: 0, step: 15 },
                 rising: { weapon: 'sword', name: '上挑', windup: 0.38, swing: 0.12, recovery: 0.57, ratio: 0.74, stagger: 2, knockback: 16, step: 3 },
                 cleave: { weapon: 'sword', name: '下劈', windup: 0.38, swing: 0.10, recovery: 0.59, ratio: 0.80, stagger: 2, knockback: 16, step: 5 },

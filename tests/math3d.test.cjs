@@ -76,7 +76,7 @@ test('sub-steps keep each step under half the thinnest box', () => {
     assert.equal(M.substeps(0, 0.2), 1);
     assert.equal(M.substeps(0.1, 0.2), 1);
     assert.equal(M.substeps(0.27 * 40, 0.3 * 40), 2);
-    // The spin's blade tip: about 27 units a step against a 24-wide body.
+    // A fast sweep's blade tip: about 27 units a step against a 24-wide body.
     const n = M.substeps(27, 24);
     assert.ok(27 / n <= 12 + 1e-9 && n === 3);
     assert.throws(() => M.substeps(1, 0));

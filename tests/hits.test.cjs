@@ -43,7 +43,7 @@ function tipAngles(move) {
     for (let k = 0; k <= 40; k++) {
         const s = R.solve(rig, playerAnim.pose(rig, { ...still, act: { move, phase: 'swing', t: k / 40 * MOVES[move].swing, from: null } }));
         const tip = M.transformPoint(s.parts[blade], [0, 0, half]);
-        out.push({ angle: Math.atan2(tip[0], tip[2]), height: tip[1] });
+        out.push({ angle: Math.atan2(tip[0], tip[2]), height: tip[1], ahead: tip[2] });
     }
     // Unwrap so a sweep through the back is one continuous range.
     for (let k = 1; k < out.length; k++) out[k].angle = out[k - 1].angle + space.wrapAngle(out[k].angle - out[k - 1].angle);
@@ -73,27 +73,36 @@ test('the dagger\'s cuts keep their shapes: tight arcs, a half-turn whirl, a str
     assert.ok(drop[0].height > 2.2 && drop.at(-1).height < 0.3, 'drop: from overhead to the ground');
 });
 
-test('horizontal cuts keep the sweep of their 2D sectors; the spin covers about 210 degrees', () => {
-    // Blade tip sweep, degrees, against the arc each move had as a 2D sector.
-    const designed = { slash: 94, backslash: 101, follow: 90, charged: 122, thrust: 25 };
+test('the sword\'s cuts keep their sweeps; the A A A on the diagonal, the charged cut low and wide (user, 2026-10-03)', () => {
+    // Blade tip sweep, degrees.
+    const designed = { slash: 102, backslash: 104, smite: 150, follow: 90, charged: 222, thrust: 25 };
     for (const [move, arc] of Object.entries(designed)) {
         const a = tipAngles(move).map(x => x.angle), sweep = degrees(Math.max(...a) - Math.min(...a));
         assert.ok(Math.abs(sweep - arc) <= 15, `${move} sweeps ${sweep.toFixed(0)} degrees, designed ${arc}`);
     }
-    const spin = tipAngles('spin').map(x => x.angle), spinSweep = degrees(Math.max(...spin) - Math.min(...spin));
-    assert.ok(spinSweep >= 200 && spinSweep <= 220, `the spin sweeps ${spinSweep.toFixed(0)} degrees`);
-    // Slash and charged go right to left; backslash and follow left to right.
-    for (const move of ['slash', 'charged']) { const a = tipAngles(move); assert.ok(a.at(-1).angle > a[0].angle, `${move} goes right to left`); }
+    // Slash, smite and charged go right to left; backslash and follow left to right.
+    for (const move of ['slash', 'smite', 'charged']) { const a = tipAngles(move); assert.ok(a.at(-1).angle > a[0].angle, `${move} goes right to left`); }
     for (const move of ['backslash', 'follow']) { const a = tipAngles(move); assert.ok(a.at(-1).angle < a[0].angle, `${move} goes left to right`); }
+    // The A A A: high right down to low left, back up, then down again from the blade held straight up.
+    const slash = tipAngles('slash'), back = tipAngles('backslash'), smite = tipAngles('smite'), charged = tipAngles('charged');
+    assert.ok(slash[0].angle < 0 && slash[0].height > 1.8 && slash.at(-1).angle > 0 && slash.at(-1).height < 0.8, 'slash: high right to low left');
+    assert.ok(back[0].angle > 0 && back[0].height < 0.8 && back.at(-1).angle < 0 && back.at(-1).height > 1.8, 'backslash: low left back to high right');
+    assert.ok(smite[0].height > 2.4 && smite[0].angle < 0 && smite.at(-1).angle > 0 && smite.at(-1).height < 0.8, 'smite: from straight up over the right shoulder to low left');
+    // The charged cut starts with the blade laid back and crosses the front low, like a scythe.
+    assert.ok(charged[0].ahead < -1 && Math.abs(charged[0].angle) > 2, 'charged: the blade starts behind');
+    const across = charged.filter(x => Math.abs(x.angle) < 0.3 && x.ahead > 0);
+    assert.ok(across.length && across.every(x => x.height < 0.9), 'and sweeps across the front below the waist');
+    // None of them strikes the ground.
+    for (const [move, tips] of Object.entries({ slash, back, smite, charged })) assert.ok(tips.every(x => x.height > 0.3), `${move} stays off the ground`);
 });
 
-test('the spin reaches both sides but leaves a gap behind', () => {
-    const covered = [];
-    for (let deg = -180; deg < 180; deg += 10) if (lands('spin', target('post', STANDARD, deg * Math.PI / 180))) covered.push(deg);
-    assert.ok(covered.includes(-90) && covered.includes(90), 'both sides');
-    const back = covered.filter(d => Math.abs(d) >= 135);
-    assert.deepEqual(back, [], 'nothing within 45 degrees of straight behind');
-    assert.ok(covered.length * 10 >= 200 && covered.length * 10 <= 250, `${covered.length * 10} degrees of posts at ${STANDARD}`);
+test('the smite covers the front; the charged cut from the left round to the right side', () => {
+    const covered = move => { const out = []; for (let deg = -180; deg < 180; deg += 10) if (lands(move, target('post', STANDARD, deg * Math.PI / 180))) out.push(deg); return out; };
+    const smite = covered('smite'), charged = covered('charged');
+    // Posts at the standard distance, + on the right (simulation y).
+    for (let deg = -40; deg <= 40; deg += 10) assert.ok(smite.includes(deg), `smite misses a post at ${deg}`);
+    assert.ok(!smite.some(d => Math.abs(d) >= 90), `smite reaches the sides: ${smite}`);
+    for (let deg = -60; deg <= 90; deg += 10) assert.ok(charged.includes(deg), `charged misses a post at ${deg}`);
 });
 
 test('the rising cut goes low-left to high-right, the cleave high-right to low-left', () => {
@@ -137,9 +146,10 @@ test('weapon boxes grow by weaponPad for hits; body boxes are exactly what is dr
 });
 
 test('a fast swing sampled in one coarse step still cannot pass a thin post', () => {
-    // The spin's whole swing in a single call, against a post at the side.
-    const post = target('post', STANDARD, Math.PI / 2);
-    assert.ok(combatKit.sweep(player, u => swingAt('spin', u), 0, 1, [{ id: 't', boxes: post }]), 'sub-steps catch it');
+    // The charged cut's whole swing in a single call, against a post
+    // straight ahead: the blade starts behind and ends on the left.
+    const post = target('post', STANDARD, 0);
+    assert.ok(combatKit.sweep(player, u => swingAt('charged', u), 0, 1, [{ id: 't', boxes: post }]), 'sub-steps catch it');
 });
 
 test('the dummy reaches the player at the standard distance, and only in front', () => {

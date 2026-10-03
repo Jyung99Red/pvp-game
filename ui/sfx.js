@@ -49,7 +49,15 @@ const sfx = (() => {
         hit: () => { tone('sine', 150, 55, 0.1, 0.22); hiss(2600, 1200, 0.04, 0.07, 0.7); },
         hurt: () => { tone('triangle', 120, 45, 0.14, 0.2); hiss(900, 400, 0.06, 0.06, 0.8); },
         block: () => { tone('triangle', 520, 470, 0.12, 0.07); tone('square', 1040, 900, 0.06, 0.025); },
-        parry: () => { tone('sine', 1320, 1300, 0.26, 0.08); tone('sine', 1980, 1960, 0.18, 0.035, 0.01); },
+        // A struck bar of iron, low and full rather than a ping: a weight
+        // behind it, a ring that beats slowly against itself, one soft
+        // overtone, and the strike (user, 2026-10-03).
+        parry: () => {
+            tone('sine', 150, 92, 0.13, 0.16);
+            tone('sine', 392, 389, 0.62, 0.09); tone('sine', 396, 393, 0.5, 0.05);
+            tone('sine', 1080, 1068, 0.2, 0.022);
+            hiss(1500, 650, 0.04, 0.05, 1.0);
+        },
         guardBroken: () => tone('sawtooth', 320, 110, 0.26, 0.05),
         cue: () => tone('sine', 880, 900, 0.08, 0.04),
         alert: () => tone('square', 520, 780, 0.07, 0.018),

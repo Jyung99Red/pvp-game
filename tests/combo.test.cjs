@@ -42,13 +42,13 @@ test('A walks the A chain; a buffered A starts the next move at the derive point
     tap(sim); const log = until(sim, 'recover:slash');
     tap(sim); log.push(...until(sim, 'recover:backslash'));
     tap(sim); log.push(...run(sim, () => phase(sim) === 'idle'));
-    assert.deepEqual(log.map(x => x.key).filter(k => k.startsWith('windup')), ['windup:slash', 'windup:backslash', 'windup:spin']);
-    const swingEnd = log.find(x => x.key === 'recover:backslash').time, next = log.find(x => x.key === 'windup:spin').time;
+    assert.deepEqual(log.map(x => x.key).filter(k => k.startsWith('windup')), ['windup:slash', 'windup:backslash', 'windup:smite']);
+    const swingEnd = log.find(x => x.key === 'recover:backslash').time, next = log.find(x => x.key === 'windup:smite').time;
     assert.ok(Math.abs(next - swingEnd - M.backslash.derive) < 0.011, 'the recovery is cut at the derive point');
     // A finisher has no derive point: its recovery always plays out in full.
-    const spinEnd = log.find(x => x.key === 'recover:spin').time, idle = log.at(-1).time;
-    assert.ok(Math.abs(idle - spinEnd - M.spin.recovery) < 0.011);
-    assert.deepEqual([...W.drain(sim).filter(e => e.type === 'hit').map(e => e.move)], ['slash', 'backslash', 'spin']);
+    const lastEnd = log.find(x => x.key === 'recover:smite').time, idle = log.at(-1).time;
+    assert.ok(Math.abs(idle - lastEnd - M.smite.recovery) < 0.011);
+    assert.deepEqual([...W.drain(sim).filter(e => e.type === 'hit').map(e => e.move)], ['slash', 'backslash', 'smite']);
 });
 
 test('pressing A starts the windup at once; without a next input the recovery plays out and the window closes', () => {
@@ -93,7 +93,7 @@ test('one attack key (user, 2026-10-03): a tap is an A, a hold a B, and telling 
     const twoA = () => { const s = setup(); tap(s); until(s, 'recover:slash'); tap(s); until(s, 'idle'); return s; };
     const pause = K.weapons.sword.pauseAfterRecovery, early = twoA();
     step(early, pause - 0.06); press(early, 'attack'); step(early, 0.1); release(early, 'attack');
-    assert.equal(early.player.act.move, 'spin');
+    assert.equal(early.player.act.move, 'smite');
     const late = twoA(); step(late, pause + 0.02); tap(late);
     assert.equal(late.player.act.move, 'thrust');
 });
@@ -117,16 +117,16 @@ test('the latest press wins, and a stale press expires', () => {
     assert.equal(sim.player.buffer.input, 'a', 'the later A replaced the B');
     until(sim, 'windup:backslash');
     // Pressed early in the finisher, the A is stale by the time its recovery ends.
-    const spin = setup(); tap(spin); until(spin, 'recover:slash'); tap(spin); until(spin, 'recover:backslash'); tap(spin); until(spin, 'swing:spin');
-    tap(spin); step(spin, 1.5);
-    assert.deepEqual(moves(spin), ['slash', 'backslash', 'spin'], 'no extra slash after the finisher');
+    const third = setup(); tap(third); until(third, 'recover:slash'); tap(third); until(third, 'recover:backslash'); tap(third); until(third, 'swing:smite');
+    tap(third); step(third, 1.5);
+    assert.deepEqual(moves(third), ['slash', 'backslash', 'smite'], 'no extra slash after the finisher');
     // Pressed near the end of that recovery, it starts the next combo.
-    const late = setup(); tap(late); until(late, 'recover:slash'); tap(late); until(late, 'recover:backslash'); tap(late); until(late, 'recover:spin');
-    run(late, () => late.player.act.t > M.spin.recovery - 0.2);
+    const late = setup(); tap(late); until(late, 'recover:slash'); tap(late); until(late, 'recover:backslash'); tap(late); until(late, 'recover:smite');
+    run(late, () => late.player.act.t > M.smite.recovery - 0.2);
     tap(late); step(late, 0.3); assert.equal(late.player.act.move, 'slash');
     // Mashing straight through walks the whole A chain.
     const m = setup(); for (let i = 0; i < 40; i++) { tap(m); step(m, 0.05); }
-    assert.deepEqual(moves(m).slice(0, 3), ['slash', 'backslash', 'spin']);
+    assert.deepEqual(moves(m).slice(0, 3), ['slash', 'backslash', 'smite']);
 });
 
 test('a pause past the recovery takes the pause move; only A is changed by it', () => {
@@ -138,7 +138,7 @@ test('a pause past the recovery takes the pause move; only A is changed by it', 
     assert.ok(W.drain(sim).some(e => e.type === 'pause_ready' && e.move === 'thrust'), 'crossing the pause line is cued');
     tap(sim); assert.equal(sim.player.act.move, 'thrust');
     assert.deepEqual([...sim.player.combo], ['a', 'a', '-', 'a']);
-    const onTime = twoA(); step(onTime, 0.05); tap(onTime); assert.equal(onTime.player.act.move, 'spin');
+    const onTime = twoA(); step(onTime, 0.05); tap(onTime); assert.equal(onTime.player.act.move, 'smite');
     // A node without a pause move treats the late A as its ordinary A.
     const late = setup(); tap(late); until(late, 'idle'); step(late, pause + 0.05);
     tap(late); assert.equal(late.player.act.move, 'backslash');
@@ -185,8 +185,8 @@ test('a charge turns slower, and the cut goes where the charge turned to', () =>
 });
 
 test('a held B waits its turn as an opening charge; an A after a landed charged cut still follows up', () => {
-    const sim = setup(); tap(sim); until(sim, 'recover:slash'); tap(sim); until(sim, 'recover:backslash'); tap(sim); until(sim, 'swing:spin');
-    press(sim, 'attack'); step(sim, M.spin.swing + M.spin.recovery + M.charged.windup + 0.05);
+    const sim = setup(); tap(sim); until(sim, 'recover:slash'); tap(sim); until(sim, 'recover:backslash'); tap(sim); until(sim, 'swing:smite');
+    press(sim, 'attack'); step(sim, M.smite.swing + M.smite.recovery + M.charged.windup + 0.05);
     assert.equal(phase(sim), 'charge:charged', 'held through the finisher, B starts charging when it is over');
     release(sim, 'attack');
     // The hitstop of a landed cut does not eat the buffered A's time.
@@ -300,7 +300,7 @@ test('each weapon type has its own tree: roots and derived moves stay in the typ
     for (const [id, item] of Object.entries(gameConfig.items)) if (item.slot === 'main') assert.ok(K.weapons[item.weapon], id);
     // The sword is the slower one: every sword move is longer than the dagger's at the same place in the tree.
     const length = id => M[id].windup + M[id].swing + M[id].recovery;
-    for (const [s, d] of [['slash', 'cut'], ['backslash', 'recut'], ['spin', 'whirl'], ['thrust', 'stab']]) assert.ok(length(s) > length(d), `${s} is slower than ${d}`);
+    for (const [s, d] of [['slash', 'cut'], ['backslash', 'recut'], ['smite', 'whirl'], ['thrust', 'stab']]) assert.ok(length(s) > length(d), `${s} is slower than ${d}`);
 });
 
 // Walk a combo: each input pressed once the move before has swung.

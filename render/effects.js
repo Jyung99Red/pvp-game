@@ -1,5 +1,5 @@
 // Drawn-only feedback (design.md 2.5): blade
-// trails, block debris, hit flash, a small camera shake, stagger stars, the
+// trails, block debris, hit flash, a parry's glint and glow, a small camera shake, stagger stars, the
 // charge glow, the pause-line cue, a fallen monster's burst and an enraged
 // one's red glow. Reads simulation events and solved rigs; never writes the
 // simulation. Kept low-key on purpose. `selfId` is the fighter this phone
@@ -77,6 +77,50 @@ const renderEffects = (() => {
             geo.setDrawRange(0, Math.max(0, samples.length - 1) * 6);
         }
 
+        // ---- parry glints: a halo and a four-pointed star, bright and
+        // additive, drawn over everything for a moment (user, 2026-10-03) ----
+        function glowTexture(draw) {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 64;
+            draw(canvas.getContext('2d'));
+            return new T.CanvasTexture(canvas);
+        }
+        const halo = glowTexture(g => {
+            const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+            r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.22, 'rgba(255,244,190,0.85)'); r.addColorStop(1, 'rgba(255,196,70,0)');
+            g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+        });
+        const starTexture = glowTexture(g => {
+            for (const [w, h] of [[64, 7], [7, 64]]) {
+                const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+                r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,230,140,0)');
+                g.fillStyle = r; g.fillRect(32 - w / 2, 32 - h / 2, w, h);
+            }
+        });
+        const glowMaterial = map => new T.SpriteMaterial({ map, blending: T.AdditiveBlending, transparent: true, depthWrite: false, depthTest: false });
+        const GLINT = 0.32;
+        const glints = Array.from({ length: 3 }, () => {
+            const g = { halo: new T.Sprite(glowMaterial(halo)), star: new T.Sprite(glowMaterial(starTexture)), life: 0 };
+            for (const s of [g.halo, g.star]) { s.visible = false; s.renderOrder = 10; scene.add(s); }
+            return g;
+        });
+        function glint(at) {
+            const g = glints.find(x => x.life <= 0) || glints.reduce((a, b) => a.life < b.life ? a : b);
+            g.life = GLINT;
+            for (const s of [g.halo, g.star]) { s.position.set(at[0], at[1], at[2]); s.visible = true; }
+        }
+        function tickGlints(dt) {
+            for (const g of glints) {
+                if (g.life <= 0) continue;
+                g.life = Math.max(0, g.life - dt);
+                const k = g.life / GLINT, grow = 1 - k * k;
+                g.halo.scale.setScalar(0.45 + 0.85 * grow); g.halo.material.opacity = 0.75 * k;
+                g.star.scale.setScalar(0.4 + 1.5 * grow); g.star.material.opacity = Math.min(1, k * 1.4);
+                g.star.material.rotation = 0.6 * grow;
+                if (g.life <= 0) g.halo.visible = g.star.visible = false;
+            }
+        }
+
         // ---- stagger stars, one ring per reeling foe ----
         const starRings = new Map();
         function starsFor(id) {
@@ -94,6 +138,8 @@ const renderEffects = (() => {
 
         // ---- flashes, shake and glow, driven by events ----
         const flash = new Map(); // id -> seconds left
+        const shine = new Map(); // a parrier's glow: id -> seconds left
+        const SHINE = 0.3;
         const FALLEN = {
             goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'],
             goblinChief: ['#5f8a34', '#8a2f2a', '#7d8088', '#d8b04a'], wolfKing: ['#4c4d55', '#2c2d33', '#ff7a3a', '#d8b04a']
@@ -109,7 +155,10 @@ const renderEffects = (() => {
                     if (e.heavy) { burst(e.at, 12, ['#ffffff', '#ffd27a', '#f2b544'], 2, 3.8, 0.08); if (e.source === selfId) shake = Math.max(shake, 0.12); }
                     else burst(e.at, 7, ['#ffffff', '#f4f1e6', '#d9dee3'], 1.5, 2.8, 0.06);
                 } else if (e.type === 'block') burst(e.at, 5, ['#d9dee3', '#9aa2aa'], 1.2, 2.2, 0.05);
-                else if (e.type === 'parry') { burst(e.at, 12, ['#fff3b0', '#ffd84a', '#ffffff'], 2, 3.6, 0.07); flash.set(e.target, 0.12); shake = Math.max(shake, 0.1); }
+                else if (e.type === 'parry') {
+                    burst(e.at, 18, ['#fff3b0', '#ffd84a', '#ffffff'], 2.2, 4.2, 0.07); glint(e.at);
+                    flash.set(e.target, 0.12); shine.set(e.side, SHINE); shake = Math.max(shake, 0.1);
+                }
                 else if (e.type === 'defeated') burst(e.at, e.boss ? 30 : 14, FALLEN[e.kind] || ['#ffffff'], 1.2, e.boss ? 3.4 : 2.6, e.boss ? 0.1 : 0.08);
                 else if (e.type === 'chest_open') burst(e.at, 16, ['#ffe066', '#d8b04a', '#ffffff'], 1.2, 3, 0.06);
                 else if (e.type === 'pickup' && e.side === selfId) burst(e.at, 3, ['#fff3b0', '#ffffff'], 0.6, 1.2, 0.04);
@@ -122,7 +171,7 @@ const renderEffects = (() => {
                 else if (e.type === 'pause_ready' && e.side === selfId) cue = 0.14;
             }
         }
-        const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24');
+        const white = new T.Color('#ffffff'), red = new T.Color('#ff8a7a'), gold = new T.Color('#f2b544'), rage = new T.Color('#ff3a24'), glow = new T.Color('#fff1c4');
         // Chips thrown up by gathering, by resource.
         const GATHERED = { ore: [palette.stone, palette.ore, palette.stoneDark], crystal: [palette.crystal, palette.crystalDeep, '#ffffff'], herb: [palette.herb, palette.herbLight, palette.berry] };
         // Per frame. `view`: { selfId, fighters: [{ id, body, rig,
@@ -131,7 +180,9 @@ const renderEffects = (() => {
         function update(dt, sim, view) {
             clock += dt;
             tickParts(dt);
+            tickGlints(dt);
             for (const [id, left] of flash) flash.set(id, Math.max(0, left - dt));
+            for (const [id, left] of shine) shine.set(id, Math.max(0, left - dt));
             const lit = id => (flash.get(id) || 0) / 0.12;
             cue = Math.max(0, cue - dt);
             const drawn = new Set();
@@ -152,11 +203,14 @@ const renderEffects = (() => {
                 }
                 if (a?.phase === 'swing') sampleBlade(trail, f.rig, f.solved, gameConfig.combo.moves[a.move].knockback > 0);
                 drawTrail(trail); trail.mesh.visible = true;
-                for (const m of f.materials) m.emissive.copy(red).multiplyScalar(0.7 * lit(f.id));
-                // The blade glows gold while charging, flashes white on the pause line.
+                // A parrier glows warm white for a moment; one struck flashes red.
+                const shone = (shine.get(f.id) || 0) / SHINE;
+                for (const m of f.materials) m.emissive.copy(shone > 0 ? glow : red).multiplyScalar(shone > 0 ? 0.3 * shone * shone : 0.7 * lit(f.id));
+                // The blade glows gold while charging, flashes white on the pause line and a parry.
                 const charge = a?.phase === 'charge' ? Math.min(1, fighterKit.chargeOf(sim, f.body, a) / gameConfig.combat.charge.full) : 0;
                 if (f.blade) {
-                    if (cue > 0 && f.id === view.selfId) f.blade.emissive.copy(white).multiplyScalar(0.9);
+                    if (shone > 0) f.blade.emissive.copy(white).multiplyScalar(shone);
+                    else if (cue > 0 && f.id === view.selfId) f.blade.emissive.copy(white).multiplyScalar(0.9);
                     else f.blade.emissive.copy(gold).multiplyScalar(0.9 * charge);
                 }
             }

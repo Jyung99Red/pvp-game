@@ -27,14 +27,16 @@ const equipmentModels = (() => {
             ]
         };
     }
-    // Carried on the outside of the left forearm, face outwards.
+    // Carried on the outside of the left forearm, face outwards; big enough
+    // to hide behind (user, 2026-10-03: larger). Drawn only: guarding goes by
+    // the front arc, not by the board (design.md 4.3).
     function shield({ face = 'wood', band = 'steelDark', boss = 'steel', id = 'wooden_shield' } = {}) {
         return {
             id, mount: 'handL', parts: [
-                { size: [0.07, 0.6, 0.5], at: [0.15, 0.18, 0.02], color: face, kind: 'shield' },
-                { size: [0.02, 0.6, 0.06], at: [0.195, 0.18, 0.02], color: band, kind: 'deco' },
-                { size: [0.02, 0.06, 0.5], at: [0.195, 0.18, 0.02], color: band, kind: 'deco' },
-                { size: [0.05, 0.14, 0.14], at: [0.205, 0.18, 0.02], color: boss, kind: 'deco' }
+                { size: [0.08, 0.78, 0.66], at: [0.16, 0.2, 0.02], color: face, kind: 'shield' },
+                { size: [0.02, 0.78, 0.07], at: [0.21, 0.2, 0.02], color: band, kind: 'deco' },
+                { size: [0.02, 0.07, 0.66], at: [0.21, 0.2, 0.02], color: band, kind: 'deco' },
+                { size: [0.06, 0.17, 0.17], at: [0.225, 0.2, 0.02], color: boss, kind: 'deco' }
             ]
         };
     }
