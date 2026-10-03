@@ -12,10 +12,10 @@ const playerMoves = (() => {
     const key = pose => ({ ...shieldArm, ...pose });
     const moves = {
         // Diagonal, high right down to low left (user, 2026-10-03: the
-        // A A A on the diagonal, the body turning less; the wrist turned a
-        // little to the right in the windup).
+        // A A A on the diagonal, the body turning less; in the windup the
+        // wrist turned so the blade leans out to the right and back).
         slash: {
-            a: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.85, ry: -0.6 }, handR: { rx: 1.3, ry: -0.2 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
+            a: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.85, ry: -0.6 }, handR: { rx: 1.05, ry: -1.2 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
             b: key({ chest: { ry: 0.3, rx: 0.12 }, upperArmR: { rx: -0.85, ry: 0.6 }, handR: { rx: 1.2 }, thighR: { rx: 0.35 }, shinR: { rx: 0.15 }, thighL: { rx: -0.4 }, shinL: { rx: 0.1 } })
         },
         // Back up the same diagonal: low left to high right.
@@ -24,10 +24,10 @@ const playerMoves = (() => {
             b: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.8, ry: -0.65 }, handR: { rx: 1.1 }, thighR: { rx: -0.35 }, shinR: { rx: 0.1 }, thighL: { rx: 0.35 }, shinL: { rx: 0.15 } })
         },
         // The finisher, with weight: the upper arm level, out front to the right,
-        // the forearm up and the blade up, leaning a little to the right at
-        // the wrist; then down hard to the low left (user, 2026-10-03).
+        // the forearm up and the blade up, leaning right and back from the
+        // wrist; then down hard to the low left (user, 2026-10-03).
         smite: {
-            a: key({ chest: { ry: -0.4, rx: -0.1 }, upperArmR: { rx: -1.5, ry: -0.85 }, forearmR: { rx: -1.5 }, handR: { rx: 1.65 }, thighR: { rx: 0.35 }, shinR: { rx: 0.2 }, thighL: { rx: -0.35 }, shinL: { rx: 0.15 } }),
+            a: key({ chest: { ry: -0.4, rx: -0.1 }, upperArmR: { rx: -1.5, ry: -0.85 }, forearmR: { rx: -1.5 }, handR: { rx: 2.05, ry: 0.9 }, thighR: { rx: 0.35 }, shinR: { rx: 0.2 }, thighL: { rx: -0.35 }, shinL: { rx: 0.15 } }),
             b: key({ pelvis: { py: -0.1 }, chest: { ry: 0.3, rx: 0.3 }, upperArmR: { rx: -0.85, ry: 0.65 }, handR: { rx: 1.0 }, thighR: { rx: 0.55 }, shinR: { rx: 0.35 }, thighL: { rx: -0.7 }, shinL: { rx: 0.3 } })
         },
         // Straight ahead.

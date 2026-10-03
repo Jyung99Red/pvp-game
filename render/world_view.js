@@ -215,6 +215,19 @@ const worldView = (() => {
             mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
             const grown = new T.Matrix4();
+            // A shield's white double, shown only while a parry blinks it
+            // (render/effects.js): one box round all the shield's boxes, which
+            // hang on one bone.
+            const shieldParts = rig.parts.map((part, i) => ({ part, i })).filter(({ part }) => C.items[part.owner]?.offhand === 'shield');
+            let blinker = null;
+            if (shieldParts.length) {
+                const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+                for (const { part } of shieldParts) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], part.at[k] - part.size[k] / 2); hi[k] = Math.max(hi[k], part.at[k] + part.size[k] / 2); }
+                const box = new T.Mesh(new T.BoxGeometry(...hi.map((v, k) => v - lo[k] + 0.02)), new T.MeshBasicMaterial({ color: '#ffffff' }));
+                box.matrixAutoUpdate = false; box.visible = false;
+                scene.add(box);
+                blinker = { box, bone: shieldParts[0].part.bone, at: new T.Matrix4().makeTranslation(...hi.map((v, k) => (v + lo[k]) / 2)), on: false };
+            }
             // Flames on a torch: shown only while it burns, glowing.
             const flames = loose.filter(l => rig.parts[l.i].tag === 'flame').map(l => l.mesh);
             for (const f of flames) { f.material.emissive.set(P[rig.parts[loose.find(l => l.mesh === f).i].color]); f.castShadow = false; }
@@ -223,9 +236,16 @@ const worldView = (() => {
                 mesh, blade: loose.find(l => rig.parts[l.i].kind === 'weapon')?.mesh.material || null, flames,
                 materials: [material, ...loose.filter(l => rig.parts[l.i].tag !== 'flame').map(l => l.mesh.material)],
                 light(on) { lit = on; for (const f of flames) f.visible = on && mesh.visible; },
+                // Show the shield white (or not); false when there is no shield.
+                flash(on) {
+                    if (!blinker) return false;
+                    blinker.on = on; blinker.box.visible = on && mesh.visible;
+                    return true;
+                },
                 place(solved) {
                     boned.forEach((part, b) => bones[b].matrixWorld.fromArray(solved.parts[part]));
                     for (const { i, mesh: m } of loose) { m.matrix.fromArray(solved.parts[i]); m.matrixWorldNeedsUpdate = true; }
+                    if (blinker) { blinker.box.matrix.fromArray(solved.bones[blinker.bone]).multiply(blinker.at); blinker.box.matrixWorldNeedsUpdate = true; }
                     for (const { i, line, grow } of lines) {
                         line.matrix.fromArray(solved.parts[i]);
                         if (grow) line.matrix.multiply(grown.makeScale(...grow));
@@ -236,6 +256,7 @@ const worldView = (() => {
                     mesh.visible = visible;
                     for (const l of loose) l.mesh.visible = visible && (lit || rig.parts[l.i].tag !== 'flame');
                     for (const l of lines) l.line.visible = visible;
+                    if (blinker) blinker.box.visible = visible && blinker.on;
                 }
             };
         }
@@ -413,7 +434,7 @@ const worldView = (() => {
                 const solved = rigKit.solve(entry.rig, pose, space.toBlocks(p.x, p.y, p.h), space.yawOf(p.facing));
                 entry.view.place(solved);
                 entry.view.light(!!f.lit);
-                drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials });
+                drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials, flash: entry.view.flash });
             }
             // The torch light sits on this fighter's flame, flickering a
             // little -- short of any block the flame pokes into, or the light
