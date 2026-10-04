@@ -33,7 +33,7 @@ const app = (() => {
         left: '对方离开了房间。'
     };
     // Panel buttons and their usual labels.
-    const LABELS = { resume: '继续', home: '回到据点', rematch: '再来一局', menu: '菜单', surrender: '认输', leave: '离开对战', erase: '清除并重新开始' };
+    const LABELS = { resume: '继续', home: '回到曙光村', rematch: '再来一局', menu: '菜单', surrender: '认输', leave: '离开对战', erase: '清除并重新开始' };
     // The screen each building of the base opens (ui/screens.js); the
     // storage is the bag, which is the menu's.
     const BUILDING_SCREENS = { shop: 'shop', smithy: 'smithy' };
@@ -161,7 +161,7 @@ const app = (() => {
             }
             if (kind === 'lose') {
                 return {
-                    title: '倒下了', tone: kind, note: '回到据点休息。捡到的东西都还在。',
+                    title: '倒下了', tone: kind, note: '回到曙光村休息。捡到的东西都还在。',
                     stats: [['用时', clockText(sim.result.at)], ['击倒', S.kills], ['命中', S.hits], ['格挡', S.blocks], ['弹反', S.parries], ['受伤', S.hurt]],
                     buttons: [['home']]
                 };

@@ -51,7 +51,7 @@ const menuScreen = (() => {
             const p = hooks.progress(), item = I[picked], lines = [item.desc];
             let compare = '', actions = [];
             if (item.slot) {
-                const slot = item.slot, worn = p.loadout[slot] === picked, lock = hooks.canChange() ? '' : '只能在据点里换装备';
+                const slot = item.slot, worn = p.loadout[slot] === picked, lock = hooks.canChange() ? '' : '只能在曙光村里换装备';
                 lines.unshift(`${slotLine(item)}${item.stats ? ' · ' + statLine(item.stats) : ''}${item.kind === 'supply' ? ` · 有 ${owned(picked)}` : ''}`);
                 const now = K.statsOf(p.loadout), next = K.statsOf({ ...p.loadout, [slot]: worn ? null : picked });
                 if (!(worn && slot === 'main')) compare = K.STATS.map(k => [STAT_NAMES[k], now[k], next[k]]).filter(([, a, b]) => a !== b)

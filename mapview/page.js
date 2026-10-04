@@ -4,7 +4,9 @@
 // edited here. Pick a map (or open ?map=field); the pointer names the cell
 // under it; a click picks a cell and a drag a rectangle, put in the text
 // box and on the clipboard; the measure tool gives the walk between two
-// cells. mapview/plan.js works everything out; this file draws it on 2D
+// cells. The overview shows every map on one sheet, set out by where its
+// portals lead; a click on one opens it. mapview/plan.js works everything
+// out; this file draws it on 2D
 // canvases (the map, a layer over it for what follows the pointer, and the
 // two rulers) and listens.
 const mapApp = (() => {
@@ -23,7 +25,7 @@ const mapApp = (() => {
     const COLOURS = Object.freeze({
         grass: '#5f9b4c', path: '#b99c68', cobble: '#9ba1a8', gravel: '#8d8779', herb: '#eef08a',
         tree: '#1f5c2c', wood: '#8a5a30', portal: '#4c3a78', gate: '#b477ff', brush: '#9a6a22',
-        ore: '#c8763a', crystal: '#63d2e6', water: '#3f86d6'
+        ore: '#c8763a', crystal: '#63d2e6', water: '#3f86d6', hedge: '#2f8a45', drop: '#d7e6f2', fence: '#a8743c'
     });
     const UNKNOWN = '#d24bc0', TREE_CROWN = '#3a8a48';
     // Stone by its height in blocks: a low stone light, a wall darker the higher.
@@ -46,6 +48,10 @@ const mapApp = (() => {
         pan: '按住拖动来移动地图（手机上用手指划）；轻点一格照样选中。'
     });
     const SHOWN = Object.freeze({ monsters: true, portals: true, marks: true, screen: false, grid: true });
+    // The overview: its entry in the list of maps, pixels to a block (it
+    // always fits the window), its words and the colour of its links.
+    const WORLD = Object.freeze({ id: 'world', name: '总览（所有地图）', min: 2, max: 14, hint: '指到一块区域上，显示那张地图里的坐标；点一下打开那张地图', link: '#f3e8ff' });
+    const SIDES = Object.freeze({ north: '北', south: '南', east: '东', west: '西' });
 
     const colourOf = cell => cell.kind === 'stone' ? STONE[Math.min(cell.level, STONE.length - 1)] : COLOURS[cell.kind] || UNKNOWN;
     // One cell, `s` pixels a side, at (x, y). Ground is flat colour. A block
@@ -84,12 +90,13 @@ const mapApp = (() => {
         const rulers = { top: $('[data-ruler="top"]'), left: $('[data-ruler="left"]') };
         const readout = $('[data-readout]'), refBox = $('[data-ref]'), copied = $('[data-copied]'), errorBox = $('[data-error]');
         const picker = $('[data-map]'), zoom = $('[data-zoom]'), info = $('[data-info]'), legend = $('[data-legend]');
+        const worldBox = $('[data-world]'), worldCanvas = $('[data-world-canvas]');
 
         // ---- state: what is shown, kept between visits ----
         // hover: the cell under the pointer; point: the last one pointed at
         // (the one-screen patch stays round it); select: { a, b } corners;
         // measure: { a, b, fixed, result }, `b` following the pointer until fixed.
-        const saved = readJSON(STORE) || {}, known = id => list.some(m => m.id === id);
+        const saved = readJSON(STORE) || {}, known = id => id === WORLD.id || list.some(m => m.id === id);
         const asked = new URLSearchParams(location.search).get('map');
         const state = {
             map: known(asked) ? asked : known(saved.map) ? saved.map : list[0].id,
@@ -99,7 +106,9 @@ const mapApp = (() => {
             hover: null, point: null, select: null, measure: null
         };
         const savePrefs = () => writeJSON(STORE, { map: state.map, cell: state.cell, tool: state.tool, show: state.show });
-        let plan = null, ratio = 1, drag = null;
+        // plan: the map on the sheet; world: the overview instead (worldCell
+        // pixels to a block, worldOver the map the pointer is over).
+        let plan = null, ratio = 1, drag = null, world = null, worldCell = WORLD.min, worldOver = null;
 
         // ---- drawing ----
         // A canvas of w x h CSS pixels, each drawn `ratio` device pixels wide, wiped.
@@ -292,11 +301,49 @@ const mapApp = (() => {
                 ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.5, y + 0.5, s, s);
             }
         }
-        function redraw() { if (plan) { drawBase(); drawRulers(); drawOver(); } }
+        // The overview: every map small, a frame and a name each, monsters as
+        // dots, and a line for each pair of portals (dashed while a boss
+        // keeps it shut, pink where its two ends disagree). As big as fits
+        // the window.
+        function drawWorld() {
+            const s = worldCell = clamp(Math.floor(Math.min((stage.clientWidth - 18) / world.width, (stage.clientHeight - 18) / world.height)), WORLD.min, WORLD.max);
+            const W = world.width * s, H = world.height * s, tags = [];
+            ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(MAX_PIXELS / (W * H)));
+            const ctx = prepare(worldCanvas, W, H);
+            for (const m of world.maps) {
+                const p = lab.planOf(m.id), x0 = m.x * s, y0 = m.y * s, floor = COLOURS[p.floor] || UNKNOWN;
+                p.cells.forEach((cell, i) => { ctx.fillStyle = cell.kind === 'herb' ? floor : colourOf(cell); ctx.fillRect(x0 + (i % p.width) * s, y0 + Math.floor(i / p.width) * s, s, s); });
+                if (state.show.monsters) for (const mo of p.monsters) {
+                    ctx.fillStyle = mo.boss ? MONSTER.boss : MONSTER[gameConfig.monsters[mo.kind]?.model || mo.kind] || MONSTER.other;
+                    disc(ctx, x0 + mo.x * s, y0 + mo.y * s, mo.boss ? Math.max(3.5, s * 0.9) : Math.max(2, s * 0.55)); ctx.fill();
+                    ctx.strokeStyle = MARK.ink; ctx.lineWidth = 1; ctx.stroke();
+                }
+                const on = m.id === worldOver;
+                ctx.strokeStyle = on ? MARK.select : 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = on ? 3 : 1.5;
+                ctx.strokeRect(x0 + 0.5, y0 + 0.5, p.width * s - 1, p.height * s - 1);
+                tags.push({ text: `${m.name} ${m.id}`, x: x0 + p.width * s / 2, y: y0 + p.height * s / 2, side: 'centre', gap: 0 });
+            }
+            if (state.show.portals) for (const link of world.links) {
+                const ends = [link.a, link.b].filter(Boolean);
+                if (ends.length === 2) {
+                    ctx.setLineDash(link.requires ? [7, 5] : []); ctx.lineCap = 'round';
+                    ctx.beginPath(); ctx.moveTo(link.a.x * s, link.a.y * s); ctx.lineTo(link.b.x * s, link.b.y * s);
+                    ctx.strokeStyle = MARK.ink; ctx.lineWidth = 4.5; ctx.stroke();
+                    ctx.strokeStyle = link.straight ? WORLD.link : MARK.walk; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+                for (const e of ends) {
+                    ctx.fillStyle = COLOURS.gate; disc(ctx, e.x * s, e.y * s, Math.max(3, s * 0.8)); ctx.fill();
+                    ctx.strokeStyle = MARK.ink; ctx.lineWidth = 1.5; ctx.stroke();
+                }
+            }
+            drawTags(ctx, tags, W, H);
+        }
+        function redraw() { if (plan) { drawBase(); drawRulers(); drawOver(); } else if (world) drawWorld(); }
         function follow() { if (plan) { drawRulers(); drawOver(); } }
 
         // ---- the words beside the map ----
-        function showReadout() { readout.textContent = plan && state.hover ? lab.describe(plan, state.hover.col, state.hover.row) : '指到地图上，这里显示坐标和那一格是什么'; }
+        function showReadout() { readout.textContent = plan && state.hover ? lab.describe(plan, state.hover.col, state.hover.row) : world ? WORLD.hint : '指到地图上，这里显示坐标和那一格是什么'; }
         function showMeasure() {
             const m = state.measure, box = $('[data-measure]');
             if (!plan || !m) { box.textContent = '还没量。'; return; }
@@ -307,7 +354,27 @@ const mapApp = (() => {
             box.innerHTML = lines.map(escape).join('<br>');
         }
         const go = (col, row) => `<button type="button" data-go="${col},${row}">(${col}, ${row})</button>`;
+        // The overview in words: the maps, and each pair of portals -- said
+        // out loud where the way there and the way back disagree about
+        // which side the other map lies on.
+        function showWorldInfo() {
+            const name = id => world.maps.find(m => m.id === id)?.name || id;
+            const open = m => `<a href="?map=${encodeURIComponent(m.id)}" data-to="${escape(m.id)}">${escape(m.name)} ${escape(m.id)}</a>`;
+            const traits = m => [m.safe && '安全区', m.training && '训练场', m.duel && '对战专用', m.dark && '黑暗'].filter(Boolean).map(t => ` · ${t}`).join('');
+            const said = link => {
+                const { a, b } = link, lock = link.requires ? `（击败${escape(link.requiresName)}后开启）` : '';
+                if (!b) return `${escape(name(a.id))} (${a.col}, ${a.row}) 往${SIDES[a.out] || '？'}出去${lock}：<span class="bad">那边没有门通回来</span>`;
+                const line = `${escape(name(a.id))} (${a.col}, ${a.row}) ⇄ ${escape(name(b.id))} (${b.col}, ${b.row})${lock}`;
+                return link.straight ? line : `${line}<br><span class="bad">方向对不上</span>：从${escape(name(a.id))}是往${SIDES[a.out]}出去，从${escape(name(b.id))}回来却是往${SIDES[b.out]}出去（粉色的线）`;
+            };
+            info.innerHTML = [
+                `<p><b>总览</b> · ${world.maps.length} 张地图。门从哪边出去，那张图就摆在哪边；摆不下就顺着那个方向往外挪。点一块区域（或下面的名字）打开它。</p>`,
+                `<h3>地图</h3><ul>${world.maps.map(m => `<li>${open(m)} · ${m.width} × ${m.height} 格${traits(m)}</li>`).join('')}</ul>`,
+                world.links.length ? `<h3>传送门连接</h3><ul>${world.links.map(l => `<li>${said(l)}</li>`).join('')}</ul>` : ''
+            ].join('');
+        }
         function showInfo() {
+            if (world) { showWorldInfo(); return; }
             if (!plan) { info.innerHTML = ''; return; }
             const html = [`<p><b>${escape(plan.name)}</b> <code>${escape(plan.id)}</code> · ${plan.width} × ${plan.height} 格（列 0–${plan.width - 1}，行 0–${plan.height - 1}）</p>`];
             const traits = [plan.safe && '安全区（没有怪）', plan.training && '训练场（不会倒下）', plan.duel && '对战专用', plan.dark && '黑暗（要火把照明）'].filter(Boolean);
@@ -454,6 +521,20 @@ const mapApp = (() => {
             showReadout(); follow();
         });
         board.addEventListener('contextmenu', e => { if (drag) e.preventDefault(); });
+        // The overview: the pointer names the cell of whichever map it is
+        // over; a click opens that map at that cell.
+        const worldUnder = e => { const r = worldCanvas.getBoundingClientRect(); return lab.worldAt(world, (e.clientX - r.left) / worldCell, (e.clientY - r.top) / worldCell); };
+        function overWorld(at) {
+            readout.textContent = at ? lab.describe(at.id, at.col, at.row) : WORLD.hint;
+            if ((at?.id || null) !== worldOver) { worldOver = at?.id || null; drawWorld(); }
+        }
+        worldCanvas.addEventListener('pointermove', e => { if (world) overWorld(worldUnder(e)); });
+        worldCanvas.addEventListener('pointerleave', () => { if (world) overWorld(null); });
+        worldCanvas.addEventListener('click', e => {
+            const at = world && worldUnder(e);
+            if (at) { pick(at.id); show(at.col, at.row); }
+        });
+        window.addEventListener('resize', () => { if (world) drawWorld(); });
         window.addEventListener('keydown', e => {
             if (e.key !== 'Escape' || !plan) return;
             state.select = null; state.measure = null; drag = null; refBox.value = '';
@@ -485,11 +566,14 @@ const mapApp = (() => {
         function pick(id) {
             state.map = id; state.hover = state.point = state.select = state.measure = null; drag = null;
             refBox.value = ''; picker.value = id;
-            try { plan = lab.planOf(id); errorBox.hidden = true; } catch (error) {
-                plan = null;
+            plan = null; world = null; worldOver = null; errorBox.hidden = true;
+            if (id === WORLD.id) world = lab.world();
+            else try { plan = lab.planOf(id); } catch (error) {
                 errorBox.textContent = `这张地图读不出来（${id}）：${error.message}`; errorBox.hidden = false;
             }
-            sheet.hidden = !plan;
+            sheet.hidden = !plan; worldBox.hidden = !world;
+            // The overview has no cells to pick: its size follows the window, and the tools rest.
+            for (const control of [zoom, ...$$('[data-tool]')]) control.disabled = !!world;
             if (state.cell == null) state.cell = plan ? clamp(fitCell(), ...CELL.first) : CELL.fallback;
             showZoom(); redraw(); showReadout(); showMeasure(); showInfo(); showLegend();
             stage.scrollTo(0, 0);
@@ -497,11 +581,11 @@ const mapApp = (() => {
             try { const url = new URL(location.href); url.searchParams.set('map', id); history.replaceState(null, '', url); } catch (_) { /* the address stays */ }
             savePrefs();
         }
-        picker.innerHTML = list.map(m => `<option value="${escape(m.id)}">${escape(m.name)} ${escape(m.id)}</option>`).join('');
+        picker.innerHTML = [`<option value="${WORLD.id}">${WORLD.name}</option>`, ...list.map(m => `<option value="${escape(m.id)}">${escape(m.name)} ${escape(m.id)}</option>`)].join('');
         picker.addEventListener('change', () => pick(picker.value));
         zoom.min = String(CELL.min); zoom.max = String(CELL.max);
         zoom.addEventListener('input', () => { if (plan) setCell(+zoom.value); });
-        $('[data-fit]').addEventListener('click', () => { if (plan) { setCell(fitCell()); stage.scrollTo(0, 0); } });
+        $('[data-fit]').addEventListener('click', () => { if (plan) { setCell(fitCell()); stage.scrollTo(0, 0); } else if (world) drawWorld(); });
         $('[data-tools]').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
         $$('[data-show]').forEach(b => {
             b.checked = !!state.show[b.dataset.show];
@@ -521,6 +605,7 @@ const mapApp = (() => {
         window.mapPreview = {
             lab, state, pick, show, select, setTool, setCell, redraw,
             get plan() { return plan; },
+            get world() { return world; },
             measure(a, b) { setMeasure({ ...a }, { ...b }, true); follow(); return state.measure.result; }
         };
     }

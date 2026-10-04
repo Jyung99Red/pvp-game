@@ -32,12 +32,16 @@ const terrainMesh = (() => {
         return ((h ^ h >>> 16) >>> 0) / 4294967296;
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
-    // How dark a pond is along its banks.
-    const POND_BANK = 0.7;
+    // How far a pond's surface lies below the ground (blocks), and how dark
+    // the earth of its banks is.
+    const POND_DEPTH = 0.25, POND_BANK = 0.8;
+    // A cliff: blocks of earth and rock drawn down from its edge, each this
+    // much darker than the one above.
+    const CLIFF_DEPTH = 4, CLIFF_SHADE = 0.12;
     // The tile of a map's own floor.
     const floorOf = t => GROUND[t.floor] || 'grassTop';
     // Tile and shade spread per solid kind (by name).
-    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05] };
+    const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05], hedge: ['leaves', 0.12] };
 
     // Drawn-only blocks: { 'x,y,z': { tile, tint } } for the whole map.
     function decor(sim) {
@@ -177,7 +181,7 @@ directLight.color *= torchSeen;
             if (y < 0) return true;
             if (terrainKit.inside(t, c, r)) {
                 const k = terrainKit.kindAt(t, c, r);
-                if (terrainKit.isSolid(k) && k !== K.gate && y < terrainKit.levelAt(t, c, r)) return true;
+                if (terrainKit.isSolid(k) && k !== K.gate && k !== K.fence && y < terrainKit.levelAt(t, c, r)) return true;
             }
             return decoKeys.has(decoKey(c, y, r));
         }
@@ -244,6 +248,9 @@ directLight.color *= torchSeen;
             const b = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
             for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
                 const k = terrainKit.kindAt(t, c, r), name = terrainKit.NAMES[k];
+                // Beyond a cliff's edge nothing is drawn; the cells along it show its face.
+                if (k === K.drop) continue;
+                cliff(b, c, r);
                 if (k === K.water) { pond(b, c, r); continue; }
                 if (!terrainKit.isSolid(k)) {
                     // Ground, shaded at corners that meet a wall; a herb
@@ -260,6 +267,7 @@ directLight.color *= torchSeen;
                 // Under a block (and a portal's opening) the map's floor goes on.
                 b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[floorTile], tintOf(WHITE, c, -1, r, 0.06));
                 if (k === K.gate) continue;
+                if (k === K.fence) { fence(b, c, r); continue; }
                 const [tile, vary] = BLOCK[name], level = terrainKit.levelAt(t, c, r);
                 for (let y = 0; y < level; y++) {
                     const rgb = tintOf(WHITE, c, y, r, vary), own = k === K.stone && hash(c, y, r, 3) < 0.3 ? 'mossy' : tile;
@@ -287,16 +295,47 @@ directLight.color *= torchSeen;
             }
             return b;
         }
-        // A pond on cell (c, r): water level with the ground (the sheet of
-        // ground beyond the map lies just under it, so it cannot sink),
-        // darker along its banks.
+        // A pond on cell (c, r): its surface POND_DEPTH below the ground,
+        // and the earth of the bank wherever the next cell is not water.
         function pond(b, c, r) {
-            const wet = (x, z) => terrainKit.inside(t, x, z) && terrainKit.kindAt(t, x, z) === K.water;
-            const shades = [[0, 1], [1, 1], [1, 0], [0, 0]].map(([sx, sz]) => {
-                const dx = sx ? 1 : -1, dz = sz ? 1 : -1;
-                return wet(c + dx, r) && wet(c, r + dz) && wet(c + dx, r + dz) ? 1 : POND_BANK;
-            });
-            b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05), shades);
+            const y = -POND_DEPTH, wet = (dc, dr) => terrainKit.inside(t, c + dc, r + dr) && terrainKit.kindAt(t, c + dc, r + dr) === K.water;
+            b.quad([[c, y, r + 1], [c + 1, y, r + 1], [c + 1, y, r], [c, y, r]], FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05));
+            // The top strip of the dirt tile, as deep as the bank is high.
+            const [u0, v0, u1, v1] = tiles.dirt, bank = [u0, v1 - (v1 - v0) * POND_DEPTH, u1, v1], rgb = tintOf(WHITE, c, -2, r, 0.06).map(v => v * POND_BANK);
+            if (!wet(0, -1)) b.quad([[c, y, r], [c + 1, y, r], [c + 1, 0, r], [c, 0, r]], [0, 0, 1], bank, rgb);
+            if (!wet(0, 1)) b.quad([[c + 1, y, r + 1], [c, y, r + 1], [c, 0, r + 1], [c + 1, 0, r + 1]], [0, 0, -1], bank, rgb);
+            if (!wet(-1, 0)) b.quad([[c, y, r + 1], [c, y, r], [c, 0, r], [c, 0, r + 1]], [1, 0, 0], bank, rgb);
+            if (!wet(1, 0)) b.quad([[c + 1, y, r], [c + 1, y, r + 1], [c + 1, 0, r + 1], [c + 1, 0, r]], [-1, 0, 0], bank, rgb);
+        }
+        // The cliff under each edge of cell (c, r) that the drop lies
+        // beyond: a block of earth, then rock, CLIFF_DEPTH down in all,
+        // darker the deeper (the mist under the map takes it from there:
+        // render/world_view.js).
+        function cliff(b, c, r) {
+            for (const side of SIDES) {
+                const F = FACES[side], nc = c + F.d[0], nr = r + F.d[1];
+                if (!terrainKit.inside(t, nc, nr) || terrainKit.kindAt(t, nc, nr) !== K.drop) continue;
+                for (let d = 0; d < CLIFF_DEPTH; d++) {
+                    const hi = 1 - d * CLIFF_SHADE, lo = hi - CLIFF_SHADE;
+                    b.quad(F.at(c, -1 - d, r), F.n, tiles[d ? 'stone' : 'dirt'], tintOf(WHITE, c, -1 - d, r, 0.06), [lo, lo, hi, hi]);
+                }
+            }
+        }
+        // A fence on cell (c, r): a post, and two rails to each next cell
+        // that holds a fence or a block (drawn thinner than the cell it
+        // closes).
+        // Plain weathered wood, the post darker than the rails: the plank
+        // tile's boards and seams did not suit so thin a thing (user,
+        // 2026-10-04: the shape is right, the material was not).
+        function fence(b, c, r) {
+            const x = c + 0.5, z = r + 0.5;
+            const post = tintOf(colour.set(palette.fencePost).toArray(), c, 0, r, 0.1), rail = tintOf(colour.set(palette.fenceRail).toArray(), c, 1, r, 0.1);
+            smallBox(b, [x, 0.5, z], [0.24, 1, 0.24], 0, tiles.white, post);
+            for (const side of SIDES) {
+                const [dx, dz] = FACES[side].d;
+                if (!column(c + dx, r + dz)) continue;
+                for (const y of [0.4, 0.78]) smallBox(b, [x + dx * 0.31, y, z + dz * 0.31], dx ? [0.38, 0.14, 0.1] : [0.1, 0.14, 0.38], 0, tiles.white, rail);
+            }
         }
         // A tuft or a flower on grass cell (c, r): tiny boxes.
         function flower(b, c, r) {

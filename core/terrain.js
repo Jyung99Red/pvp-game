@@ -18,11 +18,18 @@ const terrainKit = (() => {
     // key (gameConfig.gather): the first two a boulder, the herb a plant
     // walked through. `water` is a pond: nothing stands in it, so it hides
     // nobody and a blow lands across it, but no body walks into it
-    // (`closedAt`; user, 2026-10-04).
-    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8, brush: 9, ore: 10, crystal: 11, herb: 12, water: 13 });
+    // (`closedAt`; user, 2026-10-04). `hedge` is a thick bush one block
+    // high: it stops bodies and blows as a low stone does and is seen over,
+    // a bush for the look of a place. `drop` is the air beyond a cliff's
+    // edge: like a pond no body goes there and nothing is hidden by it;
+    // the ground simply ends (the east edge of the field). `fence` is a
+    // wooden fence one block high: it stops bodies and blows and is seen
+    // over (user, 2026-10-04: the edges of a map are not all walls).
+    const KIND = Object.freeze({ grass: 0, path: 1, stone: 2, tree: 3, wood: 4, cobble: 5, gravel: 6, portal: 7, gate: 8, brush: 9, ore: 10, crystal: 11, herb: 12, water: 13, hedge: 14, drop: 15, fence: 16 });
     const NAMES = Object.freeze(Object.fromEntries(Object.entries(KIND).map(([name, k]) => [k, name])));
-    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate, KIND.brush, KIND.ore, KIND.crystal]);
-    const WET = new Set([KIND.water]);
+    const SOLID = new Set([KIND.stone, KIND.tree, KIND.wood, KIND.portal, KIND.gate, KIND.brush, KIND.ore, KIND.crystal, KIND.hedge, KIND.fence]);
+    // Ground no body stands on, though nothing stands there.
+    const BARRED = new Set([KIND.water, KIND.drop]);
     const RESOURCE = new Set([KIND.ore, KIND.crystal, KIND.herb]);
     const TREE_HEIGHT = 4, HOUSE_HEIGHT = 3, PORTAL_HEIGHT = 3, BRUSH_HEIGHT = 2;
     // Map letters that put a monster's home on a grass block.
@@ -42,10 +49,13 @@ const terrainKit = (() => {
         if (ch === '=') return [KIND.cobble, 0];
         if (ch === ';') return [KIND.gravel, 0];
         if (ch === '~') return [KIND.water, 0];
+        if (ch === '_') return [KIND.drop, 0];
+        if (ch === '+') return [KIND.fence, 1];
         if (ch === 'T') return [KIND.tree, TREE_HEIGHT];
         if (ch === 'H') return [KIND.wood, HOUSE_HEIGHT];
         if (ch === '#') return [KIND.portal, PORTAL_HEIGHT];
         if (ch === 'B') return [KIND.brush, BRUSH_HEIGHT];
+        if (ch === '*') return [KIND.hedge, 1];
         if (ch === 'O') return [KIND.ore, 1];
         if (ch === 'X') return [KIND.crystal, 1];
         if (ch === 'h') return [KIND.herb, 0];
@@ -54,9 +64,10 @@ const terrainKit = (() => {
     }
 
     // Rows run north (screen top) to south, one letter per cell:
-    // `.` grass, `:` path, `=` cobble, `;` gravel, `~` a pond, `1`-`9` stone wall of
+    // `.` grass, `:` path, `=` cobble, `;` gravel, `~` a pond, `_` the drop
+    // beyond a cliff, `+` a fence, `1`-`9` stone wall of
     // that many blocks, `T` tree, `H` a building's wall, `#` a portal's
-    // pillar, `P` a portal's opening, `B` a dry thicket, `O` iron ore, `X`
+    // pillar, `P` a portal's opening, `B` a dry thicket, `*` a hedge, `O` iron ore, `X`
     // crystal, `h` a herb, `C` a chest, `@` a
     // spawn, `D` the training dummy, and the monster letters (MONSTERS).
     // A portal's opening is solid: it is used from in front, not walked into.
@@ -100,9 +111,9 @@ const terrainKit = (() => {
     // Outside the map counts as wall.
     function solidAt(t, c, r) { return !inside(t, c, r) || SOLID.has(chunkAt(t, c, r).kind[slot(c, r)]); }
     const isSolid = kind => SOLID.has(kind);
-    // Ground a body can stand on: not a block, not a pond.
-    const isOpen = kind => !SOLID.has(kind) && !WET.has(kind);
-    // Is cell (c, r) closed to bodies? A block, a pond, or off the map.
+    // Ground a body can stand on: not a block, a pond or the drop off a cliff.
+    const isOpen = kind => !SOLID.has(kind) && !BARRED.has(kind);
+    // Is cell (c, r) closed to bodies? A block, a pond, a drop, or off the map.
     function closedAt(t, c, r) { return !inside(t, c, r) || !isOpen(chunkAt(t, c, r).kind[slot(c, r)]); }
     const isResource = kind => RESOURCE.has(kind);
     // What the map drew at a cell, before any change: [kind, level].

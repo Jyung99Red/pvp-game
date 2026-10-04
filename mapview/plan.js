@@ -12,13 +12,14 @@
 // - describe / refOf: what a cell holds, and the words to point at it by.
 // - measure: straight distance and the walk between two cells.
 // - screen: the ground a landscape phone shows round a fighter.
+// - world: every map on one sheet, set out by where its portals lead.
 const mapPlan = (() => {
     const U = () => gameConfig.world.unitsPerBlock;
     // Kinds by their terrainKit.KIND name. One not listed here (a kind added
     // later) goes by its own name.
     const KIND_NAMES = Object.freeze({
         grass: '草地', path: '土路', cobble: '石板地', gravel: '碎石地', stone: '石墙', tree: '树', wood: '建筑墙',
-        portal: '传送门柱', gate: '传送门', brush: '枯木丛', ore: '铁矿', crystal: '晶石', herb: '草药', water: '水潭'
+        portal: '传送门柱', gate: '传送门', brush: '枯木丛', ore: '铁矿', crystal: '晶石', herb: '草药', water: '水潭', hedge: '灌木', drop: '断崖外', fence: '木栅栏'
     });
     const kindName = kind => gameConfig.gather[kind]?.name || KIND_NAMES[kind] || String(kind);
     const bossName = kind => gameConfig.monsters[kind]?.name || kind;
@@ -240,5 +241,74 @@ const mapPlan = (() => {
         return { aspect, zoom, corners: [corner(-1, 1), corner(1, 1), corner(1, -1), corner(-1, -1)] };
     }
 
-    return { KIND_NAMES, PHONE, maps, build, planOf, cellAt, kindName, describe, refOf, measure, screen };
+    // ---- all the maps on one sheet ----
+    // Every map laid out by where its portals lead (the game has no such
+    // sheet: a map is a world of its own, and a portal loads another). The
+    // safe map (else the first) goes down first; then each map a portal
+    // leads to, on the side that portal goes out by -- a portal's `facing`
+    // is the side that leads into its own map, so the way through it leaves
+    // by the other -- with its portal back in line, `gap` blocks off, and
+    // slid on that way until it is clear of every map already down. Maps no
+    // portal leads to (the arena) stand in a row underneath.
+    // `maps`: [{ id, name, x, y, width, height, ... }], (x, y) its
+    // north-west corner on the sheet in blocks. `links`: one for each pair
+    // of portals, [{ a, b, requires, requiresName, straight }], an end being
+    // { id, col, row, x, y (the cell's centre on the sheet), out (the side
+    // the way through it leaves its map by) } and `b` null where no portal
+    // leads back; `straight` is whether the two ends go out by opposite
+    // sides (out by the east and in from the west) -- false where the way
+    // there and the way back do not agree about where the two maps lie.
+    // `maps`: other maps than gameConfig.maps (for tests).
+    const WORLD = Object.freeze({ gap: 4, margin: 2 });
+    const OPPOSITE = Object.freeze({ north: 'south', south: 'north', east: 'west', west: 'east' });
+    function world(maps = null) {
+        const all = maps || gameConfig.maps, known = new Map(), at = new Map(), D = propKit.DIRS;
+        // A map the loader cannot read is left off the sheet.
+        for (const id of Object.keys(all)) { try { known.set(id, maps ? build(id, all[id]) : planOf(id)); } catch (_) { /* not shown */ } }
+        const ids = [...known.keys()], backOf = (from, to) => known.get(to).portals.find(q => q.to === from) || null;
+        const clear = (id, x, y) => [...at].every(([other, o]) => {
+            const p = known.get(id), q = known.get(other), m = WORLD.margin;
+            return x >= o.x + q.width + m || o.x >= x + p.width + m || y >= o.y + q.height + m || o.y >= y + p.height + m;
+        });
+        const first = ids.find(id => known.get(id).safe) || ids[0], queue = [];
+        if (first) { at.set(first, { x: 0, y: 0 }); queue.push(first); }
+        while (queue.length) {
+            const a = queue.shift(), A = at.get(a);
+            for (const p of known.get(a).portals) {
+                if (!known.has(p.to) || at.has(p.to) || !OPPOSITE[p.facing]) continue;
+                const B = known.get(p.to), q = backOf(a, p.to), [dx, dy] = D[OPPOSITE[p.facing]];
+                let x = A.x + p.col + dx * WORLD.gap - (q ? q.col : Math.floor(B.width / 2)), y = A.y + p.row + dy * WORLD.gap - (q ? q.row : Math.floor(B.height / 2));
+                while (!clear(p.to, x, y)) { x += dx; y += dy; }
+                at.set(p.to, { x, y }); queue.push(p.to);
+            }
+        }
+        const edge = pick => [...at].map(([id, o]) => pick(o, known.get(id)));
+        let along = at.size ? Math.min(...edge(o => o.x)) : 0;
+        const under = at.size ? Math.max(...edge((o, p) => o.y + p.height)) + 3 * WORLD.margin : 0;
+        for (const id of ids) if (!at.has(id)) { at.set(id, { x: along, y: under }); along += known.get(id).width + 2 * WORLD.margin; }
+        const x0 = Math.min(0, ...edge(o => o.x)), y0 = Math.min(0, ...edge(o => o.y));
+        for (const o of at.values()) { o.x -= x0; o.y -= y0; }
+        const end = (id, p) => ({ id, col: p.col, row: p.row, x: at.get(id).x + p.col + 0.5, y: at.get(id).y + p.row + 0.5, out: OPPOSITE[p.facing] || null });
+        const links = [], seen = new Set();
+        for (const id of ids) for (const p of known.get(id).portals) {
+            if (!known.has(p.to)) continue;
+            const q = backOf(id, p.to), key = [`${id}:${p.col},${p.row}`, q ? `${p.to}:${q.col},${q.row}` : ''].sort().join('|');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const requires = p.requires || q?.requires || null;
+            links.push({ a: end(id, p), b: q ? end(p.to, q) : null, requires, requiresName: requires ? bossName(requires) : null, straight: !!q && OPPOSITE[p.facing] === q.facing });
+        }
+        return {
+            width: at.size ? Math.max(...edge((o, p) => o.x + p.width)) : 0, height: at.size ? Math.max(...edge((o, p) => o.y + p.height)) : 0,
+            maps: ids.map(id => { const p = known.get(id); return { id, name: p.name, ...at.get(id), width: p.width, height: p.height, safe: p.safe, training: p.training, duel: p.duel, dark: p.dark }; }),
+            links
+        };
+    }
+    // The map and the cell of it under point (x, y) of a world's sheet, or null.
+    function worldAt(sheet, x, y) {
+        const m = sheet.maps.find(m => x >= m.x && y >= m.y && x < m.x + m.width && y < m.y + m.height);
+        return m ? { id: m.id, col: Math.floor(x - m.x), row: Math.floor(y - m.y) } : null;
+    }
+
+    return { KIND_NAMES, PHONE, maps, build, planOf, cellAt, kindName, describe, refOf, measure, screen, world, worldAt };
 })();

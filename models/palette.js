@@ -41,6 +41,7 @@ const palette = Object.freeze({
     sunDawn: '#ffd9a8', skyDawn: '#e6e0f3', groundDawn: '#786048', skyDawnBack: '#e8d3c0',
     sunGrey: '#eef1f6', skyGrey: '#d2dbe8', groundGrey: '#625d59', skyGreyBack: '#b9c4cf',
     brush: '#8a6a3c', brushDark: '#4e3a20', water: '#4d8cbd', waterLight: '#8fc4e4', waterDeep: '#366f9d',
+    fencePost: '#5e4630', fenceRail: '#8a7052',
     // resources
     ore: '#c9824a', oreLight: '#e8a868', crystal: '#7fe3f0', crystalDeep: '#3aa6c8', herb: '#3f9a4a', herbLight: '#7acb62', berry: '#d8394a'
 });

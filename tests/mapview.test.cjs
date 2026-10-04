@@ -223,3 +223,57 @@ test('one screen: the ground a landscape phone shows reaches further north of th
     // A screen taller than wide stands the camera further off (the game's own fit).
     assert.ok(reach(middle(...P.screen(x, y, { aspect: 390 / 844 }).corners.slice(0, 2))) > far);
 });
+
+// ---- all the maps on one sheet ----
+test('the overview puts every map on one sheet, none on another, and ties their portals in pairs', () => {
+    const w = P.world(), ids = Object.keys(MAPS);
+    assert.deepEqual(plain(w.maps.map(m => m.id)), ids);
+    for (const a of w.maps) {
+        assert.ok(a.x >= 0 && a.y >= 0 && a.x + a.width <= w.width && a.y + a.height <= w.height, `${a.id} off the sheet`);
+        assert.deepEqual([a.width, a.height], [MAPS[a.id].rows[0].length, MAPS[a.id].rows.length]);
+        for (const b of w.maps) if (a !== b) assert.ok(a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height, `${a.id} lies on ${b.id}`);
+    }
+    // Every portal of every map is one end of exactly one link, and the ends are the portals' own cells.
+    const ends = w.links.flatMap(l => [l.a, l.b].filter(Boolean)), at = id => w.maps.find(m => m.id === id);
+    for (const id of ids) for (const p of MAPS[id].portals || []) {
+        const mine = ends.filter(e => e.id === id && e.col === p.at[0] && e.row === p.at[1]);
+        assert.equal(mine.length, 1, `${id} portal to ${p.to}`);
+        assert.equal(P.cellAt(id, mine[0].col, mine[0].row).kind, 'gate');
+        near(mine[0].x, at(id).x + p.at[0] + 0.5, 'its place on the sheet'); near(mine[0].y, at(id).y + p.at[1] + 0.5, 'its place on the sheet');
+    }
+    for (const l of w.links) assert.ok(l.b && MAPS[l.a.id].portals.some(p => p.to === l.b.id) && MAPS[l.b.id].portals.some(p => p.to === l.a.id), 'the game\'s portals come in pairs');
+    // A point of the sheet is a cell of the map lying there.
+    const f = at('field');
+    assert.deepEqual(plain(P.worldAt(w, f.x + 23.5, f.y + 5.5)), { id: 'field', col: 23, row: 5 });
+    assert.equal(P.worldAt(w, -1, -1), null);
+});
+
+test('the overview lays a map on the side its portal goes out by, in line with the portal back, and says when the two ends disagree', () => {
+    // A home with a gate in its north wall and one in its east wall; `up`
+    // has its gate back in its south wall, as it should; `side` has its
+    // gate back in its south wall too, though home's gate went out east;
+    // `lone` has none.
+    const maps = {
+        up: { name: '北边', rows: ['33333', '3.@.3', '3...3', '3#P#3'], portals: [{ at: [2, 3], to: 'home', facing: 'north' }] },
+        home: {
+            name: '家', safe: true, rows: ['33#P#33', '3.....3', '3..@..#', '3.....P', '3.....#', '3333333'],
+            portals: [{ at: [3, 0], to: 'up', facing: 'south', requires: 'goblinChief' }, { at: [6, 3], to: 'side', facing: 'west' }]
+        },
+        side: { name: '东边', rows: ['33333', '3.@.3', '3#P#3'], portals: [{ at: [2, 2], to: 'home', facing: 'north' }] },
+        lone: { name: '孤岛', rows: ['333', '3@3', '333'] }
+    };
+    const w = P.world(maps), at = id => w.maps.find(m => m.id === id), home = at('home'), up = at('up'), side = at('side'), lone = at('lone');
+    // The safe map first, the others round it.
+    assert.ok(up.y + up.height <= home.y && up.x + 2 === home.x + 3, 'north of home, gate over gate');
+    assert.ok(side.x >= home.x + home.width && side.y + 2 === home.y + 3, 'east of home, gate beside gate');
+    assert.ok(lone.y >= Math.max(home.y + home.height, side.y + side.height), 'what no portal leads to goes underneath');
+    assert.equal(Math.min(...w.maps.map(m => m.x)), 0); assert.equal(Math.min(...w.maps.map(m => m.y)), 0);
+    const link = (a, b) => w.links.find(l => [l.a.id, l.b?.id].sort().join() === [a, b].sort().join());
+    assert.equal(w.links.length, 2);
+    assert.deepEqual([link('home', 'up').straight, link('home', 'up').requires, link('home', 'up').requiresName], [true, 'goblinChief', MON.goblinChief.name]);
+    const crooked = link('home', 'side'), ends = Object.fromEntries([crooked.a, crooked.b].map(e => [e.id, e.out]));
+    assert.deepEqual([crooked.straight, crooked.requires, ends], [false, null, { home: 'east', side: 'south' }]);
+    // A portal with none back is a link with one end.
+    const oneWay = P.world({ ...maps, side: { ...maps.side, portals: [], rows: ['33333', '3.@.3', '33333'] } });
+    assert.deepEqual(plain(oneWay.links.filter(l => !l.b).map(l => [l.a.id, l.a.out, l.straight])), [['home', 'east', false]]);
+});

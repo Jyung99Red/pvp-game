@@ -47,6 +47,8 @@ small { color: var(--muted); font-weight: normal; font-size: 11px; }
 .map-board[data-tool="pan"] { cursor: grab; }
 .map-board[data-tool="pan"]:active { cursor: grabbing; }
 .map-over { position: absolute; left: 0; top: 0; pointer-events: none; }
+.map-world { width: max-content; padding: 8px; }
+.map-world canvas { display: block; cursor: pointer; }
 .map-error { margin: 24px; color: var(--bad); font-size: 14px; white-space: pre-wrap; }
 
 /* ---- the panel ---- */

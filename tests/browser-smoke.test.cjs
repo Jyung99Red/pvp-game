@@ -221,7 +221,7 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             };
         });
         assert.deepEqual({ ...start, calls: undefined }, {
-            map: 'base', monsters: 0, buildings: ['hotSpring', 'shop', 'smithy', 'storage'], calls: undefined, goal: '曙光据点 · 🪙 0', banner: '曙光据点', key: '交互', idle: true
+            map: 'base', monsters: 0, buildings: ['hotSpring', 'shop', 'smithy', 'storage'], calls: undefined, goal: '曙光村 · 🪙 0', banner: '曙光村', key: '交互', idle: true
         });
         assert.ok(start.calls > 0 && start.calls < 60, `${start.calls} draw calls: terrain is a mesh per chunk`);
         await shot(page, 'base');
@@ -410,7 +410,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         await page.evaluate(() => window.game.load('field'));
         await page.click('[data-menu]');
         await page.click('[data-menu-bag] [data-item="wooden_shield"]');
-        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-act="equip"]').disabled, document.querySelector('[data-menu-detail] .detail-note').textContent]), [true, '只能在据点里换装备']);
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-act="equip"]').disabled, document.querySelector('[data-menu-detail] .detail-note').textContent]), [true, '只能在曙光村里换装备']);
         // Real time for a few frames, then frozen again for the test.
         const ticks = () => page.evaluate(async () => {
             const g = window.game, t0 = g.sim.time, frame = () => new Promise(resolve => requestAnimationFrame(resolve));

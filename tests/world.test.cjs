@@ -90,6 +90,42 @@ test('a pond stops bodies and nothing else: it is seen across, a blow lands acro
     assert.throws(() => T.fromRows(['@~'], U, '~'), /floor must be ground/);
 });
 
+test('a hedge is a low block of leaves: it stops a body and a blow, and is seen over; with trees it closes a map as a wall does', () => {
+    const t = T.fromRows(['*T*T*', '*...*', 'T.@.*', '*.*.T', '*****']);
+    assert.deepEqual([T.NAMES[T.kindAt(t, 2, 3)], T.levelAt(t, 2, 3), T.isSolid(T.KIND.hedge)], ['hedge', 1, true]);
+    // The one in the middle of the south side: a body walking at it stops, a blow across it does not land, eyes pass over.
+    const body = { x: 2.5 * U, y: 2.5 * U, radius: 12 };
+    for (let i = 0; i < 100; i++) T.moveCircle(t, body, 0, 1);
+    assert.ok(Math.abs(body.y - (3 * U - 12)) < 1e-6, `stopped at ${body.y}`);
+    assert.equal(T.lineClear(t, 1.5 * U, 3.5 * U, 3.5 * U, 3.5 * U), false);
+    assert.equal(T.sightClear(t, 1.5 * U, 3.5 * U, 3.5 * U, 3.5 * U), true);
+    // A tree in the ring does hide.
+    assert.equal(T.sightClear(t, 2.5 * U, 2.5 * U, 0.5 * U, 2.5 * U), false);
+    // The ring is shut: nothing inside it is next to the open edge of the map.
+    for (let r = 1; r <= 3; r++) for (let c = 1; c <= 3; c++) if (!T.closedAt(t, c, r)) for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) assert.ok(T.inside(t, c + dc, r + dr));
+    for (let c = 0; c < 5; c++) assert.ok(T.closedAt(t, c, 0) && T.closedAt(t, c, 4) && T.closedAt(t, 0, c) && T.closedAt(t, 4, c));
+});
+
+test('the edges of a map need not be walls: the drop beyond a cliff stops bodies only, a fence stops bodies and blows and is seen over', () => {
+    // A yard with a fence on the south and a cliff on the east.
+    const t = T.fromRows(['33333__', '3...___', '3.@..__', '3...___', '3+++___']);
+    assert.deepEqual([[4, 2], [1, 4]].map(([c, r]) => [T.NAMES[T.kindAt(t, c, r)], T.levelAt(t, c, r)]), [['grass', 0], ['fence', 1]]);
+    assert.deepEqual([T.NAMES[T.kindAt(t, 5, 2)], T.levelAt(t, 5, 2), T.isSolid(T.KIND.drop), T.isOpen(T.KIND.drop), T.isSolid(T.KIND.fence)], ['drop', 0, false, false, true]);
+    // Walking east off the cliff: stopped at its edge. Sight and a blow pass over the drop.
+    const east = { x: 2.5 * U, y: 2.5 * U, radius: 12 };
+    for (let i = 0; i < 200; i++) T.moveCircle(t, east, 1, 0);
+    assert.ok(Math.abs(east.x - (5 * U - 12)) < 1e-6, `stopped at ${east.x}`);
+    assert.ok(T.closedAt(t, 5, 2) && !T.solidAt(t, 5, 2) && T.sightClear(t, 2.5 * U, 2.5 * U, 6.5 * U, 2.5 * U) && T.lineClear(t, 2.5 * U, 2.5 * U, 6.5 * U, 2.5 * U));
+    // Walking south at the fence: stopped; a blow across it does not land; eyes pass over.
+    const south = { x: 2.5 * U, y: 2.5 * U, radius: 12 };
+    for (let i = 0; i < 200; i++) T.moveCircle(t, south, 0, 1);
+    assert.ok(Math.abs(south.y - (4 * U - 12)) < 1e-6, `stopped at ${south.y}`);
+    assert.equal(T.lineClear(t, 2.5 * U, 3.5 * U, 2.5 * U, 4.9 * U), false);
+    assert.equal(T.sightClear(t, 2.5 * U, 3.5 * U, 2.5 * U, 4.9 * U), true);
+    // Neither is ground for a map's markers.
+    assert.throws(() => T.fromRows(['@_'], U, '_'), /floor must be ground/);
+});
+
 // ---- a way round walls ----
 // A room cut in two by a wall down column 6, with a gap one block wide at
 // the north end and one `south` blocks wide at the south end.
@@ -285,14 +321,14 @@ test('the interact key: the hot spring rests, a shop opens, a portal travels; th
     assert.equal(p.focus, 'xa', 'still held');
     a.x = p.x + gameConfig.interact.release + 4; step(sim, 0.01);
     assert.equal(p.focus, null);
-    // The north gate travels; the east gate waits on the goblin chief.
+    // The gate to the field travels; the gate to the valley, further along the north wall, waits on the goblin chief.
     sim.entities.splice(-2);
-    const north = sim.entities.find(e => e.id === 'p-field'), east = sim.entities.find(e => e.id === 'p-valley');
+    const north = sim.entities.find(e => e.id === 'p-field'), valley = sim.entities.find(e => e.id === 'p-valley');
     before(p, north, Math.PI / 2); step(sim, 0.02);
     assert.equal(p.focus, 'p-field');
     tap(sim, 'interact');
     assert.deepEqual(plain(events(sim, 'travel').map(e => [e.to, e.from])), [['field', 'base']]);
-    before(p, east, Math.PI); step(sim, 0.02);
+    before(p, valley, Math.PI / 2); step(sim, 0.02);
     const locked = interactKit.target(sim, p).offer;
     assert.ok(!locked.ready && /哥布林头目/.test(locked.why), JSON.stringify(locked));
     tap(sim, 'interact');
@@ -431,9 +467,9 @@ test('the goblin chief: a bigger goblin; down, it stays down, and the gate and c
     const again = W.create({ region: 'field', progress: save });
     assert.equal(again.monsters.some(m => m.boss), false, 'it does not come back');
     assert.equal(again.monsters.length, sim.terrain.monsters.length - 1);
-    const base = W.create({ region: 'base', progress: save }), east = base.entities.find(e => e.id === 'p-valley');
-    before(base.player, east, Math.PI); step(base, 0.02);
-    assert.equal(interactKit.target(base, base.player).offer.ready, true, 'the base\'s east gate opens too');
+    const base = W.create({ region: 'base', progress: save }), valley = base.entities.find(e => e.id === 'p-valley');
+    before(base.player, valley, Math.PI / 2); step(base, 0.02);
+    assert.equal(interactKit.target(base, base.player).offer.ready, true, 'the village\'s own gate to the valley opens too');
 });
 
 test('a monster that gives up the chase and gets home is whole again', () => {
@@ -472,12 +508,12 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     // Junk is dropped, and anything unreadable starts fresh. A version 1
     // save (M5, before gear) gets the starter gear.
     const junk = {
-        v: 1, bosses: { goblinChief: true, goblin: true, nobody: true }, chests: { 'field/chest-46-5': true, 'mars/x': true },
+        v: 1, bosses: { goblinChief: true, goblin: true, nobody: true }, chests: { 'field/chest-53-5': true, 'mars/x': true },
         inventory: { gold: -5, items: { goblin_ear: 2.5, wolf_pelt: 3, junk: 9, gold: 4, potion: 99 } },
         edits: { arena: [[1, 1, 'stone', 1]], field: [[1, 1, 'stone', 1], 'x', [1, 2, 'lava', 1]], mars: [[1, 1, 'stone', 1]] }
     };
     assert.deepEqual(plain(saveKit.clean(junk)), {
-        v: 2, bosses: { goblinChief: true }, chests: { 'field/chest-46-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
+        v: 2, bosses: { goblinChief: true }, chests: { 'field/chest-53-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
         loadout: WORN, edits: { field: [[1, 1, 'stone', 1]] }, clock: 0, gathered: {}
     });
     // Gear worn but not owned, or in the wrong slot, falls back to the starter piece; the main hand is never empty.

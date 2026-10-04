@@ -123,6 +123,9 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         };
     }
 
+    // The mist under a map with a cliff: sheets of the sky's colour, `step`
+    // blocks one under another.
+    const MIST = { layers: 4, step: 0.9, opacity: 0.42 };
     // ---- one world: scene, terrain, characters, effects ----
     function build(T, renderer, sim, camera, mapSize, selfId, tune) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
@@ -186,13 +189,52 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const t = sim.terrain;
         const ground = terrainMesh.create(T, scene, sim, tx);
         // The map's own floor goes on beyond the map edge (grass, or a
-        // cave's gravel), so the world does not end in sky. It lies just
-        // under the block tops, which cover it inside the map.
+        // cave's gravel), so the world does not end in sky: four sheets
+        // round the map, a tile to a block. Not under the map itself,
+        // where the terrain draws its own ground and a pond lies lower
+        // than it (user, 2026-10-04).
+        // Where the map's own edge is the drop beyond a cliff, no ground
+        // goes on beyond it either: each side's sheet is laid only along
+        // the stretches of that side that are not the drop (a corner
+        // going by the corner cell). Under a map with a cliff lie a few
+        // sheets of mist, the sky's colour, one under another: what is
+        // seen past the edge fades into them the deeper it lies.
         {
-            const span = 240, top = tx.ground(terrainMesh.floorOf(t));
-            top.repeat.set(span, span);
-            const skirt = new T.Mesh(new T.PlaneGeometry(span, span), lambert(null, top));
-            skirt.rotation.x = -Math.PI / 2; skirt.position.set(t.width / 2, -0.01, t.height / 2);
+            const span = 120, top = tx.ground(terrainMesh.floorOf(t)), w = t.width, h = t.height, y = -0.01;
+            const pos = [], uv = [], idx = [];
+            const sheet = (x0, z0, x1, z1) => {
+                const base = pos.length / 3;
+                pos.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z0);
+                uv.push(x0, -z1, x1, -z1, x1, -z0, x0, -z0);
+                idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+            };
+            const dropAt = (c, r) => terrainKit.kindAt(t, c, r) === terrainKit.KIND.drop;
+            // Stretches of cells 0..n-1 that are ground (`ground(i)`), as [from, to]; with `ends`, the first and the last go on `span` past the map.
+            const stretches = (n, ground, ends, lay) => {
+                for (let i = 0, from = -1; i <= n; i++) {
+                    const on = i < n && ground(i);
+                    if (on && from < 0) from = i;
+                    if (!on && from >= 0) { lay(ends && from === 0 ? -span : from, ends && i === n ? n + span : i); from = -1; }
+                }
+            };
+            stretches(w, c => !dropAt(c, 0), true, (x0, x1) => sheet(x0, -span, x1, 0));
+            stretches(w, c => !dropAt(c, h - 1), true, (x0, x1) => sheet(x0, h, x1, h + span));
+            stretches(h, r => !dropAt(0, r), false, (z0, z1) => sheet(-span, z0, 0, z1));
+            stretches(h, r => !dropAt(w - 1, r), false, (z0, z1) => sheet(w, z0, w + span, z1));
+            let cliffs = false;
+            for (let r = 0; r < h && !cliffs; r++) for (let c = 0; c < w; c++) if (dropAt(c, r)) { cliffs = true; break; }
+            if (cliffs) for (let k = 1; k <= MIST.layers; k++) {
+                const mist = new T.Mesh(new T.PlaneGeometry(w + 2 * span, h + 2 * span), new T.MeshBasicMaterial({ color: sky, transparent: true, opacity: MIST.opacity, depthWrite: false, fog: false }));
+                mist.rotation.x = -Math.PI / 2; mist.position.set(w / 2, -k * MIST.step, h / 2);
+                // The lowest first.
+                mist.renderOrder = -k;
+                scene.add(mist);
+            }
+            const sheets = new T.BufferGeometry();
+            sheets.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+            sheets.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+            sheets.setIndex(idx); sheets.computeVertexNormals();
+            const skirt = new T.Mesh(sheets, lambert(null, top));
             skirt.receiveShadow = true;
             scene.add(skirt);
         }

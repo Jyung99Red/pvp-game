@@ -20,6 +20,7 @@
                     </div>
                 </div>
             </div>
+            <div class="map-world" data-world hidden><canvas data-world-canvas></canvas></div>
             <p class="map-error" data-error hidden></p>
         </div>
     </section>
@@ -78,6 +79,7 @@
                 <li>怪物的<b>实线圈</b>是警戒范围（走进去会被发现；隔着挡视线的方块它看不见你），<b>虚线圈</b>是追击范围（怪离家超过这么远、你又出了警戒圈，它就回家）。</li>
                 <li>传送门旁的小圈是从那边过来时站的位置。</li>
                 <li>走路距离按格子算（可以斜走，不能擦着方块的角斜穿），实际会略短一点。</li>
+                <li><b>总览</b>把所有地图按传送门的方向摆在一张纸上（游戏里它们各自独立，靠传送门切换）：门从哪边出去，那张图就摆在哪边。连线是一对传送门，虚线是要先打倒首领的，粉色是两头方向对不上的。</li>
             </ul>
         </section>
     </aside>
