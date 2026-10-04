@@ -74,8 +74,12 @@ test('the dagger\'s cuts keep their shapes: tight arcs, a half-turn whirl, a str
 });
 
 test('the sword\'s cuts keep their sweeps; the A A A on the diagonal, the charged cut low and wide (user, 2026-10-03)', () => {
-    // Blade tip sweep, degrees.
-    const designed = { slash: 116, backslash: 104, smite: 170, follow: 90, charged: 222, thrust: 25 };
+    // Blade tip sweep, degrees. Slash, backslash, smite and follow as the
+    // user set their keys in the move tuner (2026-10-04): the slash from
+    // further back on the right, the backslash ending at the shoulder, not
+    // over the head; the smite ending further round to the left; the
+    // follow starting with the wrist turned, the blade out to the left.
+    const designed = { slash: 168, backslash: 143, smite: 185, follow: 127, charged: 222, thrust: 25 };
     for (const [move, arc] of Object.entries(designed)) {
         const a = tipAngles(move).map(x => x.angle), sweep = degrees(Math.max(...a) - Math.min(...a));
         assert.ok(Math.abs(sweep - arc) <= 15, `${move} sweeps ${sweep.toFixed(0)} degrees, designed ${arc}`);
@@ -83,10 +87,10 @@ test('the sword\'s cuts keep their sweeps; the A A A on the diagonal, the charge
     // Slash, smite and charged go right to left; backslash and follow left to right.
     for (const move of ['slash', 'smite', 'charged']) { const a = tipAngles(move); assert.ok(a.at(-1).angle > a[0].angle, `${move} goes right to left`); }
     for (const move of ['backslash', 'follow']) { const a = tipAngles(move); assert.ok(a.at(-1).angle < a[0].angle, `${move} goes left to right`); }
-    // The A A A: high right down to low left, back up, then down again from the blade raised back over the shoulder.
+    // The A A A: high right down to low left, back up to the right at shoulder height, then down again from the blade raised back over the shoulder.
     const slash = tipAngles('slash'), back = tipAngles('backslash'), smite = tipAngles('smite'), charged = tipAngles('charged');
     assert.ok(slash[0].angle < 0 && slash[0].height > 1.8 && slash.at(-1).angle > 0 && slash.at(-1).height < 0.8, 'slash: high right to low left');
-    assert.ok(back[0].angle > 0 && back[0].height < 0.8 && back.at(-1).angle < 0 && back.at(-1).height > 1.8, 'backslash: low left back to high right');
+    assert.ok(back[0].angle > 0 && back[0].height < 0.8 && back.at(-1).angle < 0 && back.at(-1).height > 1.4, 'backslash: low left back up to the right');
     assert.ok(smite[0].height > 1.8 && smite[0].ahead < 0 && smite[0].angle < 0 && smite.at(-1).angle > 0 && smite.at(-1).height < 0.8, 'smite: from the blade raised back over the right shoulder to low left');
     // The charged cut starts with the blade laid back and crosses the front low, like a scythe.
     assert.ok(charged[0].ahead < -1 && Math.abs(charged[0].angle) > 2, 'charged: the blade starts behind');

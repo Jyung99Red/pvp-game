@@ -13,15 +13,18 @@ const playerMoves = (() => {
     const moves = {
         // Diagonal, high right down to low left (user, 2026-10-03: the
         // A A A on the diagonal, the body turning less; in the windup the
-        // wrist turned so the blade leans out to the right and back).
+        // wrist turned so the blade leans out to the right and back). Both
+        // keys are the user's own numbers from the move tuner (2026-10-04),
+        // as are the backslash's, the smite's `b`, the thrust's `b`, the
+        // rising cut's `a` and the follow's keys below.
         slash: {
-            a: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.85, ry: -0.6 }, handR: { rx: 1.05, ry: -1.2 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
-            b: key({ chest: { ry: 0.3, rx: 0.12 }, upperArmR: { rx: -0.85, ry: 0.6 }, handR: { rx: 1.2 }, thighR: { rx: 0.35 }, shinR: { rx: 0.15 }, thighL: { rx: -0.4 }, shinL: { rx: 0.1 } })
+            a: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.88, ry: -0.63, rz: -0.41 }, handR: { rx: 0.84, ry: -1.2, rz: 2.27 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.35 }, shinL: { rx: 0.1 } }),
+            b: key({ chest: { ry: 0.33, rx: 0.25 }, upperArmR: { rx: -0.85, ry: 0.6 }, forearmR: { rz: 0.25 }, handR: { rx: 1.2 }, thighR: { rx: 0.35 }, shinR: { rx: 0.15 }, thighL: { rx: -0.4 }, shinL: { rx: 0.1 } })
         },
-        // Back up the same diagonal: low left to high right.
+        // Back up the same diagonal: low left to the right, at the shoulder.
         backslash: {
-            a: key({ chest: { ry: 0.3, rx: 0.12 }, upperArmR: { rx: -0.85, ry: 0.6 }, handR: { rx: 1.2 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
-            b: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.8, ry: -0.65 }, handR: { rx: 1.1 }, thighR: { rx: -0.35 }, shinR: { rx: 0.1 }, thighL: { rx: 0.35 }, shinL: { rx: 0.15 } })
+            a: key({ chest: { ry: 0.3, rx: 0.12 }, upperArmR: { rx: -0.85, ry: 0.6, rz: 0.1 }, forearmR: { rz: 0.3 }, handR: { rx: 1.2 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
+            b: key({ chest: { ry: -0.3, rx: -0.05 }, upperArmR: { rx: -1.5, rz: -0.3, ry: -0.65 }, handR: { rx: 1.3 }, thighR: { rx: -0.35 }, shinR: { rx: 0.1 }, thighL: { rx: 0.35 }, shinL: { rx: 0.15 } })
         },
         // The finisher, with weight: the upper arm level, out front to the right,
         // the forearm up and the blade leaning well back to the right from
@@ -29,16 +32,17 @@ const playerMoves = (() => {
         // on a short step (user, 2026-10-03).
         smite: {
             a: key({ chest: { ry: -0.4, rx: -0.1 }, upperArmR: { rx: -1.5, ry: -0.85 }, forearmR: { rx: -1.5 }, handR: { rx: 2.6, ry: 1.3 }, thighR: { rx: 0.2 }, shinR: { rx: 0.1 }, thighL: { rx: -0.2 }, shinL: { rx: 0.1 } }),
-            b: key({ pelvis: { py: -0.06 }, chest: { ry: 0.3, rx: 0.3 }, upperArmR: { rx: -0.85, ry: 0.65 }, handR: { rx: 1.0 }, thighR: { rx: 0.3 }, shinR: { rx: 0.2 }, thighL: { rx: -0.4 }, shinL: { rx: 0.15 } })
+            b: key({ pelvis: { py: -0.06 }, chest: { ry: 0.3, rx: 0.3 }, upperArmR: { rx: -0.85, ry: 0.65 }, handR: { rx: 0.772, rz: 0.2, ry: 0.467 }, thighR: { rx: 0.3 }, shinR: { rx: 0.2 }, thighL: { rx: -0.4 }, shinL: { rx: 0.15 } })
         },
         // Straight ahead.
         thrust: {
             a: key({ chest: { ry: -0.5, rx: -0.05 }, upperArmR: { rx: -0.35, ry: 0.35 }, forearmR: { rx: -1.3 }, handR: { rx: 1.5, ry: 0.3 }, upperArmL: { rx: -0.9, ry: 0.4 }, thighR: { rx: 0.5 }, shinR: { rx: 0.2 }, thighL: { rx: -0.25 }, shinL: { rx: 0.15 } }),
-            b: key({ chest: { ry: 0.25, rx: 0.15 }, upperArmR: { rx: -1.52, ry: 0.08 }, handR: { rx: 1.57 }, upperArmL: { rx: -0.2, ry: 0.3 }, thighR: { rx: 0.55 }, shinR: { rx: 0.2 }, thighL: { rx: -0.6 }, shinL: { rx: 0.3 } })
+            b: key({ chest: { ry: 0.25, rx: 0.28 }, upperArmR: { rx: -1.52, ry: 0.08 }, forearmR: { rx: -0.1 }, handR: { rx: 1.4 }, upperArmL: { rx: -0.2, ry: 0.3 }, thighR: { rx: 0.55 }, shinR: { rx: 0.2 }, thighL: { rx: -0.6 }, shinL: { rx: 0.3 } })
         },
         // Diagonal, low left to high right: picks up where the slash ended.
+        // It starts with the wrist turned over, the tip down at the ground.
         rising: {
-            a: key({ pelvis: { py: -0.08 }, chest: { rx: 0.25, ry: 0.45 }, upperArmR: { rx: -0.35, rz: 0.75 }, forearmR: { rx: -0.3 }, handR: { rx: 0.9 }, thighR: { rx: 0.45 }, shinR: { rx: 0.3 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
+            a: key({ pelvis: { py: -0.08 }, chest: { rx: 0.25, ry: 0.45 }, upperArmR: { rx: -0.8, rz: 0.8, ry: -0.5 }, forearmR: { rx: 0.3 }, handR: { rx: 1.2, ry: 2.9, rz: 1.35 }, thighR: { rx: 0.45 }, shinR: { rx: 0.3 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
             b: key({ chest: { rx: -0.2, ry: -0.35 }, upperArmR: { rx: -2.45, ry: -0.55 }, handR: { rx: 1.3 }, thighR: { rx: 0.3 }, shinR: { rx: 0.15 }, thighL: { rx: -0.5 }, shinL: { rx: 0.1 } })
         },
         // Diagonal, high right to low left: picks up where the backslash ended.
@@ -54,10 +58,11 @@ const playerMoves = (() => {
             a: key({ pelvis: { py: -0.1 }, chest: { ry: -0.6, rx: -0.05 }, upperArmR: { ry: 0.2, rz: -1.45 }, forearmR: { rz: -1.5 }, handR: { ry: 2.8 }, upperArmL: { rx: -0.9, ry: 0.8 }, thighR: { rx: 0.55 }, shinR: { rx: 0.3 }, thighL: { rx: -0.45 }, shinL: { rx: 0.2 } }),
             b: key({ pelvis: { py: -0.12 }, chest: { ry: 0.5, rx: 0.1 }, upperArmR: { rx: -1.25, ry: 0.8 }, handR: { rx: 1.2 }, upperArmL: { rx: -0.4, ry: 0.1 }, thighR: { rx: 0.6 }, shinR: { rx: 0.35 }, thighL: { rx: -0.65 }, shinL: { rx: 0.25 } })
         },
-        // After the charged cut: back left to right.
+        // After the charged cut: back left to right, the wrist turned at
+        // the start so the blade lies out to the left.
         follow: {
-            a: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.1, ry: 0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
-            b: key({ chest: { ry: -0.3 }, upperArmR: { rx: -1.1, ry: -0.5 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } })
+            a: key({ chest: { ry: 0.35 }, upperArmR: { rx: -1.1, ry: 0.5 }, handR: { rx: 0.942, ry: 1.9, rz: 1.5 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } }),
+            b: key({ chest: { ry: -0.3 }, upperArmR: { rx: -1.1, ry: -0.5, rz: -0.15 }, handR: { rx: 1.1 }, thighR: { rx: -0.3 }, shinR: { rx: 0.1 }, thighL: { rx: 0.3 }, shinL: { rx: 0.15 } })
         },
 
         // ---- the dagger (design.md 4.2): low, tight, quick ----
@@ -110,10 +115,11 @@ const playerMoves = (() => {
         shieldArm,
         // Shield up: the left forearm across the front, the board facing
         // forward; the sword arm drawn back. Upper body only: the legs are
-        // guardLegs / guardBend.
+        // guardLegs / guardBend. The left arm is the user's numbers from the
+        // move tuner (2026-10-04).
         guard: {
             chest: { ry: 0.12 },
-            upperArmL: { rx: -1.25, ry: -0.95, rz: 0.1 }, forearmL: { rx: -0.35 }, handL: { ry: -0.3 },
+            upperArmL: { rx: -1.25, ry: -0.4, rz: 0.1 }, forearmL: { rz: -0.8 }, handL: { ry: -0.3 },
             upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
         // Guarding with the weapon (no shield carried): the blade held
@@ -126,8 +132,10 @@ const playerMoves = (() => {
         // The legs under either guard (user, 2026-10-04): the knees a little
         // bent for a steady centre, the left foot ahead and the right behind,
         // both down. Standing, the legs are guardLegs; walking, the stride
-        // goes on with guardBend added, the knees kept bent.
-        guardLegs: { thighR: { rx: 0.55 }, shinR: { rx: 0.35 }, thighL: { rx: -0.55 }, shinL: { rx: 0.65 } },
+        // goes on with guardBend added, the knees kept bent. The right leg is
+        // the user's numbers from the move tuner: the knee well bent, the
+        // foot up on its toes (0.015 blocks short of the ground, not seen).
+        guardLegs: { thighR: { rx: 0.1 }, shinR: { rx: 1.12 }, thighL: { rx: -0.55 }, shinL: { rx: 0.65 } },
         guardBend: { thighR: { rx: -0.2 }, shinR: { rx: 0.4 }, thighL: { rx: -0.2 }, shinL: { rx: 0.4 } },
         // Drinking a potion: the flask up to the mouth, the head tipped
         // back. Upper body only: legs keep walking underneath.
@@ -139,8 +147,9 @@ const playerMoves = (() => {
         // Carrying a torch: held up and forward on the left.
         torch: { upperArmL: { rx: -0.55, ry: 0.15, rz: 0.1 }, forearmL: { rx: -1.05 } },
         // Interacting, the same for every interaction for now (user,
-        // 2026-10-04): the left hand a little forward. Left arm only.
-        reach: { upperArmL: { rx: -0.7, ry: 0.1, rz: 0.08 }, forearmL: { rx: -0.45 } },
+        // 2026-10-04): the left hand a little forward, the chest leaning in
+        // and turned a little to the right (the user's numbers, move tuner).
+        reach: { chest: { rx: 0.15, ry: -0.2 }, upperArmL: { rx: -0.7, ry: 0.1, rz: 0.08 }, forearmL: { rx: -0.45 } },
         // Struck: thrown back; added on top, faded by the stun.
         flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } },
         // Fallen: on the back, arms flung out.

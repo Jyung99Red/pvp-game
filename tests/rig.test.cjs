@@ -161,7 +161,10 @@ test('under a guard the knees bend (user, 2026-10-04): standing, the left foot a
     for (const offhand of [gameConfig.gear.starter.offhand, null]) {
         const loadout = { ...gameConfig.gear.starter, offhand }, body = guardBlend => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend, stun: 0, loadout });
         const up = R.solve(rig, playerAnim.pose(rig, body(1))), free = R.solve(rig, playerAnim.pose(rig, body(0)));
-        for (const i of feet) assert.ok(Math.abs(low(up, i)) < 0.01, `${offhand}: both feet on the ground`);
+        // Down to within 0.02 blocks, which is not seen: the right leg is the
+        // user's numbers from the move tuner (2026-10-04, "near enough"),
+        // and its toes are 0.015 up.
+        for (const i of feet) assert.ok(Math.abs(low(up, i)) < 0.02, `${offhand}: both feet on the ground (${low(up, i).toFixed(3)} blocks up)`);
         // The model faces +z: the left foot is ahead.
         assert.ok(up.parts[feet[1]][14] - up.parts[feet[0]][14] > 0.3, `${offhand}: the left foot ahead`);
         const drop = pelvisAt(free) - pelvisAt(up);

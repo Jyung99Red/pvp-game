@@ -124,7 +124,8 @@ test('a weapon\'s length decides its reach: the dagger must stand closer; the tw
     assert.equal(I.iron_sword.blade, I.wooden_sword.blade);
     for (const move of of('sword')) {
         assert.ok(lands(sword, move, 80), `${move}: at 80 the wooden sword lands`);
-        assert.ok(lands(iron, move, 80) && !lands(iron, move, 92), `${move}: the iron sword reaches as far`);
+        // No further than 96: the thrust, leaning in as the user tuned it (2026-10-04), lands at 92.
+        assert.ok(lands(iron, move, 80) && !lands(iron, move, 96), `${move}: the iron sword reaches as far`);
     }
     assert.ok(Math.abs(I.assassin_dagger.blade / I.wooden_sword.blade - 0.65) < 0.02, 'the dagger blade is about 65% of the sword');
 });
