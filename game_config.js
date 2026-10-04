@@ -29,7 +29,12 @@ const gameConfig = (() => {
         // to runSpeed over runRampSeconds (set apart from the walk, user
         // 2026-10-02: changing one leaves the other), and back down the same
         // way once the walk is broken (stick eased off or released, a wall).
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5 },
+        // sightAngle: the body sees only what lies within this of where it
+        // faces (75 degrees either side: the front 150), and not past
+        // blocks at least eye high; the rest of the ground is shaded and a
+        // monster or a rival there is not drawn (user, 2026-10-04: the same
+        // in the adventure and in a duel).
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -68,7 +73,8 @@ const gameConfig = (() => {
             charge: { threshold: 0.3, full: 2.3, moveMultiplier: 0.6, turnMultiplier: 0.65 },
             // The guard key: guarding is the defence, there is no dodge
             // (user, 2026-10-03). `startup` from press to up; only hits from
-            // within frontAngle of facing are blocked. What it guards with
+            // within frontAngle of facing are blocked (60 degrees either
+            // side: the front 120; user, 2026-10-04, it was 180). What it guards with
             // decides the rest: the shield when one is carried, else the
             // weapon, weaker (user: shield 120, weapon 80 against the old
             // shield's 100). blockMultiplier: the share of the damage a
@@ -76,7 +82,7 @@ const gameConfig = (() => {
             // guard bar; a hit within parryWindow of the guard coming up is a
             // perfect parry.
             guard: {
-                startup: 0.16, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 2,
+                startup: 0.16, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 3,
                 shield: { blockMultiplier: 0.2, blockCostScale: 2, parryWindow: 0.22 },
                 weapon: { blockMultiplier: 0.3, blockCostScale: 3, parryWindow: 0.15 }
             },
@@ -651,15 +657,21 @@ const gameConfig = (() => {
         // being ready to the fight. snapshotSeconds: host to guest state;
         // heartbeatSeconds: guest to host when it has nothing else to say;
         // timeoutSeconds: nothing heard for this long and the connection
-        // counts as lost. replaySeconds: how far past a snapshot the guest
+        // counts as lost. awaySeconds: how long a phone in the background
+        // is waited for, the fight held still (user, 2026-10-04).
+        // replaySeconds: how far past a snapshot the guest
         // predicts at most; latencySeconds: cap on its one-way estimate.
+        // steer: the share of the difference between the guest's time and
+        // a snapshot's that each snapshot takes out (small: the network's
+        // unevenness does not show in the moves); resyncSeconds: past this
+        // difference the guest's time jumps instead.
         // historyEvents: events the host keeps until the guest has them.
         // connectSeconds: how long finding the other phone may take.
         // weapons: the main hands each side may pick before a duel (user
         // 2026-10-02: one of each weapon type); the rest is gear.starter.
         pvp: {
-            countdown: 3, snapshotSeconds: 0.05, heartbeatSeconds: 0.25, timeoutSeconds: 5,
-            replaySeconds: 0.25, latencySeconds: 0.15, historyEvents: 128, connectSeconds: 12,
+            countdown: 3, snapshotSeconds: 0.05, heartbeatSeconds: 0.25, timeoutSeconds: 5, awaySeconds: 60,
+            replaySeconds: 0.25, latencySeconds: 0.15, steer: 0.1, resyncSeconds: 0.1, historyEvents: 128, connectSeconds: 12,
             weapons: ['wooden_sword', 'assassin_dagger']
         }
     });

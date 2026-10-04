@@ -12,7 +12,9 @@
 // player (`cut`): fragments in a cylinder round the line from the camera to
 // the player's chest, on the camera's side of the player along the ground,
 // are dropped in a dither pattern, so the player shows through a wall or a
-// roof in front, while walls behind stay whole.
+// roof in front, while walls behind stay whole. The hole opens only while
+// blocks do hide the player (`hides`): a wall beside them is in the
+// cylinder too, but hides nothing and stays whole (user, 2026-10-04).
 const terrainMesh = (() => {
     const AO = [0.5, 0.68, 0.84, 1];
     // Whole-number hash of a cell to [0, 1): the same world every time, and
@@ -107,34 +109,37 @@ const terrainMesh = (() => {
     function create(T, scene, sim, tx) {
         const t = sim.terrain, K = terrainKit.KIND, tiles = tx.tiles, colour = new T.Color();
         // The cut: centre (the player's chest) and eye (the camera), blocks.
-        const cut = { center: { value: new T.Vector3() }, eye: { value: new T.Vector3() }, radius: { value: 1.3 }, on: { value: 1 } };
+        // `on` is the switch (1, or 0 for none at all); `open` is how far
+        // the hole is open, 0..1: the view opens it only while blocks do
+        // hide the player (`hides`, below).
+        const cut = { center: { value: new T.Vector3() }, eye: { value: new T.Vector3() }, radius: { value: 1.3 }, on: { value: 1 }, open: { value: 0 } };
         const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
         // Hidden faces are left out, so the back faces three.js would cast
         // shadows with are often missing: cast with both sides.
         material.shadowSide = T.DoubleSide;
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open });
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
             shader.fragmentShader = shader.fragmentShader
                 .replace('#include <common>', `#include <common>
 varying vec3 vCutPos;
-uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn;
+uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
     ivec2 i = ivec2(mod(p, 4.0));
     return (m[i.x + i.y * 4] + 0.5) / 16.0;
 }`)
                 .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-if (cutOn > 0.5 && vCutPos.y > 0.05) {
+if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
     vec3 axis = normalize(cutEye - cutCenter);
     vec3 rel = vCutPos - cutCenter;
     float along = dot(rel, axis);
     // Only what stands on the camera's side of the player, on the ground plane.
     float ahead = dot(rel.xz, normalize(axis.xz));
     float fade = (1.0 - smoothstep(cutRadius * 0.55, cutRadius, length(rel - axis * along))) * smoothstep(0.1, 0.35, ahead);
-    if (fade * 0.85 > cutDither(gl_FragCoord.xy)) discard;
+    if (fade * 0.85 * cutOpen > cutDither(gl_FragCoord.xy)) discard;
 }`);
         };
         let deco = null, decoRev = -1;
@@ -149,6 +154,26 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
                 if (terrainKit.isSolid(k) && k !== K.gate && y < terrainKit.levelAt(t, c, r)) return true;
             }
             return deco.has(`${c},${y},${r}`);
+        }
+        // Does a block (the terrain's or decor) stand on the straight line
+        // from `from` to `to` ([x, y, z], blocks)? Sampled every fifth of a
+        // block, where the line runs lower than the highest block. Decor is
+        // looked up by number here: this runs every frame.
+        const decoKey = (c, y, r) => ((y + 8) * 2048 + c + 512) * 2048 + r + 512;
+        let decoKeys = new Set(), top = 0;
+        function hides(from, to) {
+            const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2], n = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.2));
+            for (let i = 1; i < n; i++) {
+                const y = from[1] + dy * i / n;
+                if (y >= top || y < 0) continue;
+                const c = Math.floor(from[0] + dx * i / n), r = Math.floor(from[2] + dz * i / n), level = Math.floor(y);
+                if (terrainKit.inside(t, c, r)) {
+                    const k = terrainKit.kindAt(t, c, r);
+                    if (terrainKit.isSolid(k) && k !== K.gate && level < terrainKit.levelAt(t, c, r)) return true;
+                }
+                if (decoKeys.has(decoKey(c, level, r))) return true;
+            }
+            return false;
         }
         const tintOf = (base, c, y, r, vary) => { const k = 1 - vary + hash(c, y, r) * vary * 1.6; return [base[0] * k, base[1] * k, base[2] * k]; };
         const WHITE = [1, 1, 1];
@@ -259,7 +284,12 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
         }
         // Rebuild every chunk whose revision moved (all of them the first time).
         function update() {
-            if (decoRev !== t.rev) { deco = decor(sim); fronts = facades(); decoRev = t.rev; }
+            if (decoRev !== t.rev) {
+                deco = decor(sim); fronts = facades(); decoRev = t.rev;
+                decoKeys = new Set(); top = 0;
+                for (const key of deco.keys()) { const [x, y, z] = key.split(',').map(Number); decoKeys.add(decoKey(x, y, z)); top = Math.max(top, y + 1); }
+                for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) top = Math.max(top, terrainKit.levelAt(t, c, r));
+            }
             let rebuilt = 0;
             t.chunks.forEach((chunk, i) => {
                 const have = chunks.get(i);
@@ -274,7 +304,7 @@ if (cutOn > 0.5 && vCutPos.y > 0.05) {
         }
         update();
         return {
-            cut, material, update,
+            cut, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const { mesh: m } of chunks.values()) { scene.remove(m); m.geometry.dispose(); }

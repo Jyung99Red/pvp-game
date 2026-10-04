@@ -10,6 +10,10 @@ const worldView = (() => {
     // the torch's intensity. A torch lights `reach` blocks round it.
     const LIGHT = { day: { sky: 1.9, sun: 2.7, fog: [8, 26], torch: 3 }, dark: { sky: 0.05, sun: 0.03, fog: [1, 9], torch: 9 } };
     const TORCH = { reach: 7, decay: 1.2 };
+    // How soft the edge of the sun's shadows is, blocks: the reach of the
+    // shadow filter, the same on a small shadow map as on a large one
+    // (user, 2026-10-04: soft, like the shade of sight).
+    const SUN_SOFT = 0.1;
     // In a dark region a little daylight comes in by each portal: a soft
     // light `inside` blocks in from it, so the dark does not shut at the
     // doorway (user, 2026-10-03).
@@ -48,7 +52,7 @@ const worldView = (() => {
 
         function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
-            world = build(T, next, camera, mapSize, selfId, tune);
+            world = build(T, renderer, next, camera, mapSize, selfId, tune);
         }
         load(sim, opts);
         // `bodies`: fighters and monsters as shown, by id -- a blend between
@@ -84,14 +88,14 @@ const worldView = (() => {
             get playerRig() { return world.playerRig; },
             // The terrain's chunk meshes and the camera cut (render/terrain_mesh.js).
             get ground() { return world.ground; },
-            // Was fighter `id` drawn last frame? (In a duel the rival behind
-            // a wall is not.)
+            // Was body `id` (a fighter, a monster, the dummy) drawn last
+            // frame? What the player's fighter does not see is not.
             seen: id => world.seen.has(id)
         };
     }
 
     // ---- one world: scene, terrain, characters, effects ----
-    function build(T, sim, camera, mapSize, selfId, tune) {
+    function build(T, renderer, sim, camera, mapSize, selfId, tune) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
         // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
@@ -130,6 +134,7 @@ const worldView = (() => {
         const lightRight = new T.Vector3().crossVectors(new T.Vector3(...UP), lightDir).normalize();
         const lightUp = new T.Vector3().crossVectors(lightDir, lightRight);
         const texel = 2 * extent / mapSize, focus = new T.Vector3();
+        sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
         function placeSun(x, y, z) {
             focus.set(x, y, z);
             const u = Math.round(focus.dot(lightRight) / texel) * texel, v = Math.round(focus.dot(lightUp) / texel) * texel, w = focus.dot(lightDir);
@@ -354,8 +359,9 @@ const worldView = (() => {
             return warnShapes.get(key);
         }
         const warnMaterial = () => new T.MeshBasicMaterial({ color: '#ff2a1a', transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-        function warn(entry, m) {
-            const S = C.monsters[m.kind], mv = S.moves[m.move], active = m.phase === 'windup' || m.phase === 'swing';
+        // (A monster out of sight shows no warning either.)
+        function warn(entry, m, visible) {
+            const S = C.monsters[m.kind], mv = S.moves[m.move], active = visible && (m.phase === 'windup' || m.phase === 'swing');
             if (!active) { if (entry.warning) entry.warning.visible = false; return; }
             if (!entry.warning) { entry.warning = new T.Mesh(warnGeometry(m.kind, m.move), warnMaterial()); entry.warning.renderOrder = 1; scene.add(entry.warning); }
             const w = entry.warning;
@@ -368,42 +374,118 @@ const worldView = (() => {
             } else w.material.opacity = 0.44 * (1 - Math.min(1, m.t / mv.swing));
         }
 
-        // ---- a duel: ground this fighter cannot see is shaded, as far as
-        // `SHADE_FAR` blocks; walls at least eye high cast it ----
-        const SHADE_RAYS = 240, SHADE_FAR = 30;
-        const shade = sim.duel ? (() => {
-            const geo = new T.BufferGeometry(), pos = new Float32Array(SHADE_RAYS * 18);
-            geo.setAttribute('position', new T.BufferAttribute(pos, 3));
-            const mesh = new T.Mesh(geo, new T.MeshBasicMaterial({ color: '#05070d', transparent: true, opacity: 0.55, depthWrite: false, side: T.DoubleSide }));
-            mesh.frustumCulled = false; mesh.renderOrder = 1;
+        // ---- sight: ground this fighter cannot see is shaded, out to
+        // `SHADE_FAR` blocks; walls at least eye high cast it, and so does
+        // everything outside the front arc it sees (player.sightAngle).
+        // The same in the adventure and in a duel (user, 2026-10-04). The
+        // edge of sight comes exact from the terrain (terrainKit.sightFan:
+        // rays past every wall corner), so it slides evenly as the fighter
+        // walks; an even spread of rays stepped along left the edge jumping
+        // from one ray to the next. Sight is worked out as far as
+        // `SIGHT_FAR` blocks, which is past the screen's edge.
+        //
+        // The shade's edge is soft (user, 2026-10-04; drawing only, what is
+        // seen is decided as before): the fan is drawn from straight above
+        // into a small texture, `MASK` texels across the `2 * SIGHT_FAR`
+        // blocks round the fighter, blurred along and then across, and
+        // that texture is the opacity of one dark sheet over the ground. ----
+        const SHADE_FAR = 30, SIGHT_FAR = 20, SHADE_Y = 0.02, MASK = 256, BLUR = 1.1;
+        const shade = (() => {
+            const geo = new T.BufferGeometry();
+            let pos = null;
+            // The fan, white on black, seen from above with north up.
+            const fanMesh = new T.Mesh(geo, new T.MeshBasicMaterial({ color: '#ffffff', side: T.DoubleSide, fog: false }));
+            fanMesh.frustumCulled = false;
+            const above = new T.Scene(), eye = new T.OrthographicCamera(-SIGHT_FAR, SIGHT_FAR, SIGHT_FAR, -SIGHT_FAR, 0, 10);
+            above.background = new T.Color('#000000'); above.add(fanMesh);
+            eye.up.set(0, 0, -1); eye.position.set(0, 5, 0); eye.lookAt(0, 0, 0);
+            const target = samples => new T.WebGLRenderTarget(MASK, MASK, { depthBuffer: false, samples });
+            const drawnMask = target(4), blurred = [target(0), target(0)];
+            // A nine-texel bell curve in five taps; `along` is one texel's step.
+            const blur = new T.ShaderMaterial({
+                uniforms: { map: { value: null }, along: { value: new T.Vector2() } }, depthTest: false, depthWrite: false,
+                vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+                fragmentShader: `uniform sampler2D map; uniform vec2 along; varying vec2 vUv;
+void main() {
+    float a = texture2D(map, vUv).g * 0.227027
+        + (texture2D(map, vUv + along * 1.384615).g + texture2D(map, vUv - along * 1.384615).g) * 0.316216
+        + (texture2D(map, vUv + along * 3.230769).g + texture2D(map, vUv - along * 3.230769).g) * 0.070270;
+    gl_FragColor = vec4(a, a, a, 1.0);
+}`
+            });
+            const pass = new T.Scene(), flat = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), full = new T.Mesh(new T.PlaneGeometry(2, 2), blur);
+            full.frustumCulled = false; pass.add(full);
+            function soften() {
+                const steps = [[drawnMask, eye, above, null], [blurred[0], flat, pass, [BLUR / MASK, 0, drawnMask]], [blurred[1], flat, pass, [0, BLUR / MASK, blurred[0]]]];
+                for (const [to, cam, what, from] of steps) {
+                    if (from) { blur.uniforms.along.value.set(from[0], from[1]); blur.uniforms.map.value = from[2].texture; }
+                    renderer.setRenderTarget(to); renderer.render(what, cam);
+                }
+                renderer.setRenderTarget(null);
+            }
+            // The dark sheet: as far as SHADE_FAR; past the texture it takes
+            // the texture's edge, which is past sight and so all shade. Drawn
+            // over the ground it lies on, whatever the depth buffer's precision.
+            const mask = blurred[1].texture, k = SHADE_FAR / SIGHT_FAR;
+            mask.repeat.set(k, k); mask.offset.set(0.5 - k / 2, 0.5 - k / 2);
+            const mesh = new T.Mesh(new T.PlaneGeometry(2 * SHADE_FAR, 2 * SHADE_FAR), new T.MeshBasicMaterial({ color: '#05070d', alphaMap: mask, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+            mesh.rotation.x = -Math.PI / 2; mesh.frustumCulled = false; mesh.renderOrder = 1;
             scene.add(mesh);
-            const t = sim.terrain, reach = [];
-            // As terrainKit.sightClear: blocks at least eye high, and the world's edge.
-            const blocks = (c, r) => terrainKit.solidAt(t, c, r) && (terrainKit.levelAt(t, c, r) >= 2 || c < 0 || r < 0 || c >= t.width || r >= t.height);
-            let lastX = NaN, lastZ = NaN;
-            // Recast only when the fighter has moved.
-            return (x, z) => {
-                if (Math.abs(x - lastX) < 0.01 && Math.abs(z - lastZ) < 0.01) return;
-                lastX = x; lastZ = z;
-                for (let i = 0; i < SHADE_RAYS; i++) {
-                    const a = i / SHADE_RAYS * Math.PI * 2, dx = Math.cos(a), dz = Math.sin(a);
-                    let d = 0;
-                    while (d < SHADE_FAR && !blocks(Math.floor(x + dx * d), Math.floor(z + dz * d))) d += 0.125;
-                    reach[i] = Math.min(d, SHADE_FAR);
+            const fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
+            let lastX = NaN, lastZ = NaN, lastFacing = NaN, lastRev = -1;
+            function dispose() {
+                geo.dispose(); fanMesh.material.dispose(); blur.dispose(); full.geometry.dispose();
+                for (const target of [drawnMask, ...blurred]) target.dispose();
+            }
+            // Recast only when the fighter has moved or turned (or the terrain changed).
+            function update(x, z, facing) {
+                if (x === lastX && z === lastZ && facing === lastFacing && lastRev === t.rev) return;
+                lastX = x; lastZ = z; lastFacing = facing; lastRev = t.rev;
+                terrainKit.sightFan(t, x * U, z * U, SIGHT_FAR * U, { facing, half: C.player.sightAngle, out: fan });
+                const n = fan.n;
+                if (!pos || pos.length < fan.angle.length * 18) {
+                    geo.dispose();
+                    pos = new Float32Array(fan.angle.length * 18);
+                    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
                 }
-                for (let i = 0; i < SHADE_RAYS; i++) {
-                    const j = (i + 1) % SHADE_RAYS, a0 = i / SHADE_RAYS * Math.PI * 2, a1 = j / SHADE_RAYS * Math.PI * 2;
-                    const p = (d, a) => [x + Math.cos(a) * d, 0.02, z + Math.sin(a) * d];
-                    pos.set([...p(reach[i], a0), ...p(SHADE_FAR, a0), ...p(SHADE_FAR, a1), ...p(reach[i], a0), ...p(SHADE_FAR, a1), ...p(reach[j], a1)], i * 18);
+                // Between each ray and the next: from where sight ends out to the far edge.
+                for (let i = 0, o = 0; i < n; i++) {
+                    const j = (i + 1) % n, c0 = Math.cos(fan.angle[i]), s0 = Math.sin(fan.angle[i]), c1 = Math.cos(fan.angle[j]), s1 = Math.sin(fan.angle[j]);
+                    const d0 = fan.reach[i] / U, d1 = fan.reach[j] / U;
+                    const nx0 = x + c0 * d0, nz0 = z + s0 * d0, fx0 = x + c0 * SHADE_FAR, fz0 = z + s0 * SHADE_FAR;
+                    const nx1 = x + c1 * d1, nz1 = z + s1 * d1, fx1 = x + c1 * SHADE_FAR, fz1 = z + s1 * SHADE_FAR;
+                    pos[o++] = nx0; pos[o++] = SHADE_Y; pos[o++] = nz0; pos[o++] = fx0; pos[o++] = SHADE_Y; pos[o++] = fz0; pos[o++] = fx1; pos[o++] = SHADE_Y; pos[o++] = fz1;
+                    pos[o++] = nx0; pos[o++] = SHADE_Y; pos[o++] = nz0; pos[o++] = fx1; pos[o++] = SHADE_Y; pos[o++] = fz1; pos[o++] = nx1; pos[o++] = SHADE_Y; pos[o++] = nz1;
                 }
+                geo.setDrawRange(0, n * 6);
                 geo.attributes.position.needsUpdate = true;
-            };
-        })() : null;
+                eye.position.set(x, 5, z); mesh.position.set(x, SHADE_Y, z);
+                soften();
+            }
+            return { update, dispose };
+        })();
 
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let clock = 0;
         const seen = new Set();
 
+        // Do blocks hide the fighter standing at `at` from the camera? The
+        // lines from the camera to a few points of the body ([across, up],
+        // blocks; inside the body's width, so a wall the fighter leans on
+        // sideways is not in the way) are tried against the terrain.
+        const BODY = [[0, 0.3], [0, 1], [0, 1.7], [-0.22, 0.6], [0.22, 0.6], [-0.22, 1.4], [0.22, 1.4]];
+        // How fast the cut opens and shuts, per second.
+        const CUT_RATE = 10;
+        const eyeAt = [0, 0, 0], bodyAt = [0, 0, 0], across = new T.Vector3();
+        let cutSet = false;
+        function hidden(at) {
+            camera.position.toArray(eyeAt);
+            across.set(1, 0, 0).applyQuaternion(camera.quaternion);
+            return BODY.some(([side, up]) => {
+                bodyAt[0] = at[0] + across.x * side; bodyAt[1] = at[1] + up; bodyAt[2] = at[2] + across.z * side;
+                return ground.hides(eyeAt, bodyAt);
+            });
+        }
         function placeCamera(x, y, z) {
             const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(cam.pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
@@ -415,14 +497,16 @@ const worldView = (() => {
             clock += frameSeconds;
             const shownOf = body => bodies?.get(body.id) || body;
             const me = shownOf(current.fighters.find(f => f.id === selfId) || current.fighters[0]);
-            // In a duel the rival is drawn only while this fighter can see it.
+            // What this fighter does not see is not drawn: a rival, a
+            // monster or the dummy behind its back or behind a wall.
+            const inSight = body => combatKit.sees(current.terrain, me, body);
             seen.clear();
             const drawn = [];
             for (const f of current.fighters) {
                 const entry = fighters.get(f.id);
                 if (!entry) continue;
                 const p = shownOf(f);
-                const visible = f.id === selfId || !current.duel || terrainKit.sightClear(current.terrain, me.x, me.y, p.x, p.y);
+                const visible = f.id === selfId || inSight(p);
                 entry.view.show(visible);
                 if (!visible) continue;
                 seen.add(f.id);
@@ -447,7 +531,11 @@ const worldView = (() => {
                 torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
             } else torchLight.intensity = 0;
             const foes = [];
-            if (dummyView && current.dummy) { dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
+            if (dummyView && current.dummy) {
+                const visible = inSight(current.dummy);
+                dummyView.show(visible);
+                if (visible) { seen.add(current.dummy.id); dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
+            }
             const focus = space.toBlocks(me.x, me.y, me.h);
             for (const m of current.monsters) {
                 const entry = monsters.get(m.id);
@@ -455,26 +543,32 @@ const worldView = (() => {
                 const shown = shownOf(m), rig = current.rigs.monsters[m.kind], root = space.toBlocks(shown.x, shown.y, shown.h);
                 // A fallen monster lies a while, then sinks into the ground.
                 const sink = m.phase === 'dead' ? Math.max(0, m.t - C.monsters.corpseSeconds) * 0.5 : 0;
-                const near = Math.hypot(root[0] - focus[0], root[2] - focus[2]) < FAR;
-                entry.view.show(sink < 1.2 && near);
-                if (sink < 1.2 && near) {
+                const near = Math.hypot(root[0] - focus[0], root[2] - focus[2]) < FAR, visible = sink < 1.2 && near && inSight(shown);
+                entry.view.show(visible);
+                if (visible) {
+                    seen.add(m.id);
                     root[1] -= sink;
                     entry.view.place(rigKit.solve(rig, monsterKit.pose(rig, shown), root, space.yawOf(shown.facing)));
+                    foes.push({ body: m, view: entry.view, top: monsterKit.height(m.kind) + 0.25, shown });
                 }
-                warn(entry, m);
-                if (near) foes.push({ body: m, view: entry.view, top: monsterKit.height(m.kind) + 0.25, shown });
+                warn(entry, m, visible);
             }
             props(current, focus);
             ground.update();
             effects.onEvents(events, selfId);
             effects.update(frameSeconds, current, { selfId, fighters: drawn, foes });
             const at = space.toBlocks(me.x, me.y, me.h);
-            if (shade) shade(at[0], at[2]);
+            shade.update(at[0], at[2], me.facing);
             placeCamera(at[0], at[1], at[2]);
             placeSun(at[0], at[1], at[2]);
-            // Cut the blocks between the camera and this fighter's chest.
+            // Cut the blocks between the camera and this fighter's chest,
+            // while some do hide the fighter; the hole eases open and shut.
             ground.cut.center.value.set(at[0], at[1] + 1, at[2]);
             ground.cut.eye.value.copy(camera.position);
+            // (A world's first frame shows it as it is, with no easing.)
+            const open = hidden(at) ? 1 : 0;
+            ground.cut.open.value = cutSet ? ground.cut.open.value + (open - ground.cut.open.value) * Math.min(1, frameSeconds * CUT_RATE) : open;
+            cutSet = true;
         }
         function dispose() {
             const seen = new Set();
@@ -486,7 +580,7 @@ const worldView = (() => {
             });
             for (const g of warnShapes.values()) once(g, () => g.dispose());
             for (const texture of Object.values(tx)) if (texture?.isTexture) once(texture, () => texture.dispose());
-            ground.dispose();
+            ground.dispose(); shade.dispose();
             // The shadow map is the light's own render target.
             sun.dispose();
         }

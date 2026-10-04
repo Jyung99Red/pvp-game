@@ -10,13 +10,29 @@
 // Each side picks its weapon before connecting (one of pvp.weapons; the
 // rest of the gear is the starter's) and names it in its hello.
 //
+// The guest's time (user, 2026-10-04: its moves drew unevenly): the guest
+// plays a little ahead of the snapshots, by the way there and back, so a
+// control given now reaches the host as the host's clock gets to where
+// this phone's already is, and the host's answer shows the move where the
+// guest had already drawn it. That time runs on evenly with the frames; a
+// snapshot coming early or late only steers it a little (pvp.steer), so
+// the network's unevenness does not show in the moves.
+//
+// A phone in the background (user, 2026-10-04) says `away`; the host holds
+// the fight still (phase `hold`) until both are back, then counts down
+// again. Whoever waits gives up after pvp.awaySeconds.
+//
 // Messages: hello { protocol, rules, weapon } both ways on connect; host start
-// { battle }; guest ready; host snap { serial, ack, countdown, state,
-// events } every pvp.snapshotSeconds; guest input { seq, cmd }; either way
-// beat (nothing else to say), surrender, rematch, abort (the match is off),
-// leave (the room is closed). Everything after hello names its battle.
+// { battle }; guest ready; host snap { serial, ack, stamp, wait, hold,
+// aways, countdown, state, events } every pvp.snapshotSeconds; guest input
+// { seq, cmd }; either way beat (nothing else to say), away { n } and back,
+// surrender, rematch, abort (the match is off), leave (the room is
+// closed). Everything after hello names its battle. The guest numbers its
+// inputs and beats (`stamp`); a snapshot names the last one the host has
+// had and how long ago (`wait`), which times the way there and back.
+// `aways` is the guest's last `away` the host has had.
 const duelKit = (() => {
-    const PROTOCOL = 4;
+    const PROTOCOL = 5;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -103,17 +119,26 @@ const duelKit = (() => {
     // channel closed) | 'aborted' | 'left' | 'closed' (this phone left): the
     // duel is over for good.
     // phase: hello -> starting -> countdown -> fight -> over (-> starting
-    // again on a rematch) | ended.
+    // again on a rematch) | ended; countdown and fight give way to hold
+    // while a phone is away, and a countdown follows it.
     function create({ role, send, now, on = {}, weapon = P().weapons[0] }) {
         if (role !== 'host' && role !== 'guest') throw new Error(`Unknown duel role ${role}`);
         loadoutFor(weapon);
         const host = role === 'host', self = host ? 0 : 1, other = 1 - self;
         let phase = 'hello', battle = null, sim = null, countdown = 0, peerOk = false, endReason = null, peerWeapon = null;
         let lastHeard = now(), lastSent = -Infinity, wantRematch = false, peerRematch = false;
-        // host
-        let receivedSeq = 0, eventId = 0, history = [], lastSnap = -Infinity, serial = 0;
-        // guest
-        let inputSeq = 0, pending = [], applied = -1, seenEvent = 0, latency = 0.03, snapAt = 0, snapCountdown = 0;
+        // either phone in the background, and since when the other one is
+        let selfAway = false, peerAway = false, awaySince = 0;
+        // host: the guest's last stamp and when it came; `peerAways` the
+        // guest's last `away` it has had
+        let receivedSeq = 0, eventId = 0, history = [], lastSnap = -Infinity, serial = 0, stampSeen = 0, stampAt = 0, peerAways = 0;
+        // guest: `latency` one way, from `timed` samples (`stamps`: when
+        // each numbered message left); `frameAt` when the last frame ran;
+        // `synced` once its time follows the snapshots; `held` while the
+        // host holds the fight (`aways` counts this phone's own times away)
+        let inputSeq = 0, pending = [], applied = -1, seenEvent = 0, latency = 0.03, timed = 0, snapAt = 0, snapCountdown = 0;
+        let frameAt = now(), synced = false, held = false, aways = 0, stamp = 0;
+        const stamps = new Map();
         // drawing: positions before the last live step, and snapshot
         // corrections still being eased out (guest)
         let before = new Map(), offsets = new Map();
@@ -126,10 +151,25 @@ const duelKit = (() => {
             take(worldSim.drain(sim));
         });
         const ids = () => sim.fighters.map(f => f.id);
-        function remember() { before = new Map(sim.fighters.map(f => [f.id, { x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend }])); }
+        // What drawing blends from (ui/app.js): each fighter before the last step.
+        function remember() {
+            before = new Map(sim.fighters.map(f => [f.id, {
+                x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend, guardBlend: f.guardBlend,
+                act: f.act ? { move: f.act.move, phase: f.act.phase, t: f.act.t } : null
+            }]));
+        }
+        // Where a fighter is drawn before any correction: between the last two steps.
+        function drawn(f) {
+            const b = before.get(f.id), a = loop.alpha();
+            return b ? { x: b.x + (f.x - b.x) * a, y: b.y + (f.y - b.y) * a, facing: space.lerpAngle(b.facing, f.facing, a) } : { x: f.x, y: f.y, facing: f.facing };
+        }
+        // How far past a snapshot the guest plays: the way there and back,
+        // and half a step (a control takes at the step after it is given).
+        const lead = () => Math.min(P().replaySeconds, 2 * latency + STEP / 2);
 
         function post(message) {
             lastSent = now();
+            if (!host && battle && (message.t === 'input' || message.t === 'beat')) { message = { ...message, stamp: ++stamp }; stamps.set(stamp, lastSent); }
             send(battle && !['hello'].includes(message.t) ? { battle, ...message } : message);
         }
         // Events as they happen: the host numbers them for the guest; the
@@ -156,8 +196,9 @@ const duelKit = (() => {
             const mains = [weapon, peerWeapon];
             battle = id; sim = arena(host ? mains : mains.reverse()); phase = 'starting';
             wantRematch = peerRematch = false; countdown = P().countdown;
-            receivedSeq = eventId = serial = 0; history = []; lastSnap = -Infinity;
-            inputSeq = 0; pending = []; applied = -1; seenEvent = 0; snapCountdown = countdown; snapAt = now();
+            receivedSeq = eventId = serial = stampSeen = 0; history = []; lastSnap = -Infinity; stampAt = now();
+            inputSeq = stamp = 0; pending = []; applied = -1; seenEvent = 0; snapCountdown = countdown; snapAt = now();
+            synced = false; held = false; stamps.clear();
             loop.reset(); outbox.length = 0; offsets = new Map(); remember();
             on.start?.(sim);
         }
@@ -165,40 +206,64 @@ const duelKit = (() => {
             begin(newBattle());
             post({ t: 'start' });
         }
+        // The host holds the fight still while either phone is away, and
+        // counts down again once both are back.
+        function attend() {
+            if (!host) return;
+            const away = selfAway || peerAway;
+            if (away && (phase === 'countdown' || phase === 'fight')) { phase = 'hold'; snapshot(); }
+            else if (!away && phase === 'hold') { countdown = P().countdown; phase = 'countdown'; snapshot(); }
+        }
 
         // ---- the guest takes a snapshot ----
         function applySnapshot(msg) {
             if (!Number.isSafeInteger(msg.serial) || msg.serial <= applied || !Number.isSafeInteger(msg.ack) || msg.ack < 0 || msg.ack > inputSeq ||
+                !count(msg.stamp) || msg.stamp > stamp || !num(msg.wait) || msg.wait < 0 || !bool(msg.hold) || !count(msg.aways) ||
                 !within(msg.countdown, 0, P().countdown) || !Array.isArray(msg.events) || !validSnapshot(sim, msg.state)) return;
             applied = msg.serial;
             const at = now();
-            const acked = pending.filter(p => p.seq <= msg.ack);
-            if (acked.length) {
-                const sample = Math.min(P().latencySeconds, Math.max(0, (at - acked.at(-1).at) / 2));
-                latency += (sample - latency) * 0.1;
+            if (stamps.has(msg.stamp)) {
+                // There and back, less the time the host kept it before
+                // this snapshot left; the first few samples count in full.
+                const sample = Math.min(P().latencySeconds, Math.max(0, (at - stamps.get(msg.stamp) - msg.wait) / 2));
+                latency += (sample - latency) * Math.max(0.1, 1 / ++timed);
+                for (const n of stamps.keys()) { if (n > msg.stamp) break; stamps.delete(n); }
             }
             pending = pending.filter(p => p.seq > msg.ack);
-            const was = sim.fighters.map(f => ({ id: f.id, x: f.x, y: f.y, facing: f.facing }));
+            // Where this phone's time and its fighters stood at the last frame.
+            const was = sim.fighters.map(drawn), stood = sim.time + loop.carry;
             worldSim.restore(sim, msg.state);
             snapCountdown = msg.countdown; snapAt = at;
-            // The snapshot is about one way's latency old: predict on to now,
-            // replaying this phone's own controls the host has not had yet.
-            if (!sim.result && msg.countdown <= 0) {
-                const from = at - Math.min(latency, P().replaySeconds), n = Math.max(0, Math.round((at - from) / STEP));
+            // Held: the host says so, or has not yet had this phone's last `away`.
+            if (msg.hold) held = true; else if (msg.aways >= aways) held = false;
+            remember();
+            let left = 0;
+            if (!sim.result && msg.countdown <= 0 && !held) {
+                // Play on from the snapshot to this phone's own time,
+                // replaying its controls the host has not had yet at the
+                // steps they were given. That time (as of the last frame;
+                // the next frame adds what has passed since) is steered
+                // towards the snapshot's plus the lead, and jumps there
+                // only when it is far off.
+                const want = msg.state.time + lead() - (at - frameAt), off = want - stood;
+                const to = synced && Math.abs(off) <= P().resyncSeconds ? stood + off * P().steer : want;
+                synced = true;
+                const span = Math.min(P().replaySeconds, Math.max(0, to - sim.time)), n = Math.floor(span / STEP + 1e-6);
                 let k = 0;
-                for (let i = 0; i <= n; i++) {
-                    while (k < pending.length && pending[k].at <= from + i * STEP + 1e-9) worldSim.command(sim, pending[k++].cmd, self);
-                    if (i < n) worldSim.step(sim, STEP, { judge: false });
+                for (let i = 0; i < n; i++) {
+                    while (k < pending.length && pending[k].time <= sim.time + 1e-9) worldSim.command(sim, pending[k++].cmd, self);
+                    if (i === n - 1) remember();
+                    worldSim.step(sim, STEP, { judge: false });
                 }
                 while (k < pending.length) worldSim.command(sim, pending[k++].cmd, self);
-            }
+                left = span - n * STEP;
+            } else synced = false;
             worldSim.drain(sim);
-            loop.reset();
-            // Draw from where things were, easing the jump out.
-            remember();
+            loop.reset(left);
+            // Draw from where things were drawn, easing the jump out.
             sim.fighters.forEach((f, i) => {
-                const o = offsets.get(f.id) || { x: 0, y: 0, facing: 0 }, w = was[i];
-                o.x += w.x - f.x; o.y += w.y - f.y; o.facing = space.wrapAngle(o.facing + w.facing - f.facing);
+                const o = offsets.get(f.id) || { x: 0, y: 0, facing: 0 }, w = was[i], d = drawn(f);
+                o.x += w.x - d.x; o.y += w.y - d.y; o.facing = space.wrapAngle(o.facing + w.facing - d.facing);
                 offsets.set(f.id, Math.hypot(o.x, o.y) > 90 || sim.result ? { x: 0, y: 0, facing: 0 } : o);
             });
             for (const e of msg.events) {
@@ -217,7 +282,7 @@ const duelKit = (() => {
         }
         function snapshot() {
             lastSnap = now();
-            post({ t: 'snap', serial: ++serial, ack: receivedSeq, countdown, state: worldSim.snapshot(sim), events: history });
+            post({ t: 'snap', serial: ++serial, ack: receivedSeq, stamp: stampSeen, wait: Math.max(0, lastSnap - stampAt), hold: phase === 'hold', aways: peerAways, countdown, state: worldSim.snapshot(sim), events: history });
         }
 
         // ---- messages from the other phone ----
@@ -232,6 +297,17 @@ const duelKit = (() => {
             }
             if (!peerOk) return;
             if (msg.t === 'leave') { end('left'); return; }
+            if (msg.t === 'away' || msg.t === 'back') {
+                peerAway = msg.t === 'away';
+                if (!peerAway) return attend();
+                awaySince = lastHeard;
+                if (host) {
+                    if (count(msg.n)) peerAways = Math.max(peerAways, msg.n);
+                    // Already holding: the guest still needs to hear that this `away` is known.
+                    if (phase === 'hold') snapshot(); else attend();
+                } else { held = true; if (phase === 'countdown' || phase === 'fight') phase = 'hold'; }
+                return;
+            }
             if (msg.t === 'start') {
                 if (host || typeof msg.battle !== 'string' || msg.battle === battle) return;
                 if (phase !== 'hello' && !(phase === 'over' && wantRematch)) return;
@@ -241,9 +317,10 @@ const duelKit = (() => {
             }
             if (msg.battle !== battle) return;
             if (msg.t === 'abort') { end('aborted'); return; }
+            if (host && count(msg.stamp) && msg.stamp > stampSeen) { stampSeen = msg.stamp; stampAt = lastHeard; }
             if (host) {
-                if (msg.t === 'ready' && phase === 'starting') { phase = 'countdown'; snapshot(); }
-                else if (msg.t === 'input' && msg.seq === receivedSeq + 1 && (phase === 'countdown' || phase === 'fight')) {
+                if (msg.t === 'ready' && phase === 'starting') { phase = 'countdown'; snapshot(); attend(); }
+                else if (msg.t === 'input' && msg.seq === receivedSeq + 1 && (phase === 'countdown' || phase === 'fight' || phase === 'hold')) {
                     receivedSeq = msg.seq;
                     worldSim.command(sim, msg.cmd, other);
                     take(worldSim.drain(sim));
@@ -266,29 +343,55 @@ const duelKit = (() => {
             take(worldSim.drain(sim));
             if (!host) {
                 if (pending.length >= 256) { end('aborted', 'abort'); return false; }
-                pending.push({ seq: ++inputSeq, cmd, at: now() });
+                pending.push({ seq: ++inputSeq, cmd, at: now(), time: sim.time });
                 post({ t: 'input', seq: inputSeq, cmd, ack: seenEvent });
             }
             return true;
+        }
+
+        // The match is off.
+        function abort() { if (battle) end('aborted', 'abort'); else end('closed', 'leave'); }
+        // This phone's page went to the background, or is back. A guest
+        // stands still at once; the host's next snapshot lets it go on.
+        function away(flag) {
+            if (phase === 'ended' || selfAway === !!flag) return;
+            selfAway = !!flag;
+            if (!selfAway) { lastHeard = now(); post({ t: 'back' }); }
+            else if (host) post({ t: 'away' });
+            else {
+                held = true;
+                if (phase === 'countdown' || phase === 'fight') phase = 'hold';
+                post({ t: 'away', n: ++aways });
+            }
+            attend();
         }
 
         // ---- the frame: time passes ----
         function frame(seconds) {
             if (phase === 'ended') return outbox.splice(0);
             const t = now();
-            if (t - lastHeard > P().timeoutSeconds) { end('timeout'); return outbox.splice(0); }
+            frameAt = t;
+            // A phone that said it is away is waited for, pvp.awaySeconds at most.
+            if (peerAway ? t - awaySince > P().awaySeconds : !selfAway && t - lastHeard > P().timeoutSeconds) {
+                if (peerAway) abort(); else end('timeout');
+                return outbox.splice(0);
+            }
             if (host) {
+                attend();
                 if (phase === 'countdown') {
-                    countdown = Math.max(0, countdown - seconds);
+                    // (The first frame back from the background is a long one.)
+                    countdown = Math.max(0, countdown - Math.min(seconds, simLoop.MAX_FRAME));
                     if (countdown === 0) { phase = 'fight'; loop.reset(); remember(); }
                 } else if (phase === 'fight' || phase === 'over') loop.advance(seconds);
                 settled();
                 if (phase === 'over' && serial && lastSnap !== Infinity) { snapshot(); lastSnap = Infinity; }
                 else if ((phase === 'countdown' || phase === 'fight') && t - lastSnap >= P().snapshotSeconds - 1e-9) snapshot();
-            } else if (sim && (phase === 'starting' || phase === 'countdown' || phase === 'fight')) {
-                countdown = Math.max(0, snapCountdown - (t - snapAt));
-                if (applied >= 0) phase = snapCountdown > 0 && countdown > 0 ? 'countdown' : 'fight';
-                if (phase === 'fight' && snapCountdown <= 0) loop.advance(seconds);
+            } else if (sim && (phase === 'starting' || phase === 'countdown' || phase === 'fight' || phase === 'hold')) {
+                if (held) { if (applied >= 0) phase = 'hold'; } else {
+                    countdown = Math.max(0, snapCountdown - (t - snapAt));
+                    if (applied >= 0) phase = snapCountdown > 0 && countdown > 0 ? 'countdown' : 'fight';
+                    if (phase === 'fight' && snapCountdown <= 0) loop.advance(seconds);
+                }
             } else if (sim && phase === 'over') loop.advance(seconds);
             const ease = Math.exp(-seconds * 18);
             for (const o of offsets.values()) { o.x *= ease; o.y *= ease; o.facing *= ease; }
@@ -324,8 +427,11 @@ const duelKit = (() => {
                 if (host && peerRematch) hostStart();
                 return true;
             },
-            // The match is off (this page went to the background, say).
-            abort() { if (battle) end('aborted', 'abort'); else end('closed', 'leave'); },
+            abort, away,
+            // Who the fight waits for: 'self', 'peer' or null.
+            get waiting() { return selfAway ? 'self' : peerAway ? 'peer' : null; },
+            // In the background no frames run: this keeps the channel alive there.
+            pulse() { if (phase !== 'ended' && now() - lastSent >= P().heartbeatSeconds) post({ t: 'beat', ack: seenEvent }); },
             // Leaving the room for good.
             leave() { end('closed', 'leave'); },
             // The channel itself is gone.

@@ -3,8 +3,10 @@
 // out the controls, covers portrait with the rotate hint, two real touch
 // points (stick + A) drive the simulation together; the world (M5): from
 // the base through a portal by touch, a fight, falling and home, walls in
-// front cut open, the save across a reload. Two pages of one browser play
-// a whole duel over ?link=local (design.md 8).
+// front cut open, a monster behind the player's back not drawn, the save
+// across a reload. Two pages of one browser play
+// a whole duel over ?link=local (design.md 8), one of them going to the
+// background and back on the way.
 //
 // Skipped when Playwright is not available. It is looked up as
 // PLAYWRIGHT_MODULE (a path), then `playwright`, `playwright-core`, then the
@@ -270,11 +272,18 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             for (let i = 0; i < 300 && m.phase !== 'windup'; i++) g.run(0.01);
             g.run(0.5);
             g.view.render(s, 0.016);
-            const warning = g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a');
-            return { phase: m.phase, opacity: warning ? warning.material.opacity : 0, key: document.querySelector('[data-button="interact"]').className };
+            const shown = () => g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a');
+            const warning = shown(), p = s.player, seen = g.view.seen(m.id);
+            // Sight (user, 2026-10-04): with the player's back to it, the
+            // goblin and its warning are not drawn; facing it again they are.
+            p.facing = Math.PI; g.view.render(s, 0.016);
+            const behind = { seen: g.view.seen(m.id), warning: !!shown() };
+            p.facing = 0; g.view.render(s, 0.016);
+            return { phase: m.phase, opacity: warning ? warning.material.opacity : 0, seen, behind, again: g.view.seen(m.id), key: document.querySelector('[data-button="interact"]').className };
         });
         assert.equal(fight.phase, 'windup');
         assert.ok(fight.opacity > 0.1, `the warning shows through the windup: ${JSON.stringify(fight)}`);
+        assert.deepEqual([fight.seen, fight.behind, fight.again], [true, { seen: false, warning: false }, true], 'a monster behind the player is not drawn');
         await page.waitForFunction(() => document.querySelector('[data-hud="target-name"]').textContent === '哥布林', null, { timeout: 10000 });
         await shot(page, 'field-windup');
         // A wall in front of the player is cut open round them: the pixel at
@@ -284,10 +293,12 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             s.monsters = s.monsters.filter(m => m.boss);
             Object.assign(p, { x: 36.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
             const gl = g.view.renderer.getContext(), N = 8, px = new Uint8Array(N * N * 4), ground = g.view.ground;
-            // Share of bluish pixels in a small square at the chest (the cut is a dither).
+            // Share of bluish pixels in a small square at the chest (the cut
+            // is a dither; it eases open while the wall hides the player, so
+            // a second is drawn).
             const sample = on => {
                 ground.cut.on.value = on;
-                g.view.render(s, 0);
+                g.view.render(s, 1);
                 const at = g.view.project([p.x / 40, 1.05, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
                 gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
                 let blue = 0;
@@ -296,9 +307,10 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             };
             const off = sample(0), on = sample(1);
             ground.cut.on.value = 1;
-            return { off, on };
+            return { off, on, open: ground.cut.open.value };
         });
         await shot(page, 'cutaway');
+        assert.equal(cut.open, 1, 'the wall hides the player: the cut is open');
         assert.ok(cut.on > 0.5, `the blue shirt shows through the wall: ${JSON.stringify(cut)}`);
         assert.ok(cut.off < 0.1, `without the cut, the stone hides it: ${JSON.stringify(cut)}`);
         // Falling: the trip ends; home to the base, whole.
@@ -415,6 +427,8 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         const light = await page.evaluate(() => {
             const g = window.game, s = g.sim, p = s.player, gl = g.view.renderer.getContext(), N = 16, px = new Uint8Array(N * N * 4);
             s.monsters = [];
+            // The ground sampled lies east of the player: facing it, so it is in sight (not shaded).
+            p.facing = 0;
             const sample = () => {
                 g.view.render(s, 0);
                 const at = g.view.project([p.x / 40 + 1.2, 0, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
@@ -465,15 +479,42 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         assert.deepEqual(await B.page.evaluate(() => [window.game.map, window.game.duel.selfId, window.game.duel.battle]), ['arena', 'guest', await A.page.evaluate(() => window.game.duel.battle)]);
         for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'fight', null, { timeout: 30000 });
         for (const { page } of [A, B]) assert.deepEqual(await page.evaluate(() => window.game.sim.fighters.map(f => f.loadout.main)), ['wooden_sword', 'assassin_dagger']);
-        // The rival behind the north pillar is not drawn, and has no bar or arrow; in sight it is.
+        // The rival behind the north pillar is not drawn, and has no bar or
+        // arrow; in sight it is -- ahead of the fighter, not behind its back
+        // (the front 150 degrees; user, 2026-10-04).
         const seen = await A.page.evaluate(() => {
             const g = window.game, [h, r] = g.sim.fighters, look = () => { g.view.render(g.sim, 0.016); return g.view.seen('guest'); };
-            Object.assign(h, { x: 500, y: 260 }); Object.assign(r, { x: 620, y: 260 });
+            Object.assign(h, { x: 500, y: 260, facing: 0 }); Object.assign(r, { x: 620, y: 260 });
             const hidden = look();
-            Object.assign(r, { x: 500, y: 380 });
-            return { hidden, shown: look() };
+            Object.assign(r, { x: 500, y: 380 }); h.facing = Math.PI / 2;
+            const shown = look();
+            h.facing = -Math.PI / 2;
+            return { hidden, shown, behind: look() };
         });
-        assert.deepEqual(seen, { hidden: false, shown: true });
+        assert.deepEqual(seen, { hidden: false, shown: true, behind: false });
+        // The cut opens only for blocks that do hide the fighter: leaning
+        // on the west wall sideways it stays shut; behind the south wall
+        // it opens (user, 2026-10-04).
+        const open = await A.page.evaluate(() => {
+            const g = window.game, [h] = g.sim.fighters;
+            const at = (x, y) => { Object.assign(h, { x: x * 40, y: y * 40 }); g.view.render(g.sim, 1); return g.view.ground.cut.open.value; };
+            return { beside: at(4.31, 9.5), behind: at(12, 14.69) };
+        });
+        assert.deepEqual(open, { beside: 0, behind: 1 });
+        // B's page goes to the background: the fight is held on both, and A
+        // is told who it waits for; back, a countdown and the fight goes on.
+        const hide = (page, hidden) => page.evaluate(flag => {
+            Object.defineProperty(document, 'hidden', { value: flag, configurable: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+        }, hidden);
+        await hide(B.page, true);
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'hold', null, { timeout: 30000 });
+        await A.page.waitForFunction(() => document.querySelector('[data-hud="banner"]').textContent.includes('对方暂时离开'), null, { timeout: 10000 });
+        await shot(A.page, 'duel-hold');
+        await hide(B.page, false);
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'countdown', null, { timeout: 30000 });
+        for (const { page } of [A, B]) await page.waitForFunction(() => window.game.duel.phase === 'fight', null, { timeout: 30000 });
+        assert.deepEqual(await A.page.evaluate(() => [window.game.panel, window.game.duel.endReason]), [null, null]);
         // A knock-out: the host cuts the guest down; one result on each phone.
         await A.page.evaluate(() => {
             const [h, r] = window.game.sim.fighters;

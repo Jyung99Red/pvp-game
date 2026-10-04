@@ -210,6 +210,84 @@ const terrainKit = (() => {
         }
         return true;
     }
+    // The cells that hide (as sightClear: at least `eye` high, and
+    // everything off the map) with one ring of cells round the map, and the
+    // corners of their outline: every one where the edge of what is seen
+    // can turn. Worked out again only when the terrain changes.
+    const sightGrids = new WeakMap();
+    function sightGrid(t, eye) {
+        let g = sightGrids.get(t);
+        if (g && g.rev === t.rev && g.eye === eye) return g;
+        const w = t.width + 2, grid = new Uint8Array(w * (t.height + 2)), corners = [];
+        for (let r = -1; r <= t.height; r++) for (let c = -1; c <= t.width; c++) {
+            grid[(r + 1) * w + c + 1] = solidAt(t, c, r) && (!inside(t, c, r) || levelAt(t, c, r) >= eye) ? 1 : 0;
+        }
+        // The four cells round grid point (i, j): one or three hiding is a
+        // corner, and so are two across the diagonal; two side by side
+        // are a straight wall.
+        for (let j = 0; j <= t.height; j++) for (let i = 0; i <= t.width; i++) {
+            const a = grid[j * w + i], b = grid[j * w + i + 1], c = grid[(j + 1) * w + i], d = grid[(j + 1) * w + i + 1], n = a + b + c + d;
+            if (n === 1 || n === 3 || (n === 2 && a === d)) corners.push(i, j);
+        }
+        g = { rev: t.rev, eye, w, grid, corners };
+        sightGrids.set(t, g);
+        return g;
+    }
+    // How far (cells) a ray from (x, z) along the unit vector (dx, dz) goes
+    // before it enters a hiding cell, `far` at most: cell by cell, exact.
+    function sightReach(g, x, z, dx, dz, far) {
+        const { w, grid } = g;
+        let c = Math.floor(x), r = Math.floor(z);
+        if (grid[(r + 1) * w + c + 1]) return 0;
+        const sc = dx > 0 ? 1 : -1, sr = dz > 0 ? 1 : -1, perC = dx ? Math.abs(1 / dx) : Infinity, perR = dz ? Math.abs(1 / dz) : Infinity;
+        let nextC = dx ? (dx > 0 ? c + 1 - x : x - c) * perC : Infinity, nextR = dz ? (dz > 0 ? r + 1 - z : z - r) * perR : Infinity;
+        for (;;) {
+            let d;
+            if (nextC < nextR) { d = nextC; c += sc; nextC += perC; } else { d = nextR; r += sr; nextR += perR; }
+            if (d >= far) return far;
+            if (grid[(r + 1) * w + c + 1]) return d;
+        }
+    }
+    // What a fighter standing at (x, y) sees of the ground, as a fan of
+    // rays round it: `out.angle` (radians, ascending) and `out.reach` (how
+    // far each goes before a block that hides, `far` at most), `out.n` of
+    // them. Besides an even spread, two rays pass just either side of
+    // every corner in reach, so between two neighbours the edge of sight
+    // is one straight line: it is exact, and slides evenly as the fighter
+    // walks. With `half` under a half turn the fighter sees only within
+    // `half` of `facing`: rays outside that reach nothing, and two more
+    // pass just either side of each edge of it. `out` is reused from call
+    // to call.
+    const SIGHT_SPREAD = 32, SIGHT_SPLIT = 1e-4;
+    // An angle a little outside (-pi, pi] brought back into it.
+    const turned = a => a > Math.PI ? a - 2 * Math.PI : a <= -Math.PI ? a + 2 * Math.PI : a;
+    function sightFan(t, x, y, far, { eye = 2, facing = 0, half = Math.PI, out = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) } } = {}) {
+        const g = sightGrid(t, eye), px = x / t.unit, pz = y / t.unit, reach = far / t.unit, most = g.corners.length + SIGHT_SPREAD + 4;
+        const narrow = half < Math.PI - 1e-9, ahead = Math.atan2(Math.sin(facing), Math.cos(facing));
+        if (out.angle.length < most) { out.angle = new Float64Array(most); out.reach = new Float64Array(most); }
+        let n = 0;
+        // Off the map nothing is seen.
+        if (inside(t, Math.floor(px), Math.floor(pz))) {
+            for (let k = 0; k < SIGHT_SPREAD; k++) out.angle[n++] = ((k + 0.5) / SIGHT_SPREAD * 2 - 1) * Math.PI;
+            for (let k = 0; k < g.corners.length; k += 2) {
+                const dx = g.corners[k] - px, dz = g.corners[k + 1] - pz;
+                if (dx * dx + dz * dz > reach * reach) continue;
+                const a = Math.atan2(dz, dx);
+                out.angle[n++] = turned(a - SIGHT_SPLIT); out.angle[n++] = turned(a + SIGHT_SPLIT);
+            }
+            if (narrow) for (const side of [-1, 1]) {
+                const edge = turned(ahead + side * half);
+                out.angle[n++] = turned(edge - SIGHT_SPLIT); out.angle[n++] = turned(edge + SIGHT_SPLIT);
+            }
+            out.angle.subarray(0, n).sort();
+            for (let i = 0; i < n; i++) {
+                const a = out.angle[i];
+                out.reach[i] = narrow && Math.abs(turned(a - ahead)) > half ? 0 : sightReach(g, px, pz, Math.cos(a), Math.sin(a), reach) * t.unit;
+            }
+        }
+        out.n = n;
+        return out;
+    }
     // Move a circle body by (dx, dy), sliding along walls and round corners
     // and around other bodies (`obstacles`: circles { x, y, radius }).
     // Sub-steps keep every step under half the radius, so thin corners
@@ -225,6 +303,6 @@ const terrainKit = (() => {
         CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, BRUSH_HEIGHT, MONSTERS,
         cellOf, fromRows, inside, kindAt, levelAt, solidAt, isSolid, isResource, generated, cellCentre,
         chunkIndex, chunkCells, set, edits, applyEdits,
-        blocked, lineClear, sightClear, moveCircle
+        blocked, lineClear, sightClear, sightFan, moveCircle
     };
 })();

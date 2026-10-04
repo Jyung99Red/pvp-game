@@ -164,6 +164,7 @@ html, body {
     position: absolute; z-index: 3; pointer-events: none; left: 50%; top: 32%; transform: translate(-50%, -50%);
     font: 800 64px/1 var(--font); color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
+.hud-banner.note { font-size: 26px; white-space: nowrap; }
 .hud-banner[hidden] { display: none; }
 .hud-arrow {
     position: absolute; z-index: 3; pointer-events: none; left: 0; top: 0; width: 0; height: 0;

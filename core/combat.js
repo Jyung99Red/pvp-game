@@ -152,10 +152,24 @@ const combatKit = (() => {
     }
     // The first contact of all, or null.
     function sweep(rig, solveAt, u0, u1, targets, opts) { return contacts(rig, solveAt, u0, u1, targets, opts)[0] || null; }
-    // Is `from` within the guard's front arc of `body`?
-    function inFront(body, from) {
+    // Is `from` within `half` radians of where `body` faces?
+    function inArc(body, from, half) {
         const toward = Math.atan2(from.y - body.y, from.x - body.x);
-        return Math.abs(space.wrapAngle(toward - body.facing)) <= C().guard.frontAngle + 1e-9;
+        return Math.abs(space.wrapAngle(toward - body.facing)) <= half + 1e-9;
     }
-    return { kitOf, defended, emit, damage, impact, tickPush, guardOf, guardCost, spendGuard, tickGuardBar, strike, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront };
+    // Is `from` within the guard's front arc of `body`?
+    function inFront(body, from) { return inArc(body, from, C().guard.frontAngle); }
+    // Does the fighter `body` see `other` (a rival, a monster, the dummy)?
+    // Only ahead of it (within player.sightAngle of where it faces), with
+    // no block that hides between. The other's middle or either edge of
+    // it, as seen from here, will do: a big body half round a corner shows.
+    function sees(terrain, body, other) {
+        const half = gameConfig.player.sightAngle, dx = other.x - body.x, dy = other.y - body.y, d = Math.hypot(dx, dy), r = d > 1e-6 ? (other.radius || 0) / d : 0;
+        for (const side of r ? [0, 1, -1] : [0]) {
+            const at = { x: other.x - dy * r * side, y: other.y + dx * r * side };
+            if (inArc(body, at, half) && terrainKit.sightClear(terrain, body.x, body.y, at.x, at.y)) return true;
+        }
+        return false;
+    }
+    return { kitOf, defended, emit, damage, impact, tickPush, guardOf, guardCost, spendGuard, tickGuardBar, strike, hurtboxes, attackBoxes, weaponBoxes, contacts, sweep, inFront, sees };
 })();

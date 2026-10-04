@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, duelKit, terrainKit, gameConfig, inventoryKit } = load();
+const { worldSim: W, duelKit, terrainKit, combatKit, space, gameConfig, inventoryKit } = load();
 const F = gameConfig.combat, M = gameConfig.combo.moves, PV = gameConfig.pvp, U = gameConfig.world.unitsPerBlock;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -168,14 +168,21 @@ test('snapshot checks turn away broken or foreign state', () => {
 });
 
 // ---- the protocol, both ends over an in-memory channel ----
-function pair({ latency = 0, weapons = {} } = {}) {
-    let clock = 100;
-    const queue = [], log = {}, ends = {};
+// `jitter()`: extra seconds a message takes, each its own (they still
+// arrive in order). A phone in the background (`sleep`) runs no frames,
+// only a pulse a second (ui/app.js).
+function pair({ latency = 0, weapons = {}, jitter = null } = {}) {
+    let clock = 100, lastDue = 0;
+    const queue = [], log = {}, ends = {}, asleep = new Map();
     for (const role of ['host', 'guest']) {
         log[role] = { starts: 0, results: [], ends: [], rematch: 0, sent: [] };
         ends[role] = duelKit.create({
             role, now: () => clock, ...(weapons[role] ? { weapon: weapons[role] } : {}),
-            send: msg => { const copy = plain(msg); log[role].sent.push(copy); queue.push({ to: role === 'host' ? 'guest' : 'host', at: clock + latency, msg: copy }); },
+            send: msg => {
+                const copy = plain(msg);
+                lastDue = Math.max(lastDue, clock + latency + (jitter ? jitter() : 0));
+                log[role].sent.push(copy); queue.push({ to: role === 'host' ? 'guest' : 'host', at: lastDue, msg: copy });
+            },
             on: { start: () => log[role].starts++, result: o => log[role].results.push(o), end: r => log[role].ends.push(r), rematch: () => log[role].rematch++ }
         });
     }
@@ -184,14 +191,20 @@ function pair({ latency = 0, weapons = {} } = {}) {
     const shown = { host: [], guest: [] };
     const frame = (seconds = 0.01) => {
         clock += seconds; deliver();
-        for (const role of ['host', 'guest']) shown[role].push(...ends[role].frame(seconds));
+        for (const role of ['host', 'guest']) {
+            if (!asleep.has(role)) shown[role].push(...ends[role].frame(seconds));
+            else if (clock - asleep.get(role) >= 1) { asleep.set(role, clock); ends[role].pulse(); }
+        }
         deliver();
     };
     const run = seconds => { for (let i = 0; i < Math.round(seconds / 0.01); i++) frame(); };
     ends.host.open(); ends.guest.open(); deliver();
     return {
         host: ends.host, guest: ends.guest, log, shown, queue, frame, run, deliver,
-        cut() { connected = false; }, get clock() { return clock; }, pass(seconds) { clock += seconds; }
+        cut() { connected = false; }, get clock() { return clock; }, pass(seconds) { clock += seconds; },
+        // The page of `role` goes to the background, or comes back.
+        sleep(role) { asleep.set(role, clock); ends[role].away(true); },
+        wake(role) { asleep.delete(role); ends[role].away(false); }
     };
 }
 const fightNow = p => { p.run(PV.countdown + 0.2); assert.equal(p.host.phase, 'fight'); assert.equal(p.guest.phase, 'fight'); };
@@ -354,4 +367,207 @@ test('silence past the timeout, or a phone leaving, ends it on both with a reaso
     // While nothing happens both still hear each other.
     const s = pair(); s.run(PV.timeoutSeconds * 2);
     assert.deepEqual([s.log.host.ends, s.log.guest.ends], [[], []]);
+});
+
+// ---- the guest's time, and phones in the background (user, 2026-10-04) ----
+// A channel that takes 30 ms and up to 20 more, differently for each message.
+function uneven() {
+    let seed = 12345;
+    return pair({ latency: 0.03, jitter: () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 * 0.02; } });
+}
+
+test('the guest\'s time runs on evenly however unevenly the snapshots come', () => {
+    const p = uneven(); fightNow(p); p.run(1);
+    // What the guest draws: the last step and how far into the next.
+    const g = p.guest, time = () => g.sim.time + g.alpha() * 0.01;
+    let last = time(), worst = 0, back = 0;
+    for (let i = 0; i < 300; i++) {
+        p.frame();
+        const now = time();
+        worst = Math.max(worst, Math.abs(now - last - 0.01)); if (now < last) back++;
+        last = now;
+    }
+    assert.equal(back, 0, 'never backwards');
+    assert.ok(worst < 0.004, `each frame moves it on by a frame, give or take a little: ${worst}`);
+    // And it leads the snapshots by about the way there and back.
+    const ahead = time() - p.host.sim.time;
+    assert.ok(ahead > 0.02 && ahead < 0.08, `ahead of the host by ${ahead}`);
+});
+
+test('a cut the guest begins goes on evenly when the host confirms it', () => {
+    const p = uneven(); fightNow(p); p.run(1);
+    const own = () => p.guest.sim.fighters[1], t = [];
+    press(p.guest, 'attack'); release(p.guest, 'attack');
+    assert.equal(own().act.move, 'slash');
+    let frames = 0;
+    while (own().act?.phase === 'windup' && frames < 100) { p.frame(); frames++; if (own().act?.phase === 'windup') t.push(own().act.t); }
+    for (let i = 1; i < t.length; i++) assert.ok(t[i] >= t[i - 1] - 1e-9, `the windup never steps back: ${t[i - 1]} to ${t[i]}`);
+    assert.ok(Math.abs(frames * 0.01 - M.slash.windup) <= 0.02, `the windup takes its own time on the guest's screen: ${frames * 0.01}`);
+    assert.equal(p.log.guest.sent.filter(m => m.t === 'input').length, 2);
+    p.run(0.5);
+    assert.equal(p.host.sim.fighters[1].stats.attacks, 1);
+});
+
+test('what drawing blends from: each fighter before the last step, its move and how far into it', () => {
+    const p = pair(); fightNow(p);
+    press(p.host, 'attack'); release(p.host, 'attack'); p.run(0.05);
+    const f = p.host.sim.fighters[0], b = p.host.before('host');
+    assert.equal(b.act.move, f.act.move); assert.equal(b.act.phase, f.act.phase);
+    assert.ok(Math.abs(f.act.t - b.act.t - 0.01) < 1e-9, 'one step earlier');
+    assert.equal(typeof b.guardBlend, 'number');
+});
+
+test('a phone in the background: the fight stands still till it is back, then a countdown', () => {
+    for (const role of ['host', 'guest']) {
+        const p = pair({ latency: 0.02 }); fightNow(p);
+        const other = role === 'host' ? 'guest' : 'host', walker = () => p.host.sim.fighters[1];
+        p.guest.command({ type: 'move', x: -1, y: 0 }); p.run(0.3);
+        p.sleep(role); p.run(0.2);
+        assert.deepEqual([p.host.phase, p.guest.phase], ['hold', 'hold'], `${role} away`);
+        assert.deepEqual([p[role].waiting, p[other].waiting], ['self', 'peer']);
+        // Longer than the plain timeout: nothing moves, nobody gives up.
+        const x = walker().x, time = p.host.sim.time, guestX = p.guest.sim.fighters[1].x;
+        p.run(PV.timeoutSeconds + 2);
+        assert.deepEqual([p.host.phase, p.guest.phase], ['hold', 'hold']);
+        assert.deepEqual([walker().x, p.host.sim.time, p.guest.sim.fighters[1].x], [x, time, guestX]);
+        assert.deepEqual([p.log.host.ends, p.log.guest.ends], [[], []]);
+        assert.equal(press(p[other], 'attack'), false, 'no moves while it waits');
+        // Back: both count down again, then the stick still held walks on.
+        p.wake(role); p.run(0.1);
+        assert.deepEqual([p.host.phase, p.guest.phase], ['countdown', 'countdown']);
+        assert.equal(p[other].waiting, null);
+        assert.ok(Math.abs(p.guest.countdown - (PV.countdown - 0.1)) < 0.06, `counting from the top: ${p.guest.countdown}`);
+        assert.equal(walker().x, x);
+        fightNow(p); p.run(0.3);
+        assert.ok(walker().x < x - 20, 'the fight goes on');
+        assert.ok(Math.abs(p.guest.sim.fighters[1].x - walker().x) < 12, 'the same on the guest');
+        assert.deepEqual([p.log.host.starts, p.log.guest.starts], [1, 1], 'the same match');
+    }
+});
+
+test('away and back at once, and both away: held until both are back', () => {
+    // The guest is back before the host has even heard it left.
+    const p = pair({ latency: 0.05 }); fightNow(p);
+    p.guest.away(true); p.guest.away(false);
+    assert.equal(p.guest.phase, 'hold', 'held until the host lets it go on');
+    p.run(0.02); assert.equal(p.guest.phase, 'hold', 'snapshots sent before the host knew do not let it go');
+    p.run(0.3);
+    assert.deepEqual([p.host.phase, p.guest.phase], ['countdown', 'countdown']);
+    fightNow(p);
+    // Both away; the guest back first.
+    p.sleep('guest'); p.run(0.2); p.sleep('host'); p.run(1);
+    p.wake('guest'); p.run(0.5);
+    assert.deepEqual([p.host.phase, p.guest.phase], ['hold', 'hold']);
+    assert.equal(p.guest.waiting, 'peer');
+    p.wake('host'); p.run(0.2);
+    assert.deepEqual([p.host.phase, p.guest.phase], ['countdown', 'countdown']);
+    // Away during the first countdown: it starts over.
+    const q = pair(); q.run(1); q.sleep('host'); q.run(3); q.wake('host'); q.run(0.1);
+    assert.deepEqual([q.host.phase, q.guest.phase], ['countdown', 'countdown']);
+    assert.ok(q.host.countdown > PV.countdown - 0.2);
+    fightNow(q);
+});
+
+test('a phone away too long: the one waiting gives up, and the other is told when it is back', () => {
+    for (const role of ['host', 'guest']) {
+        const p = pair(); fightNow(p);
+        const other = role === 'host' ? 'guest' : 'host';
+        p.sleep(role); p.run(PV.awaySeconds - 1);
+        assert.deepEqual(p.log[other].ends, []);
+        p.run(1.5);
+        assert.deepEqual(p.log[other].ends, ['aborted']);
+        p.wake(role); p.run(0.1);
+        assert.deepEqual(p.log[role].ends, ['aborted']);
+    }
+    // A phone that went silent without a word still times out.
+    const q = pair(); fightNow(q); q.cut(); q.run(PV.timeoutSeconds + 0.2);
+    assert.deepEqual(q.log.host.ends, ['timeout']);
+});
+
+test('the edge of sight is exact: it ends at the blocks that hide, turns at their corners, and moves evenly as the fighter walks', () => {
+    const sim = duel(), t = sim.terrain, far = 30 * U;
+    const hides = (c, r) => terrainKit.solidAt(t, c, r) && (!terrainKit.inside(t, c, r) || terrainKit.levelAt(t, c, r) >= 2);
+    // The lit ground: the fan's area, in square blocks.
+    const area = fan => { let a = 0; for (let i = 0; i < fan.n; i++) { const j = (i + 1) % fan.n; a += fan.reach[i] * fan.reach[j] * Math.sin(fan.angle[j] - fan.angle[i]) / 2; } return a / (U * U); };
+    const [x, y] = [7.5 * U, 9.5 * U], fan = terrainKit.sightFan(t, x, y, far);
+    assert.ok(fan.n > 40);
+    for (let i = 0; i < fan.n; i++) {
+        const c = Math.cos(fan.angle[i]), s = Math.sin(fan.angle[i]), d = fan.reach[i];
+        if (i) assert.ok(fan.angle[i] >= fan.angle[i - 1], 'in order round the fighter');
+        assert.ok(d > 0 && d < far, 'the arena is walled in');
+        assert.ok(hides(Math.floor((x + c * (d + 0.01)) / U), Math.floor((y + s * (d + 0.01)) / U)), `ray ${i} ends at a block that hides`);
+        assert.ok(terrainKit.sightClear(t, x, y, x + c * (d - 6), y + s * (d - 6)), 'and what is short of it is in sight');
+    }
+    // Two rays pass the south-east corner of the pillar at (8, 7), where
+    // its near face ends: one stops on it, the other goes on to the wall
+    // behind.
+    const corner = Math.atan2(8 * U - y, 9 * U - x), near = [];
+    for (let i = 0; i < fan.n; i++) if (Math.abs(fan.angle[i] - corner) < 1e-3) near.push(fan.reach[i]);
+    assert.ok(near.length >= 2, 'a ray either side of it');
+    assert.ok(Math.abs(Math.min(...near) - Math.hypot(9 * U - x, 8 * U - y)) < 0.05, 'to the corner itself');
+    assert.ok(Math.max(...near) > Math.min(...near) + U, 'and past it');
+    // Walking a hundredth of a block at a time, the lit ground never jumps.
+    const out = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
+    let last = area(terrainKit.sightFan(t, 5 * U, 10.2 * U, far, { out })), worst = 0;
+    for (let k = 1; k <= 1400; k++) {
+        const now = area(terrainKit.sightFan(t, (5 + k * 0.01) * U, 10.2 * U, far, { out }));
+        worst = Math.max(worst, Math.abs(now - last)); last = now;
+    }
+    assert.ok(worst < 0.6, `the lit ground changes by at most ${worst} square blocks a step`);
+    // Off the map, or inside a block, nothing is seen.
+    assert.equal(terrainKit.sightFan(t, -U, -U, far).n, 0);
+    assert.ok(Array.from(terrainKit.sightFan(t, 3.5 * U, 9.5 * U, far).reach.subarray(0, 8)).every(d => d === 0));
+});
+
+// Sight is the same in the adventure and in a duel (core/combat.js `sees`,
+// core/terrain.js `sightFan`); it is tried here on the arena.
+test('a fighter sees only the front 150 degrees, and not past a wall: a body behind it is not seen and the ground there is not lit (user, 2026-10-04)', () => {
+    const SIGHT = gameConfig.player.sightAngle, PV = { sightAngle: SIGHT };
+    assert.ok(Math.abs(SIGHT - 75 * Math.PI / 180) < 1e-12, '75 degrees either side');
+    const sim = duel(), t = sim.terrain, [h, g] = sim.fighters, far = 30 * U;
+    Object.assign(h, { x: 12.5 * U, y: 9.5 * U, facing: 0 });
+    // The rival a block and a half away, `deg` round from due east. Its
+    // nearer edge counts (its radius is 11 degrees wide from there).
+    const at = (deg, body = g) => { const a = deg * Math.PI / 180; Object.assign(body, { x: h.x + Math.cos(a) * 1.5 * U, y: h.y + Math.sin(a) * 1.5 * U }); return combatKit.sees(t, h, body); };
+    assert.deepEqual([0, 70, -70, 84, -84, 90, -90, 180].map(deg => at(deg)), [true, true, true, true, true, false, false, false]);
+    h.facing = Math.PI;
+    assert.deepEqual([180, 110, 100, 90, 0].map(deg => at(deg)), [true, true, true, false, false], 'turned round, it sees the other way');
+    // A bigger body shows sooner: a monster as wide as the wolf king.
+    h.facing = 0;
+    const big = { x: 0, y: 0, radius: gameConfig.monsters.wolfKing.radius };
+    assert.deepEqual([90, 100].map(deg => [at(deg), at(deg, big)]), [[false, true], [false, false]]);
+    // Ahead, a wall still hides: either side of the north pillar. A step
+    // out past its corner and an edge of the body shows before its middle.
+    Object.assign(h, { x: 500, y: 260, facing: 0 }); Object.assign(g, { x: 620, y: 260 });
+    assert.equal(combatKit.sees(t, h, g), false);
+    Object.assign(h, { x: 500, y: 330 }); Object.assign(g, { x: 620, y: 316 });
+    assert.equal(terrainKit.sightClear(t, h.x, h.y, g.x, g.y), false, 'its middle is behind the corner');
+    assert.equal(combatKit.sees(t, h, g), true, 'its edge is not');
+    // The lit ground: nothing outside the arc, the same as before inside it,
+    // with a ray just either side of each edge.
+    const facing = 0.4, [x, y] = [12.5 * U, 9.5 * U];
+    const whole = terrainKit.sightFan(t, x, y, far), front = terrainKit.sightFan(t, x, y, far, { facing, half: PV.sightAngle });
+    const reachAt = (fan, a) => { for (let i = 0; i < fan.n; i++) if (Math.abs(fan.angle[i] - a) < 1e-12) return fan.reach[i]; return null; };
+    let lit = 0, dark = 0;
+    for (let i = 0; i < front.n; i++) {
+        const off = Math.abs(space.wrapAngle(front.angle[i] - facing)), same = reachAt(whole, front.angle[i]);
+        if (off > PV.sightAngle) { assert.equal(front.reach[i], 0, 'behind: nothing'); dark++; } else { assert.ok(front.reach[i] > 0); lit++; if (same !== null) assert.equal(front.reach[i], same); }
+    }
+    assert.ok(lit > 10 && dark > 10);
+    for (const side of [-1, 1]) {
+        const edge = space.wrapAngle(facing + side * PV.sightAngle), near = [];
+        for (let i = 0; i < front.n; i++) if (Math.abs(space.wrapAngle(front.angle[i] - edge)) < 1e-3) near.push(front.reach[i]);
+        assert.ok(near.includes(0) && near.some(d => d > U), `the edge of the arc is sharp: ${near}`);
+    }
+    // Turning a hundredth of a radian at a time, the lit ground never jumps
+    // (all the way round, through where the angle wraps).
+    const area = fan => { let a = 0; for (let i = 0; i < fan.n; i++) { const j = (i + 1) % fan.n; a += fan.reach[i] * fan.reach[j] * Math.sin(fan.angle[j] - fan.angle[i]) / 2; } return a / (U * U); };
+    const out = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) }, total = area(whole);
+    let last = area(terrainKit.sightFan(t, x, y, far, { facing: -4, half: PV.sightAngle, out })), worst = 0;
+    for (let k = 1; k <= 800; k++) {
+        const now = area(terrainKit.sightFan(t, x, y, far, { facing: -4 + k * 0.01, half: PV.sightAngle, out }));
+        assert.ok(now > 0 && now < total, 'part of the whole');
+        worst = Math.max(worst, Math.abs(now - last)); last = now;
+    }
+    assert.ok(worst < 1.5, `the lit ground changes by at most ${worst} square blocks a step`);
 });

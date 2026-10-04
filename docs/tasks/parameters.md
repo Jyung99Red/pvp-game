@@ -12,7 +12,7 @@
 | `core/loop.js` | 模拟步长 0.01 秒，单帧最多补 0.1 秒 |
 | `core/terrain.js` | 分块 16×16；树 4 格高、建筑和传送门 3 格、枯木丛 2 格、矿石和晶石 1 格 |
 | `core/duel.js` | 联机协议版本 `PROTOCOL` = 3（改协议时手动加一）；访客最多攒 256 条未确认的操作 |
-| `render/` | 纯画面：光照、雾、火把灯（照亮约 7 格）、特效、离镜头 18 格外不画、镜头遮挡透明的半径 1.3 格 |
+| `render/` | 纯画面：光照、雾、火把灯（照亮约 7 格）、特效、离镜头 18 格外不画、镜头遮挡透明的半径 1.3 格、开合约 0.2 秒、视野阴影（不透明度 0.55，边缘模糊 `BLUR` 1.1 个贴图像素步长，贴图 256）、太阳影子边缘柔化 `SUN_SOFT` 0.1 格 |
 | `net/link.js` | 房间号 4 位数字、STUN 服务器 |
 
 ## 1. 主角
@@ -23,6 +23,7 @@
 | `player.speed` | 122 | 走路（每秒约 3.05 格；用户 2026-10-02 试过后定的） |
 | `player.startSeconds` | 0.12 | 从站着到走满速 |
 | `player.turnSlow` | 0.5 | 朝背后走时先慢一半，转过身就恢复（按角度渐变） |
+| `player.sightAngle` | 5π/12 | 只看得见朝向左右各 75° 以内（前方 150°）且没被 2 格高的方块挡住的地方；冒险和对战共用 |
 | `player.turnRate` | 8 | 转身速度（转 180° 约 0.4 秒） |
 | `player.radius` | 12 | 撞墙用的圆 |
 | `player.runAfter` / `runStick` | 1.5 / 0.9 | 摇杆推到 90% 以上连续走 1.5 秒后开始跑（用户 2026-10-03：从 2 秒缩短） |
@@ -50,7 +51,7 @@
 | `guard.startup` | 0.16 | 格挡键按下到挡住要多久 |
 | `guard.shield` / `guard.weapon` | 见下表 | 带盾用盾挡，没带盾用武器挡（用户 2026-10-03：盾 120 分、武器 80 分，旧的盾算 100 分） |
 | `guard.moveMultiplier` / `turnMultiplier` | 0.3 / 0.5 | 格挡时走和转的倍率 |
-| `guard.frontAngle` | π/2 | 正面左右各 90° 以内才挡得住 |
+| `guard.frontAngle` | π/3 | 攻击者在正面左右各 60° 以内才挡得住（共 120°；原来 π/2） |
 | `guardBar.max` / `raiseCost` / `holdDrain` | 100 / 10 / 10 | 格挡条：满 100，举盾扣 10，按住每秒扣 10 |
 | `guardBar.parryCostRatio` | 0.5 | 挡下扣 原始伤害 ÷ 最大生命 × `blockCostScale` × 100；弹反扣一半 |
 | `guardBar.refillSeconds` / `unlockRatio` | 3 / 0.4 | 放下格挡 3 秒回满；扣空后回到 40% 才能再挡 |
@@ -262,7 +263,9 @@
 | `countdown` | 3 | 开打前倒计时 |
 | `snapshotSeconds` | 0.05 | 主机每秒发 20 次快照 |
 | `heartbeatSeconds` / `timeoutSeconds` | 0.25 / 5 | 没话说时的心跳；多久没消息算断线 |
+| `awaySeconds` | 60 | 一方切到后台，对局停住最多等多久 |
 | `replaySeconds` / `latencySeconds` | 0.25 / 0.15 | 访客收到快照后最多补算多久；单程延迟估计上限 |
+| `steer` / `resyncSeconds` | 0.1 / 0.1 | 访客的时间和快照差多少：每次快照拉回一成；差过 0.1 秒直接跳 |
 | `historyEvents` | 128 | 主机保留访客还没确认的事件条数 |
 | `connectSeconds` | 12 | 连信令服务器和对方的超时 |
 

@@ -9,7 +9,8 @@
 // whole, keeping what was picked up. ?map= starts in another region
 // (testing). A duel (design.md 8) starts from the room screen
 // (ui/room.js): its world belongs to the duel session (core/duel.js),
-// which this loop feeds with time and controls; panels never pause it.
+// which this loop feeds with time and controls; panels never pause it. A
+// phone in the background does: the session holds the fight till it is back.
 // The menu (ui/menu.js) does not pause the adventure either (user,
 // 2026-10-02); its pause button does, and so do the other panels and the
 // shop and smithy.
@@ -28,7 +29,7 @@ const app = (() => {
         incompatible: '两台手机上的游戏版本不同。请两边都刷新页面，再重新连接。',
         timeout: '很久没收到对方的消息，连接中断了。',
         lost: '和对方的连接断开了。',
-        aborted: '对局中断了：有一方切到了后台，或关掉了页面。',
+        aborted: '对局中断了：有一方离开太久，或关掉了页面。',
         left: '对方离开了房间。'
     };
     // Panel buttons and their usual labels.
@@ -75,8 +76,12 @@ const app = (() => {
             fallback(root, '这台设备的浏览器没有开启 WebGL，3D 画面无法显示。');
         }
         // Drawing blends the state before the last step into the current one
-        // (drawn only; every rule reads the simulation itself).
-        const LERP = ['x', 'y', 'h', 'gait', 'moveBlend', 'runBlend'], copy = p => Object.fromEntries([...LERP, 'facing'].map(k => [k, p[k]]));
+        // (drawn only; every rule reads the simulation itself): where a
+        // body is, its stride, its guard, and how far into its move it is
+        // -- or a move would go on by one step in one frame and by two in
+        // the next (user, 2026-10-04: attacks drew unevenly).
+        const LERP = ['x', 'y', 'h', 'gait', 'moveBlend', 'runBlend', 'guardBlend'];
+        const copy = p => ({ ...Object.fromEntries([...LERP, 'facing'].map(k => [k, p[k]])), act: p.act ? { move: p.act.move, phase: p.act.phase, t: p.act.t } : null });
         const snapshot = () => new Map([...sim.fighters, ...sim.monsters].map(b => [b.id, copy(b)]));
         let before = snapshot();
         const loop = simLoop.create(dt => { before = snapshot(); worldSim.step(sim, dt); });
@@ -84,6 +89,8 @@ const app = (() => {
             const out = { ...now };
             for (const k of LERP) if (Number.isFinite(then[k])) out[k] = then[k] + (now[k] - then[k]) * alpha;
             out.facing = space.lerpAngle(then.facing, now.facing, alpha);
+            // The same phase of the same move: part way through the step.
+            if (now.act && then.act && then.act.move === now.act.move && then.act.phase === now.act.phase) out.act = { ...now.act, t: then.act.t + (now.act.t - then.act.t) * alpha };
             return out;
         }
         const shownBodies = alpha => new Map([...sim.fighters, ...sim.monsters].map(b => [b.id, before.has(b.id) ? blend(b, before.get(b.id), alpha) : b]));
@@ -285,10 +292,13 @@ const app = (() => {
         actions.leave.addEventListener('click', () => load('base'));
         // Asking first shows "waiting"; agreeing starts the match at once.
         actions.rematch.addEventListener('click', () => { if (duel?.session.rematch() && duel.session.phase === 'over') openPanel('duelResult'); });
-        // A duel cannot wait for a phone in the background: going there ends
-        // the match (the other phone is told); closing the page leaves.
-        document.addEventListener('visibilitychange', () => { if (document.hidden && live()) duel.session.abort(); });
+        // A duel waits for a phone in the background (user, 2026-10-04): the
+        // other phone is told and the fight stands still till it is back
+        // (pvp.awaySeconds at most); closing the page leaves. No frames are
+        // drawn in the background, so a slow timer keeps the channel alive.
+        document.addEventListener('visibilitychange', () => { if (live()) duel.session.away(document.hidden); });
         window.addEventListener('pagehide', () => { if (live()) duel.session.leave(); });
+        setInterval(() => { if (document.hidden && live()) duel.session.pulse(); }, 1000);
         // The save is written whenever the page may be going away.
         document.addEventListener('visibilitychange', () => { if (document.hidden && !duel) persist(); });
         window.addEventListener('pagehide', () => { if (!duel) persist(); });
@@ -336,7 +346,7 @@ const app = (() => {
             const w = world(), me = selfId();
             for (const e of events) sfx.play(e, me, worldSim.outcome(w, me));
             display.events(events, clock);
-            display.update(w, view, clock, bodies, { self: me, duel: s ? { countdown: s.countdown, phase: s.phase } : null });
+            display.update(w, view, clock, bodies, { self: me, duel: s ? { countdown: s.countdown, phase: s.phase, waiting: s.waiting } : null });
             // Portrait is covered by the rotate hint: skip drawing to save power.
             if (view && !portrait.matches) view.render(w, Math.min(seconds, simLoop.MAX_FRAME), { bodies, events });
             // The fight is decided: let it play out a moment, then the result.

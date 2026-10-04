@@ -127,7 +127,7 @@ const hud = (() => {
             at[1] += TAG[e.type] ?? 1.5;
             els.tag.hidden = !place(els.tag, view, at);
         }
-        // duel (optional): { countdown, phase } from the duel session.
+        // duel (optional): { countdown, phase, waiting } from the duel session.
         function update(sim, view, now, bodies = null, { self = 'player', duel = null } = {}) {
             selfId = self;
             const p = sim.fighters.find(f => f.id === self) || sim.fighters[0], G = gameConfig.combat.guardBar;
@@ -180,7 +180,7 @@ const hud = (() => {
             // Over each monster in a fight or hurt: a small bar; "!" as it notices.
             for (const m of sim.monsters) {
                 const mob = mobOf(m.id), shown = shownOf(m);
-                const visible = m.phase !== 'dead' && (FIGHTING.has(m.phase) || m.hp < m.maxHp);
+                const visible = m.phase !== 'dead' && (FIGHTING.has(m.phase) || m.hp < m.maxHp) && (view?.seen(m.id) ?? true);
                 mob.el.hidden = !visible || !place(mob.el, view, over(m, shown));
                 if (mob.el.hidden) continue;
                 mob.alert.hidden = m.phase !== 'alert';
@@ -199,8 +199,12 @@ const hud = (() => {
                 if (!mob.el.hidden) width(mob.fill, f.hp / f.maxHp);
                 if (seen) pointAt(view, at);
             }
-            // The countdown, then "开始" for a moment.
-            if (duel && duel.countdown > 0 && (duel.phase === 'countdown' || duel.phase === 'starting')) {
+            // The countdown, then "开始" for a moment; while the fight is
+            // held for a phone in the background, who it waits for.
+            els.banner.classList.toggle('note', duel?.phase === 'hold');
+            if (duel && duel.phase === 'hold') {
+                els.banner.hidden = false; els.banner.textContent = duel.waiting === 'peer' ? '对方暂时离开，等待中…' : '对局暂停'; fightAt = null;
+            } else if (duel && duel.countdown > 0 && (duel.phase === 'countdown' || duel.phase === 'starting')) {
                 els.banner.hidden = false; els.banner.textContent = String(Math.ceil(duel.countdown - 1e-6)); fightAt = null;
             } else if (duel && duel.phase === 'fight') {
                 if (fightAt === null) fightAt = now;

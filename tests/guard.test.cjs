@@ -10,9 +10,10 @@ const G = gameConfig.combat.guardBar, GU = gameConfig.combat.guard, D = gameConf
 const S = inventoryKit.statsOf(inventoryKit.starter());
 
 // Player 60 units in front of the dummy, facing it; the dummy swipes at once.
-function setup({ facingAway = false, loadout } = {}) {
+// `turned`: how far (radians) the player faces away from it.
+function setup({ facingAway = false, turned = 0, loadout } = {}) {
     const sim = W.create(loadout ? { loadout } : {}), d = sim.dummy;
-    sim.player.x = d.x - 60; sim.player.y = d.y; sim.player.facing = facingAway ? Math.PI : 0;
+    sim.player.x = d.x - 60; sim.player.y = d.y; sim.player.facing = facingAway ? Math.PI : turned;
     d.wait = 0;
     return sim;
 }
@@ -78,6 +79,14 @@ test('a blocked hit does a share of the damage and no stun; from behind the shie
     const behind = guardAt(setup({ facingAway: true }), impactTime - 0.8);
     assert.equal(behind.stats.blocks, 0); assert.equal(behind.stats.hurt, 1);
     assert.ok(behind.player.stun > 0);
+});
+
+test('the guard covers the front 120 degrees, 60 either side of where the body faces (user, 2026-10-04; it was 180)', () => {
+    assert.ok(Math.abs(GU.frontAngle - Math.PI / 3) < 1e-12);
+    for (const [deg, blocks] of [[0, 1], [55, 1], [-55, 1], [65, 0], [-65, 0], [90, 0]]) {
+        const sim = guardAt(setup({ turned: deg * Math.PI / 180 }), impactTime - 0.8);
+        assert.deepEqual([sim.stats.blocks, sim.stats.hurt], [blocks, 1 - blocks], `the blow comes from ${deg} degrees off the front`);
+    }
 });
 
 test('an empty bar drops the shield and locks it until the bar is back to the unlock ratio', () => {

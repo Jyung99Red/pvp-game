@@ -17,13 +17,17 @@ const simLoop = (() => {
             // How far real time has run into the next step, 0..1: drawing
             // blends the last two states by this so motion stays even.
             alpha() { return Math.min(1, carry / step); },
+            // Real time fed in and not yet run as a step, seconds.
+            get carry() { return carry; },
             // Run exactly `seconds` of simulation now (tests, debugging).
             run(seconds) {
                 const n = Math.round(seconds / step);
                 for (let i = 0; i < n; i++) stepFn(step);
                 return n;
             },
-            reset() { carry = 0; }
+            // Start afresh, `left` seconds into the next step (a duel's guest
+            // keeps its place in time across a snapshot).
+            reset(left = 0) { carry = Math.min(step, Math.max(0, left)); }
         };
     }
     return { STEP, MAX_FRAME, create };
