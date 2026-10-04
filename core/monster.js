@@ -260,6 +260,10 @@ const monsterKit = (() => {
         emit(sim, m, 'windup', { move: name });
     }
 
+    // How many others of this monster's kind are in a move just now, windup to recovery.
+    const MOVING = new Set(['windup', 'swing', 'recover']);
+    function inMove(sim, m) { let n = 0; for (const o of sim.monsters) if (o !== m && o.kind === m.kind && MOVING.has(o.phase)) n++; return n; }
+
     // ---- the AI, on the monster's own clock (dt is already times tempo) ----
     // It minds the nearest fighter still standing (in PVE, the player).
     function think(sim, m, dt) {
@@ -296,6 +300,13 @@ const monsterKit = (() => {
                 }
                 // Free: a player off to the side or behind is turned to first, on the spot.
                 if (Math.abs(space.wrapAngle(Math.atan2(p.y - m.y, p.x - m.x) - m.facing)) > M().turnFirst) return;
+                // A pack (design.md 5.2): only `pack` of a kind are in a move at
+                // once; within reach of the player the others wait their turn,
+                // facing it from outside their near band.
+                if (S.pack && d <= edge.mid && inMove(sim, m) >= S.pack) {
+                    if (d > edge.near * M().packStandOff) walkRound(sim, m, p.x, p.y, short, S.patrolSpeed, dt, false);
+                    return;
+                }
                 const choice = d > edge.mid ? null : d <= edge.near ? roll(sim, m, S.near, d, 'stand') : roll(sim, m, S.mid, d, 'forward');
                 if (choice === 'approach') { m.phase = 'approach'; m.t = 0; return; }
                 if (choice) { begin(sim, m, choice); return; }

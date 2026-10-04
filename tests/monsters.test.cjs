@@ -577,6 +577,41 @@ test('a pond between them hides nobody: it sees across, walks round, and a blow 
     assert.ok(g.x >= 19 * U + 12 - 1e-6, 'without the goblin getting its feet wet');
 });
 
+test('a pack of wolves: only two are in a move at once, the others wait their turn outside the near band (user, 2026-10-03)', () => {
+    assert.equal(MON.wolf.pack, 2);
+    // `n` wolves round a player who stands and takes it (kept whole, to last the fight).
+    const fight = n => {
+        const rows = Array.from({ length: 30 }, (_, r) => r === 0 || r === 29 ? '1'.repeat(40) : '1' + '.'.repeat(38) + '1');
+        const mark = (r, c, ch) => { rows[r] = rows[r].slice(0, c) + ch + rows[r].slice(c + 1); };
+        mark(2, 2, '@');
+        for (let i = 0; i < n; i++) mark(10 + i * 4, 30, 'w');
+        const sim = W.create({ map: { name: '狼群', rows } }), p = sim.player, near = monsterKit.bands('wolf').near;
+        put(p, HOME.x, HOME.y, 0);
+        sim.monsters.forEach((m, i) => { const a = i * 2 * Math.PI / n; Object.assign(m, { phase: 'chase', t: 0, wait: 0, x: p.x + Math.cos(a) * 50, y: p.y + Math.sin(a) * 50, facing: a + Math.PI }); });
+        const moving = () => sim.monsters.filter(m => ['windup', 'swing', 'recover'].includes(m.phase));
+        let most = 0, waited = 0, crowded = 0;
+        const began = new Map();
+        for (let i = 0; i < 2000; i++) {
+            W.step(sim, 0.01);
+            p.hp = p.maxHp;
+            const busy = moving();
+            most = Math.max(most, busy.length);
+            for (const e of W.drain(sim)) if (e.type === 'windup') began.set(e.id, (began.get(e.id) || 0) + 1);
+            // One that is free while two others are at it: it is waiting.
+            for (const m of sim.monsters) if (!busy.includes(m) && busy.length === 2 && m.phase === 'chase' && m.wait === 0) waited++;
+        }
+        return { most, waited, began: sim.monsters.map(m => began.get(m.id) || 0) };
+    };
+    const three = fight(3);
+    assert.equal(three.most, 2, 'never three at once');
+    assert.ok(three.waited > 50, `the third waited ${three.waited} steps`);
+    assert.ok(three.began.every(n => n >= 2), `each takes its turn: ${three.began}`);
+    // Two wolves are not held back: both are at it together some of the time.
+    assert.equal(fight(2).most, 2);
+    // The limit is the wolves' own: goblins have none.
+    assert.equal(MON.goblin.pack, undefined);
+});
+
 test('a patrol passes over waypoints in a wall instead of walking at it', () => {
     // Home against a wall to the east: the first waypoint (due east) is inside it.
     const sim = walled('goblin', [['3', 21, 12, 18]]), m = sim.monsters[0], S = MON.goblin;

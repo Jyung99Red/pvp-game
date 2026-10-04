@@ -321,21 +321,25 @@ test('the interact key: the hot spring rests, a shop opens, a portal travels; th
     assert.equal(p.focus, 'xa', 'still held');
     a.x = p.x + gameConfig.interact.release + 4; step(sim, 0.01);
     assert.equal(p.focus, null);
-    // The gate to the field travels; the gate to the valley, further along the north wall, waits on the goblin chief.
+    // The gate to the field travels. The village has no gate to the valley (user, 2026-10-04).
     sim.entities.splice(-2);
-    const north = sim.entities.find(e => e.id === 'p-field'), valley = sim.entities.find(e => e.id === 'p-valley');
+    const north = sim.entities.find(e => e.id === 'p-field');
+    assert.equal(sim.entities.some(e => e.id === 'p-valley'), false);
     before(p, north, Math.PI / 2); step(sim, 0.02);
     assert.equal(p.focus, 'p-field');
     tap(sim, 'interact');
     assert.deepEqual(plain(events(sim, 'travel').map(e => [e.to, e.from])), [['field', 'base']]);
-    before(p, valley, Math.PI / 2); step(sim, 0.02);
-    const locked = interactKit.target(sim, p).offer;
+    // The gate to the valley, in the chief's yard in the field, waits on the goblin chief.
+    const field = W.create({ region: 'field' }), q = field.player, valley = field.entities.find(e => e.id === 'p-valley');
+    field.monsters = [];
+    before(q, valley, Math.PI / 2); step(field, 0.02);
+    const locked = interactKit.target(field, q).offer;
     assert.ok(!locked.ready && /哥布林头目/.test(locked.why), JSON.stringify(locked));
-    tap(sim, 'interact');
-    assert.equal(events(sim, 'travel').length, 0);
-    sim.progress.bosses.goblinChief = true;
-    tap(sim, 'interact');
-    assert.deepEqual(plain(events(sim, 'travel').map(e => e.to)), ['valley']);
+    tap(field, 'interact');
+    assert.equal(events(field, 'travel').length, 0);
+    field.progress.bosses.goblinChief = true;
+    tap(field, 'interact');
+    assert.deepEqual(plain(events(field, 'travel').map(e => e.to)), ['valley']);
 });
 
 test('interacting reaches the left hand out: a moment for a use at once, all through a hold (user, 2026-10-04)', () => {
@@ -467,9 +471,6 @@ test('the goblin chief: a bigger goblin; down, it stays down, and the gate and c
     const again = W.create({ region: 'field', progress: save });
     assert.equal(again.monsters.some(m => m.boss), false, 'it does not come back');
     assert.equal(again.monsters.length, sim.terrain.monsters.length - 1);
-    const base = W.create({ region: 'base', progress: save }), valley = base.entities.find(e => e.id === 'p-valley');
-    before(base.player, valley, Math.PI / 2); step(base, 0.02);
-    assert.equal(interactKit.target(base, base.player).offer.ready, true, 'the village\'s own gate to the valley opens too');
 });
 
 test('a monster that gives up the chase and gets home is whole again', () => {

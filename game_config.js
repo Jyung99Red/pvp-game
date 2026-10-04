@@ -211,12 +211,15 @@ const gameConfig = (() => {
         // rolled when it falls (`loot` below). stagger: points that make it
         // reel (else combat.stagger.threshold; bosses take 10, user
         // 2026-10-02). A monster that gets home after giving up a chase is
-        // whole again.
+        // whole again. pack: at most this many of the kind are in a move at
+        // once (windup to recovery; user, 2026-10-03: two wolves); the
+        // others wait their turn, packStandOff of their near band's edge
+        // from the player. No `pack`: no limit.
         // Bosses (design.md 5): `model` is the skeleton they are
         // built on, `scale` how much bigger, `look` their colours
         // (models/); a boss down stays down and opens what waits on it.
         monsters: {
-            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35,
+            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5,
             goblin: {
                 name: '哥布林', loot: 'goblin', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
@@ -230,7 +233,7 @@ const gameConfig = (() => {
             },
             wolf: {
                 name: '野狼', loot: 'wolf', maxHp: 90, atk: 54, def: 2, radius: 16, speed: 78, turnRate: 3, trackTurn: 1.6,
-                patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
+                patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85, pack: 2,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
                     bite: { name: '撕咬', windup: 0.72, lock: 0.17, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 35 },
@@ -427,9 +430,9 @@ const gameConfig = (() => {
         // the markers lie on (grass by default).
         maps: {
             // The base, a village (design.md 6.3): no monsters. Four
-            // buildings; in the north wall the gate to the field and, east of
-            // it, the gate straight to the valley once the goblin chief is
-            // down; the east gate to the training ground. Every portal goes
+            // buildings; the north gate to the field, the east gate to the
+            // training ground (the valley is reached through the field only:
+            // user, 2026-10-04). Every portal goes
             // out by the side its map lies on, and comes in on the far map's
             // opposite side (user, 2026-10-04).
             base: {
@@ -438,12 +441,12 @@ const gameConfig = (() => {
                     '.....TT........T.....T...T........',
                     '...TTT...............T.....T...T..',
                     'T................................T',
-                    '...333333333333#P#3333333#P#333..T',
-                    '.T.3............:.........:...3...',
-                    '...3..HHHH......:....HHHH.:...3...',
-                    '.T.3..HHHH......:....HHHH.:...3..T',
-                    'T..3..HHHH......:....HHHH.:...3..T',
-                    'T..3....================..:...#...',
+                    '...333333333333#P#3333333333333..T',
+                    '.T.3............:.............3...',
+                    '...3..HHHH......:....HHHH.....3...',
+                    '.T.3..HHHH......:....HHHH.....3..T',
+                    'T..3..HHHH......:....HHHH.....3..T',
+                    'T..3....================......#...',
                     '...3....================::::::P...',
                     '...3....================......#...',
                     '...3....================HHHH..3...',
@@ -466,8 +469,7 @@ const gameConfig = (() => {
                 ],
                 portals: [
                     { at: [16, 3], to: 'field', facing: 'south' },
-                    { at: [30, 9], to: 'clearing', facing: 'west' },
-                    { at: [26, 3], to: 'valley', facing: 'south', requires: 'goblinChief' }
+                    { at: [30, 9], to: 'clearing', facing: 'west' }
                 ]
             },
             // The first region, wide and open (the second draft of the
@@ -527,52 +529,61 @@ const gameConfig = (() => {
                 ],
                 chests: [{ at: [53, 5], loot: 'chiefChest', requires: 'goblinChief' }]
             },
-            // The second region: rocks and gravel, a wolf pack; the wolf king
-            // keeps the north-east corner and its chest.
+            // The second region, the way from the field to the cave (the
+            // second draft of the redrawn map: user, 2026-10-04; no gate to
+            // the village): a gravel floor between stepped ridges, a brook
+            // two blocks wide down it with two fords, the road up its west bank from
+            // the field's gate to the cave's, and across the brook the wolf
+            // pack and the wolf king's den of rock in the north-east. The
+            // east road ends where the ridge has come down: a way on, some
+            // day.
             valley: {
-                name: '灰岩谷',
+                name: '灰岩谷', floor: ';',
                 rows: [
-                    '..T.T..T..T....T.T......T....T.......T..T..T.T..',
-                    '.TT.TT.....T.T..T..T...T....T....T.......T......',
-                    'T.............................................T.',
-                    'T..33433#P#3343334333433343334333433343334333...',
-                    '...4..........................3.............4...',
-                    '...3.T;;;;.;;T............T...3...........C.3...',
-                    '...3...;;;;.;......12O..;;.;;.3.............3..T',
-                    '...3..;.;;;;............;;;.;.3.............3.T.',
-                    'T..4..;;.;;;;.......w...;;;;..3......K......4...',
-                    'TT.3..;;;.;;;.........w..;;;;.3..1..........3...',
-                    '...3.h...........1......;.;;;.3.............3..T',
-                    '.T.3.................w........3.............3.T.',
-                    '.T.4......23O.................3.............4...',
-                    '...3.......2..................33333..33333333..T',
-                    '...3............;;;.;;;;...........::.......3...',
-                    'TT.3............;;;;.;;;;.21O......::.......3..T',
-                    '.T.4..2..........;;;;.;;;..........::.......4...',
-                    'TT.3..1.....g...;.;;;;.;;..........::....1..3...',
-                    '.T.3............;;.;;;;.;.......;.;::;.;;...3...',
-                    '...3............;;;.;;;;..g.....;;.::;;.;...3.T.',
-                    '...4T..........1O............2..;;;::;;;w...4...',
-                    '.T.3.........................32.;;;::;;;;...3...',
-                    '...3....;;;;.;......w...1........;;::.;;;..T3..T',
-                    '...3.....;;;;...................;.;::;.;;...3...',
-                    'T..4....:::::::::::::::::::::::::::::...h...4...',
-                    '...3....:;.;;;:...........................1.3...',
-                    '.T.3....:;;.;;:.....h.............g.........3...',
-                    '...3....:.....:.......1...............21O...3.T.',
-                    '...4....:..@..:.............................4.T.',
-                    '...3....:.....:.............................3.T.',
-                    '...3122#P#221#P#12221222122212221222122212223.T.',
-                    '................................................',
-                    '................................................',
-                    '................................................'
+                    '45444544454445444544454445455544454445444544454445444544',
+                    '44343333334343433333343433344343434333333434333333434344',
+                    '44223223222222232232232232243222222322322322322322222235',
+                    '54211111#P#111111111111111133111111111111111111111111244',
+                    '4431;;;;;::;;;;;;;;;;;;;;;;11;;;;;;;;;2;;;;;;;;;;;;;1234',
+                    '4331;;;;;::;;;;;;;;;;;;;;;;;;;;;;;;;;;3;;;;;;;;;;C;;1244',
+                    '4321;;;;;::;;;;........;;;;;;;;;;;;;;;2;;;2;;;;;;;;;1235',
+                    '5321;;;;;::;;;;..~~~~..;;;;;;;;T;;;;;;2;;;;;;;;;;;;;1234',
+                    '4321;;;;;::;;;;..~~~~..2O;;;;;;;;;;;;;3;;;;;;;K;;;;;1334',
+                    '4321;;;;;::;;;;...~~...;;;;;;;;;;;;;;;2;;;;;;;;;;;;;1234',
+                    '4321;;;;;;::;;;...~~..;;;;;;2;;;;;;;;;2;;;;2;;;;;;;;1235',
+                    '5331;;;;;;::;;;..~~...;;;;;;;;;;;;;;;;3;;;;;;;;;2;;;1334',
+                    '4321;;;;;;::;;;..~~..;;;;;;;;;;;;;;;;;2;;;;;;1;;;;;;1244',
+                    '4321;;;g;;::;;g..~~.h.;;;;1;;;;;;;;;;;3;;;::;;;;;;;;1234',
+                    '4321;;;;;;::;;;...~~..;;;;;;;;;;;;;;;;333:::222222231345',
+                    '5321;;;;;;::;;;;..~~...1;;;;;;;;;;;;;;;;;:::;;;;;;;;1234',
+                    '43212O;1;;::;;;;...~~..;;;;;;;;;;;;;;;;;:::;;;;;;;;;1234',
+                    '54421;;;;;;::;;;;..~~...;;;;;;;;;;;;;;;:::;;;O;1;;;;1334',
+                    '54431;;;;;;::;;;;...~~..;;;;;;;;;;;;h;:::;;;;;;;;;;;1235',
+                    '5321;;;;;;;:::::::::::::::::::::::::::::::::::::;1123456',
+                    '4421;;;;;;;:::::::::::::::::::::::::::::::::::::12123556',
+                    '4421;;;;;;;;::;;;;;..~~..;;;;;;;;;;;;;;;;;;;;;;;;;;;1244',
+                    '4421;;;;;;;;::;;;;;..~~...;;;;;;;;;;;;;;;;;;;;;;;;;;1235',
+                    '5421;;w;;;;;::;;;;;...~~..;21;;;;;;;w;;;;;;;;2;;;;;;1244',
+                    '4431;;;;;;;;::;;T;;;..~~...;;;;;;w;;;;;;;;;;;;1;;;;;1234',
+                    '4331;;;;;;;::;;;;;;;...~~..h;;;;;;;;;;;;1;;;;;;;;;;;1244',
+                    '54321;;;;;;::;;;;;;;;..~~..;;;;;;;;;;;2;;;;;;;;;;;;;1235',
+                    '5321;;;;2;;::;;;;;;;;..~~..;;;;;;;;;;;;;;;;;;;;;;;;;1234',
+                    '4321;;1;;;;:::::::::::::::::::::;;;;;;;;;;;;;;;;2;;13445',
+                    '4321;.....::::::::::::::::::::::;;;;;;;;;;;;;;;;;;;12345',
+                    '4321;.....::.....;;;;;..~~..;;;;;;;1;;;;;;;;O2;;;;;;1235',
+                    '5331;.....::.@.h.;;;;;..~~...;;;;;;;w;;;;;;1;;;;;;;;1334',
+                    '4321;.....::.....;;;;;...~~.2O;;w;;;;;;;;;;;;;;;;;;;1244',
+                    '4321;.....::.....;1;;;;..~~..;;;11;;;;;;;;;;;;;;;;;;1234',
+                    '432111111#P#1111112111111~~11111221111111111111111111345',
+                    '5322222222222222222222222~~22222222222222222222222222234',
+                    '4322222222222222222222222~~22222222222222222222222222234',
+                    '4332222222222222222222222~~22222222222222222222222222334'
                 ],
                 portals: [
-                    { at: [8, 30], to: 'field', facing: 'north' },
-                    { at: [14, 30], to: 'base', facing: 'north' },
+                    { at: [10, 34], to: 'field', facing: 'north' },
                     { at: [9, 3], to: 'cave', facing: 'south' }
                 ],
-                chests: [{ at: [42, 5], loot: 'kingChest', requires: 'wolfKing' }]
+                chests: [{ at: [49, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
             // A dark cave off the valley (design.md 2.5): nothing to see
             // without a lit torch. Its treasure room is shut by a thicket the
