@@ -171,4 +171,10 @@ test('one move from the stance, and the other poses, each reach their key', () =
     assert.equal(L.pose('guardWeapon').loadout.offhand, null);
     const down = L.pose('down');
     assert.equal(down.stateAt(down.keys.down).body.down, true);
+    // The guard's walking bend is shown walking forward under the shield; the reach out at its key.
+    const bend = L.pose('guardBend'), mid = bend.stateAt(bend.keys.guardBend);
+    assert.ok(mid.x > 0 && mid.body.moveBlend === 1 && mid.body.guardBlend === 1 && bend.loadout.offhand === 'wooden_shield');
+    const reach = L.pose('reach');
+    assert.equal(reach.stateAt(reach.keys.reach).body.handOut, 1);
+    assert.equal(reach.stateAt(reach.duration).body.handOut, 0);
 });

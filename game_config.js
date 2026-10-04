@@ -317,7 +317,10 @@ const gameConfig = (() => {
         // distance plus facingWeight per radian off the facing; the target
         // already picked keeps it out to `release` and scores holdBonus
         // better. chestHold: seconds the key is held to open a chest.
-        interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6 },
+        // hand: the left hand goes a little forward to interact (user,
+        // 2026-10-04): out over `out` seconds, kept out while a hold fills
+        // and `stay` seconds after a use, back over `back`.
+        interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6, hand: { out: 0.12, stay: 0.3, back: 0.2 } },
         // Props: chestRadius (a chest is solid); arriveDistance, how far
         // in front of the portal back someone arriving stands. A thicket
         // set alight sets its neighbours alight after burnSpread seconds

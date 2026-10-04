@@ -219,6 +219,7 @@
 | `interact.reach` / `release` | 56 / 72 | 1.4 格内能选中，选中后走出 1.8 格才放开 |
 | `interact.facingWeight` / `holdBonus` | 18 / 10 | 选目标：距离 + 偏离朝向 × 18，已选中的再减 10 |
 | `interact.chestHold` | 0.6 | 开宝箱要按住多久 |
+| `interact.hand.out` / `stay` / `back` | 0.12 / 0.3 / 0.2 | 交互时左手往前伸：伸出 0.12 秒；一按就完成的停 0.3 秒（要按住的按着一直伸着）；收回 0.2 秒 |
 | `props.chestRadius` | 14 | 宝箱是实心的 |
 | `props.arriveDistance` | 64 | 过传送门后站在门前多远 |
 | `props.burnSpread` / `burnSeconds` | 0.35 / 1.4 | 枯木丛点着后多久烧到相邻的、多久烧完 |

@@ -29,6 +29,7 @@
 //          the way of a move since the press) }
 //   down, downT  fallen (HP emptied where nobody is `endless`), and since when
 //   focus, using  the interact key's target and a hold under way (core/interact.js)
+//   handOut, handFor  the left hand reaching out to interact (core/interact.js)
 //   drink  a potion: null, or { phase: wait (pressed while busy) | drink, t }
 //   lit    a torch carried in the offhand is burning
 //
@@ -53,7 +54,7 @@ const fighterKit = (() => {
             id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
-            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, drink: null, lit: false,
+            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null, lit: false,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
         });
     }
@@ -353,7 +354,7 @@ const fighterKit = (() => {
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, press: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, drink: null });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, press: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }

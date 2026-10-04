@@ -155,6 +155,38 @@ test('walking while charging moves the legs under the held charge', () => {
     for (const g of [0, 0.2, 0.5, 0.8]) assert.ok(Math.abs(lowestBody(at(g, 1))) < 1e-9, 'feet on the ground');
 });
 
+test('under a guard the knees bend (user, 2026-10-04): standing, the left foot ahead, both feet down, a little lower; walking, still bent, the planted foot still put', () => {
+    const unit = gameConfig.world.unitsPerBlock, feet = ['R', 'L'].map(s => find(p => p.tag === 'foot' && rig.bones[p.bone].name === `shin${s}`));
+    const pelvisAt = s => s.bones[rig.index.pelvis][13], low = (s, i) => Math.min(...cornersOf(s, i).map(c => c[1]));
+    for (const offhand of [gameConfig.gear.starter.offhand, null]) {
+        const loadout = { ...gameConfig.gear.starter, offhand }, body = guardBlend => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend, stun: 0, loadout });
+        const up = R.solve(rig, playerAnim.pose(rig, body(1))), free = R.solve(rig, playerAnim.pose(rig, body(0)));
+        for (const i of feet) assert.ok(Math.abs(low(up, i)) < 0.01, `${offhand}: both feet on the ground`);
+        // The model faces +z: the left foot is ahead.
+        assert.ok(up.parts[feet[1]][14] - up.parts[feet[0]][14] > 0.3, `${offhand}: the left foot ahead`);
+        const drop = pelvisAt(free) - pelvisAt(up);
+        assert.ok(drop > 0.03 && drop < 0.12, `${offhand}: a little lower (${drop.toFixed(3)} blocks)`);
+        // Walking under it: the knees stay bent and the planted foot keeps pace, as walking does.
+        const cycle = playerAnim.cycleLength(rig, 0), stance = playerAnim.gaitOf(rig).walk.stance, zs = [];
+        for (let f = 0; f <= Math.min(0.4, stance) + 1e-9; f += 0.025) {
+            const pose = playerAnim.pose(rig, { ...body(1), gait: f, moveBlend: 1 }), s = R.solve(rig, pose);
+            zs.push(s.parts[feet[0]][14] + f * cycle / unit);
+            assert.ok(pose.shinR.rx > 0.3 && pose.shinL.rx > 0.3, 'knees bent while walking');
+            assert.ok(Math.abs(lowestBody(s)) < 1e-9, 'on the ground');
+        }
+        assert.ok(Math.max(...zs) - Math.min(...zs) < 0.02, `${offhand}: the planted foot slides ${(Math.max(...zs) - Math.min(...zs)).toFixed(3)} blocks`);
+    }
+});
+
+test('interacting puts the left hand a little forward; not in the middle of a move', () => {
+    const body = handOut => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0, handOut, loadout: gameConfig.gear.starter });
+    const hand = find(p => p.bone === rig.index.handL), handZ = handOut => R.solve(rig, playerAnim.pose(rig, body(handOut))).parts[hand][14];
+    assert.ok(handZ(1) - handZ(0) > 0.1, 'the left hand forward');
+    assert.ok(handZ(0.5) > handZ(0) && handZ(0.5) < handZ(1));
+    const act = { move: 'slash', phase: 'swing', t: 0.05, from: null };
+    assert.deepEqual(plain(playerAnim.pose(rig, { ...body(1), act })), plain(playerAnim.pose(rig, { ...body(0), act })));
+});
+
 test('drawn-only additions never change the judged pose', () => {
     const body = { gait: 0.3, moveBlend: 0 }, judged = playerAnim.pose(rig, body);
     const before = JSON.stringify(judged);

@@ -212,6 +212,33 @@ test('the interact key: the hot spring rests, a shop opens, a portal travels; th
     assert.deepEqual(plain(events(sim, 'travel').map(e => e.to)), ['valley']);
 });
 
+test('interacting reaches the left hand out: a moment for a use at once, all through a hold (user, 2026-10-04)', () => {
+    const H = gameConfig.interact.hand;
+    const sim = W.create({ region: 'base' }), p = sim.player, spring = sim.entities.find(e => e.kind === 'hotSpring');
+    before(p, spring, Math.PI / 2, 30); step(sim, 0.02);
+    assert.deepEqual([p.handOut, p.handFor], [0, 0]);
+    tap(sim, 'interact'); step(sim, H.out);
+    assert.ok(p.handOut > 0.99, 'out');
+    step(sim, H.stay);
+    assert.ok(p.handOut < 1, 'coming back after a moment');
+    step(sim, H.back + 0.02);
+    assert.equal(p.handOut, 0, 'back');
+    // Nothing to interact with: no reach.
+    p.x += 400; step(sim, 0.05);
+    tap(sim, 'interact'); step(sim, 0.05);
+    assert.equal(p.handOut, 0);
+    // A chest: out all the while the key is held.
+    const field = W.create({ region: 'field' }), q = field.player, chest = field.entities.find(e => e.type === 'chest');
+    field.monsters = []; field.progress.bosses.goblinChief = true;
+    before(q, chest, Math.PI / 2, 34); step(field, 0.02);
+    press(field, 'interact');
+    for (let t = 0; t < gameConfig.interact.chestHold - 0.05; t += 0.1) { step(field, 0.1); if (t > H.out) assert.ok(q.handOut > 0.99, `out at ${t.toFixed(1)} s`); }
+    step(field, 0.1);
+    assert.equal(chest.open, true);
+    release(field, 'interact'); step(field, H.stay + H.back + 0.05);
+    assert.equal(q.handOut, 0);
+});
+
 test('interacting works with the shield up, and not at all in a fight', () => {
     const sim = W.create({ region: 'field' }), p = sim.player;
     const portal = sim.entities.find(e => e.id === 'p-base');

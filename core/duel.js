@@ -16,7 +16,7 @@
 // beat (nothing else to say), surrender, rematch, abort (the match is off),
 // leave (the room is closed). Everything after hello names its battle.
 const duelKit = (() => {
-    const PROTOCOL = 3;
+    const PROTOCOL = 4;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -79,7 +79,7 @@ const duelKit = (() => {
         if (f.buffer !== null && !(obj(f.buffer) && ['a', 'b'].includes(f.buffer.input) && num(f.buffer.at) && num(f.buffer.age))) return false;
         if (!Array.isArray(f.combo) || f.combo.length > 32 || !f.combo.every(c => ['a', 'b', '-'].includes(c))) return false;
         // Nothing in the arena to interact with; a weapon and the shield only.
-        if (f.focus !== null || f.using !== null || f.drink !== null || f.lit !== false) return false;
+        if (f.focus !== null || f.using !== null || f.handOut !== 0 || f.handFor !== 0 || f.drink !== null || f.lit !== false) return false;
         if (f.chain !== null && !(obj(f.chain) && ownMove(f.chain.move) && num(f.chain.at) && bool(f.chain.cued))) return false;
         const a = f.act;
         if (a === null) return true;

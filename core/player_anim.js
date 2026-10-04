@@ -129,8 +129,15 @@ const playerAnim = (() => {
         return rigKit.mix(K.b, stance, easeInOut(clamp01(act.t / m.recovery)));
     }
 
+    // The legs under a guard. The pose's legs are the stance's turning into
+    // the stride by moveBlend: the guard's standing legs take the stance's
+    // share, and the stride's share is bent.
+    function guardLegs(pose, moveBlend) {
+        const lower = playerModel.layers.lower, stance = rigKit.pick(playerPoses.stance, lower);
+        return rigKit.add(rigKit.pick(pose, lower), rigKit.scale(rigKit.add(playerMoves.guardLegs, rigKit.scale(stance, -1)), 1 - moveBlend), rigKit.scale(playerMoves.guardBend, moveBlend));
+    }
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
-    // fighter { act, guardBlend, stun, down, downT, drink, loadout }.
+    // fighter { act, guardBlend, stun, down, downT, drink, handOut, loadout }.
     function pose(rig, body) {
         let pose = locomotion(rig, body), stepping = 1;
         const act = body.act, lowerBody = playerModel.layers.lower;
@@ -149,10 +156,14 @@ const playerAnim = (() => {
             }
             pose = rigKit.mix(pose, moving, w);
         }
+        // Interacting: the left hand goes a little forward (not in a move).
+        if (!act && body.handOut > 0) pose = rigKit.mix(pose, { ...pose, ...playerMoves.reach }, smooth(clamp01(body.handOut)));
         // Guarding: the shield up if one is carried, else the blade across
-        // the chest (the left arm keeps what it holds).
+        // the chest (the left arm keeps what it holds); either way the knees
+        // bend (guardLegs).
         if (body.guardBlend > 0) {
-            const raised = inventoryKit.offhandOf(body.loadout) === 'shield' ? { ...rigKit.pick(pose, lowerBody), ...playerMoves.guard } : { ...pose, ...playerMoves.guardWeapon };
+            const legs = guardLegs(pose, body.moveBlend || 0);
+            const raised = inventoryKit.offhandOf(body.loadout) === 'shield' ? { ...legs, ...playerMoves.guard } : { ...pose, ...legs, ...playerMoves.guardWeapon };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }
         // Drinking: the flask comes up over a fifth of a second, stays, and

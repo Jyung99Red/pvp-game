@@ -7,8 +7,10 @@
 // while the key stays down and the target stays the same and ready.
 // Nothing works in a fight: a monster after the fighter greys it out.
 //
-// On a fighter: focus (the target's id, or null) and using ({ id, t } while
-// a hold fills, else null).
+// On a fighter: focus (the target's id, or null), using ({ id, t } while
+// a hold fills, else null), and the left hand reaching out to it: handOut
+// (0..1, how far) and handFor (seconds it stays out after a use). The
+// reach is the same for every interaction for now (user, 2026-10-04).
 const interactKit = (() => {
     const I = () => gameConfig.interact;
     // Fighting: any monster noticing, chasing, attacking or reeling.
@@ -42,12 +44,16 @@ const interactKit = (() => {
     function press(sim, p) {
         const t = target(sim, p);
         if (!t || !t.offer.ready) return false;
+        p.handFor = I().hand.stay;
         if (t.offer.hold > 0) { p.using = { id: t.entity.id, t: 0 }; return true; }
         entityKit.kitOf(t.entity).use(sim, t.entity, p);
         return true;
     }
     function release(sim, p) { p.using = null; }
     function tick(sim, p, dt) {
+        const H = I().hand;
+        p.handFor = Math.max(0, p.handFor - dt);
+        p.handOut = p.using || p.handFor > 0 ? Math.min(1, p.handOut + dt / H.out) : Math.max(0, p.handOut - dt / H.back);
         const e = pick(sim, p);
         p.focus = e ? e.id : null;
         const u = p.using;
@@ -55,7 +61,7 @@ const interactKit = (() => {
         const t = target(sim, p);
         if (!t || t.entity.id !== u.id || !t.offer.ready || !p.input.buttons.interact.held) { p.using = null; return; }
         u.t += dt;
-        if (u.t >= t.offer.hold - 1e-9) { p.using = null; entityKit.kitOf(t.entity).use(sim, t.entity, p); }
+        if (u.t >= t.offer.hold - 1e-9) { p.using = null; p.handFor = H.stay; entityKit.kitOf(t.entity).use(sim, t.entity, p); }
     }
     return { inCombat, pick, target, press, release, tick };
 })();

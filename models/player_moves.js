@@ -109,8 +109,8 @@ const playerMoves = (() => {
         // writes a key back as `key({...})` without it).
         shieldArm,
         // Shield up: the left forearm across the front, the board facing
-        // forward; the sword arm drawn back. Upper body only: legs keep
-        // walking underneath.
+        // forward; the sword arm drawn back. Upper body only: the legs are
+        // guardLegs / guardBend.
         guard: {
             chest: { ry: 0.12 },
             upperArmL: { rx: -1.25, ry: -0.95, rz: 0.1 }, forearmL: { rx: -0.35 }, handL: { ry: -0.3 },
@@ -123,6 +123,12 @@ const playerMoves = (() => {
             chest: { ry: -0.36 },
             upperArmR: { rx: -0.5, ry: 0.8, rz: -0.83 }, forearmR: { rx: -0.71 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
         },
+        // The legs under either guard (user, 2026-10-04): the knees a little
+        // bent for a steady centre, the left foot ahead and the right behind,
+        // both down. Standing, the legs are guardLegs; walking, the stride
+        // goes on with guardBend added, the knees kept bent.
+        guardLegs: { thighR: { rx: 0.55 }, shinR: { rx: 0.35 }, thighL: { rx: -0.55 }, shinL: { rx: 0.65 } },
+        guardBend: { thighR: { rx: -0.2 }, shinR: { rx: 0.4 }, thighL: { rx: -0.2 }, shinL: { rx: 0.4 } },
         // Drinking a potion: the flask up to the mouth, the head tipped
         // back. Upper body only: legs keep walking underneath.
         drink: {
@@ -132,6 +138,9 @@ const playerMoves = (() => {
         },
         // Carrying a torch: held up and forward on the left.
         torch: { upperArmL: { rx: -0.55, ry: 0.15, rz: 0.1 }, forearmL: { rx: -1.05 } },
+        // Interacting, the same for every interaction for now (user,
+        // 2026-10-04): the left hand a little forward. Left arm only.
+        reach: { upperArmL: { rx: -0.7, ry: 0.1, rz: 0.08 }, forearmL: { rx: -0.45 } },
         // Struck: thrown back; added on top, faded by the stun.
         flinch: { chest: { rx: -0.35 }, head: { rx: -0.25 }, upperArmR: { rz: -0.3 }, upperArmL: { rz: 0.3 } },
         // Fallen: on the back, arms flung out.
