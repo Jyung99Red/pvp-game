@@ -272,7 +272,8 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             for (let i = 0; i < 300 && m.phase !== 'windup'; i++) g.run(0.01);
             g.run(0.5);
             g.view.render(s, 0.016);
-            const shown = () => g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a');
+            // The goblin's own warning (a wolf near by may be showing one too).
+            const shown = () => g.view.scene.children.find(o => o.isMesh && o.visible && o.material?.color?.getHexString?.() === 'ff2a1a' && Math.hypot(o.position.x - m.x / 40, o.position.z - m.y / 40) < 0.5);
             const warning = shown(), p = s.player, seen = g.view.seen(m.id);
             // Sight (user, 2026-10-04): with the player's back to it, the
             // goblin and its warning are not drawn; facing it again they are.

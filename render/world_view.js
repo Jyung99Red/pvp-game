@@ -5,15 +5,40 @@
 // world (`load`), so switching maps or restarting needs no reload.
 const worldView = (() => {
     const UP = [0, 1, 0];
-    // Lighting by day and in a dark region: sky (hemisphere) and sun
-    // intensity, fog start and end past the camera distance (blocks), and
-    // the torch's intensity. A torch lights `reach` blocks round it.
-    const LIGHT = { day: { sky: 1.9, sun: 2.7, fog: [8, 26], torch: 3 }, dark: { sky: 0.05, sun: 0.03, fog: [1, 9], torch: 9 } };
+    // Lighting by look: the sky's (hemisphere) and the sun's intensity,
+    // their colours (palette names: the sky's light, the light off the
+    // ground, the sun, and the fog far off), fog start and end past the
+    // camera distance (blocks), and the torch's intensity. By day the sun
+    // is warm and the sky's light cool, so what lies in shadow turns a
+    // little blue (user, 2026-10-04). A torch lights `reach` blocks round it.
+    const LIGHT = {
+        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3 },
+        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3 },
+        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3 },
+        dark: { sky: 0.05, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9 }
+    };
+    // The look of each region: a dark one is 'dark', any not named here 'day'.
+    const LOOK = { base: 'dawn', valley: 'grey' };
     const TORCH = { reach: 7, decay: 1.2 };
     // How soft the edge of the sun's shadows is, blocks: the reach of the
     // shadow filter, the same on a small shadow map as on a large one
     // (user, 2026-10-04: soft, like the shade of sight).
     const SUN_SOFT = 0.1;
+    // The engine's soft shadows take five samples in a disc that noise
+    // turns from pixel to pixel; on a large shadow map that disc is many
+    // texels wide and the five show as grain. There, SUN_TAPS samples of
+    // the same disc are taken instead (a small map keeps the engine's
+    // five: its disc is narrow, and phones are spared the cost). The
+    // engine's shader is patched before any material is compiled; a
+    // three.js whose shader reads otherwise is left as it is.
+    const SUN_TAPS = 12;
+    function smoothShadows(T) {
+        const chunk = T.ShaderChunk.shadowmap_pars_fragment, from = chunk.indexOf('shadow = ('), end = ') * 0.2;', to = chunk.indexOf(end, from);
+        if (from < 0 || to < 0 || !chunk.slice(from, to).includes('vogelDiskSample( 4, 5, phi )')) return;
+        T.ShaderChunk.shadowmap_pars_fragment = `${chunk.slice(0, from)}shadow = 0.0;
+for ( int k = 0; k < ${SUN_TAPS}; k ++ ) shadow += texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( k, ${SUN_TAPS}, phi ) * radius, shadowCoord.z ) );
+shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
+    }
     // In a dark region a little daylight comes in by each portal: a soft
     // light `inside` blocks in from it, so the dark does not shut at the
     // doorway (user, 2026-10-03).
@@ -40,7 +65,11 @@ const worldView = (() => {
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
+        if (!small) smoothShadows(T);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, C.graphics.pixelRatioMax));
+        // Bright ground eases towards white instead of being cut off at
+        // it; colours below that are left as they are.
+        renderer.toneMapping = T.NeutralToneMapping;
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = T.PCFShadowMap;
         const camera = new T.PerspectiveCamera(C.camera.fov, 1, 0.1, 120);
@@ -100,8 +129,9 @@ const worldView = (() => {
         // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
         // light there.
-        const dark = !!C.maps[sim.region]?.dark, L = dark ? LIGHT.dark : LIGHT.day;
-        const scene = new T.Scene(), sky = new T.Color(dark ? P.darkSky : P.sky);
+        const dark = !!C.maps[sim.region]?.dark, L = LIGHT[dark ? 'dark' : LOOK[sim.region] || 'day'];
+        const [skyColor, groundColor, sunColor, farColor] = L.colors.map(name => P[name]);
+        const scene = new T.Scene(), sky = new T.Color(farColor);
         scene.background = sky;
         scene.fog = new T.Fog(sky, C.camera.distance + L.fog[0], C.camera.distance + L.fog[1]);
         // Fog and shadows follow the menu's settings.
@@ -111,8 +141,8 @@ const worldView = (() => {
             sun.castShadow = !dark && tune.shadows;
         }
 
-        scene.add(new T.HemisphereLight(P.skyLight, P.groundLight, L.sky));
-        const sun = new T.DirectionalLight(P.sun, L.sun), extent = C.graphics.shadowExtent;
+        scene.add(new T.HemisphereLight(skyColor, groundColor, L.sky));
+        const sun = new T.DirectionalLight(sunColor, L.sun), extent = C.graphics.shadowExtent;
         sun.castShadow = !dark && tune.shadows;
         // The torch's light: always there (lights coming and going would
         // rebuild every shader), at zero while no torch burns.
@@ -155,11 +185,12 @@ const worldView = (() => {
         // ---- terrain: chunk meshes (render/terrain_mesh.js) ----
         const t = sim.terrain;
         const ground = terrainMesh.create(T, scene, sim, tx);
-        // Grass beyond the map edge, so the world does not end in sky. It
-        // lies just under the block tops, which cover it inside the map.
+        // The map's own floor goes on beyond the map edge (grass, or a
+        // cave's gravel), so the world does not end in sky. It lies just
+        // under the block tops, which cover it inside the map.
         {
-            const span = 240, top = tx.grassTop.clone();
-            top.repeat.set(span, span); top.needsUpdate = true;
+            const span = 240, top = tx.ground(terrainMesh.floorOf(t));
+            top.repeat.set(span, span);
             const skirt = new T.Mesh(new T.PlaneGeometry(span, span), lambert(null, top));
             skirt.rotation.x = -Math.PI / 2; skirt.position.set(t.width / 2, -0.01, t.height / 2);
             skirt.receiveShadow = true;
@@ -374,6 +405,70 @@ const worldView = (() => {
             } else w.material.opacity = 0.44 * (1 - Math.min(1, m.t / mv.swing));
         }
 
+        // ---- ground masks: a fan of rays (terrainKit.sightFan) drawn from
+        // straight above into a small texture, north up, and blurred along
+        // and then across: white where the rays do not reach, soft at the
+        // edge. `size` texels across the `2 * half` blocks round its middle.
+        // The shade of sight is one, where the torch's light does not get
+        // to is another. ----
+        const BLUR = 1.1;
+        // A nine-texel bell curve in five taps; `along` is one texel's step.
+        const blur = new T.ShaderMaterial({
+            uniforms: { map: { value: null }, along: { value: new T.Vector2() } }, depthTest: false, depthWrite: false,
+            vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+            fragmentShader: `uniform sampler2D map; uniform vec2 along; varying vec2 vUv;
+void main() {
+    float a = texture2D(map, vUv).g * 0.227027
+        + (texture2D(map, vUv + along * 1.384615).g + texture2D(map, vUv - along * 1.384615).g) * 0.316216
+        + (texture2D(map, vUv + along * 3.230769).g + texture2D(map, vUv - along * 3.230769).g) * 0.070270;
+    gl_FragColor = vec4(a, a, a, 1.0);
+}`
+        });
+        const pass = new T.Scene(), flat = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), full = new T.Mesh(new T.PlaneGeometry(2, 2), blur);
+        full.frustumCulled = false; pass.add(full);
+        const masks = [];
+        function fanMask(size, half) {
+            const geo = new T.BufferGeometry(), out = half * 1.5;
+            let pos = null;
+            const fanMesh = new T.Mesh(geo, new T.MeshBasicMaterial({ color: '#ffffff', side: T.DoubleSide, fog: false }));
+            fanMesh.frustumCulled = false;
+            const above = new T.Scene(), eye = new T.OrthographicCamera(-half, half, half, -half, 0, 10);
+            above.background = new T.Color('#000000'); above.add(fanMesh);
+            eye.up.set(0, 0, -1); eye.position.set(0, 5, 0); eye.lookAt(0, 0, 0);
+            const target = samples => new T.WebGLRenderTarget(size, size, { depthBuffer: false, samples });
+            const drawnMask = target(4), blurred = [target(0), target(0)];
+            const steps = [[drawnMask, eye, above, null], [blurred[0], flat, pass, [BLUR / size, 0, drawnMask]], [blurred[1], flat, pass, [0, BLUR / size, blurred[0]]]];
+            // The fan round (x, z), blocks: between each ray and the next,
+            // from where it ends out past the texture's edge.
+            function draw(x, z, fan) {
+                const n = fan.n;
+                if (!pos || pos.length < fan.angle.length * 18) {
+                    geo.dispose();
+                    pos = new Float32Array(fan.angle.length * 18);
+                    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+                }
+                for (let i = 0, o = 0; i < n; i++) {
+                    const j = (i + 1) % n, c0 = Math.cos(fan.angle[i]), s0 = Math.sin(fan.angle[i]), c1 = Math.cos(fan.angle[j]), s1 = Math.sin(fan.angle[j]);
+                    const d0 = fan.reach[i] / U, d1 = fan.reach[j] / U;
+                    const nx0 = x + c0 * d0, nz0 = z + s0 * d0, fx0 = x + c0 * out, fz0 = z + s0 * out;
+                    const nx1 = x + c1 * d1, nz1 = z + s1 * d1, fx1 = x + c1 * out, fz1 = z + s1 * out;
+                    pos[o++] = nx0; pos[o++] = 0; pos[o++] = nz0; pos[o++] = fx0; pos[o++] = 0; pos[o++] = fz0; pos[o++] = fx1; pos[o++] = 0; pos[o++] = fz1;
+                    pos[o++] = nx0; pos[o++] = 0; pos[o++] = nz0; pos[o++] = fx1; pos[o++] = 0; pos[o++] = fz1; pos[o++] = nx1; pos[o++] = 0; pos[o++] = nz1;
+                }
+                geo.setDrawRange(0, n * 6);
+                geo.attributes.position.needsUpdate = true;
+                eye.position.set(x, 5, z);
+                for (const [to, cam, what, from] of steps) {
+                    if (from) { blur.uniforms.along.value.set(from[0], from[1]); blur.uniforms.map.value = from[2].texture; }
+                    renderer.setRenderTarget(to); renderer.render(what, cam);
+                }
+                renderer.setRenderTarget(null);
+            }
+            const mask = { texture: blurred[1].texture, half, out, draw, dispose() { geo.dispose(); fanMesh.material.dispose(); for (const one of [drawnMask, ...blurred]) one.dispose(); } };
+            masks.push(mask);
+            return mask;
+        }
+
         // ---- sight: ground this fighter cannot see is shaded, out to
         // `SHADE_FAR` blocks; walls at least eye high cast it, and so does
         // everything outside the front arc it sees (player.sightAngle).
@@ -385,84 +480,46 @@ const worldView = (() => {
         // `SIGHT_FAR` blocks, which is past the screen's edge.
         //
         // The shade's edge is soft (user, 2026-10-04; drawing only, what is
-        // seen is decided as before): the fan is drawn from straight above
-        // into a small texture, `MASK` texels across the `2 * SIGHT_FAR`
-        // blocks round the fighter, blurred along and then across, and
-        // that texture is the opacity of one dark sheet over the ground. ----
-        const SHADE_FAR = 30, SIGHT_FAR = 20, SHADE_Y = 0.02, MASK = 256, BLUR = 1.1;
+        // seen is decided as before): its mask is the opacity of one dark
+        // sheet over the ground. ----
+        const SHADE_FAR = 30, SIGHT_FAR = 20, SHADE_Y = 0.02, MASK = 256;
         const shade = (() => {
-            const geo = new T.BufferGeometry();
-            let pos = null;
-            // The fan, white on black, seen from above with north up.
-            const fanMesh = new T.Mesh(geo, new T.MeshBasicMaterial({ color: '#ffffff', side: T.DoubleSide, fog: false }));
-            fanMesh.frustumCulled = false;
-            const above = new T.Scene(), eye = new T.OrthographicCamera(-SIGHT_FAR, SIGHT_FAR, SIGHT_FAR, -SIGHT_FAR, 0, 10);
-            above.background = new T.Color('#000000'); above.add(fanMesh);
-            eye.up.set(0, 0, -1); eye.position.set(0, 5, 0); eye.lookAt(0, 0, 0);
-            const target = samples => new T.WebGLRenderTarget(MASK, MASK, { depthBuffer: false, samples });
-            const drawnMask = target(4), blurred = [target(0), target(0)];
-            // A nine-texel bell curve in five taps; `along` is one texel's step.
-            const blur = new T.ShaderMaterial({
-                uniforms: { map: { value: null }, along: { value: new T.Vector2() } }, depthTest: false, depthWrite: false,
-                vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-                fragmentShader: `uniform sampler2D map; uniform vec2 along; varying vec2 vUv;
-void main() {
-    float a = texture2D(map, vUv).g * 0.227027
-        + (texture2D(map, vUv + along * 1.384615).g + texture2D(map, vUv - along * 1.384615).g) * 0.316216
-        + (texture2D(map, vUv + along * 3.230769).g + texture2D(map, vUv - along * 3.230769).g) * 0.070270;
-    gl_FragColor = vec4(a, a, a, 1.0);
-}`
-            });
-            const pass = new T.Scene(), flat = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1), full = new T.Mesh(new T.PlaneGeometry(2, 2), blur);
-            full.frustumCulled = false; pass.add(full);
-            function soften() {
-                const steps = [[drawnMask, eye, above, null], [blurred[0], flat, pass, [BLUR / MASK, 0, drawnMask]], [blurred[1], flat, pass, [0, BLUR / MASK, blurred[0]]]];
-                for (const [to, cam, what, from] of steps) {
-                    if (from) { blur.uniforms.along.value.set(from[0], from[1]); blur.uniforms.map.value = from[2].texture; }
-                    renderer.setRenderTarget(to); renderer.render(what, cam);
-                }
-                renderer.setRenderTarget(null);
-            }
-            // The dark sheet: as far as SHADE_FAR; past the texture it takes
-            // the texture's edge, which is past sight and so all shade. Drawn
-            // over the ground it lies on, whatever the depth buffer's precision.
-            const mask = blurred[1].texture, k = SHADE_FAR / SIGHT_FAR;
-            mask.repeat.set(k, k); mask.offset.set(0.5 - k / 2, 0.5 - k / 2);
-            const mesh = new T.Mesh(new T.PlaneGeometry(2 * SHADE_FAR, 2 * SHADE_FAR), new T.MeshBasicMaterial({ color: '#05070d', alphaMap: mask, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+            // The dark sheet: as far as SHADE_FAR; past the mask it takes the
+            // mask's edge, which is past sight and so all shade. Drawn over
+            // the ground it lies on, whatever the depth buffer's precision.
+            const mask = fanMask(MASK, SIGHT_FAR), k = SHADE_FAR / SIGHT_FAR;
+            mask.texture.repeat.set(k, k); mask.texture.offset.set(0.5 - k / 2, 0.5 - k / 2);
+            const mesh = new T.Mesh(new T.PlaneGeometry(2 * SHADE_FAR, 2 * SHADE_FAR), new T.MeshBasicMaterial({ color: '#05070d', alphaMap: mask.texture, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
             mesh.rotation.x = -Math.PI / 2; mesh.frustumCulled = false; mesh.renderOrder = 1;
             scene.add(mesh);
             const fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
             let lastX = NaN, lastZ = NaN, lastFacing = NaN, lastRev = -1;
-            function dispose() {
-                geo.dispose(); fanMesh.material.dispose(); blur.dispose(); full.geometry.dispose();
-                for (const target of [drawnMask, ...blurred]) target.dispose();
-            }
             // Recast only when the fighter has moved or turned (or the terrain changed).
             function update(x, z, facing) {
                 if (x === lastX && z === lastZ && facing === lastFacing && lastRev === t.rev) return;
                 lastX = x; lastZ = z; lastFacing = facing; lastRev = t.rev;
                 terrainKit.sightFan(t, x * U, z * U, SIGHT_FAR * U, { facing, half: C.player.sightAngle, out: fan });
-                const n = fan.n;
-                if (!pos || pos.length < fan.angle.length * 18) {
-                    geo.dispose();
-                    pos = new Float32Array(fan.angle.length * 18);
-                    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
-                }
-                // Between each ray and the next: from where sight ends out to the far edge.
-                for (let i = 0, o = 0; i < n; i++) {
-                    const j = (i + 1) % n, c0 = Math.cos(fan.angle[i]), s0 = Math.sin(fan.angle[i]), c1 = Math.cos(fan.angle[j]), s1 = Math.sin(fan.angle[j]);
-                    const d0 = fan.reach[i] / U, d1 = fan.reach[j] / U;
-                    const nx0 = x + c0 * d0, nz0 = z + s0 * d0, fx0 = x + c0 * SHADE_FAR, fz0 = z + s0 * SHADE_FAR;
-                    const nx1 = x + c1 * d1, nz1 = z + s1 * d1, fx1 = x + c1 * SHADE_FAR, fz1 = z + s1 * SHADE_FAR;
-                    pos[o++] = nx0; pos[o++] = SHADE_Y; pos[o++] = nz0; pos[o++] = fx0; pos[o++] = SHADE_Y; pos[o++] = fz0; pos[o++] = fx1; pos[o++] = SHADE_Y; pos[o++] = fz1;
-                    pos[o++] = nx0; pos[o++] = SHADE_Y; pos[o++] = nz0; pos[o++] = fx1; pos[o++] = SHADE_Y; pos[o++] = fz1; pos[o++] = nx1; pos[o++] = SHADE_Y; pos[o++] = nz1;
-                }
-                geo.setDrawRange(0, n * 6);
-                geo.attributes.position.needsUpdate = true;
-                eye.position.set(x, 5, z); mesh.position.set(x, SHADE_Y, z);
-                soften();
+                mesh.position.set(x, SHADE_Y, z);
+                mask.draw(x, z, fan);
             }
-            return { update, dispose };
+            return { update };
+        })();
+
+        // ---- the torch lights only what it sees: its light does not pass
+        // blocks at least eye high (as sight; all the way round). The
+        // terrain reads this mask for the torch's light
+        // (render/terrain_mesh.js). Recast when the flame has moved. ----
+        const shine = (() => {
+            const mask = fanMask(128, TORCH.reach + 1), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
+            ground.torch.mask.value = mask.texture; ground.torch.at.value.set(0, 0, mask.half);
+            let lastX = NaN, lastZ = NaN, lastRev = -1;
+            return (x, z) => {
+                if (x === lastX && z === lastZ && lastRev === t.rev) return;
+                lastX = x; lastZ = z; lastRev = t.rev;
+                terrainKit.sightFan(t, x * U, z * U, mask.half * U, { out: fan });
+                ground.torch.at.value.set(x, z, mask.half);
+                mask.draw(x, z, fan);
+            };
         })();
 
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
@@ -529,6 +586,7 @@ void main() {
                 const body = space.toBlocks(bearer.shown.x, bearer.shown.y, bearer.shown.h + U);
                 torchLight.position.set(...clearOf(current.terrain, body, [m[12], m[13] + 0.15, m[14]]));
                 torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
+                shine(torchLight.position.x, torchLight.position.z);
             } else torchLight.intensity = 0;
             const foes = [];
             if (dummyView && current.dummy) {
@@ -580,7 +638,9 @@ void main() {
             });
             for (const g of warnShapes.values()) once(g, () => g.dispose());
             for (const texture of Object.values(tx)) if (texture?.isTexture) once(texture, () => texture.dispose());
-            ground.dispose(); shade.dispose();
+            ground.dispose();
+            for (const mask of masks) mask.dispose();
+            blur.dispose(); full.geometry.dispose();
             // The shadow map is the light's own render target.
             sun.dispose();
         }

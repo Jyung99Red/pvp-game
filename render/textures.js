@@ -163,7 +163,9 @@ const renderTextures = (() => {
             const e = 0.02;
             rects[name] = [(x + e) / canvas.width, 1 - (y + TILE - e) / canvas.height, (x + TILE - e) / canvas.width, 1 - (y + e) / canvas.height];
         });
-        return { grassTop: single('grassTop'), grain: single('grain'), atlas: finish(T, canvas, false), tiles: rects };
+        // `ground(name)`: one tile as a texture of its own that repeats (the
+        // sheet of ground round the map).
+        return { grassTop: single('grassTop'), grain: single('grain'), atlas: finish(T, canvas, false), tiles: rects, ground: single };
     }
     return { rng, create, TILES };
 })();

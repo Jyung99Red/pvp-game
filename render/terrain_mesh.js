@@ -4,9 +4,13 @@
 // is one draw and a change rebuilds only the chunks it touched (their
 // revision moved: core/terrain.js `set`). Tree crowns, roofs and portal
 // lintels are drawn-only blocks ("decor") worked out from the trees and the
-// buildings and portals; flowers and tufts are baked in too. Ground faces
-// darken where they meet a wall (corner shading), and each block gets a
-// slight shade of its own. Presentation only: nothing here is judged.
+// buildings and portals; flowers and tufts are baked in too. Faces darken
+// in the corners where they meet other blocks -- the ground at the foot of
+// a wall, a wall at its foot and in its inside corners, a crown under its
+// own leaves (corner shading, baked into the vertex colours) -- and each
+// block gets a slight shade of its own. The map's floor goes on under the
+// blocks, so it is what shows where the camera's cut opens a wall.
+// Presentation only: nothing here is judged.
 //
 // The material cuts a hole where blocks stand between the camera and the
 // player (`cut`): fragments in a cylinder round the line from the camera to
@@ -16,7 +20,10 @@
 // blocks do hide the player (`hides`): a wall beside them is in the
 // cylinder too, but hides nothing and stays whole (user, 2026-10-04).
 const terrainMesh = (() => {
-    const AO = [0.5, 0.68, 0.84, 1];
+    // Corner shading by how many of the three cells round a corner are
+    // filled (both sides, two, one, none): on the ground, and the lighter
+    // one on the faces of blocks.
+    const AO = [0.5, 0.68, 0.84, 1], FACE_AO = [0.58, 0.74, 0.88, 1];
     // Whole-number hash of a cell to [0, 1): the same world every time, and
     // the same after one chunk is rebuilt.
     function hash(a, b, c = 0) {
@@ -25,6 +32,8 @@ const terrainMesh = (() => {
         return ((h ^ h >>> 16) >>> 0) / 4294967296;
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
+    // The tile of a map's own floor.
+    const floorOf = t => GROUND[t.floor] || 'grassTop';
     // Tile and shade spread per solid kind (by name).
     const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05] };
 
@@ -107,24 +116,33 @@ const terrainMesh = (() => {
     }
 
     function create(T, scene, sim, tx) {
-        const t = sim.terrain, K = terrainKit.KIND, tiles = tx.tiles, colour = new T.Color();
+        const t = sim.terrain, K = terrainKit.KIND, tiles = tx.tiles, colour = new T.Color(), floorTile = floorOf(t);
         // The cut: centre (the player's chest) and eye (the camera), blocks.
         // `on` is the switch (1, or 0 for none at all); `open` is how far
         // the hole is open, 0..1: the view opens it only while blocks do
         // hide the player (`hides`, below).
         const cut = { center: { value: new T.Vector3() }, eye: { value: new T.Vector3() }, radius: { value: 1.3 }, on: { value: 1 }, open: { value: 0 } };
+        // The torch's light (the first point light) reaches only what the
+        // torch sees: `mask` is white where it does not (a ground mask of
+        // render/world_view.js, north up), `at` its middle (x, z) and half
+        // its width, blocks. A face reads it a little way out in front of
+        // itself, where the light comes from, not on its own edge.
+        const torch = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) } };
         const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
         // Hidden faces are left out, so the back faces three.js would cast
         // shadows with are often missing: cast with both sides.
         material.shadowSide = T.DoubleSide;
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, torchMask: torch.mask, torchAt: torch.at });
             shader.vertexShader = shader.vertexShader
-                .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos;')
-                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+                .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos; varying vec3 vTorchSide;')
+                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vTorchSide = normal;');
+            const lit = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
+            if (!T.ShaderChunk.lights_fragment_begin.includes(lit)) throw new Error('The point light loop of this three.js is not the one the torch mask was written for');
             shader.fragmentShader = shader.fragmentShader
                 .replace('#include <common>', `#include <common>
-varying vec3 vCutPos;
+varying vec3 vCutPos; varying vec3 vTorchSide;
+uniform sampler2D torchMask; uniform vec3 torchAt;
 uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
@@ -140,7 +158,13 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
     float ahead = dot(rel.xz, normalize(axis.xz));
     float fade = (1.0 - smoothstep(cutRadius * 0.55, cutRadius, length(rel - axis * along))) * smoothstep(0.1, 0.35, ahead);
     if (fade * 0.85 * cutOpen > cutDither(gl_FragCoord.xy)) discard;
-}`);
+}`)
+                .replace('#include <lights_fragment_begin>', `vec2 torchUv = vec2(0.5) + vec2(vCutPos.x + vTorchSide.x * 0.3 - torchAt.x, torchAt.y - vCutPos.z - vTorchSide.z * 0.3) / (2.0 * torchAt.z);
+float torchSeen = 1.0 - texture2D(torchMask, torchUv).g;
+${T.ShaderChunk.lights_fragment_begin.replace(lit, `${lit}
+#if UNROLLED_LOOP_INDEX == 0
+directLight.color *= torchSeen;
+#endif`)}`);
         };
         let deco = null, decoRev = -1;
         const chunks = new Map();
@@ -153,7 +177,28 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 const k = terrainKit.kindAt(t, c, r);
                 if (terrainKit.isSolid(k) && k !== K.gate && y < terrainKit.levelAt(t, c, r)) return true;
             }
-            return deco.has(`${c},${y},${r}`);
+            return decoKeys.has(decoKey(c, y, r));
+        }
+        // Corner shading of the face of block (c, y, r) that looks along
+        // `n`, for its corners `points`: each corner looks at the three
+        // cells it touches in the layer the face looks into -- one either
+        // side of it and the one across.
+        function faceShades(points, n, c, y, r) {
+            const axes = [0, 1, 2].filter(k => n[k] === 0), at = [c + n[0], y + n[1], r + n[2]], mid = [c + 0.5, y + 0.5, r + 0.5];
+            return points.map(p => {
+                const a = [...at], b = [...at], d = [...at];
+                for (const [i, k] of axes.entries()) {
+                    const step = p[k] > mid[k] ? 1 : -1;
+                    (i ? b : a)[k] += step; d[k] += step;
+                }
+                const s1 = opaque(...a) ? 1 : 0, s2 = opaque(...b) ? 1 : 0, corner = opaque(...d) ? 1 : 0;
+                return FACE_AO[s1 && s2 ? 0 : 3 - s1 - s2 - corner];
+            });
+        }
+        // One face of a block, shaded in its corners.
+        function face(b, F, c, y, r, rect, rgb) {
+            const points = F.at(c, y, r);
+            b.quad(points, F.n, rect, rgb, faceShades(points, F.n, c, y, r));
         }
         // Does a block (the terrain's or decor) stand on the straight line
         // from `from` to `to` ([x, y, z], blocks)? Sampled every fifth of a
@@ -209,15 +254,17 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                     if (k === K.grass && hash(c, r, 7) < 0.18 && !clear.some(s => Math.abs(c - s.col) <= 1 && Math.abs(r - s.row) <= 1)) flower(b, c, r);
                     continue;
                 }
+                // Under a block (and a portal's opening) the map's floor goes on.
+                b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[floorTile], tintOf(WHITE, c, -1, r, 0.06));
                 if (k === K.gate) continue;
                 const [tile, vary] = BLOCK[name], level = terrainKit.levelAt(t, c, r);
                 for (let y = 0; y < level; y++) {
                     const rgb = tintOf(WHITE, c, y, r, vary), own = k === K.stone && hash(c, y, r, 3) < 0.3 ? 'mossy' : tile;
-                    if (y === level - 1 && !opaque(c, y + 1, r)) b.quad(FACES.top.at(c, y, r), FACES.top.n, tiles[k === K.tree ? 'barkTop' : own], rgb);
+                    if (y === level - 1 && !opaque(c, y + 1, r)) face(b, FACES.top, c, y, r, tiles[k === K.tree ? 'barkTop' : own], rgb);
                     for (const side of SIDES) {
                         const F = FACES[side];
                         if (opaque(c + F.d[0], y, r + F.d[1])) continue;
-                        b.quad(F.at(c, y, r), F.n, tiles[fronts.get(`${c},${y},${r},${side}`) || own], rgb);
+                        face(b, F, c, y, r, tiles[fronts.get(`${c},${y},${r},${side}`) || own], rgb);
                     }
                 }
                 if (k === K.crystal) crystals(b, c, level, r);
@@ -229,10 +276,10 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 const [x, y, z] = key.split(',').map(Number);
                 if (Math.min(t.cw - 1, Math.max(0, Math.floor(x / 16))) !== cx || Math.min(t.ch - 1, Math.max(0, Math.floor(z / 16))) !== cz) continue;
                 const base = d.tint ? colour.set(d.tint).toArray() : WHITE, rgb = tintOf(base, x, y, z, d.tile === 'leaves' ? 0.12 : 0.05);
-                if (!opaque(x, y + 1, z)) b.quad(FACES.top.at(x, y, z), FACES.top.n, tiles[d.tile], rgb);
+                if (!opaque(x, y + 1, z)) face(b, FACES.top, x, y, z, tiles[d.tile], rgb);
                 for (const side of SIDES) {
                     const F = FACES[side];
-                    if (!opaque(x + F.d[0], y, z + F.d[1])) b.quad(F.at(x, y, z), F.n, tiles[d.tile], rgb);
+                    if (!opaque(x + F.d[0], y, z + F.d[1])) face(b, F, x, y, z, tiles[d.tile], rgb);
                 }
             }
             return b;
@@ -304,7 +351,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         }
         update();
         return {
-            cut, material, update, hides,
+            cut, torch, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const { mesh: m } of chunks.values()) { scene.remove(m); m.geometry.dispose(); }
@@ -312,5 +359,5 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             }
         };
     }
-    return { create, decor, hash };
+    return { create, decor, hash, floorOf };
 })();

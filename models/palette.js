@@ -35,6 +35,11 @@ const palette = Object.freeze({
     chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6',
     // world
     sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8', darkSky: '#05060a',
+    // the world's light by look (render/world_view.js): the sun warm, the
+    // sky's light cool; a dawn, and a grey day among the rocks
+    sunWarm: '#ffe4b8', skyCool: '#d9e8ff',
+    sunDawn: '#ffd9a8', skyDawn: '#e6e0f3', groundDawn: '#786048', skyDawnBack: '#e8d3c0',
+    sunGrey: '#eef1f6', skyGrey: '#d2dbe8', groundGrey: '#625d59', skyGreyBack: '#b9c4cf',
     brush: '#8a6a3c', brushDark: '#4e3a20',
     // resources
     ore: '#c9824a', oreLight: '#e8a868', crystal: '#7fe3f0', crystalDeep: '#3aa6c8', herb: '#3f9a4a', herbLight: '#7acb62', berry: '#d8394a'
