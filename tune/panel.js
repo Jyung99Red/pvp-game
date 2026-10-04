@@ -20,8 +20,8 @@ const tuneApp = (() => {
     ];
     const BONE_NAMES = Object.fromEntries(BONE_GROUPS.flatMap(([group, bones]) => bones.map(([id, name]) => [id, `${group.replace(/（.*）/, '')}·${name}`])));
     const HINTS = {
-        base: 'ry 整个人转向（正数转向左边）；rx 负数往后倒。px / py / pz 是位移（格）',
-        pelvis: 'py 负数下蹲（格）；ry 扭胯',
+        base: 'ry 整个人转向（正数转向左边）；rx 负数往后倒。py 上下没有效果：人总会自动落到地上',
+        pelvis: 'ry 扭胯。py 上下没有效果（人总会自动落到地上）；要蹲低就弯腿：大腿 rx 负、小腿 rx 正',
         chest: 'rx 正数往前弯腰，负数后仰；ry 正数转向左边',
         head: 'rx 负数抬头后仰',
         upperArmR: 'rx 负数往前抬（-1.57 平举，-3.1 举过头顶）；ry 正数往身体左边摆；rz 负数往右侧张开',
