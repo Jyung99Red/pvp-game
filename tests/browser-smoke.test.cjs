@@ -536,29 +536,63 @@ test('the move tuner: boots clean, a typed number changes the key the game reads
         assert.deepEqual([info.frozen, info.move], [false, 'slash'], 'the config is unfrozen on this page only');
         assert.ok(info.width > 300 && info.drawn > 0, 'the view draws');
 
+        // The file's own number, whatever the key has been tuned to.
+        const was = await page.evaluate(() => window.tune.lab.original('slash.a').handR.rx);
         await page.click('[data-bone="handR"] .bone-head');
         const box = page.locator('[data-bone="handR"] [data-ch="rx"] [data-number]');
         await box.fill('1.5'); await box.press('Enter');
         assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.5);
-        assert.match(await page.locator('[data-export]').inputValue(), /slash: \{\n {12}a: key\(\{ .*handR: \{ rx: 1\.5, ry: -1\.2 \}/);
+        assert.match(await page.locator('[data-export]').inputValue(), /slash: \{\n {12}a: key\(\{ .*handR: \{ rx: 1\.5, ry: -1\.2[,} ]/);
         // The draft survives a reload; "还原这一项" puts the file's value back.
         await page.waitForTimeout(500);
         await page.reload({ waitUntil: 'load' });
         await open();
         assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.5);
         await page.click('[data-revert="this"]');
-        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.05);
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), was);
         assert.equal(await page.locator('[data-export]').inputValue(), '（还没有改动）');
+        // One number put back by the button beside it: shown only while it differs from the file.
+        const back = page.locator('[data-bone="handR"] [data-ch="rx"] [data-was]');
+        assert.equal(await back.isVisible(), false);
+        await box.fill('1.5'); await box.press('Enter');
+        assert.match(await back.textContent(), new RegExp(`^原 ${String(was).replace('.', '\\.')} `));
+        await back.click();
+        assert.deepEqual(await page.evaluate(() => [playerMoves.moves.slash.a.handR.rx, window.tune.lab.changed('slash.a')]), [was, false]);
+        assert.equal(await back.isVisible(), false);
+        // The picked bone's own axes are drawn; the dashed line, the axis a
+        // slider turns about, only while the pointer is on a slider.
+        const lines = () => page.evaluate(() => {
+            const all = window.tune.view.scene.children, own = all.find(c => c.isLineSegments && c.geometry.attributes.position.count === 6), p = own.geometry.attributes.position;
+            return [window.tune.state.bone, own.visible, Math.hypot(p.getX(1) - p.getX(0), p.getY(1) - p.getY(0), p.getZ(1) - p.getZ(0)) > 0.3, all.find(c => c.material?.isLineDashedMaterial).visible];
+        });
+        await page.hover('[data-canvas]');
+        await page.waitForTimeout(100);
+        assert.deepEqual(await lines(), ['handR', true, true, false]);
+        await page.hover('[data-bone="handR"] [data-ch="ry"] [data-slider]');
+        await page.waitForTimeout(100);
+        assert.deepEqual(await lines(), ['handR', true, true, true]);
+        // Dragged on its Y, the wrist turns about its own y: all three numbers follow; Ctrl+Z takes the drag back.
+        const handle = page.locator('[data-bone="handR"] [data-turn="y"]');
+        await handle.scrollIntoViewIfNeeded();
+        const at = await handle.boundingBox(), hx = at.x + at.width / 2, hy = at.y + at.height / 2;
+        await page.mouse.move(hx, hy); await page.mouse.down(); await page.mouse.move(hx + 40, hy, { steps: 4 }); await page.mouse.up();
+        const hand = () => page.evaluate(() => ['rx', 'ry', 'rz'].map(c => playerMoves.moves.slash.a.handR[c] || 0));
+        const before = await page.evaluate(() => ['rx', 'ry', 'rz'].map(c => window.tune.lab.original('slash.a').handR[c] || 0)), turned = await hand();
+        assert.ok(turned.every((v, i) => Math.abs(v - before[i]) > 0.01), `${turned} from ${before}`);
+        await page.keyboard.press('Control+z');
+        assert.deepEqual(await hand(), before);
         // A draft made on older files (as if the code changed since): the
         // files win and the notice says so, until the old draft is asked for.
+        // (First let the page's own save of its draft go by.)
+        await page.waitForTimeout(500);
         await page.evaluate(() => {
             const pose = JSON.parse(JSON.stringify(playerMoves.moves.slash.a)), base = JSON.parse(JSON.stringify(pose));
-            pose.handR.rx = 1.7; base.handR.rx = 0.9;
+            pose.handR.rx = 1.7; base.handR.rx += 0.3;
             localStorage.setItem('blockKnight.tune.draft', JSON.stringify({ version: 2, poses: { 'slash.a': { pose, base } }, timing: {} }));
         });
         await page.reload({ waitUntil: 'load' });
         await open();
-        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.05);
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), was);
         assert.match(await page.locator('[data-notice-text]').textContent(), /斜斩 a/);
         await page.click('[data-notice="restore"]');
         assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.7);

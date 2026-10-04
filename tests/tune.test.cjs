@@ -97,6 +97,81 @@ test('a draft meets the files as they are now: what was written back drops out, 
     assert.ok(old.changed('slash.a'));
 });
 
+test('a bone turns about its own axes, which are square; its three numbers follow, even where the sliders are locked', () => {
+    const g = workbench(), L = g.moveLab, R = g.rigKit, M = g.math3d, rig = L.rigOf(L.loadoutOf('sword'));
+    const rot = p => M.compose(0, 0, 0, p?.rx || 0, p?.ry || 0, p?.rz || 0);
+    const spin = (axis, angle) => M.compose(0, 0, 0, axis === 'x' ? angle : 0, axis === 'y' ? angle : 0, axis === 'z' ? angle : 0);
+    const same = (a, b, eps, what) => { for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) assert.ok(Math.abs(a[i] - b[i]) < eps, `${what}: ${a[i]} vs ${b[i]}`); };
+    // Its own axes: the solved bone's, at the joint, square to each other.
+    const f = L.frame(rig, R.solve(rig, g.playerMoves.moves.slash.a, [1, 0, 2], 0.7), 'handR');
+    for (const [a, b] of [['x', 'y'], ['y', 'z'], ['z', 'x']]) assert.ok(Math.abs(M.dot(f[a], f[b])) < 1e-12 && Math.abs(M.length(f[a]) - 1) < 1e-12);
+    // Turned from: a wrist nearly in line with the forearm (most keys; the
+    // sliders are all but locked there), on the lock, past it, turned on all
+    // three, and at rest. The pose is the old one turned about its own axis
+    // (to the three decimals a pose keeps), and the numbers stay in range.
+    for (const from of [{ rx: 1.45 }, { rx: 1.571 }, { rx: 2.6, ry: 1.3 }, { rx: 0.84, ry: -1.2, rz: 2.27 }, { ry: 3.1, rz: -3.1 }, {}]) for (const axis of ['x', 'y', 'z']) for (const angle of [0.35, -1.2]) {
+        L.replace('slash.b', { ...L.original('slash.b'), handR: from });
+        L.turn('slash.b', 'handR', axis, angle);
+        const now = L.poseOf('slash.b').handR || {}, what = `${JSON.stringify(from)} about ${axis} by ${angle}`;
+        same(rot(now), M.multiply(rot(from), spin(axis, angle)), 2e-3, what);
+        for (const c of ['rx', 'ry', 'rz']) assert.ok(Math.abs(now[c] || 0) <= L.ANGLE_LIMIT, what);
+    }
+    // What no one slider reaches: the blade, nearly in line with the forearm, tipped 20 degrees to the side.
+    L.replace('slash.b', { ...L.original('slash.b'), handR: { rx: 1.45 } });
+    L.turn('slash.b', 'handR', 'y', 20 * Math.PI / 180);
+    const tipped = L.poseOf('slash.b').handR;
+    assert.ok(['rx', 'ry', 'rz'].every(c => Math.abs(tipped[c] - { rx: 1.45, ry: 0, rz: 0 }[c]) > 0.2), JSON.stringify(tipped));
+    L.revertAll();
+    // A drag turns from where it began by the whole angle: two steps are one.
+    const began = { ...L.poseOf('smite.a').handR };
+    L.turn('smite.a', 'handR', 'z', 0.2, began); L.turn('smite.a', 'handR', 'z', 0.5, began);
+    const dragged = { ...L.poseOf('smite.a').handR };
+    L.revertAll(); L.turn('smite.a', 'handR', 'z', 0.5);
+    assert.deepEqual(dragged, { ...L.poseOf('smite.a').handR });
+    // The numbers move as little as they can: a wrist bent past the lock (rx 2.6) is not written the other way round.
+    assert.ok(Math.abs(dragged.rx - began.rx) < 0.6 && Math.abs(dragged.ry - began.ry) < 0.6, JSON.stringify(dragged));
+    L.revertAll();
+    // On the lock itself rz keeps its number and ry takes the turn.
+    for (const rx of [Math.PI / 2, -Math.PI / 2]) {
+        const a = L.anglesOf(rot({ rx, ry: 0.7, rz: 0.2 }), { rz: 0.2 });
+        assert.ok(Math.abs(a.rx - rx) < 1e-9 && Math.abs(a.ry - 0.7) < 1e-9 && a.rz === 0.2, JSON.stringify(a));
+    }
+    // No turn, no change: every bone of every key and pose keeps its numbers.
+    for (const target of L.targets()) for (const bone of L.BONES) L.turn(target, bone, 'y', 0);
+    assert.equal(L.changesSource(), '');
+    assert.throws(() => L.turn('slash.a', 'handR', 'w', 0.1));
+    assert.throws(() => L.turn('slash.a', 'tail', 'x', 0.1));
+});
+
+test('the line shown for a slider is the axis it turns its bone about: a gimbal\'s, not the bone\'s own', () => {
+    const g = workbench(), L = g.moveLab, R = g.rigKit, rig = L.rigOf(L.loadoutOf('sword')), root = [1, 0, 2], yaw = 0.7, step = 0.3;
+    const rows = m => [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]];
+    // The turn by `angle` about the unit axis k (Rodrigues).
+    const about = ([x, y, z], angle) => {
+        const c = Math.cos(angle), s = Math.sin(angle), t = 1 - c;
+        return [[c + t * x * x, t * x * y - s * z, t * x * z + s * y], [t * x * y + s * z, c + t * y * y, t * y * z - s * x], [t * x * z - s * y, t * y * z + s * x, c + t * z * z]];
+    };
+    // A wrist well turned on all three (the user's slash.a, 2026-10-04), an arm, and the whole body.
+    for (const bone of ['handR', 'upperArmR', 'base']) {
+        const pose = { ...JSON.parse(JSON.stringify(g.playerMoves.moves.slash.a)), [bone]: { rx: 0.84, ry: -1.2, rz: 2.27 } };
+        const solved = R.solve(rig, pose, root, yaw), i = rig.index[bone], axes = L.gimbal(rig, solved, pose, bone, yaw);
+        assert.deepEqual([...axes.at], [...solved.bones[i].slice(12, 15)], `${bone}: at the joint`);
+        for (const c of ['x', 'y', 'z']) {
+            const turned = R.solve(rig, { ...pose, [bone]: { ...pose[bone], [`r${c}`]: pose[bone][`r${c}`] + step } }, root, yaw);
+            // How the bone turned in the world: after times before, inverted.
+            const a = rows(turned.bones[i]), b = rows(solved.bones[i]), want = about(axes[c], step);
+            for (let r = 0; r < 3; r++) for (let j = 0; j < 3; j++) {
+                const got = a[r][0] * b[j][0] + a[r][1] * b[j][1] + a[r][2] * b[j][2];
+                assert.ok(Math.abs(got - want[r][j]) < 1e-9, `${bone}: r${c} turns about the ${c} line`);
+            }
+        }
+        // Not the bone's own frame: its x is rz away from the line rx turns about.
+        const m = solved.bones[i];
+        assert.ok(Math.abs(g.math3d.dot(axes.x, [m[0], m[1], m[2]]) - Math.cos(2.27)) < 1e-9, bone);
+    }
+    assert.throws(() => L.gimbal(rig, R.solve(rig, {}), {}, 'tail'));
+});
+
 test('timing is changed only where the config is unfrozen (the tuner\'s page), and the preview follows it', () => {
     const frozen = workbench({ unfrozen: false }).moveLab;
     assert.equal(frozen.timingEditable(), false);

@@ -3,7 +3,8 @@
 // three.js, so the Node tests run it (tests/tune.test.cjs).
 // - Editing: a key pose is changed where the game reads it (playerMoves,
 //   playerPoses), copy on write, so keys that share a bone object (the
-//   shield arm) stay apart; move timing is changed in gameConfig, which
+//   shield arm) stay apart; a bone is given its angles one by one, or
+//   turned about its own axes; move timing is changed in gameConfig, which
 //   the tuner's page loads unfrozen. A draft is what differs from the
 //   files as they were loaded; nothing is written to the files from here.
 // - Previews ("recordings"): one move from the stance, worked out
@@ -208,6 +209,69 @@ const moveLab = (() => {
         const key = JSON.stringify(loadout);
         if (!rigs.has(key)) rigs.set(key, rigKit.build(playerModel, { scale: gameConfig.models.playerScale, equipment: equipmentModels.forLoadout(loadout) }));
         return rigs.get(key);
+    }
+    // ---- a bone's axes, and turning it about them ----
+    // A bone's three numbers are Euler angles, R = Ry * Rx * Rz
+    // (core/math3d.js), so a slider turns the bone about a gimbal axis and
+    // not about one of its own: ry about the parent's y, rx about the x
+    // that ry has turned, rz about the bone's own z. With rx set, those
+    // of ry and rz are no longer square to each other, and at rx = ±π/2
+    // they are one line (the lock): one way of turning is then out of any
+    // single slider's reach. That is where most keys hold the wrist, the
+    // blade nearly in line with the forearm. So the page turns a bone about
+    // its own axes too (`turn`), which are always square, and works the
+    // three numbers out.
+    const boneIndex = (rig, bone) => {
+        const i = rig.index[bone];
+        if (i === undefined) throw new Error(`Unknown bone ${bone}`);
+        return i;
+    };
+    // A bone's own axes in the world, for a pose as solved; `at`: the joint.
+    function frame(rig, solved, bone) {
+        const m = solved.bones[boneIndex(rig, bone)];
+        return { at: [m[12], m[13], m[14]], x: [m[0], m[1], m[2]], y: [m[4], m[5], m[6]], z: [m[8], m[9], m[10]] };
+    }
+    // The axes its rx, ry and rz sliders turn it about (`yaw`: the body's,
+    // as given to rigKit.solve).
+    function gimbal(rig, solved, pose, bone, yaw = 0) {
+        const i = boneIndex(rig, bone), parent = rig.bones[i].parent, P = parent < 0 ? math3d.compose(0, 0, 0, 0, yaw, 0) : solved.bones[parent];
+        const m = solved.bones[i], ry = pose[bone]?.ry || 0;
+        return { at: [m[12], m[13], m[14]], x: math3d.transformDirection(P, [Math.cos(ry), 0, -Math.sin(ry)]), y: [P[4], P[5], P[6]], z: [m[8], m[9], m[10]] };
+    }
+    const ROTATIONS = ['rx', 'ry', 'rz'], TAU = 2 * Math.PI, ANGLE_LIMIT = 3.2;
+    const rotationOf = p => math3d.compose(0, 0, 0, p?.rx || 0, p?.ry || 0, p?.rz || 0);
+    // The three angles of a rotation matrix. Every pose has two sets (the
+    // other goes the other way round the gimbal), each angle any number of
+    // whole turns: the set nearest `near` is given, so the numbers move as
+    // little as they can. At the lock rz keeps `near`'s and ry takes the rest.
+    function anglesOf(m, near = {}) {
+        const s = Math.min(1, Math.max(-1, -m[9])), rx = Math.asin(s), was = c => near?.[c] || 0;
+        let sets;
+        if (1 - Math.abs(s) < 1e-9) {
+            const both = Math.atan2(-m[2], m[0]);
+            sets = [{ rx, ry: s > 0 ? both + was('rz') : both - was('rz'), rz: was('rz') }];
+        } else {
+            const ry = Math.atan2(m[8], m[10]), rz = Math.atan2(m[1], m[5]);
+            sets = [{ rx, ry, rz }, { rx: Math.PI - rx, ry: ry + Math.PI, rz: rz + Math.PI }];
+        }
+        let best = null, least = Infinity;
+        for (const angles of sets) {
+            let far = 0;
+            for (const c of ROTATIONS) { angles[c] += Math.round((was(c) - angles[c]) / TAU) * TAU; far += Math.abs(angles[c] - was(c)); }
+            if (far < least) { least = far; best = angles; }
+        }
+        return best;
+    }
+    // Turn a bone about one of its own axes ('x', 'y', 'z') by `angle`, and
+    // write its three angles back. `from`: the angles it had as the gesture
+    // began (a drag turns from there by the whole angle, so rounding does
+    // not gather).
+    function turn(target, bone, axis, angle, from = poseOf(target)[bone]) {
+        if (!BONES.includes(bone) || !['x', 'y', 'z'].includes(axis) || !Number.isFinite(angle)) throw new Error(`Cannot turn ${bone} about ${axis} by ${angle}`);
+        const spin = math3d.compose(0, 0, 0, axis === 'x' ? angle : 0, axis === 'y' ? angle : 0, axis === 'z' ? angle : 0);
+        const next = anglesOf(math3d.multiply(rotationOf(from), spin), poseOf(target)[bone]);
+        // Within the sliders' range.
+        for (const c of ROTATIONS) set(target, bone, c, Math.abs(next[c]) > ANGLE_LIMIT ? next[c] - Math.round(next[c] / TAU) * TAU : next[c]);
     }
     // What playerAnim.pose needs of a body, at rest.
     const REST = Object.freeze({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0, down: false, downT: 0, drink: null, handOut: 0, act: null });
@@ -513,6 +577,7 @@ const moveLab = (() => {
         timingEditable, setTiming, timingChanged, moveChanged, draft, apply, revert, revertMove, revertAll,
         original: target => clone(original.poses[target]), originalTiming: id => ({ ...original.timing[id] }),
         weaponTypes, movesOf, label, follow, nextInputs, routes, loadoutOf, rigOf, standardOf,
+        ANGLE_LIMIT, frame, gimbal, anglesOf, turn,
         single, combo, pose, measure, tipPath, TOO_FAR, moveSource, poseSource, timingSource, changesSource
     };
 })();

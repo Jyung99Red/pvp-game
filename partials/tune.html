@@ -118,9 +118,11 @@
                 <button type="button" data-key="a">a：前摇结束</button>
                 <button type="button" data-key="b">b：挥完</button>
             </div>
-            <p class="tune-legend">rx 前后摆（绕左右轴）· ry 左右转（绕竖直轴）· rz 往侧面摆（绕前后轴）。单位弧度，1 ≈ 57°，π ≈ 3.14。
-                先转 ry，再 rx，最后 rz。选中骨头时画面上的 <b class="ax-x">红</b>/<b class="ax-y">绿</b>/<b class="ax-z">蓝</b> 轴就是它的 x / y / z。
-                左右拖通道名（rx / ry / rz）可以微调，按住 Shift 更细；数字框里可以用 ↑ ↓。</p>
+            <p class="tune-legend">选中骨头时画面上的 <b class="ax-x">红</b>/<b class="ax-y">绿</b>/<b class="ax-z">蓝</b> 线是它自己的 x / y / z（Blender 的 Local），永远互相垂直。
+                每根骨头下面"绕自身轴"的 X / Y / Z 按住左右拖，就是绕这三根线转，什么角度都摆得到；三个数会一起变，这是正常的。</p>
+            <p class="tune-legend">rx / ry / rz 是欧拉角，一层套一层：先转 ry，再 rx，最后 rz（Blender 的 ZXY 欧拉）。单位弧度，1 ≈ 57°，π ≈ 3.14。
+                所以滑块绕的不是那三根线：鼠标放到滑块上，画面上的虚线才是它绕着转的轴。rx 接近 ±1.57 时 ry 和 rz 的虚线几乎重合，少一个方向，这时用"绕自身轴"。
+                左右拖通道名（rx / ry / rz）可以微调，按住 Shift 更细；数字框里可以用 ↑ ↓；改过的数旁边点"原 … ↺"还原这一个数。</p>
             <div data-bones></div>
         </section>
 

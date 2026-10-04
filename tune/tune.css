@@ -117,16 +117,20 @@ i { color: var(--accent); font-style: normal; font-size: 10px; margin-left: 4px;
 .bone-sum { margin-left: auto; color: var(--muted); font-family: var(--mono); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .bone-body { padding: 0 0 6px 6px; }
 .bone-hint { margin: 0 0 4px; color: var(--muted); font-size: 11px; }
-.ch { display: grid; grid-template-columns: 30px minmax(0, 1fr) 64px 26px 52px; align-items: center; gap: 6px; margin: 2px 0; }
-.ch.tm { grid-template-columns: 64px minmax(0, 1fr) 64px 52px; }
+.ch { display: grid; grid-template-columns: 30px minmax(0, 1fr) 58px 26px 70px; align-items: center; gap: 6px; margin: 2px 0; }
+.ch.tm { grid-template-columns: 64px minmax(0, 1fr) 58px 70px; }
 .ch-name { font-family: var(--mono); }
 .bone .ch-name { cursor: ew-resize; user-select: none; touch-action: none; }
 .ch-rx { color: var(--x); } .ch-ry { color: var(--y); } .ch-rz { color: var(--z); }
 .ch input[type="number"] { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-family: var(--mono); font-size: 12px; }
 .ch button { padding: 1px 0; font-size: 11px; }
-.ch-was { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.ch .ch-was { padding: 1px 4px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch.changed input[type="number"] { border-color: var(--accent); }
 .ch input[type="range"] { width: 100%; accent-color: var(--accent); }
+.turn { display: flex; align-items: center; gap: 6px; margin: 5px 0 2px; }
+.turn-label, .turn-note { color: var(--muted); font-size: 11px; }
+.turn-label { min-width: 52px; }
+.turn button { padding: 1px 12px; font-family: var(--mono); font-size: 12px; cursor: ew-resize; user-select: none; touch-action: none; }
 
 .tune-checks { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; margin: 0; }
 .tune-checks dt { color: var(--muted); }

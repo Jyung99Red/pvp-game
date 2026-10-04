@@ -1,6 +1,6 @@
 // The move tuner's page (tune.html, a desktop tool; the game is index.html).
 // Pick a weapon and a move, a combo or another pose; drag a bone's rx, ry,
-// rz and the body follows at once; play the timeline slowed down or scrub
+// rz, or turn it about its own axes, and the body follows at once; play the timeline slowed down or scrub
 // it; see the checks the tests make; copy what changed as source text to
 // paste back into the files. Edits live in this page only, kept as a draft
 // in localStorage, until they are written back (tune/lab.js does the
@@ -26,10 +26,10 @@ const tuneApp = (() => {
         head: 'rx 负数抬头后仰',
         upperArmR: 'rx 负数往前抬（-1.57 平举，-3.1 举过头顶）；ry 正数往身体左边摆；rz 负数往右侧张开',
         forearmR: 'rx 负数弯肘',
-        handR: 'rx 正数往掌心弯；ry 绕小臂拧手腕',
+        handR: 'rx 正数往掌心弯；ry 绕小臂拧手腕；rz 绕剑身自转（只改刃口朝哪边）。剑快和小臂成一条线时（rx 接近 1.57）滑块少一个方向，用下面的"绕自身轴"',
         upperArmL: 'rx 负数往前抬；ry 正数往身体左边摆；rz 正数往左侧张开',
         forearmL: 'rx 负数弯肘',
-        handL: 'rx 正数往掌心弯；ry 绕小臂拧手腕',
+        handL: 'rx 正数往掌心弯；ry 绕小臂拧手腕；rz 绕朝前的轴自转（火把、药瓶的长轴）',
         thighR: 'rx 负数往前抬腿，正数往后',
         shinR: 'rx 正数弯膝',
         thighL: 'rx 负数往前抬腿，正数往后',
@@ -37,7 +37,9 @@ const tuneApp = (() => {
     };
     const MOVED = new Set(['base', 'pelvis']);
     const channelsOf = bone => MOVED.has(bone) ? ['rx', 'ry', 'rz', 'px', 'py', 'pz'] : ['rx', 'ry', 'rz'];
-    const RANGES = { r: [-3.2, 3.2, 0.01], p: [-0.6, 0.6, 0.01] };
+    const RANGES = { r: [-moveLab.ANGLE_LIMIT, moveLab.ANGLE_LIMIT, 0.01], p: [-0.6, 0.6, 0.01] };
+    // A bone's own axes, in the view's colours.
+    const OWN_AXES = [['x', '红'], ['y', '绿'], ['z', '蓝']];
     const TIMING_TEXT = {
         windup: ['前摇', '按下到开始挥（关键姿势 a）'],
         swing: ['挥动', '从 a 挥到 b，只有这段会打中'],
@@ -141,6 +143,15 @@ const tuneApp = (() => {
                 return { samples, current: state.mode !== 'pose' && o.move === state.move };
             });
         }
+        // The slider under the pointer, or the one holding the keys: the
+        // axis it turns its bone about is drawn (a gimbal's, tune/lab.js).
+        const inUse = { hover: null, focus: null };
+        function sliderAxis(b, solved, shown) {
+            const used = inUse.hover || inUse.focus;
+            if (!used) return null;
+            const g = lab.gimbal(b.rig, solved, shown, used.bone, space.yawOf(b.s.facing)), axis = used.c[1];
+            return { at: g.at, dir: g[axis], axis };
+        }
         function draw() {
             if (!rec) return;
             const b = bodyAt(time), shown = playerAnim.present(b.judged, b.body, { time, lean: 0 }), solved = solveBody(b, shown);
@@ -157,6 +168,7 @@ const tuneApp = (() => {
             view?.draw({
                 player: { rig: b.rig, look: equipmentModels.lookOf(rec.loadout), solved },
                 ghosts, trails: state.show.trails ? trails : null, boxes: state.show.boxes, bone: state.bone,
+                axes: view && state.bone ? lab.frame(b.rig, solved, state.bone) : null, slider: view ? sliderAxis(b, solved, shown) : null,
                 dummy: d ? { rig: dummyRig, solved: rigKit.solve(dummyRig, dummyKit.pose(d), space.toBlocks(d.x, d.y, 0), space.yawOf(d.facing)) } : null,
                 focus: [...space.toBlocks(b.s.x, b.s.y, 0)].map((v, i) => i === 1 ? 0.95 : v),
                 ring: state.mode === 'pose' ? null : lab.standardOf(rec.type) / U
@@ -380,8 +392,13 @@ const tuneApp = (() => {
                         <input type="range" min="${lo}" max="${hi}" step="${step}" data-slider>
                         <input type="number" step="0.01" data-number>
                         <button type="button" data-zero title="归零">0</button>
-                        <span class="ch-was" data-was></span>
+                        <button type="button" class="ch-was" data-was hidden></button>
                     </div>`; }).join('')}
+                    <div class="turn">
+                        <span class="turn-label">绕自身轴</span>
+                        ${OWN_AXES.map(([a, colour]) => `<button type="button" class="ch-r${a}" data-turn="${a}" title="按住左右拖：绕这根骨头自己的 ${a} 轴（画面上的${colour}线）转，三个数会一起变；Shift 更细">${a.toUpperCase()} ⟲</button>`).join('')}
+                        <span class="turn-note">按住左右拖</span>
+                    </div>
                 </div>
             </div>`).join('')).join('');
         const boneRows = Object.fromEntries($$('.bone').map(el => [el.dataset.bone, el]));
@@ -405,10 +422,17 @@ const tuneApp = (() => {
                     if (document.activeElement !== number) number.value = fixed(v);
                     const differs = Math.abs(v - old) > 1e-9;
                     ch.classList.toggle('changed', differs);
-                    ch.querySelector('[data-was]').textContent = differs ? `原 ${+fixed(old)}` : '';
+                    showWas(ch, differs, +fixed(old));
                 }
             }
             refreshTiming(); refreshSource();
+        }
+        // Beside a changed number, the file's: a button that puts it back.
+        function showWas(row, differs, old) {
+            const was = row.querySelector('[data-was]');
+            was.hidden = !differs;
+            was.textContent = differs ? `原 ${old} ↺` : '';
+            was.title = differs ? `还原成文件里的 ${old}` : '';
         }
         // Undo: each gesture (a slider dragged, a number typed) is one step.
         const undo = [], redo = [];
@@ -446,8 +470,10 @@ const tuneApp = (() => {
             if (e.target.closest('.bone-head')) {
                 if (state.open.has(bone) && state.bone === bone) state.open.delete(bone); else state.open.add(bone);
                 state.bone = bone; refreshEditor(); savePrefs();
-            } else if (e.target.closest('[data-zero]')) {
-                beginEdit(); lab.set(editing(), bone, e.target.closest('[data-ch]').dataset.ch, 0); endEdit();
+            } else if (e.target.closest('[data-zero], [data-was]')) {
+                // To zero, or back to the file's number.
+                const c = e.target.closest('[data-ch]').dataset.ch, back = e.target.closest('[data-was]');
+                beginEdit(); lab.set(editing(), bone, c, back ? lab.original(editing())[bone]?.[c] || 0 : 0); endEdit();
                 state.bone = bone; edited();
             }
         });
@@ -481,6 +507,35 @@ const tuneApp = (() => {
         const endNudge = () => { if (nudge) { nudge = null; endEdit(); } };
         bonesBox.addEventListener('pointerup', endNudge);
         bonesBox.addEventListener('pointercancel', endNudge);
+        // Turning a bone about one of its own axes: drag sideways on X, Y
+        // or Z, 0.01 a pixel (Shift: 0.002), from the pose it had as the
+        // drag began. Its three numbers follow.
+        let turning = null;
+        bonesBox.addEventListener('pointerdown', e => {
+            const handle = e.target.closest('[data-turn]'), bone = handle?.closest('[data-bone]')?.dataset.bone;
+            if (!bone) return;
+            e.preventDefault();
+            document.activeElement?.blur?.();
+            handle.setPointerCapture(e.pointerId);
+            beginEdit();
+            turning = { bone, axis: handle.dataset.turn, x: e.clientX, from: { ...lab.poseOf(editing())[bone] } };
+            state.bone = bone;
+            refreshEditor();
+        });
+        bonesBox.addEventListener('pointermove', e => {
+            if (!turning) return;
+            lab.turn(editing(), turning.bone, turning.axis, (e.clientX - turning.x) * (e.shiftKey ? 0.002 : 0.01), turning.from);
+            edited();
+        });
+        const endTurn = () => { if (turning) { turning = null; endEdit(); } };
+        bonesBox.addEventListener('pointerup', endTurn);
+        bonesBox.addEventListener('pointercancel', endTurn);
+        // Which slider is in use (see sliderAxis).
+        const sliderOf = e => { const t = channelOf(e); return t && t.c[0] === 'r' ? t : null; };
+        bonesBox.addEventListener('pointerover', e => { inUse.hover = sliderOf(e); });
+        bonesBox.addEventListener('pointerleave', () => { inUse.hover = null; });
+        bonesBox.addEventListener('focusin', e => { inUse.focus = sliderOf(e); });
+        bonesBox.addEventListener('focusout', () => { inUse.focus = null; });
 
         // ---- timing ----
         const timingBox = $('[data-timing]');
@@ -498,7 +553,7 @@ const tuneApp = (() => {
                         <span class="ch-name">${TIMING_TEXT[k][0]}</span>
                         <input type="range" min="${lo}" max="${hi}" step="${step}" data-slider ${editable ? '' : 'disabled'}>
                         <input type="number" step="${step}" data-number ${editable ? '' : 'disabled'}>
-                        <span class="ch-was" data-was></span>
+                        <button type="button" class="ch-was" data-was hidden></button>
                     </div>`;
                 }).join('') + `<p class="tune-note">${moves()[state.move].derive == null ? '收尾招没有派生点：后摇总是放完。' : ''}一整招：<span data-total></span></p>`;
             }
@@ -509,7 +564,7 @@ const tuneApp = (() => {
                 if (document.activeElement !== number) number.value = k === 'step' || k === 'chargeStep' ? String(v) : fixed(v);
                 const differs = v !== was[k];
                 row.classList.toggle('changed', differs);
-                row.querySelector('[data-was]').textContent = differs ? `原 ${was[k]}` : '';
+                showWas(row, differs, was[k]);
             }
             const total = timingBox.querySelector('[data-total]');
             if (total) total.textContent = `前摇 ${fixed(m.windup)} + 挥动 ${fixed(m.swing)} + 后摇 ${fixed(m.recovery)} = ${fixed(m.windup + m.swing + m.recovery)} 秒`;
@@ -523,6 +578,12 @@ const tuneApp = (() => {
             edited({ timing: true });
         });
         timingBox.addEventListener('change', e => { if (e.target.closest('[data-field]')) endEdit(); });
+        timingBox.addEventListener('click', e => {
+            const k = e.target.closest('[data-was]')?.closest('[data-field]')?.dataset.field;
+            if (!k) return;
+            beginEdit(); lab.setTiming(state.move, k, lab.originalTiming(state.move)[k]); endEdit();
+            edited({ timing: true });
+        });
 
         // ---- checks: the blade's path at once, the hit tests once the sliders rest ----
         const checksBox = $('[data-checks]');

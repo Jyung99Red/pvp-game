@@ -17,7 +17,8 @@ const tuneView = (() => {
         top: { name: '正上方', az: 0, el: 1.5, dist: 7 },
         game: { name: '游戏镜头', az: gameConfig.camera.yaw, el: gameConfig.camera.pitch, dist: gameConfig.camera.distance }
     });
-    const COLORS = Object.freeze({ bg: '#1b2026', floor: '#262d34', grid: '#3a444e', gridMain: '#56626e', ring: '#f2b544', a: '#58a6ff', b: '#ff8a4c', trail: '#ffd479', body: '#5ccfc4', weapon: '#ff5d4f', pick: '#f2b544' });
+    // x, y, z: the channel colours of the panel (tune.css).
+    const COLORS = Object.freeze({ bg: '#1b2026', floor: '#262d34', grid: '#3a444e', gridMain: '#56626e', ring: '#f2b544', a: '#58a6ff', b: '#ff8a4c', trail: '#ffd479', body: '#5ccfc4', weapon: '#ff5d4f', pick: '#f2b544', x: '#ff5d5d', y: '#5fd35f', z: '#5c8dff' });
 
     function create(canvas, { onPick = () => {} } = {}) {
         const T = THREE;
@@ -157,14 +158,24 @@ const tuneView = (() => {
             }
         }
 
-        // ---- the edited bone: its boxes tinted, its axes drawn (red x:
-        // rx turns about it; green y: ry; blue z: rz) ----
-        const axes = new T.AxesHelper(0.35);
-        axes.matrixAutoUpdate = false; axes.renderOrder = 11;
-        for (const m of [axes.material].flat()) { m.depthTest = false; m.transparent = true; }
-        scene.add(axes);
+        // ---- the edited bone: its boxes tinted and its own axes drawn from
+        // the joint (red x, green y, blue z: square to each other; the
+        // panel turns a bone about these). A slider turns it about a gimbal
+        // axis instead (tune/lab.js): the dashed line through the joint,
+        // in the slider's colour, while a slider is in use ----
+        const AXES = ['x', 'y', 'z'], AXIS = 0.38, DASHED = 0.6;
+        const axisGeo = new T.BufferGeometry(), axisColors = new Float32Array(18);
+        AXES.forEach((k, i) => { const c = new T.Color(COLORS[k]); c.toArray(axisColors, i * 6); c.toArray(axisColors, i * 6 + 3); });
+        axisGeo.setAttribute('position', new T.BufferAttribute(new Float32Array(18), 3));
+        axisGeo.setAttribute('color', new T.BufferAttribute(axisColors, 3));
+        const axes = new T.LineSegments(axisGeo, new T.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
+        const dashGeo = new T.BufferGeometry();
+        dashGeo.setAttribute('position', new T.BufferAttribute(new Float32Array(6), 3));
+        dashGeo.setAttribute('lineDistance', new T.BufferAttribute(new Float32Array([0, 2 * DASHED]), 1));
+        const dashed = new T.Line(dashGeo, new T.LineDashedMaterial({ dashSize: 0.05, gapSize: 0.03, depthTest: false, transparent: true }));
+        for (const line of [axes, dashed]) { line.renderOrder = 11; line.frustumCulled = false; line.visible = false; scene.add(line); }
         const tint = new T.Color(COLORS.pick).multiplyScalar(0.35);
-        function markBone(solved, bone) {
+        function markBone(bone, frame, slider) {
             const index = bone ? player.rig.index[bone] : undefined;
             for (const { i, mesh } of player.parts) {
                 const part = player.rig.parts[i], m = mesh.material;
@@ -172,8 +183,24 @@ const tuneView = (() => {
                 else if (part.tag === 'flame') m.emissive.copy(m.color);
                 else m.emissive.setRGB(0, 0, 0);
             }
-            axes.visible = index !== undefined;
-            if (axes.visible) { axes.matrix.fromArray(solved.bones[index]); axes.matrixWorldNeedsUpdate = true; }
+            axes.visible = index !== undefined && !!frame;
+            if (axes.visible) {
+                const at = frame.at, p = axisGeo.attributes.position;
+                AXES.forEach((k, i) => {
+                    const d = frame[k];
+                    p.setXYZ(i * 2, at[0], at[1], at[2]);
+                    p.setXYZ(i * 2 + 1, at[0] + d[0] * AXIS, at[1] + d[1] * AXIS, at[2] + d[2] * AXIS);
+                });
+                p.needsUpdate = true;
+            }
+            dashed.visible = !!slider;
+            if (slider) {
+                const { at, dir } = slider, p = dashGeo.attributes.position;
+                p.setXYZ(0, at[0] - dir[0] * DASHED, at[1] - dir[1] * DASHED, at[2] - dir[2] * DASHED);
+                p.setXYZ(1, at[0] + dir[0] * DASHED, at[1] + dir[1] * DASHED, at[2] + dir[2] * DASHED);
+                p.needsUpdate = true;
+                dashed.material.color.set(COLORS[slider.axis]);
+            }
         }
 
         // ---- blade paths: a ribbon from hilt to tip over each swing ----
@@ -258,8 +285,10 @@ const tuneView = (() => {
         // Everything shown this frame. state: { player: { rig, look, solved },
         // ghosts: { a, b } (solved or null), dummy: { rig, solved } | null,
         // trails (kept while the same array comes back), boxes (bool), bone
-        // (name or null), focus ([x, y, z] blocks: where the camera looks
-        // while following), ring (blocks, or null) }.
+        // (name or null), axes (that bone's own { at, x, y, z }), slider
+        // ({ at, dir, axis }: the axis a slider in use turns about, or
+        // null), focus ([x, y, z] blocks: where the camera looks while
+        // following), ring (blocks, or null) }.
         function draw(state) {
             if (follow && state.focus) orbit.target.set(state.focus[0], state.focus[1], state.focus[2]);
             placeCamera();
@@ -275,7 +304,7 @@ const tuneView = (() => {
             setTrails(state.trails);
             placeLines('player', player, state.player.solved, state.boxes);
             placeLines('dummy', dummy, state.dummy?.solved, state.boxes && !!dummy);
-            markBone(state.player.solved, state.bone);
+            markBone(state.bone, state.axes, state.slider);
             ring.visible = state.ring != null;
             if (ring.visible) ring.scale.set(state.ring, state.ring, 1);
             renderer.render(scene, camera);
