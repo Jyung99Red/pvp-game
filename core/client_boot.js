@@ -111,7 +111,8 @@ const clientBoot = (() => {
                 } finally { window.removeEventListener('error', onError); }
                 if (failure) throw failure;
             }
-            if (entry === 'game') app.start();
+            // Each page starts its own app: the game, or the move tuner (tune.html).
+            ({ game: () => app.start(), tune: () => tuneApp.start() })[entry]?.();
             if (!stylesReady()) throw new Error('样式在初始化期间失效');
             loaded = true; root.dataset.clientState = 'ready'; loadingPanel().remove();
             window.addEventListener('pageshow', restoreStyles);

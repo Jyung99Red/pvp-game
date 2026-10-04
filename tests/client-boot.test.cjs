@@ -7,14 +7,14 @@ const source = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8')
 // so the boot source is run with import( renamed to a stub the test owns.
 function harness(overrides = {}) {
     const nodes = [], listeners = {}, timers = new Map(), requests = [], imports = [];
-    const root = { dataset: {} }; let timerId = 0, started = 0, c;
+    const root = { dataset: {} }; let timerId = 0, started = 0, tuned = 0, c;
     const element = tag => ({
         tag, dataset: {}, style: {}, textContent: '', isConnected: false,
         remove() { this.isConnected = false; }, setAttribute() {}, addEventListener() {},
         appendChild(node) { node.isConnected = true; nodes.push(node); return node; }
     });
     const document = {
-        documentElement: root, currentScript: { dataset: { entry: 'game' } }, hidden: false, baseURI: 'http://game.test/',
+        documentElement: root, currentScript: { dataset: { entry: overrides.entry || 'game' } }, hidden: false, baseURI: 'http://game.test/',
         createElement: element, getElementById: id => nodes.find(n => n.id === id && n.isConnected),
         addEventListener(type, fn) { listeners[type] = fn; }, head: element('head'), body: element('body')
     };
@@ -32,7 +32,7 @@ function harness(overrides = {}) {
     };
     c = vm.createContext({
         document, console: { error() {} }, AbortController, URL, location: { reload() {} },
-        app: { start() { started++; } },
+        app: { start() { started++; } }, tuneApp: { start() { tuned++; } },
         addEventListener(type, fn) { listeners[type] = fn; }, removeEventListener(type) { delete listeners[type]; },
         getComputedStyle: () => ({ getPropertyValue: key => !overrides.invalidStyles && nodes.some(n => n.isConnected && n.tag === 'style' && n.textContent.includes(key)) ? 'ready' : '' }),
         setTimeout(fn) { timers.set(++timerId, fn); return timerId; }, clearTimeout(id) { timers.delete(id); },
@@ -51,7 +51,7 @@ function harness(overrides = {}) {
     // As in a browser, `window` is the global object itself.
     vm.runInContext('globalThis.window = globalThis', c);
     return {
-        c, document, nodes, listeners, timers, requests, imports, root, started: () => started,
+        c, document, nodes, listeners, timers, requests, imports, root, started: () => started, tuned: () => tuned,
         run: () => vm.runInContext(source('core/client_boot.js').replace(/\bimport\(/g, '__import('), c)
     };
 }
@@ -102,26 +102,45 @@ test('unapplied CSS blocks startup; pageshow restores missing styles without sta
     assert.equal(h.nodes.filter(n => n.tag === 'style' && n.isConnected).length, 1); assert.equal(h.started(), 1);
 });
 
+test('the move tuner\'s page (entry "tune") starts its own app, not the game', async () => {
+    const manifest = { tune: { styles: ['style.css'], scripts: ['first.js'] } };
+    const h = harness({ entry: 'tune', manifest, responses: { 'first.js': 'var order = [];' } }); await h.run();
+    assert.equal(h.root.dataset.clientState, 'ready');
+    assert.deepEqual([h.tuned(), h.started()], [1, 0]);
+});
+
 // The other tests build a synthetic manifest. `client_boot` mounts each
 // listed partial into `#mount-<id>` and throws when the div is absent, so
-// check the real files agree.
-test('the manifest and the page agree on every partial, module, script and stylesheet', () => {
-    const manifest = JSON.parse(source('client-assets.json')), page = source('index.html');
-    for (const id of manifest.game.partials) {
-        assert.ok(fs.existsSync(path.join(__dirname, '..', 'partials', `${id}.html`)), `partials/${id}.html is listed but missing`);
-        assert.match(page, new RegExp(`id="mount-${id}"`), `index.html has no mount point for the "${id}" partial`);
+// check the real files agree: each entry with its page (the game, and the
+// move tuner).
+const PAGES = { game: 'index.html', tune: 'tune.html' };
+test('the manifest and the pages agree on every partial, module, script and stylesheet', () => {
+    const manifest = JSON.parse(source('client-assets.json'));
+    assert.deepEqual(Object.keys(manifest).sort(), Object.keys(PAGES).sort());
+    for (const [entry, file] of Object.entries(PAGES)) {
+        const assets = manifest[entry], page = source(file);
+        assert.match(page, new RegExp(`data-entry="${entry}"`), `${file} boots the "${entry}" entry`);
+        for (const id of assets.partials) {
+            assert.ok(fs.existsSync(path.join(__dirname, '..', 'partials', `${id}.html`)), `partials/${id}.html is listed but missing`);
+            assert.match(page, new RegExp(`id="mount-${id}"`), `${file} has no mount point for the "${id}" partial`);
+        }
+        for (const [, id] of page.matchAll(/id="mount-([^"]+)"/g))
+            assert.ok(assets.partials.includes(id), `${file} mounts "${id}", which the manifest does not list`);
+        for (const f of [...assets.styles, ...assets.scripts, ...Object.values(assets.modules)])
+            assert.ok(fs.existsSync(path.join(__dirname, '..', f)), `${f} is listed but missing`);
     }
-    for (const [, id] of page.matchAll(/id="mount-([^"]+)"/g))
-        assert.ok(manifest.game.partials.includes(id), `index.html mounts "${id}", which the manifest does not list`);
-    for (const file of [...manifest.game.styles, ...manifest.game.scripts, ...Object.values(manifest.game.modules)])
-        assert.ok(fs.existsSync(path.join(__dirname, '..', file)), `${file} is listed but missing`);
-    assert.match(page, /viewport-fit=cover/, 'the page must reach under notches so safe-area insets apply');
+    assert.match(source('index.html'), /viewport-fit=cover/, 'the page must reach under notches so safe-area insets apply');
 });
-test('every game script is listed exactly once, and core/ and models/ stay free of the DOM and three.js', () => {
-    const manifest = JSON.parse(source('client-assets.json')), scripts = manifest.game.scripts;
-    assert.equal(new Set(scripts).size, scripts.length);
-    const onDisk = ['core', 'models', 'render', 'ui'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
-    for (const file of onDisk) if (file !== 'core/client_boot.js') assert.ok(scripts.includes(file), `${file} is not in client-assets.json`);
-    for (const file of scripts.filter(f => /^(core|models)\//.test(f)))
+test('every script is listed once per page and on some page; core/, models/ and the tuner\'s workbench stay free of the DOM and three.js', () => {
+    const manifest = JSON.parse(source('client-assets.json')), listed = new Set();
+    for (const assets of Object.values(manifest)) {
+        assert.equal(new Set(assets.scripts).size, assets.scripts.length);
+        assets.scripts.forEach(f => listed.add(f));
+    }
+    const onDisk = ['core', 'models', 'render', 'ui', 'tune'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
+    for (const file of onDisk) if (file !== 'core/client_boot.js') assert.ok(listed.has(file), `${file} is not in client-assets.json`);
+    // The game itself never loads the tuner.
+    assert.ok(!manifest.game.scripts.some(f => f.startsWith('tune/')));
+    for (const file of [...listed].filter(f => /^(core|models)\//.test(f) || f === 'tune/lab.js'))
         assert.doesNotMatch(source(file), /\b(document|window|THREE)\s*[.[]/, `${file} must run in Node and on a PVP host`);
 });

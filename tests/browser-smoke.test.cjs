@@ -517,3 +517,45 @@ test('portrait shows only the rotate hint', { timeout: 240000 }, async t => {
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });
+
+// The move tuner (tune.html): a desktop page of its own, on the same boot.
+test('the move tuner: boots clean, a typed number changes the key the game reads, kept as a draft, written out; a combo plays the tree', { timeout: 240000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    try {
+        const page = await context.newPage(), errors = [];
+        page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+        page.on('pageerror', e => errors.push(e.message));
+        const open = async () => {
+            await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.tune, null, { timeout: 120000 });
+            await page.evaluate(() => window.tune.pause());
+        };
+        await page.goto(base + 'tune.html', { waitUntil: 'load' });
+        await open();
+        const info = await page.evaluate(() => ({ frozen: Object.isFrozen(gameConfig.combo.moves.slash), width: document.querySelector('[data-canvas]').width, move: window.tune.state.move, drawn: window.tune.view.renderer.info.render.triangles }));
+        assert.deepEqual([info.frozen, info.move], [false, 'slash'], 'the config is unfrozen on this page only');
+        assert.ok(info.width > 300 && info.drawn > 0, 'the view draws');
+
+        await page.click('[data-bone="handR"] .bone-head');
+        const box = page.locator('[data-bone="handR"] [data-ch="rx"] [data-number]');
+        await box.fill('1.5'); await box.press('Enter');
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.5);
+        assert.match(await page.locator('[data-export]').inputValue(), /slash: \{\n {12}a: key\(\{ .*handR: \{ rx: 1\.5, ry: -1\.2 \}/);
+        // The draft survives a reload; "还原这一项" puts the file's value back.
+        await page.waitForTimeout(500);
+        await page.reload({ waitUntil: 'load' });
+        await open();
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.5);
+        await page.click('[data-revert="this"]');
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.05);
+        assert.equal(await page.locator('[data-export]').inputValue(), '（还没有改动）');
+
+        await page.click('[data-mode="combo"]');
+        await page.click('[data-inputs="aab"]');
+        assert.deepEqual(await page.evaluate(() => window.tune.rec.occs.map(o => o.move)), ['slash', 'backslash', 'cleave']);
+        await page.evaluate(() => { window.tune.time = window.tune.rec.keys['cleave.a']; });
+        await page.waitForTimeout(200);
+        await shot(page, 'tuner');
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});

@@ -21,6 +21,7 @@
 | M10 格挡和操作 | 不做闪避、格挡为主；格挡键任何时候都能挡（盾 120 分、武器 80 分）；一个攻击键点按 A、长按 B（判定时间算进前摇）；副手键管药水和火把；改名方块骑士；火把光源不进墙；暗区入口有光 |
 | M11 怪物按格挡为主 | 测试从"每一下都能走开"换成"每一下都挡得住"（盾和武器、狂暴也一样，掐准能弹反）；快慢范围拉大（轻招快、重招慢）；野狼和狼王的撕咬加摆头，每次随机从左或从右扫，红区成小扇形，后退侧走都躲不开 |
 | M12 剑的动作和弹反 | 剑的后摇按用户的数缩短（收尾招倍率跟着降）、小怪前摇加 0.1 秒；A A A 改走斜线（斜斩、回扫、重斩），重斩起手举剑、剑斜搭在右肩后；蓄力斩剑朝后、低扫一大圈像割稻草；弹反：沉的敲铁声、盾变白闪一下 0.2 秒（没盾时剑闪）、盾加大；跑步 1.5 秒开始 |
+| 工具：动作调试页 | `tune.html`（电脑上用，用户 2026-10-04：先做第一步、电脑、只做主角）：拖骨头的 rx / ry / rz 实时看、单招 / 连段 / 其他姿势三种预览、时间轴慢放、残影和剑的轨迹、改节奏、和测试一样的体检、导出能直接贴回的代码。见第 4.5 节 |
 
 每一步结束时：测试全绿、浏览器里能玩到、提交推送、告诉用户要在手机上试什么。用户试完提意见，再开始下一步。
 
@@ -63,7 +64,7 @@ M12 用户要在手机上试：
 4. **装备数值**：放在怪物之后，对着怪物的数值调；特殊效果。盾和武器格挡的 120 / 80 分也在这时一起看。
 5. **更多破坏**：裂墙、拉杆门之类的机关，木箱陶罐之类每次复原的杂物（`design.md` 第 6.5 节）。
 
-以后想到再说：地图的 2D 预览和编辑页面（用户 2026-10-03 问过，先不做）；存档按地图版本丢掉对不上的改动（开发中直接重开存档就行，用户）。
+以后想到再说：动作调试页的第二步——在 3D 里直接拖旋转圈、左右镜像、"把 b 复制成下一招的 a"、怪物的招也能调（用户 2026-10-04：先只做第一步）；地图的 2D 预览和编辑页面（用户 2026-10-03 问过，先不做）；存档按地图版本丢掉对不上的改动（开发中直接重开存档就行，用户）。
 
 ## 3. 新会话怎么开头
 
@@ -76,7 +77,7 @@ M12 用户要在手机上试：
 
 - 改动直接提交并推送到 `main`，不另开分支（用户 2026-10-02）。
 - 可调数值只放 `game_config.js`，改了同步 `parameters.md`。模型形状和关键姿势是 `models/` 里的数据，不是可调数值。
-- 新脚本登记到 `client-assets.json`；新页面片段还要在 `index.html` 里加 `#mount-<id>`。
+- 新脚本登记到 `client-assets.json`；新页面片段还要在 `index.html` 里加 `#mount-<id>`（动作调试页的在 `tune.html`）。
 - 完成 = `node --test "tests/*.test.cjs"` 全绿。改了测试断言的内容要说明为什么。
 - 代码注释和 `AGENTS.md` 用英文；`README.md`、界面文字、`docs/tasks/` 用中文。
 - 文档只有 3 份（这份、`design.md`、`parameters.md`）。新决定写进 `design.md` 对应的节，不另开文件，不写"某某里程碑补的决定"这种流水账。
@@ -119,7 +120,7 @@ M12 用户要在手机上试：
 - `game.duel` 是对战会话，`game.room` 是房间界面；对战页面不要 `game.pause()`（对局靠真实时间）。
 - `game.view.ground.cut.on.value = 0` 关掉镜头遮挡透明。
 - 看模型近景：先 `game.view.render(game.sim, 0)`，再把 `game.view.render` 换成空函数，自己摆 `game.view.camera` 并 `game.view.renderer.render(game.view.scene, game.view.camera)`。
-- **调姿势**（用户自己也这样调）：在浏览器控制台 `game.pause(); game.sim.player.act = { move: 'smite', phase: 'swing', t: 0, from: null }` 定格在某招的起手
+- **调姿势**：现在用动作调试页（第 4.5 节）。控制台的老办法也还能用：在浏览器控制台 `game.pause(); game.sim.player.act = { move: 'smite', phase: 'swing', t: 0, from: null }` 定格在某招的起手
   （`t` 换成 `gameConfig.combo.moves.<招>.swing` 是挥完），再改 `playerMoves.moves.<招>.a.<骨>.rx = …`，画面马上变；
   `game.sim.player.facing` 转人物（1.57 正对镜头）。只在这一页有效，调好的数写回 `models/player_moves.js`。
 - 怪物测试用固定的场地 `tests/fixtures/m3-field.cjs`（游戏里的区域会跟着内容改，测试场地不变）。
@@ -133,3 +134,14 @@ M12 用户要在手机上试：
 ### 4.4 three.js
 
 `npm pack three@<版本>` 后用 esbuild 打成一个压缩文件（`npx esbuild <入口> --bundle --minify --format=esm`），放进 `vendor/three/`。外部 CDN 在容器里连不上，npm 能用。
+
+### 4.5 动作调试页 `tune.html`
+
+- 和游戏同一个启动器，清单里是 `tune` 这一项（只有核心、模型和 `tune/`，不带游戏界面）。`tune/lab.js` 是工作台（不碰页面和 three.js，Node 测试直接跑）：
+  改关键姿势（写时复制，几个招共用的盾臂不会被带动）、单招和其他姿势的预览、连段用真的模拟按招式表出（每一下在派生点刚好接上，停顿招在过了停顿线后按）、
+  和 `tests/hits.test.cjs` 一样的量法（从站姿、不算踏步）、把改动写成源码。`tune/view.js` 只画，`tune/panel.js` 是页面。
+- 节奏能实时改，是因为 `tune.html` 在加载前设了 `window.unfrozenConfig = true`，`game_config.js` 在这一页不冻结；游戏和测试里照常冻结。
+- 草稿存在 `localStorage`（`blockKnight.tune.draft`），只记和文件不同的地方。页面上 `window.tune` 给测试和控制台用（`tune.lab`、`tune.rec`、`tune.time`、`tune.pause()`）。
+- **用户贴回导出的代码时**：招式那段整段替换 `models/player_moves.js` 里同名的招，节奏那行替换 `game_config.js` 里同名的行（改了节奏还要同步 `parameters.md`），
+  其他姿势按注释里的位置放。然后跑测试：用户有意改了一招的形状时，`tests/hits.test.cjs` 里这招设计的扫角、起止方向可能要跟着改，改了要说明是用户定的。
+- 测试：`tests/tune.test.cjs`（导出的代码和文件一字不差、改动不串、体检和判定测试一致、连段时机），`tests/browser-smoke.test.cjs` 最后一个（页面能用、草稿刷新后还在）。

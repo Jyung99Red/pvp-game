@@ -11,9 +11,9 @@ The one exception to "no modules": three.js. `client-assets.json` lists it
 under `modules`; the boot loader `import()`s it first and exposes it as the
 global `THREE`. It is vendored in `vendor/three/` (0.186.1, bundled and
 minified into one file with esbuild, MIT licence alongside). Only `render/`
-uses `THREE`. PeerJS (1.5.5, its own `dist/peerjs.min.js`, MIT) is an
-ordinary script in `vendor/peerjs/` giving the global `Peer`; only `net/`
-uses it.
+(and the move tuner's view, `tune/view.js`) uses `THREE`. PeerJS (1.5.5,
+its own `dist/peerjs.min.js`, MIT) is an ordinary script in
+`vendor/peerjs/` giving the global `Peer`; only `net/` uses it.
 
 - `core/` simulation and maths with no DOM and no three.js: coordinates,
   matrices and box tests, rig and forward kinematics, terrain (16 x 16
@@ -33,8 +33,15 @@ uses it.
   the menu (figure, gear and bag, settings), item screens (shop, smithy).
 - `net/` the channel between two phones: PeerJS rooms, or `?link=local`
   (BroadcastChannel between two tabs, for tests). No game rules.
+- `tune/` the move tuner, a second page (`tune.html`, desktop, entry
+  `tune` in `client-assets.json`): `lab.js` edits key poses and move timing
+  live, previews moves and combos through the real simulation, makes the
+  hit tests' checks and writes the edits out as source text (no DOM, no
+  three.js; Node tests run it); `view.js` draws with three.js; `panel.js`
+  is the page. `tune.html` loads `game_config.js` unfrozen
+  (`window.unfrozenConfig`); the game never loads `tune/`.
 - `vendor/` third-party files, unmodified apart from bundling.
-- `index.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
+- `index.html`, `tune.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
 
 The code, `game_config.js` and the tests are the description of current
 behaviour. `docs/tasks/` (Chinese) holds three documents and no more:
@@ -58,7 +65,8 @@ This file only changes when project setup changes.
   when Playwright is installed and skips otherwise; on Windows, install
   `playwright-core` anywhere and set `PLAYWRIGHT_MODULE` to it and
   `PLAYWRIGHT_CHANNEL=chrome`.
-- New script or partial: register it in `client-assets.json`; a partial also
-  needs `#mount-<id>` in `index.html`.
+- New script or partial: register it in `client-assets.json` under its
+  page's entry; a partial also needs `#mount-<id>` in that page
+  (`index.html` or `tune.html`).
 - Code comments and `AGENTS.md` in English; `README.md`, UI text and
   `docs/tasks/` in Chinese.

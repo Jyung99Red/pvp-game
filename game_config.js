@@ -3,7 +3,10 @@
 // radians for angles; CSS pixels for anything on the touch layer.
 // docs/tasks/parameters.md mirrors this file.
 const gameConfig = (() => {
+    // The move tuner (tune.html) changes move timing live, so its page asks
+    // for the table unfrozen; the game and the tests always freeze it.
     const freeze = value => {
+        if (globalThis.unfrozenConfig === true) return value;
         if (value && typeof value === 'object' && !Object.isFrozen(value)) {
             Object.values(value).forEach(freeze);
             Object.freeze(value);
