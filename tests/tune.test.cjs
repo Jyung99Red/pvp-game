@@ -9,8 +9,11 @@ const { load, read } = require('./load.cjs');
 
 // The game's scripts plus the workbench in one context. `unfrozen`: as on
 // the tuner's page, the config table can be changed.
-function workbench({ unfrozen = true } = {}) {
+// `edit(g)` changes the files' data first, as if the code had been edited
+// since a draft was made.
+function workbench({ unfrozen = true, edit = null } = {}) {
     const g = load({ globals: unfrozen ? { unfrozenConfig: true } : {} });
+    if (edit) edit(g);
     vm.runInContext(read('tune/lab.js'), g.context, { filename: 'tune/lab.js' });
     return g;
 }
@@ -55,6 +58,43 @@ test('an edit stays in its key: the shield arm other keys share is untouched, an
     L.revertAll();
     assert.equal(L.changesSource(), '');
     assert.ok(L.samePose(M.moves.smite.a, L.original('smite.a')));
+});
+
+test('a draft meets the files as they are now: what was written back drops out, what the code changed since is the code\'s unless forced', () => {
+    const before = workbench(), L = before.moveLab;
+    L.set('slash.a', 'handR', 'rx', 1.5);
+    L.set('cleave.b', 'chest', 'rx', 0.5);
+    L.set('stance', 'head', 'rx', 0.2);
+    L.setTiming('smite', 'swing', 0.3);
+    L.setTiming('cut', 'windup', 0.2);
+    const draft = JSON.parse(JSON.stringify(L.draft()));
+    // Since then the code took slash.a and smite's swing as tuned (written
+    // back), and changed cleave.b and cut's timing some other way.
+    const after = workbench({
+        edit: g => {
+            const M = g.playerMoves.moves, C = g.gameConfig.combo.moves;
+            M.slash.a.handR = { ...M.slash.a.handR, rx: 1.5 };
+            M.cleave.b.chest = { ...M.cleave.b.chest, rx: 0.1 };
+            C.smite.swing = 0.3;
+            C.cut.recovery = 0.4;
+        }
+    });
+    const A = after.moveLab, M = after.playerMoves.moves, report = A.apply(draft);
+    assert.deepEqual([...report.done].sort(), ['slash.a', 'smite.timing']);
+    assert.deepEqual([...report.stale].sort(), ['cleave.b', 'cut.timing']);
+    assert.deepEqual([...report.applied], ['stance']);
+    assert.equal(M.cleave.b.chest.rx, 0.1, 'the code\'s new value is shown');
+    assert.equal(after.gameConfig.combo.moves.cut.windup, 0.1);
+    assert.equal(after.playerPoses.stance.head.rx, 0.2, 'what the code left alone is the draft\'s');
+    assert.deepEqual(Object.keys(A.draft().poses), ['stance'], 'written back: gone from the draft');
+    // Asked for, the old draft goes in anyway.
+    A.apply(report.leftover, { force: true });
+    assert.equal(M.cleave.b.chest.rx, 0.5);
+    assert.equal(after.gameConfig.combo.moves.cut.windup, 0.2);
+    // A draft from before `base` was kept still goes in.
+    const old = workbench().moveLab;
+    old.apply({ poses: { 'slash.a': draft.poses['slash.a'].pose } });
+    assert.ok(old.changed('slash.a'));
 });
 
 test('timing is changed only where the config is unfrozen (the tuner\'s page), and the preview follows it', () => {

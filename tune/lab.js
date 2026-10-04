@@ -106,24 +106,49 @@ const moveLab = (() => {
     const timingChanged = id => Object.entries(original.timing[id] || {}).some(([k, v]) => MOVES()[id][k] !== v);
     const moveChanged = id => KEYS.some(k => changed(`${id}.${k}`)) || timingChanged(id);
 
-    // What differs from the files, as plain data (the page keeps it in localStorage).
+    // What differs from the files, as plain data (the page keeps it in
+    // localStorage). Each entry carries `base`, the files' value it was
+    // made on, so that a later change to the files is noticed (`apply`).
     function draft() {
         const poses = {}, timing = {};
-        for (const t of targets()) if (changed(t)) poses[t] = clone(poseOf(t));
+        for (const t of targets()) if (changed(t)) poses[t] = { pose: clone(poseOf(t)), base: clone(original.poses[t]) };
         for (const id of Object.keys(original.timing)) {
-            if (timingChanged(id)) timing[id] = Object.fromEntries(Object.keys(original.timing[id]).map(k => [k, MOVES()[id][k]]));
+            if (timingChanged(id)) timing[id] = { values: Object.fromEntries(Object.keys(original.timing[id]).map(k => [k, MOVES()[id][k]])), base: { ...original.timing[id] } };
         }
-        return { poses, timing };
+        return { version: 2, poses, timing };
     }
-    // Put a draft back; anything the files no longer have is skipped.
-    function apply(d) {
-        for (const [t, pose] of Object.entries(d?.poses || {})) if (known(t)) replace(t, pose);
-        if (!timingEditable()) return;
-        for (const [id, fields] of Object.entries(d?.timing || {})) {
-            if (!original.timing[id]) continue;
-            // Recovery first: derive is kept within it.
-            for (const k of ['recovery', ...Object.keys(fields)]) if (k in original.timing[id] && Number.isFinite(fields[k])) setTiming(id, k, fields[k]);
+    // Put a draft back, entry by entry. Left out: what the files already
+    // hold (`done`: written back), what the files changed since the entry
+    // was made (`stale`: the files win, unless `force`), and what the files
+    // no longer have. Returns the names of each ('slash.a', 'stance', and
+    // 'slash.timing' for a move's timing) and `leftover`, the stale
+    // entries as a draft of their own, to force in later.
+    function apply(d, { force = false } = {}) {
+        const out = { applied: [], done: [], stale: [], leftover: { version: 2, poses: {}, timing: {} } };
+        // A draft from before `base` was kept holds bare values.
+        const v2 = d?.version === 2;
+        for (const [t, e] of Object.entries(d?.poses || {})) {
+            if (!known(t)) continue;
+            const pose = v2 ? e?.pose : e, base = v2 ? e?.base : null, file = original.poses[t];
+            if (!pose || typeof pose !== 'object') continue;
+            if (samePose(pose, file)) out.done.push(t);
+            else if (!force && base && !samePose(base, file)) { out.stale.push(t); out.leftover.poses[t] = e; }
+            else { replace(t, pose); out.applied.push(t); }
         }
+        for (const [id, e] of Object.entries(d?.timing || {})) {
+            const file = original.timing[id];
+            if (!file || !timingEditable()) continue;
+            const values = v2 ? e?.values : e, base = v2 ? e?.base : null, name = `${id}.timing`;
+            if (!values || typeof values !== 'object') continue;
+            if (Object.keys(file).every(k => values[k] === undefined || values[k] === file[k])) out.done.push(name);
+            else if (!force && base && Object.keys(file).some(k => base[k] !== file[k])) { out.stale.push(name); out.leftover.timing[id] = e; }
+            else {
+                // Recovery first: derive is kept within it.
+                for (const k of ['recovery', ...Object.keys(values)]) if (k in file && Number.isFinite(values[k])) setTiming(id, k, values[k]);
+                out.applied.push(name);
+            }
+        }
+        return out;
     }
     function revert(target) { replace(target, original.poses[target]); }
     function revertMove(id) {

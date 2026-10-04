@@ -81,6 +81,8 @@ i { color: var(--accent); font-style: normal; font-size: 10px; margin-left: 4px;
 .tune-legend-phases .ph-hit::before { content: ''; display: inline-block; width: 2px; height: 10px; background: #fff; margin-right: 4px; vertical-align: -1px; }
 
 /* ---- the panel ---- */
+.tune-notice { border-color: var(--accent); background: #2a2416; }
+.tune-notice p { margin: 0 0 4px; }
 .tune-side { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 0 12px 24px; }
 .tune-head { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 0 6px; position: sticky; top: 0; background: var(--panel); z-index: 2; }
 .tune-head h1 { margin: 0; font-size: 17px; }

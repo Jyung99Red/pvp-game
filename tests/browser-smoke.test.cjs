@@ -549,6 +549,24 @@ test('the move tuner: boots clean, a typed number changes the key the game reads
         await page.click('[data-revert="this"]');
         assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.05);
         assert.equal(await page.locator('[data-export]').inputValue(), '（还没有改动）');
+        // A draft made on older files (as if the code changed since): the
+        // files win and the notice says so, until the old draft is asked for.
+        await page.evaluate(() => {
+            const pose = JSON.parse(JSON.stringify(playerMoves.moves.slash.a)), base = JSON.parse(JSON.stringify(pose));
+            pose.handR.rx = 1.7; base.handR.rx = 0.9;
+            localStorage.setItem('blockKnight.tune.draft', JSON.stringify({ version: 2, poses: { 'slash.a': { pose, base } }, timing: {} }));
+        });
+        await page.reload({ waitUntil: 'load' });
+        await open();
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.05);
+        assert.match(await page.locator('[data-notice-text]').textContent(), /斜斩 a/);
+        await page.click('[data-notice="restore"]');
+        assert.equal(await page.evaluate(() => playerMoves.moves.slash.a.handR.rx), 1.7);
+        await page.waitForTimeout(500);
+        await page.reload({ waitUntil: 'load' });
+        await open();
+        assert.deepEqual(await page.evaluate(() => [playerMoves.moves.slash.a.handR.rx, document.querySelector('[data-notice]').hidden]), [1.7, true]);
+        await page.click('[data-revert="this"]');
 
         await page.click('[data-mode="combo"]');
         await page.click('[data-inputs="aab"]');

@@ -76,10 +76,13 @@ const tuneApp = (() => {
         if (!state.route || !lab.follow(state.type, state.route)) state.route = lab.routes(state.type)[0]?.inputs || ['a'];
         const savePrefs = () => writeJSON(STORE.prefs, { ...state, bone: undefined, open: [...state.open] });
 
-        // The draft from the last visit, on top of the files. Its first
-        // measurements of each move are of the files themselves.
+        // The draft from the last visit, on top of the files as they are
+        // now. What the files changed since it was made is the files' (the
+        // notice says which); those entries are kept aside, and saved with
+        // the draft, until a choice is made.
         const baseline = new Map();
-        lab.apply(readJSON(STORE.draft));
+        const loaded = lab.apply(readJSON(STORE.draft));
+        let pending = loaded.stale.length ? loaded.leftover : null;
 
         // ---- the view ----
         let view = null;
@@ -585,7 +588,11 @@ const tuneApp = (() => {
             else lab.revertMove(state.move);
             endEdit(); edited({ timing: true });
         }));
-        const saveDraft = () => writeJSON(STORE.draft, lab.draft());
+        const saveDraft = () => {
+            const d = lab.draft();
+            if (pending) for (const part of ['poses', 'timing']) for (const [k, e] of Object.entries(pending[part])) if (!(k in d[part])) d[part][k] = e;
+            writeJSON(STORE.draft, d);
+        };
         saveDraft.later = () => { clearTimeout(saveDraft.soon); saveDraft.soon = setTimeout(saveDraft, 300); };
 
         // ---- keys ----
@@ -604,6 +611,25 @@ const tuneApp = (() => {
             else if (e.key === 'Home') { time = 0; }
             else if (e.key === '1' || e.key === '2') selectKey(e.key === '1' ? 'a' : 'b');
         });
+
+        // ---- the draft against the files ----
+        const nameOf = n => {
+            const [id, k] = n.split('.');
+            if (!k) return lab.POSES[id]?.name || id;
+            return `${moves()[id]?.name || id} ${k === 'timing' ? '节奏' : k}`;
+        };
+        function showNotice() {
+            $('[data-notice]').hidden = !pending;
+            if (pending) $('[data-notice-text]').textContent = `这些项在你上次调过之后，文件里又改过了，现在显示的是文件里的新数据：${loaded.stale.map(nameOf).join('、')}。上次草稿里的这几项先没有套用。`;
+        }
+        $$('[data-notice]').forEach(b => b.tagName === 'BUTTON' && b.addEventListener('click', () => {
+            if (b.dataset.notice === 'restore') { beginEdit(); lab.apply(pending, { force: true }); endEdit(); }
+            pending = null;
+            showNotice(); saveDraft(); edited({ timing: true });
+        }));
+        showNotice();
+        // What was already written back is gone from the draft from now on.
+        saveDraft();
 
         refreshChoices(); rebuild(); refreshEditor(); checks.now();
         setPlaying(true);

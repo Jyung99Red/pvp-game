@@ -141,7 +141,8 @@ M12 用户要在手机上试：
   改关键姿势（写时复制，几个招共用的盾臂不会被带动）、单招和其他姿势的预览、连段用真的模拟按招式表出（每一下在派生点刚好接上，停顿招在过了停顿线后按）、
   和 `tests/hits.test.cjs` 一样的量法（从站姿、不算踏步）、把改动写成源码。`tune/view.js` 只画，`tune/panel.js` 是页面。
 - 节奏能实时改，是因为 `tune.html` 在加载前设了 `window.unfrozenConfig = true`，`game_config.js` 在这一页不冻结；游戏和测试里照常冻结。
-- 草稿存在 `localStorage`（`blockKnight.tune.draft`），只记和文件不同的地方。页面上 `window.tune` 给测试和控制台用（`tune.lab`、`tune.rec`、`tune.time`、`tune.pause()`）。
+- 草稿存在 `localStorage`（`blockKnight.tune.draft`），只记和文件不同的地方，每一项连同调的时候文件里的值（`base`）一起记。
+  页面每次打开都读最新的文件，再逐项对草稿：和文件一样的（已经写回了）清掉；文件在那之后又改过的，以文件为准，页面上提示是哪几项，用户可以选"还是套用我上次的草稿"；其余照常套用。页面上 `window.tune` 给测试和控制台用（`tune.lab`、`tune.rec`、`tune.time`、`tune.pause()`）。
 - **用户贴回导出的代码时**：招式那段整段替换 `models/player_moves.js` 里同名的招，节奏那行替换 `game_config.js` 里同名的行（改了节奏还要同步 `parameters.md`），
   其他姿势按注释里的位置放。然后跑测试：用户有意改了一招的形状时，`tests/hits.test.cjs` 里这招设计的扫角、起止方向可能要跟着改，改了要说明是用户定的。
-- 测试：`tests/tune.test.cjs`（导出的代码和文件一字不差、改动不串、体检和判定测试一致、连段时机），`tests/browser-smoke.test.cjs` 最后一个（页面能用、草稿刷新后还在）。
+- 测试：`tests/tune.test.cjs`（导出的代码和文件一字不差、改动不串、草稿遇到改过的文件、体检和判定测试一致、连段时机），`tests/browser-smoke.test.cjs` 最后一个（页面能用、草稿刷新后还在）。

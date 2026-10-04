@@ -46,6 +46,14 @@
             <a href="index.html">回到游戏</a>
         </header>
 
+        <section class="tune-box tune-notice" data-notice hidden>
+            <p data-notice-text></p>
+            <div class="tune-row">
+                <button type="button" data-notice="keep">知道了，用文件里的</button>
+                <button type="button" data-notice="restore">还是套用我上次的草稿</button>
+            </div>
+        </section>
+
         <section class="tune-box">
             <div class="tune-row"><span class="tune-label">武器</span><div class="tune-tabs" data-types></div></div>
             <div class="tune-row">
@@ -138,7 +146,8 @@
                 <button type="button" data-revert="this">还原这一项</button>
                 <button type="button" data-revert="all">全部还原</button>
             </div>
-            <p class="tune-note">改动只在这个页面里生效，浏览器会记住草稿（刷新不丢）。复制以后贴给 Claude 写回文件、跑测试，游戏里才会变。</p>
+            <p class="tune-note">改动只在这个页面里生效，浏览器会记住草稿（刷新不丢）。复制以后贴给 Claude 写回文件、跑测试，游戏里才会变。
+                每次打开都读文件里最新的数；草稿里和文件一样的项会自动清掉，文件在你调过之后又被改过的项以文件为准（会提示）。</p>
         </section>
     </aside>
 </div>
