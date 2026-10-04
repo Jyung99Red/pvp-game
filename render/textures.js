@@ -17,7 +17,7 @@ const renderTextures = (() => {
     const rgbOf = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
     const shade = (c, k) => `rgb(${Math.min(255, c[0] * k) | 0},${Math.min(255, c[1] * k) | 0},${Math.min(255, c[2] * k) | 0})`;
     // Atlas tiles, in order; the atlas is ATLAS_COLS wide.
-    const TILES = ['grassTop', 'dirt', 'path', 'stone', 'mossy', 'bark', 'barkTop', 'leaves', 'cobble', 'gravel', 'plank', 'roof', 'door', 'window', 'portalStone', 'white', 'brush', 'ore', 'crystalRock'];
+    const TILES = ['grassTop', 'dirt', 'path', 'stone', 'mossy', 'bark', 'barkTop', 'leaves', 'cobble', 'gravel', 'plank', 'roof', 'door', 'window', 'portalStone', 'white', 'brush', 'ore', 'crystalRock', 'water'];
     const ATLAS_COLS = 8, ATLAS_ROWS = 4, TILE = 16;
 
     // Drawing of every tile on a 16x16 context; `rnd` is the shared stream.
@@ -127,6 +127,12 @@ const renderTextures = (() => {
                 speckle(g, P.stoneDark, 0.6, 0.85);
                 for (const [x, y, len, dx] of [[2, 13, 6, 1], [10, 14, 5, -1], [6, 6, 5, 1], [13, 3, 4, -1]]) for (let k = 0; k < len; k++) fill(g, P.crystal, x + k * dx, y - k, 1, 1, 0.75 + rnd() * 0.35);
                 dots(g, P.crystalDeep, 1, 8);
+            },
+            // A pond: still water, a few ripples.
+            water: g => {
+                speckle(g, P.water, 0.92, 1.05);
+                for (const [x, y, w] of [[2, 3, 4], [9, 6, 5], [4, 10, 3], [11, 13, 4], [0, 14, 2]]) fill(g, P.waterLight, x, y, w, 1);
+                dots(g, P.waterDeep, 1, 10);
             },
             // Fine grain on character boxes, tinted by the box colour.
             grain: g => { speckle(g, '#ffffff', 0.84, 1.0); dots(g, '#ffffff', 0.74, 10); }

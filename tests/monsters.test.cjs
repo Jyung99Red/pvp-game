@@ -420,15 +420,21 @@ test('the bite sweeps its head across a small fan, from either side at random: n
     for (const [kind, name] of [['wolf', 'bite'], ['wolfKing', 'bite'], ['wolfKing', 'quickBite']]) {
         const r = monsterKit.reach(kind, name), close = MON[kind].radius + gameConfig.player.radius + 4;
         assert.ok(either(kind, name), `${kind} ${name} sweeps either way`);
-        assert.ok(r.forward - r.stand > 0.9 * U, `${kind} ${name} lunges ${((r.forward - r.stand) / U).toFixed(2)} blocks`);
+        assert.ok(r.forward - r.stand > 0.8 * U, `${kind} ${name} lunges ${((r.forward - r.stand) / U).toFixed(2)} blocks`);
         // The warning: a fan either side of straight ahead, the same both ways round.
         const side = Math.max(...r.hull.map(p => p[0]));
         assert.ok(side > 0.6 && Math.abs(side + Math.min(...r.hull.map(p => p[0]))) < 1e-6, `${kind} ${name} sweeps ${side.toFixed(2)} blocks to the side`);
-        for (const d of [close, r.stand]) for (const [way, label] of [[0, 'back'], [Math.PI / 2, 'aside'], [-Math.PI / 2, 'aside']]) {
+        // The wolf's lunge is 35 (user, 2026-10-04: the bite a little shorter
+        // ahead, knowing what it costs): a prompt step back from the very
+        // edge of its reach now clears it, so its step back is tried from
+        // where it creeps to between blows (standOff) instead.
+        const back = kind === 'wolf' ? MON.wolf.standOff * r.stand : r.stand;
+        for (const [d, way, label] of [[close, 0, 'back'], [back, 0, 'back'], ...[close, r.stand].flatMap(d => [[d, Math.PI / 2, 'aside'], [d, -Math.PI / 2, 'aside']])]) {
             // Not knowing which way round it comes, a walk is caught one way or the other.
             assert.ok([false, true].some(flip => face(kind, name, d, 0, { flip, act: walk(0, way) }).hurt), `${kind} ${name}: ${label} from ${(d / U).toFixed(2)} blocks clears it`);
         }
     }
+    assert.ok([false, true].every(flip => !face('wolf', 'bite', monsterKit.reach('wolf', 'bite').stand, 0, { flip, act: walk(0, 0) }).hurt), 'the wolf\'s bite from the edge of its reach is cleared by a prompt step back');
     // A monster starting a move drawn either way round rolls which way: both come up.
     const sim = open('wolf'), seen = new Set();
     for (let i = 0; i < 20; i++) { ready(sim, 40); W.step(sim, 0.01); seen.add(sim.monsters[0].flip); }
@@ -478,6 +484,116 @@ test('lured past its leash it gives up and walks home, then patrols again', () =
     step(sim, 12);
     assert.equal(m.phase, 'patrol');
     assert.ok(dist(m, m.home) < S.patrolRadius + 4);
+});
+
+// ---- walls (design.md 5: it notices what it sees, and walks round) ----
+// The open square with blocks put into it: `walls` is a list of [letter,
+// column, first row, last row].
+function walled(kind, walls) {
+    const sim = open(kind), t = sim.terrain;
+    for (const [letter, col, from, to] of walls) for (let r = from; r <= to; r++) terrainKit.set(t, col, r, ...terrainKit.cellOf(letter));
+    return sim;
+}
+test('it notices only a player it can see: a wall two blocks high hides one, a low stone does not', () => {
+    for (const kind of KINDS) {
+        const near = MON[kind].alertRange - 20;
+        const watch = (letter, x, y) => {
+            const sim = walled(kind, [[letter, 18, 14, 16]]), m = sim.monsters[0];
+            m.rest = 99;
+            put(sim.player, x, y, 0);
+            step(sim, 1);
+            return { phase: m.phase, alerts: events(sim, 'alert').length };
+        };
+        // Due west of home, the wall between them.
+        assert.deepEqual(watch('2', HOME.x - near, HOME.y), { phase: 'patrol', alerts: 0 }, `${kind} notices through a wall`);
+        assert.equal(watch('1', HOME.x - near, HOME.y).alerts, 1, `${kind} does not see over a low stone`);
+        // As near, but past the end of the wall.
+        assert.equal(watch('2', HOME.x - near * 0.6, HOME.y - near * 0.8).alerts, 1, `${kind} does not see past the end of the wall`);
+    }
+    // Struck from where it cannot see, it still fights back at once.
+    const sim = walled('goblin', [['2', 18, 14, 16]]), m = sim.monsters[0];
+    monsterKit.struck(sim, m, { amount: 5 });
+    assert.equal(m.phase, 'chase');
+});
+
+test('a wall in the way is walked round, looking where it goes, to fight on the other side; home again the same way', () => {
+    for (const kind of KINDS) {
+        // A wall seven blocks long, west of home; the player beyond its middle.
+        const sim = walled(kind, [['3', 18, 12, 18]]), m = sim.monsters[0], p = sim.player, t = sim.terrain;
+        Object.assign(m, { phase: 'chase', wait: 0, facing: Math.PI });
+        put(p, HOME.x - 200, HOME.y, 0);
+        assert.equal(terrainKit.lineClear(t, m.x, m.y, p.x, p.y), false);
+        let aside = 0, backwards = 0, seconds = 0;
+        for (; seconds < 20 && m.phase !== 'windup'; seconds += 0.01) {
+            const x0 = m.x, y0 = m.y;
+            W.step(sim, 0.01);
+            aside = Math.max(aside, Math.abs(m.y - HOME.y));
+            // While the wall is between them it faces the way it walks.
+            const dx = m.x - x0, dy = m.y - y0;
+            if (Math.hypot(dx, dy) > 1e-6 && !terrainKit.lineClear(t, m.x, m.y, p.x, p.y) && Math.abs(space.wrapAngle(Math.atan2(dy, dx) - m.facing)) > Math.PI / 2) backwards++;
+        }
+        assert.equal(m.phase, 'windup', `${kind} never got round the wall`);
+        assert.ok(aside > 3 * U, `${kind} went ${aside.toFixed(0)} aside`);
+        assert.ok(terrainKit.lineClear(t, m.x, m.y, p.x, p.y), `${kind} attacks across the wall`);
+        assert.ok(backwards < 30, `${kind} walked backwards for ${backwards} steps`);
+        assert.ok(seconds < 600 / MON[kind].speed, `${kind} took ${seconds.toFixed(1)} s`);
+        // The player gone and the wall between it and home: round it again, and whole.
+        Object.assign(m, { phase: 'return', hp: 1, enraged: true });
+        put(m, HOME.x - 200, HOME.y); put(p, 100, 100);
+        step(sim, 600 / MON[kind].speed);
+        assert.equal(m.phase, 'patrol', `${kind} never got home`);
+        assert.ok(dist(m, HOME) <= MON[kind].patrolRadius + 4 && m.hp === m.maxHp && !m.enraged);
+    }
+});
+
+test('a player in a gap too narrow for it is fought from outside, not walked away from', () => {
+    // A dead end one block wide and two deep, open to the east; the wolf king is wider than a block.
+    const sim = walled('wolfKing', [['3', 13, 14, 16], ['3', 14, 14, 14], ['3', 15, 14, 14], ['3', 14, 16, 16], ['3', 15, 16, 16]]), m = sim.monsters[0], p = sim.player, t = sim.terrain;
+    Object.assign(m, { phase: 'chase', wait: 0, facing: Math.PI });
+    put(p, 14.5 * U, 15.5 * U, 0);
+    assert.ok(m.radius * 2 > U && terrainKit.lineClear(t, m.x, m.y, p.x, p.y));
+    for (let i = 0; i < 1500 && sim.stats.hurt === 0; i++) W.step(sim, 0.01);
+    assert.ok(m.x > 16 * U, 'it does not fit in');
+    assert.equal(terrainKit.wayTo(t, m.x, m.y, p.x, p.y, m.radius, m.radius + p.radius).direct, false);
+    assert.equal(sim.stats.hurt, 1, 'and still lands a blow');
+});
+
+test('a pond between them hides nobody: it sees across, walks round, and a blow lands across the water (user, 2026-10-04)', () => {
+    // Water five blocks long, west of home; the player beyond its middle, in the goblin's alert range.
+    const sim = walled('goblin', [['~', 18, 13, 17]]), m = sim.monsters[0], p = sim.player, t = sim.terrain;
+    m.rest = 99;
+    put(p, HOME.x - 130, HOME.y, 0);
+    step(sim, 1);
+    assert.equal(events(sim, 'alert').length, 1, 'seen across the water');
+    for (let i = 0; i < 1500 && m.phase !== 'windup'; i++) W.step(sim, 0.01);
+    assert.equal(m.phase, 'windup', 'it never came round');
+    assert.ok(m.x < 18 * U && !terrainKit.blocked(t, m.x, m.y, m.radius), `it attacks from ${(m.x / U).toFixed(1)}, ${(m.y / U).toFixed(1)}`);
+    // Either side of one block of water, as near as the banks let them: the club reaches across.
+    const across = walled('goblin', [['~', 18, 15, 15]]), g = across.monsters[0];
+    put(across.player, 18 * U - 12, HOME.y, 0);
+    Object.assign(g, { phase: 'windup', move: 'pounce', t: MON.goblin.moves.pounce.windup - 0.01, x: 19 * U + 12, y: HOME.y, facing: Math.PI });
+    step(across, 0.8);
+    assert.equal(across.stats.hurt, 1, 'the pounce lands across the pond');
+    assert.ok(g.x >= 19 * U + 12 - 1e-6, 'without the goblin getting its feet wet');
+});
+
+test('a patrol passes over waypoints in a wall instead of walking at it', () => {
+    // Home against a wall to the east: the first waypoint (due east) is inside it.
+    const sim = walled('goblin', [['3', 21, 12, 18]]), m = sim.monsters[0], S = MON.goblin;
+    assert.ok(terrainKit.blocked(sim.terrain, m.home.x + Math.cos(m.patrolAt) * S.patrolRadius, m.home.y + Math.sin(m.patrolAt) * S.patrolRadius, m.radius));
+    let rests = 0, wasResting = false, far = 0, pressed = 0;
+    for (let i = 0; i < 3000; i++) {
+        const x0 = m.x, y0 = m.y;
+        W.step(sim, 0.01);
+        if (m.rest > 0 && !wasResting) rests++;
+        wasResting = m.rest > 0;
+        far = Math.max(far, dist(m, m.home) - S.patrolRadius);
+        // Walking (legs moving) without getting anywhere.
+        if (m.rest === 0 && m.x === x0 && m.y === y0) pressed++;
+    }
+    assert.equal(m.phase, 'patrol');
+    assert.ok(rests >= 3, `rested ${rests} times in 30 s`);
+    assert.ok(far < 4 && pressed < 30, `strayed ${far.toFixed(1)}, stood pressing for ${pressed} steps`);
 });
 
 test('enraged below its threshold: harder blows and a faster clock, for good', () => {

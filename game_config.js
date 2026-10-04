@@ -33,8 +33,10 @@ const gameConfig = (() => {
         // faces (75 degrees either side: the front 150), and not past
         // blocks at least eye high; the rest of the ground is shaded and a
         // monster or a rival there is not drawn (user, 2026-10-04: the same
-        // in the adventure and in a duel).
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12 },
+        // in the adventure and in a duel). sightNear: world units round the
+        // body it sees whichever way it faces, a little behind it too
+        // (user, 2026-10-04); walls hide there as well.
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12, sightNear: 60 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -172,8 +174,10 @@ const gameConfig = (() => {
 
         // 4e. Monsters (design.md 5): patrol from waypoint to waypoint
         // patrolRadius round home at patrolSpeed, resting patrolRest at
-        // each; notice the player within alertRange and stand alert for
-        // alertSeconds; then fight (design.md 5.2), turning at turnRate.
+        // each; notice the player within alertRange and in sight (no block
+        // two high between) and stand alert for alertSeconds; then fight
+        // (design.md 5.2), turning at turnRate, walking round walls in the
+        // way (`radius` decides what gap it fits through).
         // Free again (firstDelay after the alert, `delay` after a move or a
         // reel) it decides: a player more than turnFirst off its facing
         // first gets turned to; then by distance, `near` (within the reach
@@ -229,7 +233,7 @@ const gameConfig = (() => {
                 patrolRadius: 80, patrolSpeed: 22, patrolRest: 1.0, alertRange: 180, alertSeconds: 0.4, leash: 300, standOff: 0.85,
                 firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.72, lock: 0.17, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 40 },
+                    bite: { name: '撕咬', windup: 0.72, lock: 0.17, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 35 },
                     leap: { name: '扑击', windup: 1.25, lock: 0.35, swing: 0.54, recovery: 2.2, ratio: 0.9, step: 150, ram: true, cooldown: 6 }
                 },
                 near: { bite: 1 },
@@ -254,9 +258,9 @@ const gameConfig = (() => {
                 patrolRadius: 0, patrolSpeed: 22, patrolRest: 2, alertRange: 210, alertSeconds: 0.6, leash: 380, standOff: 0.85,
                 firstDelay: 0.4, delay: 0.5, flinchSeconds: 0.18, enrage: { threshold: 0.5, atk: 1.25, tempo: 1.25 },
                 moves: {
-                    bite: { name: '撕咬', windup: 0.85, lock: 0.12, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 64 },
+                    bite: { name: '撕咬', windup: 0.85, lock: 0.12, swing: 0.16, recovery: 1.1, ratio: 0.6, step: 58 },
                     // The same bite, sooner and with a longer recovery.
-                    quickBite: { name: '快咬', pose: 'bite', windup: 0.65, lock: 0.12, swing: 0.16, recovery: 1.3, ratio: 0.6, step: 64 },
+                    quickBite: { name: '快咬', pose: 'bite', windup: 0.65, lock: 0.12, swing: 0.16, recovery: 1.3, ratio: 0.6, step: 58 },
                     leap: { name: '扑击', windup: 1.15, lock: 0.3, swing: 0.6, recovery: 2.3, ratio: 0.9, step: 190, ram: true, cooldown: 5 }
                 },
                 near: { bite: 1, quickBite: 1 },
@@ -396,7 +400,8 @@ const gameConfig = (() => {
 
         // 9. Maps (design.md 6.3: the base, two regions, the training
         // ground and the PVP arena). One character per block: `.` grass,
-        // `:` path, `=` cobble, `;` gravel, `1`-`9` stone wall of that many
+        // `:` path, `=` cobble, `;` gravel, `~` a pond (no body walks in;
+        // it is seen across and struck across), `1`-`9` stone wall of that many
         // blocks, `T` tree, `H` a building's wall (3 high), `#` a portal's
         // pillar (3 high), `P` a portal's opening, `B` a dry thicket (2
         // high), `O` iron ore and `X` crystal (1-high boulders), `h` a herb

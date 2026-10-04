@@ -222,7 +222,7 @@ test('the clearing map is well formed and closed', () => {
         assert.ok(c > 0 && r > 0 && c < t.width - 1 && r < t.height - 1, `open path to the edge at ${c},${r}`);
         for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const key = `${c + dc},${r + dr}`;
-            if (!seen.has(key) && !terrainKit.solidAt(t, c + dc, r + dr)) { seen.add(key); todo.push([c + dc, r + dr]); }
+            if (!seen.has(key) && !terrainKit.closedAt(t, c + dc, r + dr)) { seen.add(key); todo.push([c + dc, r + dr]); }
         }
     }
     assert.ok(seen.size > 150, `${seen.size} open blocks to walk on`);

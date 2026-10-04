@@ -40,8 +40,15 @@ its own `dist/peerjs.min.js`, MIT) is an ordinary script in
   three.js; Node tests run it); `view.js` draws with three.js; `panel.js`
   is the page. `tune.html` loads `game_config.js` unfrozen
   (`window.unfrozenConfig`); the game never loads `tune/`.
+- `mapview/` the map preview, a third page (`map.html`, entry `map` in
+  `client-assets.json`; read-only, no three.js): `plan.js` turns a map of
+  `gameConfig.maps` into plain data through the game's own loader, names
+  a cell (`field (23, 5)`), measures a walk and casts one screen of
+  ground from the camera (no DOM; Node tests run it); `page.js` draws it
+  on a 2D canvas with numbered columns and rows. The game never loads
+  `mapview/`.
 - `vendor/` third-party files, unmodified apart from bundling.
-- `index.html`, `tune.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
+- `index.html`, `tune.html`, `map.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
 
 The code, `game_config.js` and the tests are the description of current
 behaviour. `docs/tasks/` (Chinese) holds three documents and no more:
@@ -67,6 +74,6 @@ This file only changes when project setup changes.
   `PLAYWRIGHT_CHANNEL=chrome`.
 - New script or partial: register it in `client-assets.json` under its
   page's entry; a partial also needs `#mount-<id>` in that page
-  (`index.html` or `tune.html`).
+  (`index.html`, `tune.html` or `map.html`).
 - Code comments and `AGENTS.md` in English; `README.md`, UI text and
   `docs/tasks/` in Chinese.

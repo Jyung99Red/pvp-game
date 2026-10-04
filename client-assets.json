@@ -99,5 +99,20 @@
     "partials": [
       "tune"
     ]
+  },
+  "map": {
+    "styles": [
+      "mapview/map.css"
+    ],
+    "scripts": [
+      "game_config.js",
+      "core/terrain.js",
+      "core/props.js",
+      "mapview/plan.js",
+      "mapview/page.js"
+    ],
+    "partials": [
+      "map"
+    ]
   }
 }

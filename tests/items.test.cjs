@@ -253,7 +253,7 @@ test('a torch carried sets a thicket alight with one press, lighting itself; the
         const seen = new Set([`${start.col},${start.row}`]), todo = [[start.col, start.row]];
         while (todo.length) {
             const [c, r] = todo.pop();
-            for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k = `${c + dc},${r + dr}`; if (!seen.has(k) && !T.solidAt(t, c + dc, r + dr)) { seen.add(k); todo.push([c + dc, r + dr]); } }
+            for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const k = `${c + dc},${r + dr}`; if (!seen.has(k) && !T.closedAt(t, c + dc, r + dr)) { seen.add(k); todo.push([c + dc, r + dr]); } }
         }
         return seen.has(`${Math.floor(chest.x / U)},${Math.floor(chest.y / U) + 1}`);
     };

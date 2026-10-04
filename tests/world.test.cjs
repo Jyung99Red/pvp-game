@@ -67,12 +67,102 @@ test('a change to a block redraws only the chunks it can touch and is kept as an
     assert.equal(T.kindAt(copy, 15, 15), T.KIND.tree);
 });
 
+// ---- ponds (design.md 6.1; user, 2026-10-04) ----
+test('a pond stops bodies and nothing else: it is seen across, a blow lands across it, and the way goes round', () => {
+    // Three blocks of water across the middle of a walled room.
+    const t = T.fromRows(['1111111', '1.....1', '1.@...1', '1.~~~.1', '1.....1', '1.....1', '1111111']);
+    assert.deepEqual([T.NAMES[T.kindAt(t, 3, 3)], T.levelAt(t, 3, 3)], ['water', 0]);
+    assert.ok(!T.isSolid(T.KIND.water) && !T.isOpen(T.KIND.water) && T.isOpen(T.KIND.grass) && !T.isOpen(T.KIND.stone));
+    assert.ok(!T.solidAt(t, 3, 3) && T.closedAt(t, 3, 3) && !T.closedAt(t, 3, 2) && T.closedAt(t, 0, 0) && T.closedAt(t, -1, 3));
+    // A body walking south at it is stopped at the bank, like at a wall.
+    const body = { x: 3.5 * U, y: 2.5 * U, radius: 12 };
+    for (let i = 0; i < 200; i++) T.moveCircle(t, body, 0, 1);
+    assert.ok(Math.abs(body.y - (3 * U - 12)) < 1e-6 && T.blocked(t, 3.5 * U, 3.5 * U, 12), `stopped at ${body.y}`);
+    // Sight and blows go straight across; a body's way does not.
+    const north = [3.5 * U, 2.5 * U], south = [3.5 * U, 4.5 * U];
+    assert.ok(T.sightClear(t, ...north, ...south) && T.lineClear(t, ...north, ...south));
+    assert.equal(T.openWay(t, ...north, ...south, 12), false);
+    const went = walk(t, [3, 2], [3, 4], 12);
+    assert.ok(went.left <= 3 && went.steps > 2 * U, `round the pond in ${went.steps} steps, ${went.left.toFixed(0)} short`);
+    // It is ground as far as a change goes (no height), and no floor for a map's markers.
+    assert.equal(T.set(t, 3, 2, 'water', 0), true);
+    assert.equal(T.set(t, 3, 2, 'water', 1), false);
+    assert.throws(() => T.fromRows(['@~'], U, '~'), /floor must be ground/);
+});
+
+// ---- a way round walls ----
+// A room cut in two by a wall down column 6, with a gap one block wide at
+// the north end and one `south` blocks wide at the south end.
+function halves(south = 1) {
+    return T.fromRows(Array.from({ length: 11 }, (_, r) => r === 0 || r === 10 ? '1'.repeat(13)
+        : `1${r === 5 ? '..@..' : '.....'}${r >= 2 && r <= 9 - south ? '3' : '.'}.....1`));
+}
+// Walk a circle from cell centre to cell centre the way a monster does:
+// a step at a time towards wherever wayTo points. Seconds of steps taken,
+// and how far it ended from where it was going.
+function walk(t, from, to, radius, most = 2000) {
+    const body = { x: (from[0] + 0.5) * U, y: (from[1] + 0.5) * U, radius }, tx = (to[0] + 0.5) * U, ty = (to[1] + 0.5) * U, way = {};
+    let steps = 0, north = Infinity, south = -Infinity;
+    for (; steps < most && Math.hypot(tx - body.x, ty - body.y) > 3; steps++) {
+        T.wayTo(t, body.x, body.y, tx, ty, radius, 0, way);
+        const d = Math.hypot(way.x - body.x, way.y - body.y);
+        T.moveCircle(t, body, (way.x - body.x) / d * Math.min(d, 1), (way.y - body.y) / d * Math.min(d, 1));
+        north = Math.min(north, body.y); south = Math.max(south, body.y);
+    }
+    return { steps, left: Math.hypot(tx - body.x, ty - body.y), north, south };
+}
+test('a body finds its way round a wall, by the nearer gap it fits through; in the open it walks straight', () => {
+    const t = halves(), way = {};
+    // Nothing in the way: straight there.
+    assert.equal(T.openWay(t, 2.5 * U, 5.5 * U, 4.5 * U, 2.5 * U, 12), true);
+    assert.deepEqual(plain(T.wayTo(t, 2.5 * U, 5.5 * U, 4.5 * U, 2.5 * U, 12, 0, way)), { x: 4.5 * U, y: 2.5 * U, direct: true });
+    // Across the wall: not straight, and the next point is somewhere it can walk to.
+    assert.equal(T.openWay(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12), false);
+    T.wayTo(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12, 0, way);
+    assert.ok(!way.direct && (way.x !== 9.5 * U || way.y !== 5.5 * U) && T.openWay(t, 3.5 * U, 5.5 * U, way.x, way.y, 12));
+    // A walker gets there through a gap, not by pressing on the wall; from nearer the south end it takes the south gap.
+    for (const radius of [12, 16, 18]) {
+        const went = walk(t, [3, 5], [9, 5], radius);
+        assert.ok(went.left <= 3, `radius ${radius} stopped ${went.left.toFixed(0)} short`);
+        assert.ok(went.steps < 700, `radius ${radius} took ${went.steps} steps for a way of about 440`);
+    }
+    assert.ok(walk(t, [3, 7], [9, 7], 12).south > 9 * U, 'the south gap from nearer the south');
+    assert.ok(walk(t, [3, 3], [9, 3], 12).north < 2 * U, 'the north gap from nearer the north');
+    // A body wider than a block fits neither gap: no route, so it is sent straight at the wall as before.
+    T.wayTo(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 22, 0, way);
+    assert.deepEqual(plain(way), { x: 9.5 * U, y: 5.5 * U, direct: false });
+    assert.ok(walk(t, [3, 5], [9, 5], 22, 600).left > 3 * U);
+    // A gap two blocks wide lets it through, down the middle.
+    const wide = walk(halves(2), [3, 5], [9, 5], 22);
+    assert.ok(wide.left <= 3 && wide.south > 8 * U, `the wide body stopped ${wide.left.toFixed(0)} short`);
+});
+
+test('`short` of a body it walks up to counts as there; the way follows the terrain as it changes', () => {
+    const t = halves();
+    // The middle of the wall block is never reached, but a block short of it is open ground.
+    assert.equal(T.openWay(t, 3.5 * U, 5.5 * U, 6.5 * U, 5.5 * U, 12), false);
+    assert.equal(T.openWay(t, 3.5 * U, 5.5 * U, 6.5 * U, 5.5 * U, 12, U), true);
+    assert.equal(T.openWay(t, 3.5 * U, 5.5 * U, 6.5 * U, 5.5 * U, 12, U - 10), false);
+    // A block knocked out of the wall opens the straight way; put back, it is shut again.
+    assert.equal(T.wayTo(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12).direct, false);
+    T.set(t, 6, 5, 'grass', 0);
+    assert.equal(T.wayTo(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12).direct, true);
+    T.set(t, 6, 5, 'stone', 3);
+    assert.equal(T.wayTo(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12).direct, false);
+    // Both gaps shut: no way round, and the walker is left where the wall stops it.
+    T.set(t, 6, 1, 'stone', 3); T.set(t, 6, 9, 'stone', 3);
+    assert.ok(walk(t, [3, 5], [9, 5], 12, 600).left > 3 * U);
+    // Low stones stop a body like any wall.
+    T.set(t, 6, 5, 'stone', 1);
+    assert.equal(T.openWay(t, 3.5 * U, 5.5 * U, 9.5 * U, 5.5 * U, 12), false);
+});
+
 // ---- the regions ----
 // Cells walkable from `from`; with `burn`, dry thickets count as open (a
 // lit torch burns them away).
 function reachable(t, from, burn = true) {
     const seen = new Set([`${from.col},${from.row}`]), todo = [[from.col, from.row]];
-    const open_ = (c, r) => !T.solidAt(t, c, r) || (burn && T.inside(t, c, r) && T.kindAt(t, c, r) === T.KIND.brush);
+    const open_ = (c, r) => !T.closedAt(t, c, r) || (burn && T.inside(t, c, r) && T.kindAt(t, c, r) === T.KIND.brush);
     let open = true;
     while (todo.length) {
         const [c, r] = todo.pop();

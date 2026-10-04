@@ -653,3 +653,43 @@ test('the move tuner: boots clean, a typed number changes the key the game reads
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });
+
+// The map preview (map.html): a third page on the same boot, drawn in 2D.
+test('the map preview: boots clean without three.js, names the cell under the pointer; a click and a drag give the words to point by', { timeout: 240000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    try {
+        const page = await context.newPage(), errors = [];
+        page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+        page.on('pageerror', e => errors.push(e.message));
+        await page.goto(base + 'map.html?map=field', { waitUntil: 'load' });
+        await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.mapPreview, null, { timeout: 120000 });
+        const info = await page.evaluate(() => {
+            const M = window.mapPreview, canvas = document.querySelector('[data-canvas]');
+            M.setCell(20);
+            return {
+                map: M.state.map, three: typeof THREE, size: [M.plan.width, M.plan.height], drawn: [canvas.clientWidth, canvas.clientHeight],
+                options: document.querySelectorAll('[data-map] option').length, maps: Object.keys(gameConfig.maps).length, monster: M.plan.monsters[0]
+            };
+        });
+        assert.deepEqual([info.map, info.three, info.options], ['field', 'undefined', info.maps]);
+        assert.deepEqual(info.drawn, [info.size[0] * 20, info.size[1] * 20], 'a cell is 20 pixels');
+        // The middle of a cell, on the page.
+        const at = (col, row) => page.evaluate(([c, r]) => {
+            const box = document.querySelector('[data-canvas]').getBoundingClientRect(), s = window.mapPreview.state.cell;
+            return { x: box.left + (c + 0.5) * s, y: box.top + (r + 0.5) * s };
+        }, [col, row]);
+        // The pointer on a monster's home names it; a click puts the cell in the box.
+        const m = info.monster, home = await at(m.col, m.row);
+        await page.mouse.move(home.x, home.y);
+        assert.equal(await page.locator('[data-readout]').textContent(), `field (${m.col}, ${m.row}) ${m.name} ${m.letter}`);
+        await page.mouse.click(home.x, home.y);
+        assert.equal(await page.locator('[data-ref]').inputValue(), `field (${m.col}, ${m.row})`);
+        // A drag gives a rectangle, its north-west corner first whichever way it was dragged.
+        const from = await at(12, 9), to = await at(6, 5);
+        await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 4 }); await page.mouse.up();
+        assert.equal(await page.locator('[data-ref]').inputValue(), 'field (6,5)-(12,9)');
+        await shot(page, 'map');
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});

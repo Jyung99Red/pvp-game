@@ -1,5 +1,6 @@
 // Monsters (design.md 5): the goblin and the wolf. Patrol round home,
-// notice the player and stand alert a moment, then fight: free again, a
+// notice a player they can see and stand alert a moment, then fight,
+// walking round any wall between (terrainKit.wayTo): free again, a
 // monster turns to the player if it must and picks what to do from the
 // table of the distance band the player is in (design.md 5.2), on the
 // world's own dice; it enrages when low and walks home past the leash.
@@ -216,6 +217,14 @@ const monsterKit = (() => {
         walked += Math.hypot(m.x - x0, m.y - y0);
         return false;
     }
+    // Step towards (x, y), or towards a body there that it comes up to
+    // `short` of, round whatever wall stands in the way (terrainKit.wayTo);
+    // true once at (x, y) itself.
+    const way = { x: 0, y: 0, direct: true };
+    function walkRound(sim, m, x, y, short, speed, dt, turn = true) {
+        terrainKit.wayTo(sim.terrain, m.x, m.y, x, y, m.radius, short, way);
+        return walkTo(sim, m, way.x, way.y, speed, dt, turn) && way.x === x && way.y === y;
+    }
 
     // ---- choosing what to do (design.md 5.2) ----
     // How far a kind's bands go: `near` as far as any move of its near
@@ -255,12 +264,16 @@ const monsterKit = (() => {
     // It minds the nearest fighter still standing (in PVE, the player).
     function think(sim, m, dt) {
         const S = configOf(m.kind), p = worldSim.nearestFighter(sim, m) || sim.fighters[0], d = distance(m, p), alive = !p.down;
+        const t = sim.terrain, short = m.radius + p.radius;
         for (const name in m.cooldowns) m.cooldowns[name] = Math.max(0, m.cooldowns[name] - dt);
         switch (m.phase) {
             case 'patrol': {
-                if (alive && d <= S.alertRange) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); return; }
+                // It notices only a player it can see: a wall that hides is in the way (terrainKit.sightClear).
+                if (alive && d <= S.alertRange && terrainKit.sightClear(t, m.x, m.y, p.x, p.y)) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); return; }
                 if (m.rest > 0) { m.rest = Math.max(0, m.rest - dt); return; }
                 const x = m.home.x + Math.cos(m.patrolAt) * S.patrolRadius, y = m.home.y + Math.sin(m.patrolAt) * S.patrolRadius;
+                // A waypoint in a wall or behind one is passed over.
+                if (!terrainKit.openWay(t, m.x, m.y, x, y, m.radius)) { m.patrolAt += 2.4; return; }
                 if (walkTo(sim, m, x, y, S.patrolSpeed, dt)) { m.patrolAt += 2.4; m.rest = S.patrolRest; }
                 return;
             }
@@ -272,11 +285,13 @@ const monsterKit = (() => {
             case 'chase': {
                 if (!alive || (distance(m, m.home) > S.leash && d > S.alertRange)) { m.phase = 'return'; m.t = 0; return; }
                 const edge = bands(m.kind);
+                m.wait = Math.max(0, m.wait - dt);
+                // A block between them: no blow would land across it (swingStep), so it goes round first, looking where it walks.
+                if (!terrainKit.lineClear(t, m.x, m.y, p.x, p.y)) { walkRound(sim, m, p.x, p.y, short, S.speed, dt); return; }
                 face(m, p, S.turnRate, dt);
                 // The gap after a move: facing the player, it creeps up to the near band.
-                m.wait = Math.max(0, m.wait - dt);
                 if (m.wait > 0) {
-                    if (d > edge.near * S.standOff) walkTo(sim, m, p.x, p.y, S.patrolSpeed, dt, false);
+                    if (d > edge.near * S.standOff) walkRound(sim, m, p.x, p.y, short, S.patrolSpeed, dt, false);
                     return;
                 }
                 // Free: a player off to the side or behind is turned to first, on the spot.
@@ -285,7 +300,7 @@ const monsterKit = (() => {
                 if (choice === 'approach') { m.phase = 'approach'; m.t = 0; return; }
                 if (choice) { begin(sim, m, choice); return; }
                 // Far, or nothing it can use from here: it closes in.
-                walkTo(sim, m, p.x, p.y, S.speed, dt, false);
+                walkRound(sim, m, p.x, p.y, short, S.speed, dt, false);
                 return;
             }
             case 'approach':
@@ -293,7 +308,7 @@ const monsterKit = (() => {
                 m.t += dt;
                 face(m, p, S.turnRate, dt);
                 if (!alive || d <= bands(m.kind).near || m.t >= M().approachSeconds - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = 0; return; }
-                walkTo(sim, m, p.x, p.y, S.speed, dt, false);
+                walkRound(sim, m, p.x, p.y, short, S.speed, dt, false);
                 return;
             case 'windup': {
                 const move = S.moves[m.move];
@@ -314,7 +329,7 @@ const monsterKit = (() => {
                 return;
             case 'return':
                 // Home again: whole, calm, and back on its rounds.
-                if (walkTo(sim, m, m.home.x, m.home.y, S.speed, dt)) Object.assign(m, { phase: 'patrol', t: 0, rest: S.patrolRest, hp: m.maxHp, enraged: false, stagger: 0 });
+                if (walkRound(sim, m, m.home.x, m.home.y, 0, S.speed, dt)) Object.assign(m, { phase: 'patrol', t: 0, rest: S.patrolRest, hp: m.maxHp, enraged: false, stagger: 0 });
                 return;
         }
     }

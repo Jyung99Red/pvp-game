@@ -7,7 +7,7 @@ const source = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8')
 // so the boot source is run with import( renamed to a stub the test owns.
 function harness(overrides = {}) {
     const nodes = [], listeners = {}, timers = new Map(), requests = [], imports = [];
-    const root = { dataset: {} }; let timerId = 0, started = 0, tuned = 0, c;
+    const root = { dataset: {} }; let timerId = 0, started = 0, tuned = 0, mapped = 0, c;
     const element = tag => ({
         tag, dataset: {}, style: {}, textContent: '', isConnected: false,
         remove() { this.isConnected = false; }, setAttribute() {}, addEventListener() {},
@@ -32,7 +32,7 @@ function harness(overrides = {}) {
     };
     c = vm.createContext({
         document, console: { error() {} }, AbortController, URL, location: { reload() {} },
-        app: { start() { started++; } }, tuneApp: { start() { tuned++; } },
+        app: { start() { started++; } }, tuneApp: { start() { tuned++; } }, mapApp: { start() { mapped++; } },
         addEventListener(type, fn) { listeners[type] = fn; }, removeEventListener(type) { delete listeners[type]; },
         getComputedStyle: () => ({ getPropertyValue: key => !overrides.invalidStyles && nodes.some(n => n.isConnected && n.tag === 'style' && n.textContent.includes(key)) ? 'ready' : '' }),
         setTimeout(fn) { timers.set(++timerId, fn); return timerId; }, clearTimeout(id) { timers.delete(id); },
@@ -51,7 +51,7 @@ function harness(overrides = {}) {
     // As in a browser, `window` is the global object itself.
     vm.runInContext('globalThis.window = globalThis', c);
     return {
-        c, document, nodes, listeners, timers, requests, imports, root, started: () => started, tuned: () => tuned,
+        c, document, nodes, listeners, timers, requests, imports, root, started: () => started, tuned: () => tuned, mapped: () => mapped,
         run: () => vm.runInContext(source('core/client_boot.js').replace(/\bimport\(/g, '__import('), c)
     };
 }
@@ -108,12 +108,18 @@ test('the move tuner\'s page (entry "tune") starts its own app, not the game', a
     assert.equal(h.root.dataset.clientState, 'ready');
     assert.deepEqual([h.tuned(), h.started()], [1, 0]);
 });
+test('the map preview\'s page (entry "map") lists no module and starts its own app', async () => {
+    const manifest = { map: { styles: ['style.css'], scripts: ['first.js'] } };
+    const h = harness({ entry: 'map', manifest, responses: { 'first.js': 'var order = [];' } }); await h.run();
+    assert.equal(h.root.dataset.clientState, 'ready');
+    assert.deepEqual([h.mapped(), h.tuned(), h.started(), h.imports.length], [1, 0, 0, 0]);
+});
 
 // The other tests build a synthetic manifest. `client_boot` mounts each
 // listed partial into `#mount-<id>` and throws when the div is absent, so
-// check the real files agree: each entry with its page (the game, and the
-// move tuner).
-const PAGES = { game: 'index.html', tune: 'tune.html' };
+// check the real files agree: each entry with its page (the game, the move
+// tuner and the map preview).
+const PAGES = { game: 'index.html', tune: 'tune.html', map: 'map.html' };
 test('the manifest and the pages agree on every partial, module, script and stylesheet', () => {
     const manifest = JSON.parse(source('client-assets.json'));
     assert.deepEqual(Object.keys(manifest).sort(), Object.keys(PAGES).sort());
@@ -126,21 +132,23 @@ test('the manifest and the pages agree on every partial, module, script and styl
         }
         for (const [, id] of page.matchAll(/id="mount-([^"]+)"/g))
             assert.ok(assets.partials.includes(id), `${file} mounts "${id}", which the manifest does not list`);
-        for (const f of [...assets.styles, ...assets.scripts, ...Object.values(assets.modules)])
+        for (const f of [...assets.styles, ...assets.scripts, ...Object.values(assets.modules || {})])
             assert.ok(fs.existsSync(path.join(__dirname, '..', f)), `${f} is listed but missing`);
     }
     assert.match(source('index.html'), /viewport-fit=cover/, 'the page must reach under notches so safe-area insets apply');
 });
-test('every script is listed once per page and on some page; core/, models/ and the tuner\'s workbench stay free of the DOM and three.js', () => {
+test('every script is listed once per page and on some page; core/, models/, the tuner\'s workbench and the map preview\'s plan stay free of the DOM and three.js', () => {
     const manifest = JSON.parse(source('client-assets.json')), listed = new Set();
     for (const assets of Object.values(manifest)) {
         assert.equal(new Set(assets.scripts).size, assets.scripts.length);
         assets.scripts.forEach(f => listed.add(f));
     }
-    const onDisk = ['core', 'models', 'render', 'ui', 'tune'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
+    const onDisk = ['core', 'models', 'render', 'ui', 'tune', 'mapview'].flatMap(dir => fs.readdirSync(path.join(__dirname, '..', dir)).filter(f => f.endsWith('.js')).map(f => `${dir}/${f}`));
     for (const file of onDisk) if (file !== 'core/client_boot.js') assert.ok(listed.has(file), `${file} is not in client-assets.json`);
-    // The game itself never loads the tuner.
-    assert.ok(!manifest.game.scripts.some(f => f.startsWith('tune/')));
-    for (const file of [...listed].filter(f => /^(core|models)\//.test(f) || f === 'tune/lab.js'))
+    // The game itself never loads the tuner or the map preview; the map
+    // preview draws in 2D: no three.js, nothing of the game's own pages.
+    assert.ok(!manifest.game.scripts.some(f => /^(tune|mapview)\//.test(f)));
+    assert.ok(!manifest.map.modules && !manifest.map.scripts.some(f => /^(render|ui|net|vendor|tune)\//.test(f)));
+    for (const file of [...listed].filter(f => /^(core|models)\//.test(f) || f === 'tune/lab.js' || f === 'mapview/plan.js'))
         assert.doesNotMatch(source(file), /\b(document|window|THREE)\s*[.[]/, `${file} must run in Node and on a PVP host`);
 });

@@ -471,7 +471,8 @@ void main() {
 
         // ---- sight: ground this fighter cannot see is shaded, out to
         // `SHADE_FAR` blocks; walls at least eye high cast it, and so does
-        // everything outside the front arc it sees (player.sightAngle).
+        // everything outside the front arc it sees (player.sightAngle) but
+        // for a small ring round it (player.sightNear; user, 2026-10-04).
         // The same in the adventure and in a duel (user, 2026-10-04). The
         // edge of sight comes exact from the terrain (terrainKit.sightFan:
         // rays past every wall corner), so it slides evenly as the fighter
@@ -498,7 +499,7 @@ void main() {
             function update(x, z, facing) {
                 if (x === lastX && z === lastZ && facing === lastFacing && lastRev === t.rev) return;
                 lastX = x; lastZ = z; lastFacing = facing; lastRev = t.rev;
-                terrainKit.sightFan(t, x * U, z * U, SIGHT_FAR * U, { facing, half: C.player.sightAngle, out: fan });
+                terrainKit.sightFan(t, x * U, z * U, SIGHT_FAR * U, { facing, half: C.player.sightAngle, near: C.player.sightNear, out: fan });
                 mesh.position.set(x, SHADE_Y, z);
                 mask.draw(x, z, fan);
             }

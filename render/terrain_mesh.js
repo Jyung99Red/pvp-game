@@ -32,6 +32,8 @@ const terrainMesh = (() => {
         return ((h ^ h >>> 16) >>> 0) / 4294967296;
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
+    // How dark a pond is along its banks.
+    const POND_BANK = 0.7;
     // The tile of a map's own floor.
     const floorOf = t => GROUND[t.floor] || 'grassTop';
     // Tile and shade spread per solid kind (by name).
@@ -242,6 +244,7 @@ directLight.color *= torchSeen;
             const b = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
             for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
                 const k = terrainKit.kindAt(t, c, r), name = terrainKit.NAMES[k];
+                if (k === K.water) { pond(b, c, r); continue; }
                 if (!terrainKit.isSolid(k)) {
                     // Ground, shaded at corners that meet a wall; a herb
                     // grows on the map's own floor.
@@ -283,6 +286,17 @@ directLight.color *= torchSeen;
                 }
             }
             return b;
+        }
+        // A pond on cell (c, r): water level with the ground (the sheet of
+        // ground beyond the map lies just under it, so it cannot sink),
+        // darker along its banks.
+        function pond(b, c, r) {
+            const wet = (x, z) => terrainKit.inside(t, x, z) && terrainKit.kindAt(t, x, z) === K.water;
+            const shades = [[0, 1], [1, 1], [1, 0], [0, 0]].map(([sx, sz]) => {
+                const dx = sx ? 1 : -1, dz = sz ? 1 : -1;
+                return wet(c + dx, r) && wet(c, r + dz) && wet(c + dx, r + dz) ? 1 : POND_BANK;
+            });
+            b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05), shades);
         }
         // A tuft or a flower on grass cell (c, r): tiny boxes.
         function flower(b, c, r) {

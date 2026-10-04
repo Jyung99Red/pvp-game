@@ -69,7 +69,7 @@ const propKit = (() => {
             const { door, front } = doorOf(b), side = b.door || 'south';
             // Checked against the map as drawn, not against later edits to it.
             const ground = terrainKit.cellOf(letter(map, front[0], front[1]) ?? '1');
-            if (!ground || terrainKit.isSolid(ground[0])) throw new Error(`${map.name}: the door of ${b.kind} opens into a wall`);
+            if (!ground || !terrainKit.isOpen(ground[0])) throw new Error(`${map.name}: the door of ${b.kind} opens into a wall`);
             const at = centre(front[0], front[1]);
             out.push({
                 id: `b${i}-${b.kind}`, type: 'building', kind: b.kind, name: B.name, x: at.x, y: at.y, h: 0, facing: angleOf(side), radius: 0, solid: false,
