@@ -154,7 +154,7 @@ const duelKit = (() => {
         // What drawing blends from (ui/app.js): each fighter before the last step.
         function remember() {
             before = new Map(sim.fighters.map(f => [f.id, {
-                x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend, guardBlend: f.guardBlend, shoveOut: f.shoveOut,
+                x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend, guardBlend: f.guardBlend, shoveOut: f.shoveOut, shoveFor: f.shoveFor,
                 act: f.act ? { move: f.act.move, phase: f.act.phase, t: f.act.t } : null
             }]));
         }

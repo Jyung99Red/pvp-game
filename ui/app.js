@@ -80,7 +80,7 @@ const app = (() => {
         // body is, its stride, its guard, and how far into its move it is
         // -- or a move would go on by one step in one frame and by two in
         // the next (user, 2026-10-04: attacks drew unevenly).
-        const LERP = ['x', 'y', 'h', 'gait', 'moveBlend', 'runBlend', 'guardBlend', 'shoveOut'];
+        const LERP = ['x', 'y', 'h', 'gait', 'moveBlend', 'runBlend', 'guardBlend', 'shoveOut', 'shoveFor'];
         const copy = p => ({ ...Object.fromEntries([...LERP, 'facing'].map(k => [k, p[k]])), act: p.act ? { move: p.act.move, phase: p.act.phase, t: p.act.t } : null });
         const snapshot = () => new Map([...sim.fighters, ...sim.monsters].map(b => [b.id, copy(b)]));
         let before = snapshot();

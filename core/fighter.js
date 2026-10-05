@@ -267,9 +267,9 @@ const fighterKit = (() => {
             // goes out, stays and comes back. It is a pose and no more
             // (core/player_anim.js): nothing waits for it, and with the
             // guard down it is on its way back at once.
-            const S = F().guard.shove;
-            p.shoveFor = g.state === 'up' ? Math.max(0, p.shoveFor - dt) : 0;
-            p.shoveOut = p.shoveFor > 0 ? Math.min(1, p.shoveOut + dt / S.out) : Math.max(0, p.shoveOut - dt / S.back);
+            const S = F().guard.shove, out = g.state === 'up' && p.shoveFor > 1e-9;
+            p.shoveFor = out ? Math.max(0, p.shoveFor - dt) : 0;
+            p.shoveOut = out ? Math.min(1, p.shoveOut + dt / S.out) : Math.max(0, p.shoveOut - dt / S.back);
         }
     };
     // ---- the offhand key: the item carried there (a shield is the guard

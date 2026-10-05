@@ -136,9 +136,20 @@ const playerAnim = (() => {
         const lower = playerModel.layers.lower, stance = rigKit.pick(playerPoses.stance, lower);
         return rigKit.add(rigKit.pick(pose, lower), rigKit.scale(rigKit.add(playerMoves.guardLegs, rigKit.scale(stance, -1)), 1 - moveBlend), rigKit.scale(playerMoves.guardBend, moveBlend));
     }
+    // How far a perfect parry's shove is out (fighter.shoveOut, shoveFor),
+    // as a share of the way from the guard to its shoved pose. Going out it
+    // snaps: fastest at the start, and past the pose by combat.guard.shove
+    // `over`, settling onto the pose while it is held. Coming back it eases
+    // out and in.
+    function shoveShare(body) {
+        const S = gameConfig.combat.guard.shove, level = clamp01(body.shoveOut || 0);
+        if (!(body.shoveFor > 0)) return smooth(level);
+        const fresh = clamp01(body.shoveFor / S.stay);
+        return easeOut(level) * (1 + S.over * fresh * fresh);
+    }
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
-    // fighter { act, guardBlend, shoveOut, stun, down, downT, drink, handOut,
-    // loadout }.
+    // fighter { act, guardBlend, shoveOut, shoveFor, stun, down, downT, drink,
+    // handOut, loadout }.
     function pose(rig, body) {
         let pose = locomotion(rig, body), stepping = 1;
         const act = body.act, lowerBody = playerModel.layers.lower;
@@ -162,12 +173,12 @@ const playerAnim = (() => {
         // Guarding: the shield up if one is carried, else the blade across
         // the chest (the left arm keeps what it holds); either way the knees
         // bend (guardLegs). A perfect parry shoves the guarding arm forward
-        // and lets it come back (shoveOut): part of the guard, so it goes
+        // and lets it come back (shoveShare): part of the guard, so it goes
         // as the guard goes.
         if (body.guardBlend > 0) {
             const legs = guardLegs(pose, body.moveBlend || 0), shield = inventoryKit.offhandOf(body.loadout) === 'shield';
             const held = shield ? playerMoves.guard : playerMoves.guardWeapon, shoved = shield ? playerMoves.guardShove : playerMoves.guardWeaponShove;
-            const up = body.shoveOut > 0 ? rigKit.mix(held, shoved, smooth(clamp01(body.shoveOut))) : held;
+            const up = body.shoveOut > 0 ? rigKit.mix(held, shoved, shoveShare(body)) : held;
             const raised = shield ? { ...legs, ...up } : { ...pose, ...legs, ...up };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }

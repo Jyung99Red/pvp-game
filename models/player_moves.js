@@ -114,24 +114,23 @@ const playerMoves = (() => {
         // writes a key back as `key({...})` without it).
         shieldArm,
         // Shield up: the left forearm across the front, the board facing
-        // forward; the sword arm drawn back; the body bent forward at the
-        // waist behind the board, the head kept up (user, 2026-10-05).
-        // Upper body only: the legs are guardLegs / guardBend. The left arm
-        // is the user's numbers from the move tuner (2026-10-04); both
-        // upper arms are raised by as much as the chest leans, so the board
-        // and the blade still face the way they did.
+        // forward; the sword arm drawn back; the body bent forward a little
+        // at the waist and turned to put the shield's shoulder ahead, the
+        // head up and to the front. Upper body only: the legs are
+        // guardLegs / guardBend. The user's numbers from the move tuner
+        // (2026-10-05).
         guard: {
-            chest: { rx: 0.3, ry: 0.12 }, head: { rx: -0.2 },
+            chest: { rx: 0.2, ry: -0.15 }, head: { rx: -0.2, ry: 0.15 },
             upperArmL: { rx: -1.55, ry: -0.4, rz: 0.1 }, forearmL: { rz: -0.8 }, handL: { ry: -0.3 },
-            upperArmR: { rx: -0.55, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
+            upperArmR: { rx: -0.2, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
         // A perfect parry shoves the blow back (user, 2026-10-05): the
         // guard goes out to this and comes back (combat.guard.shove). The
-        // left shoulder and the board pushed forward, the board facing as
-        // it did, the body leaning in behind it.
+        // body leans in and the board goes forward, upright, turning
+        // square to the front (the user's numbers from the move tuner).
         guardShove: {
-            chest: { rx: 0.45, ry: -0.2 }, head: { rx: -0.3, ry: 0.2 },
-            upperArmL: { rx: -1.78, ry: -0.4, rz: 0.61 }, forearmL: { rz: -1.01 }, handL: { ry: -0.3 },
+            chest: { rx: 0.35, ry: -0.2 }, head: { rx: -0.3, ry: 0.2 },
+            upperArmL: { rx: -1.78, ry: -0.4, rz: 0.5 }, forearmL: { rz: -1.15 }, handL: { ry: -0.3, rz: -0.3 },
             upperArmR: { rx: -0.55, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
         // Guarding with the weapon (no shield carried): the blade held
@@ -149,13 +148,13 @@ const playerMoves = (() => {
             chest: { rx: 0.4, ry: -0.12 }, head: { rx: -0.28 },
             upperArmR: { rx: -0.88, ry: 1.1, rz: -1.44 }, forearmR: { rx: -0.43 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
         },
-        // The legs under either guard (user, 2026-10-04): the knees a little
-        // bent for a steady centre, the left foot ahead and the right behind,
-        // both down. Standing, the legs are guardLegs; walking, the stride
-        // goes on with guardBend added, the knees kept bent. The right leg is
-        // the user's numbers from the move tuner: the knee well bent, the
-        // foot up on its toes (0.015 blocks short of the ground, not seen).
-        guardLegs: { thighR: { rx: 0.1 }, shinR: { rx: 1.12 }, thighL: { rx: -0.55 }, shinL: { rx: 0.65 } },
+        // The legs under either guard: a squat for a steady centre, both
+        // knees bent forward, the feet side by side and a little apart, both
+        // down (the user's numbers from the move tuner, 2026-10-05; the right
+        // foot 0.008 blocks short of the ground, not seen). Standing, the
+        // legs are guardLegs; walking, the stride goes on with guardBend
+        // added, the knees kept bent.
+        guardLegs: { thighR: { rx: -0.45, ry: -0.1 }, shinR: { rx: 0.5 }, thighL: { rx: -0.5, ry: 0.15 }, shinL: { rx: 0.65 } },
         guardBend: { thighR: { rx: -0.2 }, shinR: { rx: 0.4 }, thighL: { rx: -0.2 }, shinL: { rx: 0.4 } },
         // Drinking a potion: the flask up to the mouth, the head tipped
         // back. Upper body only: legs keep walking underneath.

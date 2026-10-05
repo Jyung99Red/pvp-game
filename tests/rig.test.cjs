@@ -155,18 +155,23 @@ test('walking while charging moves the legs under the held charge', () => {
     for (const g of [0, 0.2, 0.5, 0.8]) assert.ok(Math.abs(lowestBody(at(g, 1))) < 1e-9, 'feet on the ground');
 });
 
-test('under a guard the knees bend (user, 2026-10-04): standing, the left foot ahead, both feet down, a little lower; walking, still bent, the planted foot still put', () => {
+test('under a guard the knees bend (user, 2026-10-05: a squat, the feet side by side; it was the left foot ahead): standing, both feet down and a little apart, a little lower; walking, still bent, the planted foot still put', () => {
     const unit = gameConfig.world.unitsPerBlock, feet = ['R', 'L'].map(s => find(p => p.tag === 'foot' && rig.bones[p.bone].name === `shin${s}`));
     const pelvisAt = s => s.bones[rig.index.pelvis][13], low = (s, i) => Math.min(...cornersOf(s, i).map(c => c[1]));
     for (const offhand of [gameConfig.gear.starter.offhand, null]) {
         const loadout = { ...gameConfig.gear.starter, offhand }, body = guardBlend => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend, stun: 0, loadout });
         const up = R.solve(rig, playerAnim.pose(rig, body(1))), free = R.solve(rig, playerAnim.pose(rig, body(0)));
-        // Down to within 0.02 blocks, which is not seen: the right leg is the
-        // user's numbers from the move tuner (2026-10-04, "near enough"),
-        // and its toes are 0.015 up.
+        // Down to within 0.02 blocks, which is not seen: the legs are the
+        // user's numbers from the move tuner (2026-10-05), and the right
+        // foot is 0.008 up.
         for (const i of feet) assert.ok(Math.abs(low(up, i)) < 0.02, `${offhand}: both feet on the ground (${low(up, i).toFixed(3)} blocks up)`);
-        // The model faces +z: the left foot is ahead.
-        assert.ok(up.parts[feet[1]][14] - up.parts[feet[0]][14] > 0.3, `${offhand}: the left foot ahead`);
+        // The model faces +z, its left is +x: the feet side by side, ahead
+        // of the hips, and further apart than standing.
+        const [footR, footL] = feet.map(i => up.parts[i]), squat = playerAnim.pose(rig, body(1));
+        assert.ok(Math.abs(footL[14] - footR[14]) < 0.05, `${offhand}: the feet side by side`);
+        assert.ok(Math.min(footL[14], footR[14]) - up.bones[rig.index.pelvis][14] > 0.1, `${offhand}: the knees forward, the hips back`);
+        assert.ok(footL[12] - footR[12] > free.parts[feet[1]][12] - free.parts[feet[0]][12] + 0.02, `${offhand}: the feet a little apart`);
+        assert.ok(squat.shinR.rx > 0.3 && squat.shinL.rx > 0.3, `${offhand}: both knees bent`);
         const drop = pelvisAt(free) - pelvisAt(up);
         assert.ok(drop > 0.03 && drop < 0.12, `${offhand}: a little lower (${drop.toFixed(3)} blocks)`);
         // Walking under it: the knees stay bent and the planted foot keeps pace, as walking does.
@@ -181,7 +186,7 @@ test('under a guard the knees bend (user, 2026-10-04): standing, the left foot a
     }
 });
 
-test('guarding, the body bends forward at the waist with the head kept up; a parry\'s shove pushes the board, or the blade, forward and leaves it facing as it did (user, 2026-10-05)', () => {
+test('guarding, the body bends forward at the waist with the head kept up; a parry\'s shove pushes the board, or the blade, forward, upright as it was (user, 2026-10-05)', () => {
     const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], axis = (m, k) => [m[k * 4], m[k * 4 + 1], m[k * 4 + 2]], at = m => [m[12], m[13], m[14]];
     for (const offhand of [gameConfig.gear.starter.offhand, null]) {
         const loadout = { ...gameConfig.gear.starter, offhand }, body = (guardBlend, shoveOut = 0) => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend, shoveOut, stun: 0, loadout });
@@ -189,16 +194,28 @@ test('guarding, the body bends forward at the waist with the head kept up; a par
         const free = solved(0), up = solved(1), out = solved(1, 1), mid = solved(1, 0.5);
         // The model faces +z: the chest's own up leans that way, the head's less, and the head is further forward than it was.
         const lean = s => axis(s.bones[rig.index.chest], 1)[2], nod = s => axis(s.bones[rig.index.head], 1)[2];
-        assert.ok(lean(free) < 0.1 && lean(up) > 0.25 && lean(up) < 0.35, `${offhand}: the chest leans ${lean(up).toFixed(2)}`);
-        assert.ok(nod(up) > 0 && nod(up) < lean(up) / 2, `${offhand}: the head is kept up (${nod(up).toFixed(2)})`);
-        assert.ok(at(up.bones[rig.index.head])[2] - at(free.bones[rig.index.head])[2] > 0.12);
+        assert.ok(lean(free) < 0.1 && lean(up) > 0.15 && lean(up) < 0.35, `${offhand}: the chest leans ${lean(up).toFixed(2)}`);
+        assert.ok(Math.abs(nod(up)) < lean(up) / 2, `${offhand}: the head is kept up (${nod(up).toFixed(2)})`);
+        assert.ok(at(up.bones[rig.index.head])[2] - at(free.bones[rig.index.head])[2] > 0.07);
         // What guards: the shield's board, else the blade.
         const guards = find(p => p.kind === (offhand ? 'shield' : 'weapon')), z = s => at(s.parts[guards])[2];
-        assert.ok(z(out) - z(up) > 0.15 && z(out) - z(up) < 0.3, `${offhand}: pushed ${(z(out) - z(up)).toFixed(2)} blocks forward`);
+        assert.ok(z(out) - z(up) > 0.1 && z(out) - z(up) < 0.3, `${offhand}: pushed ${(z(out) - z(up)).toFixed(2)} blocks forward`);
         assert.ok(z(mid) > z(up) && z(mid) < z(out));
-        assert.ok(Math.abs(at(out.parts[guards])[1] - at(up.parts[guards])[1]) < 0.03, 'straight forward, not up or down');
-        for (const k of [0, 1, 2]) assert.ok(dot(axis(out.parts[guards], k), axis(up.parts[guards], k)) > 0.99, `${offhand}: facing as it did (axis ${k})`);
+        assert.ok(Math.abs(at(out.parts[guards])[1] - at(up.parts[guards])[1]) < 0.03, 'forward, not up or down');
+        // The board stays upright (its third axis), and turns square to
+        // the front as it goes (the user's numbers, move tuner); the blade
+        // keeps its line.
+        if (offhand) assert.ok(dot(axis(out.parts[guards], 2), axis(up.parts[guards], 2)) > 0.99, 'the board upright as it was');
+        for (const k of [0, 1, 2]) assert.ok(dot(axis(out.parts[guards], k), axis(up.parts[guards], k)) > (offhand ? 0.94 : 0.99), `${offhand}: turned little (axis ${k})`);
         assert.ok(lean(out) > lean(up), 'the body leans in behind it');
+        // With force (user, 2026-10-05): going out it is well ahead of where
+        // it is coming back at the same level, and at first it goes past the
+        // pose, settling onto it while it is held.
+        const V = gameConfig.combat.guard.shove, going = (level, held) => R.solve(rig, playerAnim.pose(rig, { ...body(1, level), shoveFor: held }));
+        assert.ok(z(going(0.5, V.stay + V.out / 2)) > z(mid) + 0.04, `${offhand}: it snaps out`);
+        const past = z(going(1, V.stay)) - z(out), settling = z(going(1, V.stay / 2)) - z(out);
+        assert.ok(past > 0.02 && past < 0.1, `${offhand}: ${past.toFixed(3)} blocks past the pose at first`);
+        assert.ok(settling > 0 && settling < past / 2 && Math.abs(z(going(1, 1e-12)) - z(out)) < 1e-6, `${offhand}: settling onto it`);
         // Part of the guard: with the guard down there is no shove to show.
         assert.deepEqual(plain(playerAnim.pose(rig, body(0, 1))), plain(playerAnim.pose(rig, body(0, 0))));
     }

@@ -276,7 +276,7 @@ const moveLab = (() => {
         for (const c of ROTATIONS) set(target, bone, c, Math.abs(next[c]) > ANGLE_LIMIT ? next[c] - Math.round(next[c] / TAU) * TAU : next[c]);
     }
     // What playerAnim.pose needs of a body, at rest.
-    const REST = Object.freeze({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, shoveOut: 0, stun: 0, down: false, downT: 0, drink: null, handOut: 0, act: null });
+    const REST = Object.freeze({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, shoveOut: 0, shoveFor: 0, stun: 0, down: false, downT: 0, drink: null, handOut: 0, act: null });
     const IDLE_DUMMY = Object.freeze({ phase: 'idle', t: 0, move: 0, flinch: 0 });
     const standardOf = type => K().weapons[type].standard;
     // The attacker starts at the origin facing +x (simulation facing 0); the
@@ -383,7 +383,7 @@ const moveLab = (() => {
         const snap = () => frames.push({
             x: p.x - x0, y: p.y - y0, facing: p.facing, occ: p.act ? occ : -1, freeze: p.freeze,
             body: {
-                gait: p.gait, moveBlend: p.moveBlend, runBlend: p.runBlend, guardBlend: p.guardBlend, shoveOut: p.shoveOut, stun: p.stun, down: p.down, downT: p.downT,
+                gait: p.gait, moveBlend: p.moveBlend, runBlend: p.runBlend, guardBlend: p.guardBlend, shoveOut: p.shoveOut, shoveFor: p.shoveFor, stun: p.stun, down: p.down, downT: p.downT,
                 drink: p.drink && { ...p.drink },
                 act: p.act && { move: p.act.move, phase: p.act.phase, t: p.act.t, lead: p.act.lead, from: p.act.from && { ...p.act.from } }
             },
@@ -442,7 +442,7 @@ const moveLab = (() => {
                 act = { ...act, t: same ? lerp(act.t, b.t) : Math.min(phaseLength(MOVES()[act.move], act.phase), act.t + run) };
             }
             const body = { ...f0.body, act };
-            for (const k of ['gait', 'moveBlend', 'runBlend', 'guardBlend', 'shoveOut', 'stun', 'downT']) body[k] = lerp(f0.body[k], f1.body[k]);
+            for (const k of ['gait', 'moveBlend', 'runBlend', 'guardBlend', 'shoveOut', 'shoveFor', 'stun', 'downT']) body[k] = lerp(f0.body[k], f1.body[k]);
             let dummy = f0.dummy;
             if (dummy && f1.dummy) dummy = { ...dummy, x: lerp(dummy.x, f1.dummy.x), y: lerp(dummy.y, f1.dummy.y), flinch: lerp(dummy.flinch, f1.dummy.flinch), t: dummy.phase === f1.dummy.phase ? lerp(dummy.t, f1.dummy.t) : dummy.t };
             return { x: lerp(f0.x, f1.x), y: lerp(f0.y, f1.y), facing: space.lerpAngle(f0.facing, f1.facing, u), occ: f0.occ, body, dummy };
@@ -467,9 +467,13 @@ const moveLab = (() => {
             stance: { duration: 1.6, key: 0, body: () => ({}) },
             torch: { duration: 1.6, key: 0, body: () => ({}) },
             guard: { duration: 1.4, key: at + F.guard.startup, body: t => ({ guardBlend: t < 1.1 ? ramp(t, at, F.guard.startup) : 1 - ramp(t, 1.1, gameConfig.animation.blendSeconds) }) },
+            // (Its key is where it has settled onto the pose: it goes past it first.)
             guardShove: {
-                duration: at + V.out + V.stay + V.back + TAIL, key: at + V.out,
-                body: t => ({ guardBlend: 1, shoveOut: t < at + V.out + V.stay ? ramp(t, at, V.out) : 1 - ramp(t, at + V.out + V.stay, V.back) })
+                duration: at + V.out + V.stay + V.back + TAIL, key: at + V.out + V.stay,
+                body: t => ({
+                    guardBlend: 1, shoveFor: t < at ? 0 : Math.max(0, at + V.out + V.stay - t),
+                    shoveOut: t < at + V.out + V.stay ? ramp(t, at, V.out) : 1 - ramp(t, at + V.out + V.stay, V.back)
+                })
             },
             drink: { duration: at + F.potion.seconds + TAIL, key: at + 0.2, body: t => ({ drink: t >= at && t < at + F.potion.seconds ? { phase: 'drink', t: t - at } : null }) },
             flinch: { duration: at + F.hitStun + TAIL, key: at + 0.2 * F.hitStun, body: t => ({ stun: t >= at ? Math.max(0, F.hitStun - (t - at)) : 0 }) },
