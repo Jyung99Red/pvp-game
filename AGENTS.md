@@ -77,3 +77,7 @@ This file only changes when project setup changes.
   (`index.html`, `tune.html` or `map.html`).
 - Code comments and `AGENTS.md` in English; `README.md`, UI text and
   `docs/tasks/` in Chinese.
+- Ask the user before adding a feature they did not ask for, or changing
+  a rule already decided (user, 2026-10-05). Keep `design.md` short: what
+  the game is and the rules decided, not how they are built or tested;
+  its section numbers stay, code comments cite them.
