@@ -114,20 +114,40 @@ const playerMoves = (() => {
         // writes a key back as `key({...})` without it).
         shieldArm,
         // Shield up: the left forearm across the front, the board facing
-        // forward; the sword arm drawn back. Upper body only: the legs are
-        // guardLegs / guardBend. The left arm is the user's numbers from the
-        // move tuner (2026-10-04).
+        // forward; the sword arm drawn back; the body bent forward at the
+        // waist behind the board, the head kept up (user, 2026-10-05).
+        // Upper body only: the legs are guardLegs / guardBend. The left arm
+        // is the user's numbers from the move tuner (2026-10-04); both
+        // upper arms are raised by as much as the chest leans, so the board
+        // and the blade still face the way they did.
         guard: {
-            chest: { ry: 0.12 },
-            upperArmL: { rx: -1.25, ry: -0.4, rz: 0.1 }, forearmL: { rz: -0.8 }, handL: { ry: -0.3 },
-            upperArmR: { rx: -0.25, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
+            chest: { rx: 0.3, ry: 0.12 }, head: { rx: -0.2 },
+            upperArmL: { rx: -1.55, ry: -0.4, rz: 0.1 }, forearmL: { rz: -0.8 }, handL: { ry: -0.3 },
+            upperArmR: { rx: -0.55, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
+        },
+        // A perfect parry shoves the blow back (user, 2026-10-05): the
+        // guard goes out to this and comes back (combat.guard.shove). The
+        // left shoulder and the board pushed forward, the board facing as
+        // it did, the body leaning in behind it.
+        guardShove: {
+            chest: { rx: 0.45, ry: -0.2 }, head: { rx: -0.3, ry: 0.2 },
+            upperArmL: { rx: -1.78, ry: -0.4, rz: 0.61 }, forearmL: { rz: -1.01 }, handL: { ry: -0.3 },
+            upperArmR: { rx: -0.55, rz: -0.25 }, forearmR: { rx: -0.7 }, handR: { rx: 1.0, ry: -0.3 }
         },
         // Guarding with the weapon (no shield carried): the blade held
-        // across the chest, edge out, tip to the left. The right arm only:
-        // the left keeps whatever it carries.
+        // across the chest, edge out, tip to the left, the body bent
+        // forward as under the shield. The right arm only (turned to keep
+        // the blade as the lean found it): the left keeps whatever it
+        // carries.
         guardWeapon: {
-            chest: { ry: -0.36 },
-            upperArmR: { rx: -0.5, ry: 0.8, rz: -0.83 }, forearmR: { rx: -0.71 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
+            chest: { rx: 0.3, ry: -0.36 }, head: { rx: -0.2 },
+            upperArmR: { rx: -0.69, ry: 0.96, rz: -1.11 }, forearmR: { rx: -0.71 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
+        },
+        // The weapon guard's shove after a perfect parry: the blade hand
+        // pushed forward, the blade still across.
+        guardWeaponShove: {
+            chest: { rx: 0.4, ry: -0.12 }, head: { rx: -0.28 },
+            upperArmR: { rx: -0.88, ry: 1.1, rz: -1.44 }, forearmR: { rx: -0.43 }, handR: { rx: 0.05, ry: 0.8, rz: 0.5 }
         },
         // The legs under either guard (user, 2026-10-04): the knees a little
         // bent for a steady centre, the left foot ahead and the right behind,

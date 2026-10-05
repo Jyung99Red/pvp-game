@@ -114,6 +114,28 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
         assert.ok(info.interactIdle);
         assert.equal(info.guardKind, 'shield');
         assert.equal(info.offhandGrey, true, 'with the shield the offhand key is grey');
+        // What the fighter does not see goes dark, the blocks with the
+        // ground they stand on (user, 2026-10-05): a stone five blocks west
+        // of the player, looked at and then with the player's back to it.
+        const shade = await page.evaluate(() => {
+            const g = window.game, s = g.sim, p = s.player, t = s.terrain, gl = g.view.renderer.getContext(), N = 6, px = new Uint8Array(N * N * 4), facing = p.facing;
+            const c = Math.floor(p.x / 40) - 5, r = Math.floor(p.y / 40), was = [terrainKit.kindAt(t, c, r), terrainKit.levelAt(t, c, r)];
+            terrainKit.set(t, c, r, 'stone', 1);
+            const bright = at => {
+                const q = g.view.project(at), k = gl.drawingBufferWidth / innerWidth;
+                gl.readPixels(Math.round(q.x * k) - N / 2, Math.round(gl.drawingBufferHeight - q.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                let sum = 0;
+                for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+                return sum / (N * N * 3);
+            };
+            // The stone's top, and the grass just south of it.
+            const look = to => { p.facing = to; g.view.render(s, 0); return { top: bright([c + 0.5, 1, r + 0.5]), ground: bright([c + 0.5, 0, r + 1.6]) }; };
+            const seen = look(Math.PI), unseen = look(0);
+            terrainKit.set(t, c, r, ...was); p.facing = facing; g.view.render(s, 0);
+            return { seen, unseen };
+        });
+        assert.ok(shade.seen.ground > 40 && shade.unseen.ground < shade.seen.ground * 0.7, `the ground behind the player is shaded: ${JSON.stringify(shade)}`);
+        assert.ok(shade.seen.top > 40 && shade.unseen.top < shade.seen.top * 0.7, `and the block on it too: ${JSON.stringify(shade)}`);
         // A real-time fight: the frame loop runs, J is A, the dummy swings back.
         await page.evaluate(() => { const g = window.game, d = g.sim.dummy; g.sim.player.x = d.x - 60; g.sim.player.y = d.y; g.sim.player.facing = 0; g.pause(false); });
         for (let i = 0; i < 3; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }

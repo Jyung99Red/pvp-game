@@ -137,7 +137,8 @@ const playerAnim = (() => {
         return rigKit.add(rigKit.pick(pose, lower), rigKit.scale(rigKit.add(playerMoves.guardLegs, rigKit.scale(stance, -1)), 1 - moveBlend), rigKit.scale(playerMoves.guardBend, moveBlend));
     }
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
-    // fighter { act, guardBlend, stun, down, downT, drink, handOut, loadout }.
+    // fighter { act, guardBlend, shoveOut, stun, down, downT, drink, handOut,
+    // loadout }.
     function pose(rig, body) {
         let pose = locomotion(rig, body), stepping = 1;
         const act = body.act, lowerBody = playerModel.layers.lower;
@@ -160,10 +161,14 @@ const playerAnim = (() => {
         if (!act && body.handOut > 0) pose = rigKit.mix(pose, { ...pose, ...playerMoves.reach }, smooth(clamp01(body.handOut)));
         // Guarding: the shield up if one is carried, else the blade across
         // the chest (the left arm keeps what it holds); either way the knees
-        // bend (guardLegs).
+        // bend (guardLegs). A perfect parry shoves the guarding arm forward
+        // and lets it come back (shoveOut): part of the guard, so it goes
+        // as the guard goes.
         if (body.guardBlend > 0) {
-            const legs = guardLegs(pose, body.moveBlend || 0);
-            const raised = inventoryKit.offhandOf(body.loadout) === 'shield' ? { ...legs, ...playerMoves.guard } : { ...pose, ...legs, ...playerMoves.guardWeapon };
+            const legs = guardLegs(pose, body.moveBlend || 0), shield = inventoryKit.offhandOf(body.loadout) === 'shield';
+            const held = shield ? playerMoves.guard : playerMoves.guardWeapon, shoved = shield ? playerMoves.guardShove : playerMoves.guardWeaponShove;
+            const up = body.shoveOut > 0 ? rigKit.mix(held, shoved, smooth(clamp01(body.shoveOut))) : held;
+            const raised = shield ? { ...legs, ...up } : { ...pose, ...legs, ...up };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }
         // Drinking: the flask comes up over a fifth of a second, stays, and

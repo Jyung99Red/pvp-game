@@ -224,7 +224,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             let cliffs = false;
             for (let r = 0; r < h && !cliffs; r++) for (let c = 0; c < w; c++) if (dropAt(c, r)) { cliffs = true; break; }
             if (cliffs) for (let k = 1; k <= MIST.layers; k++) {
-                const mist = new T.Mesh(new T.PlaneGeometry(w + 2 * span, h + 2 * span), new T.MeshBasicMaterial({ color: sky, transparent: true, opacity: MIST.opacity, depthWrite: false, fog: false }));
+                const mist = new T.Mesh(new T.PlaneGeometry(w + 2 * span, h + 2 * span), terrainMesh.shadeUnseen(new T.MeshBasicMaterial({ color: sky, transparent: true, opacity: MIST.opacity, depthWrite: false, fog: false }), ground.sight));
                 mist.rotation.x = -Math.PI / 2; mist.position.set(w / 2, -k * MIST.step, h / 2);
                 // The lowest first.
                 mist.renderOrder = -k;
@@ -234,7 +234,8 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             sheets.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
             sheets.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
             sheets.setIndex(idx); sheets.computeVertexNormals();
-            const skirt = new T.Mesh(sheets, lambert(null, top));
+            // (The ground out there and the mist take the shade of sight as the terrain does.)
+            const skirt = new T.Mesh(sheets, terrainMesh.shadeUnseen(lambert(null, top), ground.sight));
             skirt.receiveShadow = true;
             scene.add(skirt);
         }
@@ -511,38 +512,36 @@ void main() {
             return mask;
         }
 
-        // ---- sight: ground this fighter cannot see is shaded, out to
-        // `SHADE_FAR` blocks; walls at least eye high cast it, and so does
-        // everything outside the front arc it sees (player.sightAngle) but
-        // for a small ring round it (player.sightNear; user, 2026-10-04).
-        // The same in the adventure and in a duel (user, 2026-10-04). The
-        // edge of sight comes exact from the terrain (terrainKit.sightFan:
-        // rays past every wall corner), so it slides evenly as the fighter
-        // walks; an even spread of rays stepped along left the edge jumping
-        // from one ray to the next. Sight is worked out as far as
-        // `SIGHT_FAR` blocks, which is past the screen's edge.
+        // ---- sight: what this fighter cannot see is shaded; walls at least
+        // eye high cast the shade, and so does everything outside the front
+        // arc it sees (player.sightAngle) but for a small ring round it
+        // (player.sightNear; user, 2026-10-04). The same in the adventure
+        // and in a duel (user, 2026-10-04). The edge of sight comes exact
+        // from the terrain (terrainKit.sightFan: rays past every wall
+        // corner), so it slides evenly as the fighter walks; an even spread
+        // of rays stepped along left the edge jumping from one ray to the
+        // next. Sight is worked out as far as `SIGHT_FAR` blocks, which is
+        // past the screen's edge; past the mask the shade takes the mask's
+        // edge, which is past sight and so all shade.
         //
         // The shade's edge is soft (user, 2026-10-04; drawing only, what is
-        // seen is decided as before): its mask is the opacity of one dark
-        // sheet over the ground. ----
-        const SHADE_FAR = 30, SIGHT_FAR = 20, SHADE_Y = 0.02, MASK = 256;
+        // seen is decided as before): its mask is how far the terrain's
+        // material goes towards `SHADE.color` (render/terrain_mesh.js),
+        // `opacity` of the way at most. It is in the material, not a dark
+        // sheet over the ground, so that what stands on the ground --
+        // blocks, plants, stones -- goes dark with it (user, 2026-10-05). ----
+        const SIGHT_FAR = 20, MASK = 256, SHADE = { color: [5, 7, 13], opacity: 0.55 };
         const shade = (() => {
-            // The dark sheet: as far as SHADE_FAR; past the mask it takes the
-            // mask's edge, which is past sight and so all shade. Drawn over
-            // the ground it lies on, whatever the depth buffer's precision.
-            const mask = fanMask(MASK, SIGHT_FAR), k = SHADE_FAR / SIGHT_FAR;
-            mask.texture.repeat.set(k, k); mask.texture.offset.set(0.5 - k / 2, 0.5 - k / 2);
-            const mesh = new T.Mesh(new T.PlaneGeometry(2 * SHADE_FAR, 2 * SHADE_FAR), new T.MeshBasicMaterial({ color: '#05070d', alphaMap: mask.texture, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-            mesh.rotation.x = -Math.PI / 2; mesh.frustumCulled = false; mesh.renderOrder = 1;
-            scene.add(mesh);
-            const fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
+            const mask = fanMask(MASK, SIGHT_FAR), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
+            ground.sight.mask.value = mask.texture; ground.sight.at.value.set(0, 0, mask.half);
+            ground.sight.tone.value.set(...SHADE.color.map(v => v / 255), SHADE.opacity);
             let lastX = NaN, lastZ = NaN, lastFacing = NaN, lastRev = -1;
             // Recast only when the fighter has moved or turned (or the terrain changed).
             function update(x, z, facing) {
                 if (x === lastX && z === lastZ && facing === lastFacing && lastRev === t.rev) return;
                 lastX = x; lastZ = z; lastFacing = facing; lastRev = t.rev;
                 terrainKit.sightFan(t, x * U, z * U, SIGHT_FAR * U, { facing, half: C.player.sightAngle, near: C.player.sightNear, out: fan });
-                mesh.position.set(x, SHADE_Y, z);
+                ground.sight.at.value.set(x, z, mask.half);
                 mask.draw(x, z, fan);
             }
             return { update };

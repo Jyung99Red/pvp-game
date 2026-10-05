@@ -83,6 +83,8 @@ const combatKit = (() => {
                 emit(sim, 'parry', { side: v.side, target: attacker.id, damage: counter, at: point });
                 kitOf(attacker).struck(sim, attacker, { amount: counter, stagger: C().stagger.parry, by: v });
                 if (!(fighter && attacker.down)) impact(sim, attacker, v, 'parry');
+                // The guarding arm shoves forward once the hitstop is over (fighterKit).
+                v.shoveFor = C().guard.shove.out + C().guard.shove.stay;
             } else {
                 const amount = Math.round(defended(raw, v.def) * G.blockMultiplier);
                 damage(sim, v, amount);

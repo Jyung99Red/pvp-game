@@ -28,7 +28,9 @@ const moveLab = (() => {
     const POSES = Object.freeze({
         stance: { name: '站姿', file: 'models/player_poses.js', of: () => playerPoses.stance },
         guard: { name: '举盾', file: 'models/player_moves.js', of: () => playerMoves.guard },
+        guardShove: { name: '弹反·盾往前推', file: 'models/player_moves.js', of: () => playerMoves.guardShove },
         guardWeapon: { name: '横剑格挡', file: 'models/player_moves.js', of: () => playerMoves.guardWeapon },
+        guardWeaponShove: { name: '弹反·武器往前推', file: 'models/player_moves.js', of: () => playerMoves.guardWeaponShove },
         guardLegs: { name: '格挡·站着的腿', file: 'models/player_moves.js', of: () => playerMoves.guardLegs },
         guardBend: { name: '格挡·走路弯膝（叠加）', file: 'models/player_moves.js', of: () => playerMoves.guardBend },
         drink: { name: '喝药', file: 'models/player_moves.js', of: () => playerMoves.drink },
@@ -274,7 +276,7 @@ const moveLab = (() => {
         for (const c of ROTATIONS) set(target, bone, c, Math.abs(next[c]) > ANGLE_LIMIT ? next[c] - Math.round(next[c] / TAU) * TAU : next[c]);
     }
     // What playerAnim.pose needs of a body, at rest.
-    const REST = Object.freeze({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0, down: false, downT: 0, drink: null, handOut: 0, act: null });
+    const REST = Object.freeze({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, shoveOut: 0, stun: 0, down: false, downT: 0, drink: null, handOut: 0, act: null });
     const IDLE_DUMMY = Object.freeze({ phase: 'idle', t: 0, move: 0, flinch: 0 });
     const standardOf = type => K().weapons[type].standard;
     // The attacker starts at the origin facing +x (simulation facing 0); the
@@ -381,7 +383,7 @@ const moveLab = (() => {
         const snap = () => frames.push({
             x: p.x - x0, y: p.y - y0, facing: p.facing, occ: p.act ? occ : -1, freeze: p.freeze,
             body: {
-                gait: p.gait, moveBlend: p.moveBlend, runBlend: p.runBlend, guardBlend: p.guardBlend, stun: p.stun, down: p.down, downT: p.downT,
+                gait: p.gait, moveBlend: p.moveBlend, runBlend: p.runBlend, guardBlend: p.guardBlend, shoveOut: p.shoveOut, stun: p.stun, down: p.down, downT: p.downT,
                 drink: p.drink && { ...p.drink },
                 act: p.act && { move: p.act.move, phase: p.act.phase, t: p.act.t, lead: p.act.lead, from: p.act.from && { ...p.act.from } }
             },
@@ -440,7 +442,7 @@ const moveLab = (() => {
                 act = { ...act, t: same ? lerp(act.t, b.t) : Math.min(phaseLength(MOVES()[act.move], act.phase), act.t + run) };
             }
             const body = { ...f0.body, act };
-            for (const k of ['gait', 'moveBlend', 'runBlend', 'guardBlend', 'stun', 'downT']) body[k] = lerp(f0.body[k], f1.body[k]);
+            for (const k of ['gait', 'moveBlend', 'runBlend', 'guardBlend', 'shoveOut', 'stun', 'downT']) body[k] = lerp(f0.body[k], f1.body[k]);
             let dummy = f0.dummy;
             if (dummy && f1.dummy) dummy = { ...dummy, x: lerp(dummy.x, f1.dummy.x), y: lerp(dummy.y, f1.dummy.y), flinch: lerp(dummy.flinch, f1.dummy.flinch), t: dummy.phase === f1.dummy.phase ? lerp(dummy.t, f1.dummy.t) : dummy.t };
             return { x: lerp(f0.x, f1.x), y: lerp(f0.y, f1.y), facing: space.lerpAngle(f0.facing, f1.facing, u), occ: f0.occ, body, dummy };
@@ -449,14 +451,15 @@ const moveLab = (() => {
     }
 
     // ---- the other poses, each shown coming and going (the guard's
-    // walking bend, walking forward under the shield) ----
+    // walking bend, walking forward under the shield; a parry's shove, out
+    // of a guard already up) ----
     // opts: type (the weapon held), offhand where the pose does not decide it.
     function pose(id, { type = loadoutTypeOf(gameConfig.gear.starter), offhand } = {}) {
         if (!Object.hasOwn(POSES, id)) throw new Error(`Unknown pose ${id}`);
         const F = gameConfig.combat, S = gameConfig.gear.starter.offhand;
-        const hand = { guard: S, guardWeapon: null, guardLegs: S, guardBend: S, drink: 'potion', torch: 'torch' }[id];
+        const hand = { guard: S, guardShove: S, guardWeapon: null, guardWeaponShove: null, guardLegs: S, guardBend: S, drink: 'potion', torch: 'torch' }[id];
         const loadout = loadoutOf(type, hand !== undefined ? hand : offhand);
-        const at = LEAD, ramp = (t, from, len) => clamp01((t - from) / len), H = gameConfig.interact.hand;
+        const at = LEAD, ramp = (t, from, len) => clamp01((t - from) / len), H = gameConfig.interact.hand, V = F.guard.shove;
         // Walking under the guard, as fast as the guard lets the body go.
         const speed = gameConfig.player.speed * F.guard.moveMultiplier, cycle = playerAnim.cycleLength(rigOf(loadout), 0);
         const walked = t => Math.max(0, t - at) * speed;
@@ -464,6 +467,10 @@ const moveLab = (() => {
             stance: { duration: 1.6, key: 0, body: () => ({}) },
             torch: { duration: 1.6, key: 0, body: () => ({}) },
             guard: { duration: 1.4, key: at + F.guard.startup, body: t => ({ guardBlend: t < 1.1 ? ramp(t, at, F.guard.startup) : 1 - ramp(t, 1.1, gameConfig.animation.blendSeconds) }) },
+            guardShove: {
+                duration: at + V.out + V.stay + V.back + TAIL, key: at + V.out,
+                body: t => ({ guardBlend: 1, shoveOut: t < at + V.out + V.stay ? ramp(t, at, V.out) : 1 - ramp(t, at + V.out + V.stay, V.back) })
+            },
             drink: { duration: at + F.potion.seconds + TAIL, key: at + 0.2, body: t => ({ drink: t >= at && t < at + F.potion.seconds ? { phase: 'drink', t: t - at } : null }) },
             flinch: { duration: at + F.hitStun + TAIL, key: at + 0.2 * F.hitStun, body: t => ({ stun: t >= at ? Math.max(0, F.hitStun - (t - at)) : 0 }) },
             down: { duration: at + 1.2, key: at + 0.5, body: t => (t >= at ? { down: true, downT: t - at } : {}) },
@@ -474,6 +481,7 @@ const moveLab = (() => {
             reach: { duration: at + H.out + H.stay + H.back + TAIL, key: at + H.out, body: t => ({ handOut: t < at ? 0 : t < at + H.out + H.stay ? ramp(t, at, H.out) : 1 - ramp(t, at + H.out + H.stay, H.back) }) }
         };
         shows.guardWeapon = shows.guardLegs = shows.guard;
+        shows.guardWeaponShove = shows.guardShove;
         const show = shows[id];
         return {
             kind: 'pose', type, loadout, moves: [], duration: show.duration, segments: [], occs: [], keys: { [id]: show.key }, hits: [],

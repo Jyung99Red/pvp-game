@@ -368,18 +368,20 @@ test('in the gap after a move it faces the player and creeps to its near band at
 // A blow under way at a player `d` in front and `off` its facing, looking
 // at it: the move `name` starts its windup, drawn mirrored with `flip`;
 // `act(sim, i)` runs before each step i. The player's stats after the
-// swing, and when the blow first got through (or null).
+// swing, when the blow first got through (or null), and when it first met
+// the guard (or null).
 function face(kind, name, d, off, { enraged = false, flip = false, loadout = null, act = () => {} } = {}) {
     const sim = open(kind, 1, loadout), m = ready(sim, d, off), mv = MON[kind].moves[name];
     const tempo = enraged ? MON[kind].enrage.tempo : 1;
     Object.assign(m, { phase: 'windup', move: name, t: 0, enraged, flip });
-    let hurtAt = null;
+    let hurtAt = null, metAt = null;
     for (let i = 0; i < Math.round((mv.windup + mv.swing) / tempo / 0.01) + 5; i++) {
         act(sim, i);
         W.step(sim, 0.01);
         if (hurtAt === null && sim.stats.hurt) hurtAt = i + 1;
+        if (metAt === null && sim.stats.blocks + sim.stats.parries) metAt = i + 1;
     }
-    return { ...sim.stats, hurtAt };
+    return { ...sim.stats, hurtAt, metAt };
 }
 const REACT = Math.round(MON.reactSeconds / 0.01);
 const at = (step, command) => (sim, i) => { if (i === step) W.command(sim, command); };
@@ -408,8 +410,12 @@ test('every blow can be blocked, with the shield or with the weapon, raised reac
                 assert.ok(w.hurt === 0 && w.blocks + w.parries === 1, `${where} with the weapon: ${JSON.stringify(w)}`);
             }
             // Raised just in time for the parry window, it parries -- the weapon's narrower one too.
-            const contact = face(kind, name, hi, 0).hurtAt, G = F.guard.weapon;
-            assert.ok(contact, `${kind} ${name} lands on a player standing still`);
+            // The blow is timed against a guard held all along: guarding, the body bends
+            // forward (user, 2026-10-05), and a blow at the end of its reach meets it sooner
+            // than it would a player standing straight.
+            assert.ok(face(kind, name, hi, 0).hurtAt, `${kind} ${name} lands on a player standing still`);
+            const contact = face(kind, name, hi, 0, { loadout: TORCH, act: guardAt(0) }).metAt, G = F.guard.weapon;
+            assert.ok(contact, `${kind} ${name} meets a guard held all along`);
             const parry = face(kind, name, hi, 0, { loadout: TORCH, act: guardAt(contact - Math.round((F.guard.startup + G.parryWindow / 2) / 0.01)) });
             assert.ok(parry.parries === 1 && parry.hurt === 0, `${kind} ${name} not parried: ${JSON.stringify(parry)}`);
         }

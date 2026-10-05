@@ -181,6 +181,29 @@ test('under a guard the knees bend (user, 2026-10-04): standing, the left foot a
     }
 });
 
+test('guarding, the body bends forward at the waist with the head kept up; a parry\'s shove pushes the board, or the blade, forward and leaves it facing as it did (user, 2026-10-05)', () => {
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], axis = (m, k) => [m[k * 4], m[k * 4 + 1], m[k * 4 + 2]], at = m => [m[12], m[13], m[14]];
+    for (const offhand of [gameConfig.gear.starter.offhand, null]) {
+        const loadout = { ...gameConfig.gear.starter, offhand }, body = (guardBlend, shoveOut = 0) => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend, shoveOut, stun: 0, loadout });
+        const solved = (...state) => R.solve(rig, playerAnim.pose(rig, body(...state)));
+        const free = solved(0), up = solved(1), out = solved(1, 1), mid = solved(1, 0.5);
+        // The model faces +z: the chest's own up leans that way, the head's less, and the head is further forward than it was.
+        const lean = s => axis(s.bones[rig.index.chest], 1)[2], nod = s => axis(s.bones[rig.index.head], 1)[2];
+        assert.ok(lean(free) < 0.1 && lean(up) > 0.25 && lean(up) < 0.35, `${offhand}: the chest leans ${lean(up).toFixed(2)}`);
+        assert.ok(nod(up) > 0 && nod(up) < lean(up) / 2, `${offhand}: the head is kept up (${nod(up).toFixed(2)})`);
+        assert.ok(at(up.bones[rig.index.head])[2] - at(free.bones[rig.index.head])[2] > 0.12);
+        // What guards: the shield's board, else the blade.
+        const guards = find(p => p.kind === (offhand ? 'shield' : 'weapon')), z = s => at(s.parts[guards])[2];
+        assert.ok(z(out) - z(up) > 0.15 && z(out) - z(up) < 0.3, `${offhand}: pushed ${(z(out) - z(up)).toFixed(2)} blocks forward`);
+        assert.ok(z(mid) > z(up) && z(mid) < z(out));
+        assert.ok(Math.abs(at(out.parts[guards])[1] - at(up.parts[guards])[1]) < 0.03, 'straight forward, not up or down');
+        for (const k of [0, 1, 2]) assert.ok(dot(axis(out.parts[guards], k), axis(up.parts[guards], k)) > 0.99, `${offhand}: facing as it did (axis ${k})`);
+        assert.ok(lean(out) > lean(up), 'the body leans in behind it');
+        // Part of the guard: with the guard down there is no shove to show.
+        assert.deepEqual(plain(playerAnim.pose(rig, body(0, 1))), plain(playerAnim.pose(rig, body(0, 0))));
+    }
+});
+
 test('interacting puts the left hand a little forward; not in the middle of a move', () => {
     const body = handOut => ({ gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0, handOut, loadout: gameConfig.gear.starter });
     const hand = find(p => p.bone === rig.index.handL), handZ = handOut => R.solve(rig, playerAnim.pose(rig, body(handOut))).parts[hand][14];

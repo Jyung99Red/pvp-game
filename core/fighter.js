@@ -23,6 +23,8 @@
 //          counts unfrozen time only, so a hitstop never eats into it)
 //   combo  the inputs of the running combo, for display: 'a', 'b', '-'
 //   guard  { state: down|raising|up, t, readyAt, bar, locked, queued }
+//   shoveOut, shoveFor  a perfect parry's shove: how far out the guarding
+//          arm is (0..1), and how long it still goes out and stays there
 //   stun, freeze (hitstop), push (knockback)
 //   press  the attack key's press: null or { at, held, upAt, as (null while
 //          it is still telling, then 'a' or 'b'), free (nothing has stood in
@@ -55,7 +57,7 @@ const fighterKit = (() => {
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
             act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null, lit: false,
-            guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0
+            guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0, shoveOut: 0, shoveFor: 0
         });
     }
     // Everyone a fighter can hit: the training dummy, living monsters, and
@@ -261,6 +263,13 @@ const fighterKit = (() => {
                 g.t += dt;
                 if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
             }
+            // A perfect parry's shove (combatKit.strike): the guarding arm
+            // goes out, stays and comes back. It is a pose and no more
+            // (core/player_anim.js): nothing waits for it, and with the
+            // guard down it is on its way back at once.
+            const S = F().guard.shove;
+            p.shoveFor = g.state === 'up' ? Math.max(0, p.shoveFor - dt) : 0;
+            p.shoveOut = p.shoveFor > 0 ? Math.min(1, p.shoveOut + dt / S.out) : Math.max(0, p.shoveOut - dt / S.back);
         }
     };
     // ---- the offhand key: the item carried there (a shield is the guard
@@ -354,7 +363,7 @@ const fighterKit = (() => {
     // The HP bar emptied where the fighter can lose: down for good.
     function fall(sim, p) {
         if (p.down) return;
-        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, press: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null });
+        Object.assign(p, { down: true, downT: 0, act: null, chain: null, combo: [], buffer: null, press: null, stun: 0, push: null, speed: 0, pace: 0, runBlend: 0, moveTime: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null, shoveOut: 0, shoveFor: 0 });
         p.guard.state = 'down'; p.guard.queued = false;
         emit(sim, p, 'down');
     }

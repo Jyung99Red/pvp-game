@@ -31,12 +31,14 @@ const gameConfig = (() => {
         // way once the walk is broken (stick eased off or released, a wall).
         // sightAngle: the body sees only what lies within this of where it
         // faces (75 degrees either side: the front 150), and not past
-        // blocks at least eye high; the rest of the ground is shaded and a
-        // monster or a rival there is not drawn (user, 2026-10-04: the same
-        // in the adventure and in a duel). sightNear: world units round the
-        // body it sees whichever way it faces, a little behind it too
-        // (user, 2026-10-04); walls hide there as well.
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12, sightNear: 60 },
+        // blocks at least eye high; the rest of the ground is shaded, with
+        // the blocks and plants on it (user, 2026-10-05), and a monster or
+        // a rival there is not drawn (user, 2026-10-04: the same in the
+        // adventure and in a duel). sightNear: world units round the body
+        // it sees whichever way it faces, a little behind it too (user,
+        // 2026-10-05: two blocks; it was one and a half); walls hide there
+        // as well.
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12, sightNear: 80 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -82,9 +84,14 @@ const gameConfig = (() => {
             // shield's 100). blockMultiplier: the share of the damage a
             // block lets through; blockCostScale: what a block costs of the
             // guard bar; a hit within parryWindow of the guard coming up is a
-            // perfect parry.
+            // perfect parry. shove: a perfect parry pushes the shield (or
+            // the weapon hand) forward, as if throwing the blow back (user,
+            // 2026-10-05): out over `out` seconds once the hitstop is over,
+            // held `stay`, back over `back`. A pose only: it locks nothing,
+            // and goes with the guard as soon as the guard is lowered.
             guard: {
                 startup: 0.16, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 3,
+                shove: { out: 0.07, stay: 0.12, back: 0.25 },
                 shield: { blockMultiplier: 0.2, blockCostScale: 2, parryWindow: 0.22 },
                 weapon: { blockMultiplier: 0.3, blockCostScale: 3, parryWindow: 0.15 }
             },

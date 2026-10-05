@@ -19,6 +19,10 @@
 // roof in front, while walls behind stay whole. The hole opens only while
 // blocks do hide the player (`hides`): a wall beside them is in the
 // cylinder too, but hides nothing and stays whole (user, 2026-10-04).
+//
+// What the player's fighter does not see is shaded in the material too
+// (`sight`), so the blocks, the plants and the stones there go dark with
+// the ground they stand on (user, 2026-10-05).
 const terrainMesh = (() => {
     // Corner shading by how many of the three cells round a corner are
     // filled (both sides, two, one, none): on the ground, and the lighter
@@ -40,6 +44,30 @@ const terrainMesh = (() => {
     const CLIFF_DEPTH = 4, CLIFF_SHADE = 0.12;
     // The tile of a map's own floor.
     const floorOf = t => GROUND[t.floor] || 'grassTop';
+    // The shade of sight (render/world_view.js), as shader text: the colour
+    // on its way to the screen is mixed towards the shade where the ground
+    // mask is white at `at`, a world (x, z) in blocks. Uniforms: `sightMask`
+    // (white where the fighter does not see, north up), `sightAt` (its
+    // middle x, z and half its width, blocks) and `sightTone` (the shade's
+    // colour as the screen shows it, and how strong). It goes in ahead of
+    // the fog, which then takes the shade as it takes the ground.
+    const SIGHT_UNIFORMS = 'uniform sampler2D sightMask; uniform vec3 sightAt; uniform vec4 sightTone;';
+    const sightShade = at => `gl_FragColor.rgb = mix(gl_FragColor.rgb, sightTone.rgb, sightTone.a * texture2D(sightMask, vec2(0.5) + vec2((${at}).x - sightAt.x, sightAt.y - (${at}).y) / (2.0 * sightAt.z)).g);`;
+    // The same shade for a material that is not the terrain's own (the
+    // ground beyond the map, the mist under a cliff): `sight` is the
+    // terrain's (`create`).
+    function shadeUnseen(material, sight) {
+        material.onBeforeCompile = shader => {
+            Object.assign(shader.uniforms, { sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
+            shader.vertexShader = shader.vertexShader
+                .replace('#include <common>', '#include <common>\nvarying vec2 vSightAt;')
+                .replace('#include <project_vertex>', '#include <project_vertex>\nvSightAt = (modelMatrix * vec4(transformed, 1.0)).xz;');
+            shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', `#include <common>\nvarying vec2 vSightAt; ${SIGHT_UNIFORMS}`)
+                .replace('#include <fog_fragment>', `${sightShade('vSightAt')}\n#include <fog_fragment>`);
+        };
+        return material;
+    }
     // Tile and shade spread per solid kind (by name).
     const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05], hedge: ['leaves', 0.12] };
 
@@ -134,12 +162,17 @@ const terrainMesh = (() => {
         // its width, blocks. A face reads it a little way out in front of
         // itself, where the light comes from, not on its own edge.
         const torch = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) } };
+        // The shade of sight (`sightShade`, above): nothing is shaded until
+        // the view gives it a mask and a tone. A face reads the mask a
+        // little way out in front of itself, as for the torch: the wall
+        // that ends the sight is itself seen, its top and its far side not.
+        const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
         const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
         // Hidden faces are left out, so the back faces three.js would cast
         // shadows with are often missing: cast with both sides.
         material.shadowSide = T.DoubleSide;
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, torchMask: torch.mask, torchAt: torch.at });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, torchMask: torch.mask, torchAt: torch.at, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos; varying vec3 vTorchSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vTorchSide = normal;');
@@ -148,7 +181,7 @@ const terrainMesh = (() => {
             shader.fragmentShader = shader.fragmentShader
                 .replace('#include <common>', `#include <common>
 varying vec3 vCutPos; varying vec3 vTorchSide;
-uniform sampler2D torchMask; uniform vec3 torchAt;
+uniform sampler2D torchMask; uniform vec3 torchAt; ${SIGHT_UNIFORMS}
 uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
@@ -170,7 +203,8 @@ float torchSeen = 1.0 - texture2D(torchMask, torchUv).g;
 ${T.ShaderChunk.lights_fragment_begin.replace(lit, `${lit}
 #if UNROLLED_LOOP_INDEX == 0
 directLight.color *= torchSeen;
-#endif`)}`);
+#endif`)}`)
+                .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vTorchSide.xz * 0.3')}\n#include <fog_fragment>`);
         };
         let deco = null, decoRev = -1;
         const chunks = new Map();
@@ -404,7 +438,7 @@ directLight.color *= torchSeen;
         }
         update();
         return {
-            cut, torch, material, update, hides,
+            cut, torch, sight, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const { mesh: m } of chunks.values()) { scene.remove(m); m.geometry.dispose(); }
@@ -412,5 +446,5 @@ directLight.color *= torchSeen;
             }
         };
     }
-    return { create, decor, hash, floorOf };
+    return { create, decor, hash, floorOf, shadeUnseen };
 })();

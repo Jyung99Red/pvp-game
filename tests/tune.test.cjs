@@ -244,6 +244,11 @@ test('one move from the stance, and the other poses, each reach their key', () =
     assert.equal(guard.stateAt(guard.keys.guard).body.guardBlend, 1);
     assert.equal(guard.loadout.offhand, 'wooden_shield');
     assert.equal(L.pose('guardWeapon').loadout.offhand, null);
+    // A parry's shove is shown out of a guard already up: right out at its key, back by the end.
+    for (const [id, offhand] of [['guardShove', 'wooden_shield'], ['guardWeaponShove', null]]) {
+        const shove = L.pose(id), state = time => shove.stateAt(time).body;
+        assert.deepEqual([state(shove.keys[id]).guardBlend, state(shove.keys[id]).shoveOut, state(0).shoveOut, state(shove.duration).shoveOut, shove.loadout.offhand], [1, 1, 0, 0, offhand]);
+    }
     const down = L.pose('down');
     assert.equal(down.stateAt(down.keys.down).body.down, true);
     // The guard's walking bend is shown walking forward under the shield; the reach out at its key.

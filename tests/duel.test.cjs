@@ -162,7 +162,7 @@ test('snapshot checks turn away broken or foreign state', () => {
         s => { s.fighters[1].guard.bar = 1e6; }, s => { s.fighters[0].atk = 999; }, s => { s.fighters.pop(); },
         s => { s.fighters[1].input.buttons.skill = { held: true, presses: 1 }; }, s => { s.result = { winner: 'nobody', at: 1 }; },
         s => { s.fighters[0].id = 'guest'; }, s => { s.entities.push({}); }, s => { s.fighters[0].x = -500; },
-        s => { s.fighters[0].focus = 'p-base'; }, s => { s.region = 'field'; }
+        s => { s.fighters[0].focus = 'p-base'; }, s => { s.region = 'field'; }, s => { s.fighters[1].shoveOut = 2; }, s => { delete s.fighters[0].shoveFor; }
     ];
     for (const corrupt of bad) { const s = plain(good); corrupt(s); assert.equal(duelKit.validSnapshot(sim, s), false, String(corrupt)); }
 });
@@ -414,7 +414,7 @@ test('what drawing blends from: each fighter before the last step, its move and 
     const f = p.host.sim.fighters[0], b = p.host.before('host');
     assert.equal(b.act.move, f.act.move); assert.equal(b.act.phase, f.act.phase);
     assert.ok(Math.abs(f.act.t - b.act.t - 0.01) < 1e-9, 'one step earlier');
-    assert.equal(typeof b.guardBlend, 'number');
+    assert.equal(typeof b.guardBlend, 'number'); assert.equal(b.shoveOut, 0);
 });
 
 test('a phone in the background: the fight stands still till it is back, then a countdown', () => {
@@ -524,21 +524,21 @@ test('the edge of sight is exact: it ends at the blocks that hide, turns at thei
 test('a fighter sees the front 150 degrees and a small ring round itself, and not past a wall: a body behind it further off is not seen and the ground there is not lit (user, 2026-10-04)', () => {
     const SIGHT = gameConfig.player.sightAngle, NEAR = gameConfig.player.sightNear, PV = { sightAngle: SIGHT };
     assert.ok(Math.abs(SIGHT - 75 * Math.PI / 180) < 1e-12, '75 degrees either side');
-    assert.ok(NEAR >= U && NEAR <= 2 * U, 'the ring is small');
+    assert.equal(NEAR, 2 * U, 'the ring is small: two blocks');
     const sim = duel(), t = sim.terrain, [h, g] = sim.fighters, far = 30 * U;
     Object.assign(h, { x: 12 * U, y: 9.5 * U, facing: 0 });
-    // The rival two blocks away, `deg` round from due east: past the ring
-    // (added after this test, which stood the rival a block and a half
-    // away) and between the arena's pillars. Its nearer edge counts (its
-    // radius is 8.5 degrees wide from there).
-    const at = (deg, body = g, d = 2 * U) => { const a = deg * Math.PI / 180; Object.assign(body, { x: h.x + Math.cos(a) * d, y: h.y + Math.sin(a) * d }); return combatKit.sees(t, h, body); };
+    // The rival two and a half blocks away, `deg` round from due east:
+    // past the ring (two blocks: user, 2026-10-05) and between the arena's
+    // pillars. Its nearer edge counts (its radius is 6.8 degrees wide from
+    // there).
+    const at = (deg, body = g, d = 2.5 * U) => { const a = deg * Math.PI / 180; Object.assign(body, { x: h.x + Math.cos(a) * d, y: h.y + Math.sin(a) * d }); return combatKit.sees(t, h, body); };
     assert.deepEqual([0, 70, -70, 80, -80, 90, -90, 180].map(deg => at(deg)), [true, true, true, true, true, false, false, false]);
     h.facing = Math.PI;
     assert.deepEqual([180, 110, 101, 90, 0].map(deg => at(deg)), [true, true, true, false, false], 'turned round, it sees the other way');
     // A bigger body shows sooner: a monster as wide as the wolf king (a little further off, so that it too is past the ring).
     h.facing = 0;
     const big = { x: 0, y: 0, radius: gameConfig.monsters.wolfKing.radius };
-    assert.deepEqual([84, 92].map(deg => [at(deg, g, 2.2 * U), at(deg, big, 2.2 * U)]), [[false, true], [false, false]]);
+    assert.deepEqual([84, 92].map(deg => [at(deg, g, 2.7 * U), at(deg, big, 2.7 * U)]), [[false, true], [false, false]]);
     // The ring: behind its back a body is seen once its nearer edge is within sightNear, whichever way the fighter faces.
     const behind = d => at(180, g, d);
     assert.deepEqual([NEAR + g.radius - 1, NEAR + g.radius + 1].map(behind), [true, false]);
@@ -567,13 +567,18 @@ test('a fighter sees the front 150 degrees and a small ring round itself, and no
         for (let i = 0; i < front.n; i++) if (Math.abs(space.wrapAngle(front.angle[i] - edge)) < 1e-3) near.push(front.reach[i]);
         assert.ok(near.includes(0) && near.some(d => d > U), `the edge of the arc is sharp: ${near}`);
     }
-    // With the ring the ground outside the arc is lit as far as sightNear, and inside it as before.
-    const ringed = terrainKit.sightFan(t, x, y, far, { facing, half: PV.sightAngle, near: NEAR });
+    // With the ring the ground outside the arc is lit as far as sightNear
+    // -- or the pillar, which stands nearer than that on one side -- and
+    // inside it as before.
+    const ringed = terrainKit.sightFan(t, x, y, far, { facing, half: PV.sightAngle, near: NEAR }), walls = terrainKit.sightFan(t, x, y, far, { facing, half: PV.sightAngle, near: far });
     assert.equal(ringed.n, front.n);
+    const round = [];
     for (let i = 0; i < ringed.n; i++) {
         const off = Math.abs(space.wrapAngle(ringed.angle[i] - facing));
-        assert.equal(ringed.reach[i], off > PV.sightAngle ? NEAR : front.reach[i]);
+        assert.equal(ringed.reach[i], off > PV.sightAngle ? Math.min(NEAR, walls.reach[i]) : front.reach[i]);
+        if (off > PV.sightAngle) round.push(ringed.reach[i]);
     }
+    assert.ok(round.filter(d => d === NEAR).length > 10 && round.some(d => d < NEAR - 1), 'the ring, short where a wall stands in it');
     // A wall nearer than that ends it: just inside the west wall, looking east.
     const byWall = terrainKit.sightFan(t, 4.5 * U, 9.5 * U, far, { facing: 0, half: PV.sightAngle, near: NEAR });
     const west = Array.from({ length: byWall.n }, (_, i) => i).filter(i => Math.abs(space.wrapAngle(byWall.angle[i] - Math.PI)) < 0.2).map(i => byWall.reach[i]);

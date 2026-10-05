@@ -32,7 +32,7 @@
 // had and how long ago (`wait`), which times the way there and back.
 // `aways` is the guest's last `away` the host has had.
 const duelKit = (() => {
-    const PROTOCOL = 5;
+    const PROTOCOL = 6;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -82,7 +82,7 @@ const duelKit = (() => {
         if (!within(f.x, 0, t.width * t.unit) || !within(f.y, 0, t.height * t.unit) || !num(f.h) || !num(f.facing)) return false;
         if (f.radius !== ref.radius || f.maxHp !== ref.maxHp || f.atk !== ref.atk || f.def !== ref.def || f.endless !== ref.endless) return false;
         if (!within(f.hp, 0, f.maxHp) || !bool(f.down) || !obj(f.loadout) || f.loadout.main !== ref.loadout.main || f.loadout.offhand !== ref.loadout.offhand) return false;
-        if (!['speed', 'gait', 'moveBlend', 'runBlend', 'moveTime', 'downT', 'guardBlend'].every(k => num(f[k])) || !within(f.pace, 0, 1) || !within(f.stun, 0, 10) || !within(f.freeze, 0, 10)) return false;
+        if (!['speed', 'gait', 'moveBlend', 'runBlend', 'moveTime', 'downT', 'guardBlend'].every(k => num(f[k])) || !within(f.pace, 0, 1) || !within(f.stun, 0, 10) || !within(f.freeze, 0, 10) || !within(f.shoveOut, 0, 1) || !within(f.shoveFor, 0, 10)) return false;
         const i = f.input;
         if (!obj(i) || !obj(i.move) || !num(i.move.x) || !num(i.move.y) || Math.hypot(i.move.x, i.move.y) > 1 + 1e-6 || !obj(i.buttons)) return false;
         if (Object.keys(i.buttons).length !== worldSim.BUTTONS.length || !worldSim.BUTTONS.every(b => obj(i.buttons[b]) && bool(i.buttons[b].held) && count(i.buttons[b].presses))) return false;
@@ -154,7 +154,7 @@ const duelKit = (() => {
         // What drawing blends from (ui/app.js): each fighter before the last step.
         function remember() {
             before = new Map(sim.fighters.map(f => [f.id, {
-                x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend, guardBlend: f.guardBlend,
+                x: f.x, y: f.y, h: f.h, facing: f.facing, gait: f.gait, moveBlend: f.moveBlend, runBlend: f.runBlend, guardBlend: f.guardBlend, shoveOut: f.shoveOut,
                 act: f.act ? { move: f.act.move, phase: f.act.phase, t: f.act.t } : null
             }]));
         }

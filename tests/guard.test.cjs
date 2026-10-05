@@ -169,6 +169,38 @@ test('without a shield the weapon guards, weaker: more damage and guard bar per 
     assert.equal(blade.stats.parries, 0); assert.equal(blade.stats.blocks, 1);
 });
 
+test('a perfect parry shoves the guarding arm forward once the hitstop is over, and back again; a block does not; nothing waits for it (user, 2026-10-05)', () => {
+    const V = GU.shove, near = (a, b) => Math.abs(a - b) < 1e-6;
+    const parried = () => {
+        const sim = setup(); step(sim, impactTime - GU.startup - 0.05 - sim.time); press(sim, 'guard');
+        for (let i = 0; i < 200 && !sim.stats.parries; i++) W.step(sim, 0.01);
+        assert.equal(sim.stats.parries, 1);
+        return sim;
+    };
+    const sim = parried(), p = sim.player;
+    // Held still by the hitstop, the arm has not moved; then out, kept there, and back, the guard up all the while.
+    assert.ok(p.freeze > 0 && p.shoveOut === 0);
+    step(sim, F.impact.hitstop.parry); assert.equal(p.shoveOut, 0);
+    step(sim, 0.03); assert.ok(p.shoveOut > 0.3 && p.shoveOut < 0.6, `on its way out: ${p.shoveOut}`);
+    step(sim, V.out - 0.03); assert.ok(near(p.shoveOut, 1));
+    step(sim, V.stay - 0.02); assert.ok(near(p.shoveOut, 1), 'kept out');
+    step(sim, 0.02 + V.back / 2); assert.ok(p.shoveOut > 0.3 && p.shoveOut < 0.7, `on its way back: ${p.shoveOut}`);
+    step(sim, V.back / 2 + 0.02); assert.ok(near(p.shoveOut, 0));
+    assert.equal(p.guard.state, 'up');
+    // A block is no parry: no shove.
+    const block = guardAt(setup(), impactTime - 0.8);
+    assert.equal(block.stats.blocks, 1); assert.deepEqual([block.player.shoveOut, block.player.shoveFor], [0, 0]);
+    // With the arm right out, the guard is let go and an A pressed: the cut starts at once and the arm is on its way back.
+    const cut = parried(), q = cut.player;
+    step(cut, F.impact.hitstop.parry + V.out); assert.ok(near(q.shoveOut, 1));
+    release(cut, 'guard'); tap(cut);
+    assert.equal(q.act?.move, 'slash');
+    step(cut, 0.01); assert.ok(q.shoveFor === 0 && q.shoveOut < 1);
+    // (The cut lands on the dummy meanwhile, and its hitstop holds the arm too.)
+    step(cut, V.back + F.impact.hitstop.hit); assert.ok(near(q.shoveOut, 0));
+    assert.equal(q.act.move, 'slash'); assert.equal(cut.stats.hits, 1);
+});
+
 test('training is deathless: a fall refills the player', () => {
     const sim = setup(); sim.player.hp = 1;
     step(sim, impactTime + 0.05);
