@@ -70,10 +70,30 @@ const terrainMesh = (() => {
     const sightShade = at => `gl_FragColor.rgb = mix(gl_FragColor.rgb, sightTone.rgb, sightTone.a * texture2D(sightMask, vec2(0.5) + vec2((${at}).x - sightAt.x, sightAt.y - (${at}).y) / (2.0 * sightAt.z)).g);`;
     // The same shade for a material that is not the terrain's own (the
     // ground beyond the map, the mist under a cliff): `sight` is the
-    // terrain's (`create`).
-    function shadeUnseen(material, sight) {
-        material.onBeforeCompile = shader => unseen(shader, sight);
+    // terrain's (`create`). `also(shader)`: what else its shader takes
+    // (the ground beyond the map fades as the terrain does: `fadeLight`).
+    function shadeUnseen(material, sight, also = null) {
+        material.onBeforeCompile = shader => { also?.(shader); unseen(shader, sight); };
         return material;
+    }
+    // Colours fading to grey in the natural light -- the sky's, what the
+    // ground gives back of it, the sun's or the moon's (LIGHT's `fade`
+    // in render/world_view.js; user, 2026-10-06) -- as shader text
+    // for a material lit as the engine's Lambert is: its own colour goes
+    // `lightFade` (the uniform `fade`: { value }) of the way to grey once
+    // the point lights (a torch, a fire, a doorway's glow) have been taken
+    // in colour, and before the rest is; so the light keeps its own tint
+    // (the moon's blue) and a torch brings a thing's colours back. `begin`:
+    // the engine's lights as the material reads them. A three.js whose
+    // lights read otherwise is left as it is.
+    const SUN_LIGHTS = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
+    function fadeLight(T, shader, fade, begin = T.ShaderChunk.lights_fragment_begin) {
+        const include = '#include <lights_fragment_begin>', at = begin.indexOf(SUN_LIGHTS);
+        if (at < 0) { shader.fragmentShader = shader.fragmentShader.replace(include, begin); return; }
+        shader.uniforms.lightFade = fade;
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform float lightFade;')
+            .replace(include, `${begin.slice(0, at)}material.diffuseColor = mix( material.diffuseColor, vec3( dot( material.diffuseColor, vec3( 0.2126, 0.7152, 0.0722 ) ) ), lightFade );\n${begin.slice(at)}`);
     }
     function unseen(shader, sight) {
         Object.assign(shader.uniforms, { sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
@@ -243,6 +263,9 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
         // little way out in front of itself: the wall that ends the sight
         // is itself seen, its top and its far side not.
         const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
+        // How far the terrain's colours fade to grey in the natural light
+        // (`fadeLight`, above): the view sets it by the look of the hour.
+        const fade = { value: 0 };
         // Block light (render/terrain_light.js): a texel a cell, made anew
         // by `glow` when what gives light has moved a cell or changed.
         const glowData = new Uint8Array(t.width * t.height * 4), glowMap = new T.DataTexture(glowData, t.width, t.height);
@@ -272,8 +295,8 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
+            fadeLight(T, shader, fade, skyLit(T, blockLight));
             shader.fragmentShader = shader.fragmentShader
-                .replace('#include <lights_fragment_begin>', skyLit(T, blockLight))
                 .replace('#include <common>', `#include <common>
 varying float vSky; varying vec3 vCutPos; varying vec3 vSide;
 uniform sampler2D glowMap; uniform vec2 glowSize; uniform float glowPower;
@@ -605,7 +628,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         }
         update();
         return {
-            cut, sight, water, glow, bounce, material, update, hides,
+            cut, sight, fade, water, glow, bounce, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const chunk of chunks.values()) drop(chunk);
@@ -614,5 +637,5 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             }
         };
     }
-    return { create, decor, hash, floorOf, shadeUnseen };
+    return { create, decor, hash, floorOf, shadeUnseen, fadeLight };
 })();
