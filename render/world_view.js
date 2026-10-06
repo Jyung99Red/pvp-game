@@ -90,6 +90,9 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
     // now (`power`). It is worked out again only when a source has moved
     // a cell or changed.
     const GLOW = { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.16 };
+    // How much of the light the ground and the walls are lit by they give
+    // back onto what is near (light probes; user, 2026-10-06).
+    const BOUNCE = 0.7;
     // How bright the sky a pond gives back is (the sky's own colour, paler
     // low down), for each unit of the sky's light.
     const WATER_SKY = 0.5;
@@ -697,6 +700,7 @@ void main() {
 
         // Each torch's light's way out from its bearer towards the flame, eased (TORCH).
         const torchOffsets = new Map();
+        const bounceLight = [0, 0, 0];
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let clock = 0;
         const seen = new Set();
@@ -755,6 +759,14 @@ void main() {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
+            // The ground and the walls give back the hour's light, their
+            // colour (render/terrain_light.js, the probes): the sky's and
+            // the sun's (or the moon's) as it falls on open ground.
+            const up = Math.max(0, lightDir.y);
+            bounceLight[0] = (hemisphere.color.r * hemisphere.intensity + sun.color.r * sun.intensity * up) * BOUNCE;
+            bounceLight[1] = (hemisphere.color.g * hemisphere.intensity + sun.color.g * sun.intensity * up) * BOUNCE;
+            bounceLight[2] = (hemisphere.color.b * hemisphere.intensity + sun.color.b * sun.intensity * up) * BOUNCE;
+            ground.bounce(bounceLight);
             // The ponds give back the sky as the hour lights it, and ripple.
             ground.water.time.value = clock;
             ground.water.sky.value.copy(now.colors[3]).multiplyScalar(now.sky * WATER_SKY);

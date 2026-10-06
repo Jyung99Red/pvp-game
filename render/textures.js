@@ -152,7 +152,7 @@ const renderTextures = (() => {
         // The atlas: every tile in TILES order, left to right, top to bottom.
         const canvas = document.createElement('canvas');
         canvas.width = ATLAS_COLS * TILE; canvas.height = ATLAS_ROWS * TILE;
-        const g = canvas.getContext('2d'), rects = {};
+        const g = canvas.getContext('2d', { willReadFrequently: true }), rects = {};
         TILES.forEach((name, i) => {
             const x = (i % ATLAS_COLS) * TILE, y = Math.floor(i / ATLAS_COLS) * TILE;
             g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, TILE, TILE); g.clip();
@@ -163,9 +163,17 @@ const renderTextures = (() => {
             const e = 0.02;
             rects[name] = [(x + e) / canvas.width, 1 - (y + TILE - e) / canvas.height, (x + TILE - e) / canvas.width, 1 - (y + e) / canvas.height];
         });
+        // Each tile's mean colour, linear [r, g, b] (the light the terrain
+        // gives back: render/terrain_light.js).
+        const means = {}, colour = new T.Color(), px = g.getImageData(0, 0, canvas.width, canvas.height).data;
+        TILES.forEach((name, i) => {
+            const x0 = (i % ATLAS_COLS) * TILE, y0 = Math.floor(i / ATLAS_COLS) * TILE, sum = [0, 0, 0];
+            for (let y = y0; y < y0 + TILE; y++) for (let x = x0; x < x0 + TILE; x++) for (let ch = 0; ch < 3; ch++) sum[ch] += px[(y * canvas.width + x) * 4 + ch];
+            means[name] = colour.setRGB(...sum.map(v => v / (255 * TILE * TILE)), T.SRGBColorSpace).toArray();
+        });
         // `ground(name)`: one tile as a texture of its own that repeats (the
         // sheet of ground round the map).
-        return { grassTop: single('grassTop'), grain: single('grain'), atlas: finish(T, canvas, false), tiles: rects, ground: single };
+        return { grassTop: single('grassTop'), grain: single('grain'), atlas: finish(T, canvas, false), tiles: rects, means, ground: single };
     }
     return { rng, create, TILES };
 })();

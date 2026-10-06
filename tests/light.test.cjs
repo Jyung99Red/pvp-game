@@ -80,3 +80,35 @@ test('block light: it spreads round corners and fades, a wall two high stops it,
     const two = L.blockLight(t, [{ c: 6, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }, { c: 7, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }]);
     assert.ok(at(two, 6, 1) > at(L.blockLight(t, [{ c: 6, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }]), 6, 1));
 });
+
+test('light probes: a probe gives back the colour round it -- the ground from below, a wall from its side', () => {
+    const rows = [
+        '@..........',
+        '...........',
+        '.....44....',
+        '.....44....',
+        '.....44....',
+        '...........',
+        '...........'
+    ];
+    const t = T.fromRows(rows.map(r => r.replace(/4/g, '.')));
+    rows.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '4') T.set(t, c, r, 'wood', 4); }));
+    const g = L.blocks(t), sky = L.sky(g);
+    // The ground green, the wall red.
+    const p = L.probes(g, t, { colour: name => name === 'wood' ? [1, 0, 0] : name === 'grassTop' ? [0, 1, 0] : null, ground: () => 'grassTop', skyAt: sky });
+    const [nx, ny, nz] = p.count, S = L.PROBES.spacing;
+    assert.deepEqual([nx, ny, nz], [Math.ceil((t.width - 1) / S) + 1, L.PROBES.heights.length, Math.ceil((t.height - 1) / S) + 1]);
+    // Irradiance as three.js works it out of the nine numbers.
+    const at = (i, j, k, [x, y, z]) => [0, 1, 2].map(ch => {
+        const c = n => p.sh[((k * ny + j) * nx + i) * 27 + ch * 9 + n];
+        return c(0) * 0.886227 + 2 * 0.511664 * (c(1) * y + c(2) * z + c(3) * x) + 2 * 0.429043 * (c(4) * x * y + c(5) * y * z + c(7) * x * z) + c(6) * (0.743125 * z * z - 0.247708) + c(8) * 0.429043 * (x * x - y * y);
+    });
+    // The probe at (4.5, 0.5, 2.5) stands west of the wall (x = 5..7).
+    const i = 2, k = 1, low = 0, down = at(i, low, k, [0, -1, 0]), east = at(i, low, k, [1, 0, 0]), west = at(i, low, k, [-1, 0, 0]);
+    assert.ok(down[1] > down[0] && down[1] > 1, `from below, green: ${down}`);
+    assert.ok(east[0] > west[0] + 0.5, `from the wall's side, red: ${east} against ${west}`);
+    assert.ok(at(i, low, k, [0, 1, 0])[1] < down[1], 'from above (the sky), less');
+    // The probe at (6.5, 0.5, 2.5), inside the wall, takes a neighbour's numbers.
+    const inside = ((1 * ny) * nx + 3) * 27;
+    assert.ok(g.solid(6, 0, 2) && p.sh.slice(inside, inside + 27).some(v => v !== 0));
+});

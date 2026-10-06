@@ -17,6 +17,15 @@
 // behind a wall stays dark (user, 2026-10-06). The terrain's material
 // reads it from a small texture, a texel a cell; near a torch its real
 // light and shadows are on top, so this is the soft glow further off.
+//
+// Light probes: the colour of the ground and the walls given back onto
+// what is near them -- green beside grass, warm beside earth and wood
+// (user, 2026-10-06). A coarse grid of points over the map each looks all
+// round along the block grid and keeps what it sees (each face's own
+// colour, as lit as the sky it sees) in nine numbers a colour (spherical
+// harmonics); three.js reads them for every lit material, characters too.
+// The light of the hour is a factor laid on afterwards, so the hour
+// moving on needs no new look round.
 const terrainLight = (() => {
     // Rays per face (over the half of the sky above the horizon it faces),
     // how far they go (blocks), and how much of the sky's light a face that
@@ -31,9 +40,11 @@ const terrainLight = (() => {
     const sideOf = n => n[1] > 0 ? 0 : n[2] > 0 ? 1 : n[2] < 0 ? 2 : n[0] > 0 ? 3 : 4;
 
     // The opaque blocks as a dense grid: the terrain's columns (but gates
-    // and fences, which light passes) and `extra` ([x, y, z] each: tree
-    // crowns, roofs, lintels). Under the ground (y < 0) is solid; beyond
-    // the grid's sides and above its top is open air.
+    // and fences, which light passes) and `extra` ([x, y, z, name] each:
+    // tree crowns, roofs, lintels, `name` their tile). Under the ground
+    // (y < 0) is solid; beyond the grid's sides and above its top is open
+    // air. `paint(c, y, r)` names what fills a cell: the terrain kind's
+    // name, or the extra block's.
     function blocks(t, extra = []) {
         const K = terrainKit.KIND, x0 = -MARGIN, z0 = -MARGIN, w = t.width + 2 * MARGIN, d = t.height + 2 * MARGIN;
         let h = 1;
@@ -41,18 +52,24 @@ const terrainLight = (() => {
         for (const [, y] of more) h = Math.max(h, y + 1);
         for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) h = Math.max(h, terrainKit.levelAt(t, c, r));
         const cells = new Uint8Array(w * d * h), index = (c, y, r) => (y * d + r - z0) * w + c - x0;
+        // What fills each cell, by number into `paints` (0: nothing).
+        const paints = [null], paintOf = new Map(), named = name => {
+            if (!paintOf.has(name)) { paintOf.set(name, paints.length); paints.push(name); }
+            return paintOf.get(name);
+        };
         for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) {
             const k = terrainKit.kindAt(t, c, r);
             if (!terrainKit.isSolid(k) || k === K.gate || k === K.fence) continue;
-            for (let y = 0, top = terrainKit.levelAt(t, c, r); y < top; y++) cells[index(c, y, r)] = 1;
+            for (let y = 0, top = terrainKit.levelAt(t, c, r), p = named(terrainKit.NAMES[k]); y < top; y++) cells[index(c, y, r)] = p;
         }
-        for (const [x, y, z] of more) if (x >= x0 && z >= z0 && x < x0 + w && z < z0 + d && y >= 0) cells[index(x, y, z)] = 1;
+        for (const [x, y, z, name = 'block'] of more) if (x >= x0 && z >= z0 && x < x0 + w && z < z0 + d && y >= 0) cells[index(x, y, z)] = named(name);
         function solid(c, y, r) {
             if (y < 0) return true;
             if (y >= h || c < x0 || r < z0 || c >= x0 + w || r >= z0 + d) return false;
-            return cells[index(c, y, r)] === 1;
+            return cells[index(c, y, r)] !== 0;
         }
-        return { x0, z0, w, d, h, cells, index, solid };
+        const paint = (c, y, r) => y < 0 || y >= h || c < x0 || r < z0 || c >= x0 + w || r >= z0 + d ? null : paints[cells[index(c, y, r)]];
+        return { x0, z0, w, d, h, cells, index, solid, paint };
     }
 
     // Directions over the sky as a face looking along `n` sees it: spread
@@ -90,7 +107,7 @@ const terrainLight = (() => {
                 if (tx < ty && tx < tz) { if (tx > far) return true; c += sc; tx += ix; }
                 else if (ty < tz) { if (ty > far) return true; y++; ty += iy; if (y >= h) return true; }
                 else { if (tz > far) return true; r += sz; tz += iz; }
-                if (c >= x0 && r >= z0 && c < x0 + w && r < z0 + d && cells[(y * d + r - z0) * w + c - x0] === 1) return false;
+                if (c >= x0 && r >= z0 && c < x0 + w && r < z0 + d && cells[(y * d + r - z0) * w + c - x0] !== 0) return false;
             }
         }
         return function at(c, y, r, n) {
@@ -171,5 +188,83 @@ const terrainLight = (() => {
         return out;
     }
 
-    return { SKY, blocks, sky, corners, skyShade, shuts, blockLight };
+    // ---- light probes ----
+    // A probe every `spacing` blocks across the map, at `heights`; `rays`
+    // looks round each, `far` blocks long.
+    const PROBES = { spacing: 2, heights: [0.5, 1.5, 2.5], rays: 32, far: 6 };
+    // Directions spread evenly over the whole sphere.
+    const ROUND = Array.from({ length: PROBES.rays }, (_, i) => {
+        const y = 1 - 2 * (i + 0.5) / PROBES.rays, s = Math.sqrt(1 - y * y), phi = i * GOLDEN;
+        return [s * Math.cos(phi), y, s * Math.sin(phi)];
+    });
+    // The nine numbers of a direction (three.js's order and scale).
+    const basis = ([x, y, z]) => [0.282095, 0.488603 * y, 0.488603 * z, 0.488603 * x, 1.092548 * x * y, 1.092548 * y * z, 0.315392 * (3 * z * z - 1), 1.092548 * x * z, 0.546274 * (x * x - y * y)];
+    // The first block a ray from (ox, oy, oz) along (dx, dy, dz) runs into
+    // within `far`, written into `hit`: the cell [0..2], the open cell it
+    // came from [3..5] (whose face it struck looks back along the ray's
+    // last step: [6..8]). Returns false if none.
+    function march(g, ox, oy, oz, dx, dy, dz, far, hit) {
+        const { cells, x0, z0, w, d, h } = g;
+        let c = Math.floor(ox), y = Math.floor(oy), r = Math.floor(oz);
+        const sc = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+        const ix = Math.abs(dx) > 1e-9 ? 1 / Math.abs(dx) : Infinity, iy = Math.abs(dy) > 1e-9 ? 1 / Math.abs(dy) : Infinity, iz = Math.abs(dz) > 1e-9 ? 1 / Math.abs(dz) : Infinity;
+        let tx = ix * (dx > 0 ? c + 1 - ox : ox - c), ty = iy * (dy > 0 ? y + 1 - oy : oy - y), tz = iz * (dz > 0 ? r + 1 - oz : oz - r);
+        for (;;) {
+            let axis;
+            if (tx < ty && tx < tz) { if (tx > far) return false; c += sc; tx += ix; axis = 0; }
+            else if (ty < tz) { if (ty > far) return false; y += sy; ty += iy; axis = 1; if (y >= h) return false; }
+            else { if (tz > far) return false; r += sz; tz += iz; axis = 2; }
+            if (y < 0 || (c >= x0 && r >= z0 && c < x0 + w && r < z0 + d && cells[(y * d + r - z0) * w + c - x0] !== 0)) {
+                hit[0] = c; hit[1] = y; hit[2] = r;
+                hit[6] = axis === 0 ? -sc : 0; hit[7] = axis === 1 ? -sy : 0; hit[8] = axis === 2 ? -sz : 0;
+                hit[3] = c + hit[6]; hit[4] = y + hit[7]; hit[5] = r + hit[8];
+                return true;
+            }
+        }
+    }
+    // Look round from every probe. `colour(name)`: the colour ([r, g, b],
+    // linear) of a block (`g.paint`'s names) or of the ground under open
+    // cell (c, r) (`ground(c, r)`'s names; null where there is none, as
+    // past a cliff); `skyAt` as from `sky`. Each face seen counts as its
+    // colour times the sky light on it (skyShade; a face looking down sees
+    // none). Returns where the
+    // probes stand (`min`, `max`, blocks; `count` along x, y, z) and their
+    // numbers, 27 a probe (nine per colour, colour by colour), x fastest,
+    // then y, then z. A probe inside a block takes a neighbour's numbers.
+    function probes(g, t, { colour, ground, skyAt }) {
+        const { spacing, heights } = PROBES, nx = Math.ceil((t.width - 1) / spacing) + 1, nz = Math.ceil((t.height - 1) / spacing) + 1, ny = heights.length;
+        const min = [0.5, heights[0], 0.5], max = [0.5 + (nx - 1) * spacing, heights[ny - 1], 0.5 + (nz - 1) * spacing];
+        const sh = new Float32Array(nx * ny * nz * 27), inside = new Uint8Array(nx * ny * nz), weight = 4 * Math.PI / ROUND.length;
+        const bases = ROUND.map(basis), hit = new Int32Array(9), n = [0, 0, 0], known = new Map();
+        const colours = name => { if (!known.has(name)) known.set(name, colour(name)); return known.get(name); };
+        for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+            const p = (k * ny + j) * nx + i, x = min[0] + i * spacing, y = heights[j], z = min[2] + k * spacing;
+            if (g.solid(Math.floor(x), Math.floor(y), Math.floor(z))) { inside[p] = 1; continue; }
+            for (let q = 0; q < ROUND.length; q++) {
+                const [dx, dy, dz] = ROUND[q];
+                if (!march(g, x, y, z, dx, dy, dz, PROBES.far, hit)) continue;
+                const name = hit[1] < 0 ? ground(hit[0], hit[2]) : g.paint(hit[0], hit[1], hit[2]), rgb = name && colours(name);
+                if (!rgb) continue;
+                n[0] = hit[6]; n[1] = hit[7]; n[2] = hit[8];
+                const lit = skyShade(n[1] < 0 ? 0 : skyAt(hit[3], hit[4], hit[5], n)) * weight, Y = bases[q], o = p * 27;
+                for (let b = 0; b < 9; b++) { const v = lit * Y[b]; sh[o + b] += rgb[0] * v; sh[o + 9 + b] += rgb[1] * v; sh[o + 18 + b] += rgb[2] * v; }
+            }
+        }
+        // Probes inside blocks: a neighbour's numbers, so a face beside the
+        // block does not darken towards the inside.
+        for (let pass = 0; pass < 2; pass++) for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+            const p = (k * ny + j) * nx + i;
+            if (inside[p] !== 1) continue;
+            for (const [di, dj, dk] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]) {
+                const a = i + di, b = j + dj, e = k + dk, q = (e * ny + b) * nx + a;
+                if (a < 0 || b < 0 || e < 0 || a >= nx || b >= ny || e >= nz || inside[q] === 1) continue;
+                sh.copyWithin(p * 27, q * 27, q * 27 + 27);
+                inside[p] = 2;
+                break;
+            }
+        }
+        return { min, max, count: [nx, ny, nz], sh };
+    }
+
+    return { SKY, PROBES, blocks, sky, corners, skyShade, shuts, blockLight, probes };
 })();

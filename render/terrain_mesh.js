@@ -518,6 +518,59 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             m.castShadow = material !== wetMaterial; m.receiveShadow = true;
             return m;
         }
+        // ---- light probes (render/terrain_light.js): looked round anew
+        // when the terrain changes; the hour's light laid on by `bounce`.
+        // A grid three.js reads for every lit material: an object it
+        // knows by `isLightProbeGrid`, with the probes' numbers in a 3D
+        // texture, seven texels a probe (their 27 numbers four by four),
+        // each of the seven a stack of slices along z with one more at
+        // either end. ----
+        const probeGrid = new T.Object3D();
+        Object.assign(probeGrid, { isLightProbeGrid: true, texture: null, boundingBox: new T.Box3(), resolution: new T.Vector3() });
+        scene.add(probeGrid);
+        let baked = null;
+        const lastBounce = [-1, -1, -1];
+        // The colour things give back, linear, by what terrainLight names.
+        const colourOf = name => {
+            if (BLOCK[name]) return tx.means[BLOCK[name][0]];
+            if (name === 'water') return colour.set(palette.water).toArray();
+            return tx.means[name] || null;
+        };
+        // What the ground is under open cell (c, r): its tile, or none.
+        const groundOf = (c, r) => {
+            if (!terrainKit.inside(t, c, r)) return floorTile;
+            const k = terrainKit.kindAt(t, c, r);
+            return k === K.drop ? null : k === K.water ? 'water' : GROUND[k] || floorTile;
+        };
+        function bake() {
+            baked = terrainLight.probes(blocks, t, { colour: colourOf, ground: groundOf, skyAt });
+            const [nx, ny, nz] = baked.count;
+            probeGrid.texture?.dispose();
+            const texture = new T.Data3DTexture(new Uint16Array(nx * ny * 7 * (nz + 2) * 4), nx, ny, 7 * (nz + 2));
+            Object.assign(texture, { format: T.RGBAFormat, type: T.HalfFloatType, magFilter: T.LinearFilter, minFilter: T.LinearFilter });
+            probeGrid.texture = texture;
+            probeGrid.boundingBox.min.fromArray(baked.min); probeGrid.boundingBox.max.fromArray(baked.max);
+            probeGrid.resolution.set(nx, ny, nz);
+            lastBounce.fill(-1);
+        }
+        // The light the ground and the walls are lit by now ([r, g, b],
+        // linear, as irradiance): their colour given back is that times
+        // their own over pi. Laid into the texture only when it has moved
+        // by more than a few hundredths.
+        function bounce(light) {
+            if (light.every((v, i) => Math.abs(v - lastBounce[i]) <= 0.02 * Math.max(0.05, lastBounce[i]))) return false;
+            light.forEach((v, i) => { lastBounce[i] = v; });
+            const [nx, ny, nz] = baked.count, data = probeGrid.texture.image.data, slices = nz + 2, half = T.DataUtils.toHalfFloat;
+            for (let k = 0; k < slices; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+                const p = (Math.min(nz - 1, Math.max(0, k - 1)) * ny + j) * nx + i;
+                for (let m = 0; m < 28; m++) {
+                    const ch = Math.floor(m / 3), b = m % 3, v = m < 27 ? baked.sh[p * 27 + b * 9 + ch] * light[b] / Math.PI : 0;
+                    data[(((Math.floor(m / 4) * slices + k) * ny + j) * nx + i) * 4 + m % 4] = half(v);
+                }
+            }
+            probeGrid.texture.needsUpdate = true;
+            return true;
+        }
         // Take a chunk's meshes out of the scene.
         function drop({ mesh: m, water: w }) {
             for (const one of [m, w]) if (one) { scene.remove(one); one.geometry.dispose(); }
@@ -529,8 +582,9 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 decoKeys = new Set(); top = 0;
                 for (const key of deco.keys()) { const [x, y, z] = key.split(',').map(Number); decoKeys.add(decoKey(x, y, z)); top = Math.max(top, y + 1); }
                 for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) top = Math.max(top, terrainKit.levelAt(t, c, r));
-                blocks = terrainLight.blocks(t, [...deco.keys()].map(key => key.split(',').map(Number)));
+                blocks = terrainLight.blocks(t, [...deco].map(([key, d]) => [...key.split(',').map(Number), d.tile]));
                 skyAt = terrainLight.sky(blocks);
+                bake();
             }
             let rebuilt = 0;
             t.chunks.forEach((chunk, i) => {
@@ -547,11 +601,12 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         }
         update();
         return {
-            cut, sight, water, glow, material, update, hides,
+            cut, sight, water, glow, bounce, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const chunk of chunks.values()) drop(chunk);
                 chunks.clear(); material.dispose(); wetMaterial.dispose(); glowMap.dispose();
+                scene.remove(probeGrid); probeGrid.texture?.dispose();
             }
         };
     }
