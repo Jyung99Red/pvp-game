@@ -148,7 +148,6 @@ const propKit = (() => {
             const G = gameConfig.gather[e.kind];
             out = { verb: G.verb, name: G.name, hold: G.hold, ready: true, why: '' };
         }
-        if (out && out.ready && interactKit.inCombat(sim, p)) Object.assign(out, { ready: false, why: '战斗中' });
         return out;
     }
     function use(sim, e, p) {

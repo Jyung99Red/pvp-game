@@ -14,13 +14,16 @@ const worldView = (() => {
     // (user, 2026-10-04). The looks follow the time of day (core/daytime.js,
     // day.looks); `dawn` is sunrise and sunset, the base's old morning light
     // (user, 2026-10-06). At night the moon's light is enough to see by out
-    // of doors (user). A dark region stays `dark` whatever the hour.
+    // of doors (user). A dark region stays `dark` whatever the hour: its
+    // sky's light is enough to make out the walls and the way, and no more
+    // (user, 2026-10-06: nobody gets lost there without a torch; it was
+    // 0.05, all black).
     const LIGHT = {
         day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1 },
         dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1 },
         grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1 },
         night: { sky: 1.1, sun: 0.9, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7 },
-        dark: { sky: 0.05, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1 }
+        dark: { sky: 0.4, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1 }
     };
     // A region whose day looks other than `day`: grey among the rocks.
     const LOOK = { valley: 'grey' };
@@ -135,6 +138,29 @@ varying vec3 vProbeIrradiance;`;
         smoothShadows(T);
         softTorchShadows(T, torchTaps);
         if (bounce) probesByVertex(T);
+    }
+    // A fighter a ring of stealth hides (fighterKit.hidden; user,
+    // 2026-10-06) is drawn thinned out: GHOST of its pixels are left out,
+    // in the pattern of the camera's cut (render/terrain_mesh.js). Nothing
+    // is blended, so nothing needs sorting and its shadow stays; `ghost`
+    // is a uniform, so the shader is the same hidden or not. Drawn only:
+    // the body is hit as ever.
+    const GHOST = 0.4;
+    function ghostly(material, ghost) {
+        material.onBeforeCompile = shader => {
+            shader.uniforms.ghost = ghost;
+            shader.fragmentShader = shader.fragmentShader
+                .replace('#include <common>', `#include <common>
+uniform float ghost;
+float ghostDither(vec2 p) {
+    const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
+    ivec2 i = ivec2(mod(p, 4.0));
+    return (m[i.x + i.y * 4] + 0.5) / 16.0;
+}`)
+                .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
+        };
+        return material;
     }
     // Block light (render/terrain_light.js; user, 2026-10-06): how many
     // cells a torch's, a burning thicket's and a doorway's light spreads
@@ -255,6 +281,8 @@ varying vec3 vProbeIrradiance;`;
         return {
             load, render, resize, project, settings, renderer, camera,
             info: () => renderer.info.render,
+            // The hour a world is drawn at (the HUD's clock shows the same).
+            hour: current => dayKit.hourOf(current, tune.hourShift),
             get scene() { return world.scene; },
             get playerRig() { return world.playerRig; },
             // The terrain's chunk meshes and the camera cut (render/terrain_mesh.js).
@@ -464,16 +492,18 @@ varying vec3 vProbeIrradiance;`;
         // What casts no shadow in point lights: writes nothing.
         const shunned = new T.MeshDistanceMaterial({ depthWrite: false, colorWrite: false });
         const pad = C.combat.weaponPad / U, colour = new T.Color();
-        // `look` swaps palette colours by name (playerModel.looks).
-        function character(rig, apart = () => false, look = {}) {
-            const material = new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true });
+        // `look` swaps palette colours by name (playerModel.looks). `ghost`
+        // ({ value }): the share of its pixels left out (`ghostly`).
+        function character(rig, apart = () => false, look = {}, ghost = null) {
+            const thin = made => ghost ? ghostly(made, ghost) : made;
+            const material = thin(new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true }));
             const pos = [], nor = [], uv = [], col = [], skin = [], weight = [], index = [], bones = [], boned = [], loose = [], lines = [];
             rig.parts.forEach((part, i) => {
                 const name = look[part.color] || part.color;
                 if (!P[name]) throw new Error(`Unknown palette colour ${name}`);
                 const g = boxGeo(...part.size);
                 if (apart(part)) {
-                    const mesh = new T.Mesh(g, new T.MeshLambertMaterial({ color: P[name], map: tx.grain }));
+                    const mesh = new T.Mesh(g, thin(new T.MeshLambertMaterial({ color: P[name], map: tx.grain })));
                     mesh.matrixAutoUpdate = false; mesh.castShadow = true; mesh.receiveShadow = true;
                     scene.add(mesh); loose.push({ i, mesh });
                 } else {
@@ -560,11 +590,14 @@ varying vec3 vProbeIrradiance;`;
         // colours. The blade and torch flames are meshes of their own (the
         // blade glows while charging).
         const rigOf = id => sim.rigs.fighters[id], playerRig = rigOf(selfId) || rigOf(sim.fighters[0].id);
-        const fighters = new Map(sim.fighters.map(f => [f.id, {
-            rig: rigOf(f.id),
-            view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }),
-            lastFacing: f.facing, lean: 0
-        }]));
+        const fighters = new Map(sim.fighters.map(f => {
+            const ghost = { value: 0 };
+            return [f.id, {
+                rig: rigOf(f.id), ghost,
+                view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }, ghost),
+                lastFacing: f.facing, lean: 0
+            }];
+        }));
         fighters.get(selfId)?.view.shunTorch();
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
         const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null }]));
@@ -746,7 +779,7 @@ void main() {
         // `opacity` of the way at most. It is in the material, not a dark
         // sheet over the ground, so that what stands on the ground --
         // blocks, plants, stones -- goes dark with it (user, 2026-10-05). ----
-        const SIGHT_FAR = 20, MASK = 256, SHADE = { color: [5, 7, 13], opacity: 0.55 };
+        const SIGHT_FAR = 20, MASK = 256, SHADE = { color: [5, 7, 13], opacity: 0.48 };
         const shade = (() => {
             const mask = fanMask(MASK, SIGHT_FAR), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
             ground.sight.mask.value = mask.texture; ground.sight.at.value.set(0, 0, mask.half);
@@ -811,6 +844,7 @@ void main() {
                 entry.view.show(visible);
                 if (!visible) continue;
                 seen.add(f.id);
+                entry.ghost.value = fighterKit.hidden(f) ? GHOST : 0;
                 const omega = space.wrapAngle(p.facing - entry.lastFacing) / dt;
                 entry.lastFacing = p.facing;
                 const leanTarget = Math.max(-0.12, Math.min(0.12, 0.015 * omega)) * p.moveBlend;

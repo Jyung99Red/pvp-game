@@ -93,6 +93,8 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
                 interactIdle: document.querySelector('[data-button="interact"]').classList.contains('idle'),
                 guardKind: document.querySelector('[data-button="guard"]').dataset.kind,
                 offhandGrey: document.querySelector('[data-button="offhand"]').classList.contains('disabled'),
+                // The clock (user, 2026-10-06): its rim's arcs, and the sun for a new game's morning.
+                clock: [document.querySelectorAll('[data-hud="clock-ring"] path').length, document.querySelector('[data-hud="clock"]').dataset.body],
                 calls: g.view.info().calls, threeRevision: THREE.REVISION
             };
         });
@@ -114,6 +116,7 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
         assert.ok(info.interactIdle);
         assert.equal(info.guardKind, 'shield');
         assert.equal(info.offhandGrey, true, 'with the shield the offhand key is grey');
+        assert.deepEqual(info.clock, [48, 'sun']);
         // What the fighter does not see goes dark, the blocks with the
         // ground they stand on (user, 2026-10-05): a stone five blocks west
         // of the player, looked at and then with the player's back to it.
@@ -299,6 +302,9 @@ test('the world: the base, through the north gate by touch, a fight, falling and
             const warning = shown(), p = s.player, seen = g.view.seen(m.id);
             // Sight (user, 2026-10-04): with the player's back to it, the
             // goblin and its warning are not drawn; facing it again they are.
+            // (From past the ring round the player, where it sees whichever
+            // way it faces: player.sightNear.)
+            p.x = m.x - gameConfig.player.sightNear - 40; p.y = m.y;
             p.facing = Math.PI; g.view.render(s, 0.016);
             const behind = { seen: g.view.seen(m.id), warning: !!shown() };
             p.facing = 0; g.view.render(s, 0.016);

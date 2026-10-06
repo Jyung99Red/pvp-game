@@ -1,7 +1,8 @@
 // Heads-up display over the 3D view: this fighter's HP and guard bar, the
 // foe being fought (its HP, stagger, enrage, a boss tag), small HP bars and
 // a "!" over monsters in a fight, the region and the gold carried, the
-// running combo with the move's name, and floating damage numbers. The
+// clock (the hour of the day), the running combo with the move's name,
+// and floating damage numbers. The
 // world (design.md 6): the interact key names what it would do (dim
 // with nothing in reach, greyed when it cannot now, a ring filling while a
 // hold runs) and a tag over the target says what it is and why not; the
@@ -11,6 +12,25 @@
 // in sight but off it. Reads the simulation; never writes it.
 const hud = (() => {
     const FIGHTING = monsterKit.FIGHTING;
+    // The clock (design.md 3.6; user, 2026-10-06): a dial with noon at the
+    // top that its hand goes round once a day. Its rim is the day's light
+    // by the hour, in `segments` arcs: each the colour of the look that
+    // hour has (core/daytime.js `look`, day.looks), going over from one to
+    // the next as the light does. The badge is the sun or the moon.
+    const CLOCK = { segments: 48, radius: 34, colors: { day: [96, 196, 78], dawn: [240, 140, 44], night: [62, 96, 200] } };
+    // Degrees round the dial, clockwise from the top, of an hour.
+    const dialAngle = hour => (hour - 12) * 15;
+    function clockRing() {
+        const point = deg => { const a = deg * Math.PI / 180; return `${(CLOCK.radius * Math.sin(a)).toFixed(2)} ${(-CLOCK.radius * Math.cos(a)).toFixed(2)}`; };
+        let out = '';
+        for (let k = 0; k < CLOCK.segments; k++) {
+            const from = k * 24 / CLOCK.segments, to = (k + 1) * 24 / CLOCK.segments, l = dayKit.look((from + to) / 2);
+            const a = CLOCK.colors[l.from], b = CLOCK.colors[l.to], rgb = a.map((v, i) => Math.round(v + (b[i] - v) * l.mix));
+            // Each arc runs a little under the next: no seam between them.
+            out += `<path d="M${point(dialAngle(from))}A${CLOCK.radius} ${CLOCK.radius} 0 0 1 ${point(dialAngle(to) + 0.8)}" stroke="rgb(${rgb.join(',')})"/>`;
+        }
+        return out;
+    }
     function attach(root) {
         const $ = sel => root.querySelector(sel);
         const els = {
@@ -22,8 +42,11 @@ const hud = (() => {
             boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
             tag: $('[data-hud="tag"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
             region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]'),
-            guardKey: $('[data-button="guard"]'), offhand: $('[data-button="offhand"]'), offhandCount: $('[data-hud="offhand-count"]')
+            guardKey: $('[data-button="guard"]'), offhand: $('[data-button="offhand"]'), offhandCount: $('[data-hud="offhand-count"]'),
+            clock: $('[data-hud="clock"]'), clockRing: $('[data-hud="clock-ring"]'), clockHand: $('[data-hud="clock-hand"]')
         };
+        els.clockRing.innerHTML = clockRing();
+        let shownTurn = NaN, shownTime = '';
         let toasts = [], notice = null;
         let comboKey = '', comboShownAt = -1, floats = [], focus = null, mobs = new Map(), fightAt = null, selfId = 'player';
         const width = (el, share) => { el.style.width = `${(Math.max(0, Math.min(1, share)) * 100).toFixed(1)}%`; };
@@ -150,6 +173,17 @@ const hud = (() => {
             const map = gameConfig.maps[sim.region];
             els.goal.hidden = !!sim.duel || !map;
             if (!els.goal.hidden) els.goal.textContent = map.training ? map.name : `${map.name} · ${gameConfig.items.gold.icon} ${sim.progress?.inventory.gold ?? 0}`;
+            // The clock: the hour the world is drawn at, to a quarter of a
+            // degree; the sun or the moon, whichever is up.
+            const hour = view?.hour ? view.hour(sim) : dayKit.hourOf(sim), turn = Math.round(dialAngle(hour) * 4) / 4;
+            if (turn !== shownTurn) {
+                shownTurn = turn;
+                els.clockHand.setAttribute('transform', `rotate(${turn})`);
+                els.clock.dataset.body = dayKit.sky(hour).body;
+                // Read out to ten minutes.
+                const time = `${String(Math.floor(hour)).padStart(2, '0')}:${Math.floor(hour % 1 * 6)}0`;
+                if (time !== shownTime) { shownTime = time; els.clock.setAttribute('aria-label', `时刻 ${time}`); }
+            }
             interaction(sim, p, view);
             if (notice) {
                 els.region.classList.toggle('fade', now > notice.until - 0.5);

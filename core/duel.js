@@ -96,8 +96,8 @@ const duelKit = (() => {
         if (k !== null && !(obj(k) && num(k.at) && bool(k.held) && (k.upAt === null || num(k.upAt)) && [null, 'a', 'b'].includes(k.as) && bool(k.free))) return false;
         if (f.buffer !== null && !(obj(f.buffer) && ['a', 'b'].includes(f.buffer.input) && num(f.buffer.at) && num(f.buffer.age))) return false;
         if (!Array.isArray(f.combo) || f.combo.length > 32 || !f.combo.every(c => ['a', 'b', '-'].includes(c))) return false;
-        // Nothing in the arena to interact with; a weapon and the shield only.
-        if (f.focus !== null || f.using !== null || f.handOut !== 0 || f.handFor !== 0 || f.drink !== null || f.lit !== false) return false;
+        // Nothing in the arena to interact with; a weapon and the shield only (no ring).
+        if (f.focus !== null || f.using !== null || f.handOut !== 0 || f.handFor !== 0 || f.drink !== null || f.lit !== false || f.reveal !== 0) return false;
         if (f.chain !== null && !(obj(f.chain) && ownMove(f.chain.move) && num(f.chain.at) && bool(f.chain.cued))) return false;
         const a = f.act;
         if (a === null) return true;

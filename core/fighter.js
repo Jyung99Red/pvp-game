@@ -34,6 +34,8 @@
 //   handOut, handFor  the left hand reaching out to interact (core/interact.js)
 //   drink  a potion: null, or { phase: wait (pressed while busy) | drink, t }
 //   lit    a torch carried in the offhand is burning
+//   reveal seconds a ring of stealth worn still takes to hide its wearer
+//          again (0: hidden; `hidden`)
 //
 // Swings are settled once every fighter has moved (`settle`): each is
 // sampled against everyone as they stand after the step, and only then are
@@ -56,7 +58,7 @@ const fighterKit = (() => {
             id, side: id, kind: 'fighter', hp: stats.maxHp, maxHp: stats.maxHp, atk: stats.atk, def: stats.def, endless,
             input: { move: { x: 0, y: 0 }, buttons },
             stats: { attacks: 0, hits: 0, misses: 0, blocks: 0, parries: 0, hurt: 0, kills: 0 },
-            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null, lit: false,
+            act: null, chain: null, buffer: null, combo: [], stun: 0, freeze: 0, push: null, press: null, down: false, downT: 0, focus: null, using: null, handOut: 0, handFor: 0, drink: null, lit: false, reveal: 0,
             guard: { state: 'down', t: 0, readyAt: -1, bar: F().guardBar.max, locked: false, queued: false }, guardBlend: 0, shoveOut: 0, shoveFor: 0
         });
     }
@@ -116,6 +118,9 @@ const fighterKit = (() => {
         p.chain = null; p.buffer = null;
         // Attacking stands the body still: a run is over.
         p.runBlend = 0; p.moveTime = 0;
+        // And it gives away the wearer of a ring of stealth.
+        const ring = inventoryKit.stealthOf(p.loadout);
+        if (ring) p.reveal = ring.cooldown;
         p.stats.attacks++;
         emit(sim, p, 'attack', { move: d.id });
     }
@@ -332,6 +337,16 @@ const fighterKit = (() => {
     }
     // The offhand item the offhand key uses, or null.
     const itemOf = p => ITEMS[inventoryKit.offhandOf(p.loadout)] || null;
+    // ---- a ring of stealth (design.md 7.2; user, 2026-10-06): monsters do
+    // not notice its wearer (core/monster.js). Starting an attack gives the
+    // wearer away; the ring hides them again once its cooldown has passed
+    // with no monster in a fight (it counts from the fight's end) ----
+    const hidden = p => !p.down && !(p.reveal > 0) && !!inventoryKit.stealthOf(p.loadout);
+    function tickStealth(sim, p, dt) {
+        if (!(p.reveal > 0)) return;
+        const ring = inventoryKit.stealthOf(p.loadout);
+        p.reveal = !ring ? 0 : monsterKit.inFight(sim) ? ring.cooldown : Math.max(0, p.reveal - dt);
+    }
 
     function press(sim, p, button) {
         if (p.down) return false;
@@ -453,6 +468,7 @@ const fighterKit = (() => {
         }
         free(sim, p);
         GUARD.tick(sim, p, dt);
+        tickStealth(sim, p, dt);
         itemOf(p)?.tick(sim, p, dt);
         interactKit.tick(sim, p, dt);
         motion(sim, p, dt);
@@ -510,5 +526,5 @@ const fighterKit = (() => {
             }
         }
     }
-    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, rigOf, light, ITEMS };
+    return { BUTTONS, init, press, release, tick, settle, struck, fall, foes, solve, hurtboxes, derive, chargeOf, rigOf, light, hidden, ITEMS };
 })();

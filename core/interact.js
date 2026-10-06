@@ -5,7 +5,8 @@
 // at the edge. Pressing the key does the target's action at once, or for an
 // action with a `hold` (opening a chest) starts filling a bar that runs
 // while the key stays down and the target stays the same and ready.
-// Nothing works in a fight: a monster after the fighter greys it out.
+// A fight stops none of it (user, 2026-10-06: every limit taken out for
+// now; they may come back).
 //
 // On a fighter: focus (the target's id, or null), using ({ id, t } while
 // a hold fills, else null), and the left hand reaching out to it: handOut
@@ -13,8 +14,6 @@
 // reach is the same for every interaction for now (user, 2026-10-04).
 const interactKit = (() => {
     const I = () => gameConfig.interact;
-    // Fighting: any monster noticing, chasing, attacking or reeling.
-    function inCombat(sim, p) { return sim.monsters.some(m => monsterKit.engaged(m)); }
     function offerOf(sim, e, p) {
         const kit = entityKit.kitOf(e);
         return kit.offer && entityKit.present(e) ? kit.offer(sim, e, p) : null;
@@ -63,5 +62,5 @@ const interactKit = (() => {
         u.t += dt;
         if (u.t >= t.offer.hold - 1e-9) { p.using = null; p.handFor = H.stay; entityKit.kitOf(t.entity).use(sim, t.entity, p); }
     }
-    return { inCombat, pick, target, press, release, tick };
+    return { pick, target, press, release, tick };
 })();

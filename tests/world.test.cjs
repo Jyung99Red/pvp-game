@@ -369,7 +369,7 @@ test('interacting reaches the left hand out: a moment for a use at once, all thr
     assert.equal(q.handOut, 0);
 });
 
-test('interacting works with the shield up, and not at all in a fight', () => {
+test('interacting works with the shield up, and in a fight too (user, 2026-10-06: no limits for now)', () => {
     const sim = W.create({ region: 'field' }), p = sim.player;
     const portal = sim.entities.find(e => e.id === 'p-base');
     before(p, portal, -Math.PI / 2);
@@ -378,13 +378,15 @@ test('interacting works with the shield up, and not at all in a fight', () => {
     tap(sim, 'interact');
     assert.equal(events(sim, 'travel').length, 1, 'shield and interact together');
     release(sim, 'guard');
+    // A goblin after the player: the gate takes them all the same.
     const m = sim.monsters.find(x => x.kind === 'goblin');
-    put(m, p.x + 100, p.y - 60); m.phase = 'chase'; m.wait = 99;
+    put(m, p.x + 100, p.y - 60); m.home = { x: m.x, y: m.y }; m.phase = 'chase'; m.wait = 99;
     step(sim, 0.02);
+    assert.ok(monsterKit.inFight(sim));
     const offer = interactKit.target(sim, p).offer;
-    assert.ok(!offer.ready && offer.why === '战斗中');
+    assert.ok(offer.ready && offer.why === '');
     tap(sim, 'interact');
-    assert.equal(events(sim, 'travel').length, 0);
+    assert.equal(events(sim, 'travel').length, 1);
 });
 
 test('a chest: guarded until its boss is down, then opened by holding the key; letting go early starts over', () => {

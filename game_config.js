@@ -36,9 +36,9 @@ const gameConfig = (() => {
         // a rival there is not drawn (user, 2026-10-04: the same in the
         // adventure and in a duel). sightNear: world units round the body
         // it sees whichever way it faces, a little behind it too (user,
-        // 2026-10-05: two blocks; it was one and a half); walls hide there
+        // 2026-10-06: two and a half blocks; it was two); walls hide there
         // as well.
-        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12, sightNear: 80 },
+        player: { speed: 122, turnRate: 8, radius: 12, runAfter: 1.5, runSpeed: 252, runRampSeconds: 0.3, runStick: 0.9, startSeconds: 0.12, turnSlow: 0.5, sightAngle: Math.PI * 5 / 12, sightNear: 100 },
 
         // 3. Animation. blendSeconds: idle <-> walk cross-fade.
         animation: { blendSeconds: 0.1 },
@@ -208,7 +208,8 @@ const gameConfig = (() => {
         // from here. During a windup the body keeps turning to the player
         // at trackTurn until `lock` seconds before the swing (a bite only
         // the last moment: it follows a step aside). Past `leash`
-        // from home with the player out of alertRange it walks back home.
+        // from home it walks back home, wherever the player is, and a blow
+        // on the way does not turn it round (user, 2026-10-06).
         // At enrage.threshold of its HP it enrages for good: damage times
         // enrage.atk, its whole clock (cooldowns too) times enrage.tempo.
         // HP is the old value times the old hpScale 3, and so is ATK, to
@@ -291,7 +292,10 @@ const gameConfig = (() => {
         // only their colours differ: user 2026-10-02); an offhand item's
         // `offhand` is what it is for: a shield is what the guard key guards
         // with (the weapon guards without one), a torch or a potion is used
-        // with the offhand key. `max`:
+        // with the offhand key. An accessory's `stealth` keeps monsters
+        // from noticing its wearer (user, 2026-10-06): starting an attack
+        // gives the wearer away, and `cooldown` seconds with no monster in
+        // a fight hide them again. `max`:
         // how many can be owned. `price`: what the shop sells it for;
         // `sell`: what it pays for one. `recipe`: what the smithy wants for
         // it (gold and materials). Gear is never lost; potions are used up.
@@ -314,7 +318,8 @@ const gameConfig = (() => {
             cloth_armor: { kind: 'gear', slot: 'armor', name: '布甲', icon: '👕', stats: { def: 2, maxHp: 20 }, max: 1, desc: '开局穿着的衣服。' },
             iron_armor: { kind: 'gear', slot: 'armor', name: '铁甲', icon: '🥋', stats: { def: 7, maxHp: 40 }, max: 1, recipe: { gold: 100, materials: { iron_ore: 6, wolf_pelt: 3 } }, desc: '加了肩甲和胸甲。' },
             chief_charm: { kind: 'gear', slot: 'accessory', name: '头目护符', icon: '📿', stats: { maxHp: 50 }, max: 1, recipe: { gold: 60, materials: { chief_tusk: 1, herb: 3 } }, desc: '用头目的獠牙打的护符。' },
-            fang_necklace: { kind: 'gear', slot: 'accessory', name: '狼牙项链', icon: '🦷', stats: { atk: 4 }, max: 1, recipe: { gold: 60, materials: { king_fang: 1, crystal: 2 } }, desc: '用狼王的牙和晶石穿的项链。' }
+            fang_necklace: { kind: 'gear', slot: 'accessory', name: '狼牙项链', icon: '🦷', stats: { atk: 4 }, max: 1, recipe: { gold: 60, materials: { king_fang: 1, crystal: 2 } }, desc: '用狼王的牙和晶石穿的项链。' },
+            stealth_ring: { kind: 'gear', slot: 'accessory', name: '隐形戒指', icon: '💍', price: 150, max: 1, stealth: { cooldown: 5 }, desc: '戴在饰品栏。怪物察觉不到你；一出手就失效，脱战 5 秒后重新生效。' }
         },
         // What a new game starts with, worn (a duel is fought in this too).
         gear: { starter: { main: 'wooden_sword', offhand: 'wooden_shield', armor: 'cloth_armor', accessory: null } },

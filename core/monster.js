@@ -3,7 +3,9 @@
 // walking round any wall between (terrainKit.wayTo): free again, a
 // monster turns to the player if it must and picks what to do from the
 // table of the distance band the player is in (design.md 5.2), on the
-// world's own dice; it enrages when low and walks home past the leash.
+// world's own dice; it enrages when low. Past the leash it walks home,
+// whoever is by it, and a blow on the way does not turn it round (user,
+// 2026-10-06). A fighter a ring hides (fighterKit.hidden) is not noticed.
 // Their blows hit by the same box test as the player's sword (design.md
 // 5); the wolf's leap rams with its whole body along its path. How far a move reaches, and the warning
 // on the ground, are swept out of its key poses once (`reach`).
@@ -49,6 +51,8 @@ const monsterKit = (() => {
     const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const living = m => m.phase !== 'dead';
     const engaged = m => FIGHTING.has(m.phase);
+    // Is any monster of this world in a fight?
+    function inFight(sim) { for (const e of sim.entities) if (e.type === 'monster' && engaged(e)) return true; return false; }
     // Distance walked by the monster being ticked, for its gait.
     let walked = 0;
 
@@ -163,8 +167,10 @@ const monsterKit = (() => {
         const S = configOf(m.kind);
         m.flinch = S.flinchSeconds;
         if (!m.enraged && S.enrage && m.hp <= m.maxHp * S.enrage.threshold + 1e-9) { m.enraged = true; emit(sim, m, 'enrage', { at: chest(m) }); }
+        // On its way home it goes on home, and does not reel (user, 2026-10-06).
+        if (m.phase === 'return') return;
         // Struck before it noticed anyone: it fights back at once.
-        if (['patrol', 'alert', 'return'].includes(m.phase)) { m.phase = 'chase'; m.t = 0; m.wait = S.firstDelay; }
+        if (m.phase === 'patrol' || m.phase === 'alert') { m.phase = 'chase'; m.t = 0; m.wait = S.firstDelay; }
         if (points > 0) stagger(sim, m, points);
     }
     // Stagger points that make a kind reel (bosses take more).
@@ -272,8 +278,8 @@ const monsterKit = (() => {
         for (const name in m.cooldowns) m.cooldowns[name] = Math.max(0, m.cooldowns[name] - dt);
         switch (m.phase) {
             case 'patrol': {
-                // It notices only a player it can see: a wall that hides is in the way (terrainKit.sightClear).
-                if (alive && d <= S.alertRange && terrainKit.sightClear(t, m.x, m.y, p.x, p.y)) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); return; }
+                // It notices only a player it can see: a wall that hides is in the way (terrainKit.sightClear), and so is a ring of stealth.
+                if (alive && d <= S.alertRange && !fighterKit.hidden(p) && terrainKit.sightClear(t, m.x, m.y, p.x, p.y)) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); return; }
                 if (m.rest > 0) { m.rest = Math.max(0, m.rest - dt); return; }
                 const x = m.home.x + Math.cos(m.patrolAt) * S.patrolRadius, y = m.home.y + Math.sin(m.patrolAt) * S.patrolRadius;
                 // A waypoint in a wall or behind one is passed over.
@@ -287,7 +293,7 @@ const monsterKit = (() => {
                 if (m.t >= S.alertSeconds - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = S.firstDelay; }
                 return;
             case 'chase': {
-                if (!alive || (distance(m, m.home) > S.leash && d > S.alertRange)) { m.phase = 'return'; m.t = 0; return; }
+                if (!alive || distance(m, m.home) > S.leash) { m.phase = 'return'; m.t = 0; return; }
                 const edge = bands(m.kind);
                 m.wait = Math.max(0, m.wait - dt);
                 // A block between them: no blow would land across it (swingStep), so it goes round first, looking where it walks.
@@ -383,5 +389,5 @@ const monsterKit = (() => {
         m.h = space.groundHeight(m.x, m.y);
     }
     function tick(sim, dt) { for (const m of sim.monsters) tickOne(sim, m, dt); }
-    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, threshold, reach, bands, cycleLength, height, tick, living, engaged, present: living, modelOf };
+    return { FIGHTING, rig, look, create, pose, solve, hurtboxes, struck, stagger, threshold, reach, bands, cycleLength, height, tick, living, engaged, inFight, present: living, modelOf };
 })();

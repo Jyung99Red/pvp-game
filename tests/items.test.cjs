@@ -27,7 +27,7 @@ test('stats are the base plus the gear worn; the starter gear makes 360 HP, 30 A
     for (const [id, item] of Object.entries(I)) {
         if (item.kind !== 'gear' && item.kind !== 'supply') continue;
         assert.ok(K.SLOTS.includes(item.slot), `${id} slot`);
-        assert.ok(item.stats || item.offhand, `${id} does something`);
+        assert.ok(item.stats || item.offhand || item.stealth, `${id} does something`);
         assert.doesNotThrow(() => equipmentModels.forLoadout({ main: 'wooden_sword', [item.slot]: id }), id);
         if (item.slot === 'main') assert.ok(item.blade > 0, `${id} has a blade`);
     }
@@ -60,7 +60,7 @@ test('gear goes on only if owned and in its own slot; the main hand is never emp
     assert.deepEqual(plain(K.gearFor('offhand')), ['potion', 'torch', 'wooden_shield', 'iron_shield']);
 });
 
-test('the shop sells potions (five at most) and a torch, and buys materials, one or all', () => {
+test('the shop sells potions (five at most), a torch and the ring of stealth, and buys materials, one or all', () => {
     const p = fresh();
     assert.equal(K.buy(p, 'potion'), '金币不够');
     p.inventory.gold = 200;
@@ -79,7 +79,17 @@ test('the shop sells potions (five at most) and a torch, and buys materials, one
     assert.equal(K.sell(p, 'wolf_pelt'), '没有可卖的');
     assert.equal(K.sell(p, 'wooden_sword'), '不收这个');
     assert.equal(p.inventory.gold, 200 - 5 * I.potion.price - I.torch.price + I.goblin_ear.sell + 2 * I.wolf_pelt.sell);
-    assert.deepEqual(plain(K.forSale()), ['potion', 'torch']);
+    assert.deepEqual(plain(K.forSale()), ['potion', 'torch', 'stealth_ring']);
+    // The ring (user, 2026-10-06): bought for gold, once, and worn as an accessory.
+    assert.equal(K.buy(p, 'stealth_ring'), '金币不够');
+    p.inventory.gold = I.stealth_ring.price;
+    assert.equal(K.buy(p, 'stealth_ring'), '');
+    assert.equal(K.buy(p, 'stealth_ring'), '已经有了');
+    assert.equal(p.inventory.gold, 0);
+    assert.equal(K.stealthOf(p.loadout), null, 'not worn yet');
+    assert.equal(K.equip(p, 'accessory', 'stealth_ring'), '');
+    assert.deepEqual(plain(K.stealthOf(p.loadout)), { cooldown: 5 });
+    assert.ok(!K.recipes().includes('stealth_ring'), 'the smithy does not make it');
     assert.deepEqual(plain(K.wanted()), ['goblin_ear', 'wolf_pelt', 'chief_tusk', 'king_fang', 'iron_ore', 'crystal', 'herb']);
 });
 
@@ -348,7 +358,7 @@ test('holding interact on ore mines it: loot pops out, rubble is left, and it gr
     assert.ok(Math.abs(sim.progress.clock - c0 - 0.5) < 1e-6);
 });
 
-test('a herb is picked in a moment and leaves bare ground; nothing is gathered in a fight', () => {
+test('a herb is picked in a moment and leaves bare ground, in a fight too (user, 2026-10-06: no limits for now)', () => {
     const sim = W.create({ region: 'field' }), p = sim.player, t = sim.terrain, G = gameConfig.gather;
     const herb = sim.entities.find(e => e.type === 'node' && e.kind === 'herb');
     sim.monsters = [];
@@ -358,10 +368,54 @@ test('a herb is picked in a moment and leaves bare ground; nothing is gathered i
     assert.equal(T.kindAt(t, herb.col, herb.row), T.KIND.grass);
     step(sim, 1.5);
     assert.ok(K.count(sim.progress, 'herb') >= 1);
-    // With a monster coming for the player, the key cannot gather.
+    // With a monster coming for the player, the key gathers all the same.
     const fight = W.create({ region: 'field' }), f = fight.player, h2 = fight.entities.find(e => e.type === 'node' && e.kind === 'herb');
     put(f, h2.x, h2.y + 30, -Math.PI / 2);
-    const m = fight.monsters[0]; m.phase = 'chase'; m.wait = 99; put(m, f.x + 120, f.y);
+    const m = fight.monsters[0]; m.phase = 'chase'; m.wait = 99; put(m, f.x + 120, f.y); m.home = { x: m.x, y: m.y };
     step(fight, 0.02);
-    assert.equal(interactKit.target(fight, f).offer.why, '战斗中');
+    assert.ok(g.monsterKit.inFight(fight));
+    assert.equal(interactKit.target(fight, f).offer.ready, true);
+    press(fight, 'interact'); step(fight, G.herb.hold + 0.05); release(fight, 'interact');
+    assert.equal(T.kindAt(fight.terrain, h2.col, h2.row), T.KIND.grass);
+});
+
+// ---- the ring of stealth (design.md 7.2; user, 2026-10-06) ----
+test('the ring of stealth: monsters do not notice its wearer; an attack gives them away, and it hides them again 5 s after the fight is over', () => {
+    const S = gameConfig.monsters.goblin, RING = I.stealth_ring.stealth, hidden = g.fighterKit.hidden;
+    // A goblin standing at home, the player well inside its alert range and in plain sight, out of the sword's reach.
+    const meet = ring => {
+        const save = fresh();
+        if (ring) { save.inventory.items.stealth_ring = 1; save.loadout.accessory = 'stealth_ring'; }
+        const sim = W.create({ region: 'field', progress: save }), p = sim.player, m = sim.monsters.find(x => x.kind === 'goblin');
+        sim.monsters = [m]; m.rest = 99;
+        put(p, m.x - S.alertRange + 20, m.y, 0);
+        assert.ok(T.sightClear(sim.terrain, m.x, m.y, p.x, p.y));
+        return { sim, p, m };
+    };
+    const plainly = meet(false);
+    step(plainly.sim, 0.05);
+    assert.equal(plainly.m.phase, 'alert', 'without the ring it notices');
+    assert.equal(hidden(plainly.p), false);
+    const { sim, p, m } = meet(true);
+    assert.equal(hidden(p), true);
+    step(sim, 3);
+    assert.equal(m.phase, 'patrol', 'with it, it does not');
+    // Guarding gives nobody away; starting an attack does, hit or miss.
+    press(sim, 'guard'); step(sim, 0.3); release(sim, 'guard'); step(sim, 0.1);
+    assert.equal(hidden(p), true);
+    tap(sim); step(sim, 0.05);
+    assert.deepEqual([hidden(p), p.reveal, m.phase], [false, RING.cooldown, 'alert']);
+    // While the fight lasts the cooldown does not run.
+    Object.assign(m, { phase: 'chase', wait: 99 });
+    step(sim, 3);
+    assert.ok(g.monsterKit.inFight(sim) && p.reveal === RING.cooldown && sim.stats.hits === 0);
+    // The fight over, it counts: hidden again after `cooldown`, not before.
+    m.phase = 'dead';
+    step(sim, RING.cooldown - 0.1);
+    assert.equal(hidden(p), false);
+    step(sim, 0.2);
+    assert.deepEqual([hidden(p), p.reveal], [true, 0]);
+    // A duel is fought in the starter gear: nobody is hidden there.
+    const duel = W.create({ map: gameConfig.maps.arena, duel: true });
+    assert.ok(duel.fighters.every(f => !hidden(f) && f.reveal === 0));
 });

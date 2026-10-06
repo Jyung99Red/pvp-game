@@ -1,6 +1,6 @@
 // The item screens of the base's shop and smithy (design.md 7.3),
 // landscape, two columns: a list on the left, what is picked on the right.
-// The shop sells potions and a torch and buys materials; the smithy makes
+// The shop sells potions, a torch and the ring of stealth and buys materials; the smithy makes
 // gear from materials and gold. (The bag is the menu's, ui/menu.js.) Every
 // change goes through core/inventory.js on the world's progress;
 // `changed(kind)` tells the page (it saves). Reads and writes no simulation

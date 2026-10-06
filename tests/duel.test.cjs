@@ -536,26 +536,25 @@ test('the edge of sight is exact: it ends at the blocks that hide, turns at thei
 test('a fighter sees the front 150 degrees and a small ring round itself, and not past a wall: a body behind it further off is not seen and the ground there is not lit (user, 2026-10-04)', () => {
     const SIGHT = gameConfig.player.sightAngle, NEAR = gameConfig.player.sightNear, PV = { sightAngle: SIGHT };
     assert.ok(Math.abs(SIGHT - 75 * Math.PI / 180) < 1e-12, '75 degrees either side');
-    assert.equal(NEAR, 2 * U, 'the ring is small: two blocks');
+    assert.equal(NEAR, 2.5 * U, 'the ring is small: two and a half blocks (user, 2026-10-06; it was two)');
     const sim = duel(), t = sim.terrain, [h, g] = sim.fighters, far = 30 * U;
     Object.assign(h, { x: 12 * U, y: 9.5 * U, facing: 0 });
-    // The rival two and a half blocks away, `deg` round from due east:
-    // past the ring (two blocks: user, 2026-10-05) and between the arena's
-    // pillars. Its nearer edge counts (its radius is 6.8 degrees wide from
-    // there).
-    const at = (deg, body = g, d = 2.5 * U) => { const a = deg * Math.PI / 180; Object.assign(body, { x: h.x + Math.cos(a) * d, y: h.y + Math.sin(a) * d }); return combatKit.sees(t, h, body); };
+    // The rival 2.9 blocks away, `deg` round from due east: past the ring
+    // (its nearer edge too) and between the arena's pillars. Its nearer
+    // edge counts (its radius is 5.9 degrees wide from there).
+    const at = (deg, body = g, d = 2.9 * U) => { const a = deg * Math.PI / 180; Object.assign(body, { x: h.x + Math.cos(a) * d, y: h.y + Math.sin(a) * d }); return combatKit.sees(t, h, body); };
     assert.deepEqual([0, 70, -70, 80, -80, 90, -90, 180].map(deg => at(deg)), [true, true, true, true, true, false, false, false]);
     h.facing = Math.PI;
     assert.deepEqual([180, 110, 101, 90, 0].map(deg => at(deg)), [true, true, true, false, false], 'turned round, it sees the other way');
     // A bigger body shows sooner: a monster as wide as the wolf king (a little further off, so that it too is past the ring).
     h.facing = 0;
     const big = { x: 0, y: 0, radius: gameConfig.monsters.wolfKing.radius };
-    assert.deepEqual([84, 92].map(deg => [at(deg, g, 2.7 * U), at(deg, big, 2.7 * U)]), [[false, true], [false, false]]);
+    assert.deepEqual([84, 92].map(deg => [at(deg, g, 3.1 * U), at(deg, big, 3.1 * U)]), [[false, true], [false, false]]);
     // The ring: behind its back a body is seen once its nearer edge is within sightNear, whichever way the fighter faces.
     const behind = d => at(180, g, d);
     assert.deepEqual([NEAR + g.radius - 1, NEAR + g.radius + 1].map(behind), [true, false]);
     assert.equal(at(180, big, NEAR + big.radius - 1), true, 'a wide body from further off');
-    assert.equal(at(120, g, NEAR), true);
+    assert.equal(at(105, g, NEAR), true);
     // Ahead, a wall still hides: either side of the north pillar. A step
     // out past its corner and an edge of the body shows before its middle.
     Object.assign(h, { x: 500, y: 260, facing: 0 }); Object.assign(g, { x: 620, y: 260 });

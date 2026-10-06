@@ -84,7 +84,8 @@ const equipmentModels = (() => {
         cloth_armor: () => [],
         iron_armor: () => ironArmor(),
         chief_charm: () => [],
-        fang_necklace: () => []
+        fang_necklace: () => [],
+        stealth_ring: () => []
     };
     // Colour swaps a piece of armor makes (the cloth armor is the model's own).
     const LOOKS = { iron_armor: { tunic: 'ironTunic', tunicTrim: 'steelDark' } };

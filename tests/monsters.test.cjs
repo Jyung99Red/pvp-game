@@ -156,6 +156,9 @@ const release = (sim, b) => W.command(sim, { type: 'release', button: b });
 const tap = (sim, input = 'a') => { press(sim, 'attack'); if (input === 'b') step(sim, gameConfig.combo.holdSeconds); release(sim, 'attack'); };
 const events = (sim, type) => W.drain(sim).filter(e => e.type === type);
 const put = (body, x, y, facing) => { body.x = x; body.y = y; if (facing !== undefined) body.facing = facing; };
+// A monster moved to fight at (x, y): its home goes with it, or it would be
+// past its leash and walk back (user, 2026-10-06).
+const stand = (m, x, y, facing) => { put(m, x, y, facing); m.home = { x, y }; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 test('the field: closed, the player spawns out of every alert range, monsters stand on open grass', () => {
@@ -222,7 +225,7 @@ test('notice, stand alert, chase, and attack once the player is within the move\
 
 test('the windup turns to follow the player until `lock` before the swing, then holds', () => {
     const sim = field('wolf'), m = sim.monsters[0], p = sim.player, S = MON.wolf, mv = S.moves.bite;
-    put(m, 600, 400, 0); put(p, 650, 400, 0);
+    stand(m, 600, 400, 0); put(p, 650, 400, 0);
     m.phase = 'chase'; m.wait = 0;
     W.step(sim, 0.01);
     assert.equal(m.phase, 'windup');
@@ -492,6 +495,33 @@ test('lured past its leash it gives up and walks home, then patrols again', () =
     assert.ok(dist(m, m.home) < S.patrolRadius + 4);
 });
 
+test('past its leash it goes home though the player stands by it, and a blow on the way does not turn it round (user, 2026-10-06)', () => {
+    const sim = field('goblin'), m = sim.monsters[0], p = sim.player, S = MON.goblin;
+    m.phase = 'chase'; m.wait = 0;
+    put(m, m.home.x - S.leash - 10, m.home.y, 0);
+    put(p, m.x - 50, m.y, 0);
+    W.step(sim, 0.01);
+    assert.equal(m.phase, 'return', 'the player within its reach, and still it goes');
+    // Cut in the back as it walks: hurt, and walking on.
+    tap(sim); step(sim, 0.3);
+    assert.equal(sim.stats.hits, 1);
+    assert.ok(m.hp < m.maxHp && m.phase === 'return');
+    // A blow that would have made it reel does not.
+    monsterKit.struck(sim, m, { amount: 1, stagger: F.stagger.threshold });
+    assert.deepEqual([m.phase, m.stagger], ['return', 0]);
+    // Inside the leash again it keeps on home; there it is whole.
+    put(p, 300, 500);
+    for (let i = 0; i < 2000 && m.phase !== 'patrol'; i++) { W.step(sim, 0.01); assert.ok(['return', 'patrol'].includes(m.phase)); }
+    assert.equal(m.phase, 'patrol');
+    assert.equal(m.hp, m.maxHp);
+    // Just inside the leash it fights on.
+    const near = field('goblin'), n = near.monsters[0];
+    n.phase = 'chase'; n.wait = 99;
+    put(n, n.home.x - S.leash + 10, n.home.y, 0); put(near.player, n.x - 50, n.y, 0);
+    W.step(near, 0.01);
+    assert.equal(n.phase, 'chase');
+});
+
 // ---- walls (design.md 5: it notices what it sees, and walks round) ----
 // The open square with blocks put into it: `walls` is a list of [letter,
 // column, first row, last row].
@@ -593,7 +623,7 @@ test('a pack of wolves: only two are in a move at once, the others wait their tu
         for (let i = 0; i < n; i++) mark(10 + i * 4, 30, 'w');
         const sim = W.create({ map: { name: '狼群', rows } }), p = sim.player, near = monsterKit.bands('wolf').near;
         put(p, HOME.x, HOME.y, 0);
-        sim.monsters.forEach((m, i) => { const a = i * 2 * Math.PI / n; Object.assign(m, { phase: 'chase', t: 0, wait: 0, x: p.x + Math.cos(a) * 50, y: p.y + Math.sin(a) * 50, facing: a + Math.PI }); });
+        sim.monsters.forEach((m, i) => { const a = i * 2 * Math.PI / n; Object.assign(m, { phase: 'chase', t: 0, wait: 0, x: p.x + Math.cos(a) * 50, y: p.y + Math.sin(a) * 50, facing: a + Math.PI, home: { x: p.x, y: p.y } }); });
         const moving = () => sim.monsters.filter(m => ['windup', 'swing', 'recover'].includes(m.phase));
         let most = 0, waited = 0, crowded = 0;
         const began = new Map();
@@ -641,7 +671,7 @@ test('enraged below its threshold: harder blows and a faster clock, for good', (
     const S = MON.wolf, mv = S.moves.bite;
     const timeToHit = enraged => {
         const sim = field('wolf'), m = sim.monsters[0], p = sim.player;
-        put(m, 600, 400, 0); put(p, 650, 400, Math.PI);
+        stand(m, 600, 400, 0); put(p, 650, 400, Math.PI);
         m.phase = 'chase'; m.wait = 0;
         if (enraged) { m.hp = Math.floor(m.maxHp * S.enrage.threshold); m.enraged = true; }
         const hp = p.hp;
@@ -697,7 +727,7 @@ test('a block and a perfect parry work against a monster as against the dummy', 
     const S = MON.goblin, mv = S.moves.flail;
     const fight = raiseBefore => {
         const sim = field('goblin'), m = sim.monsters[0], p = sim.player;
-        put(m, 600, 400, Math.PI); put(p, 560, 400, 0);
+        stand(m, 600, 400, Math.PI); put(p, 560, 400, 0);
         m.phase = 'chase'; m.wait = 0;
         W.step(sim, 0.01);
         step(sim, mv.windup - raiseBefore);
@@ -740,7 +770,7 @@ test('no blow lands across a wall, either way (design.md 4.3)', () => {
         const sim = field('goblin'), m = sim.monsters[0], p = sim.player, t = sim.terrain;
         assert.ok(terrainKit.solidAt(t, 15, 15));
         const y = 15.5 * U, x = stone ? 15 * U - 14 : 13 * U;
-        put(p, x, y, 0); put(m, x + 68, y, Math.PI);
+        put(p, x, y, 0); stand(m, x + 68, y, Math.PI);
         assert.equal(terrainKit.lineClear(t, p.x, p.y, m.x, m.y), !stone);
         if (goblinSwings) { m.phase = 'windup'; m.move = 'pounce'; m.t = MON.goblin.moves.pounce.windup - 0.01; } else { m.phase = 'chase'; m.wait = 99; tap(sim, 'b'); }
         step(sim, 0.8);
@@ -772,7 +802,7 @@ test('a whole fight: every monster down drops its loot and the world goes on; a 
     // Loss: the player's HP runs out.
     const lose = field('goblin', 'wolf'), q = lose.player;
     q.hp = 5;
-    for (const m of lose.monsters) { put(m, q.x + 45, q.y + (m.kind === 'wolf' ? 40 : -40), Math.PI); m.phase = 'chase'; m.wait = 0; }
+    for (const m of lose.monsters) { stand(m, q.x + 45, q.y + (m.kind === 'wolf' ? 40 : -40), Math.PI); m.phase = 'chase'; m.wait = 0; }
     for (let i = 0; i < 400 && !lose.result; i++) W.step(lose, 0.01);
     assert.equal(lose.result?.outcome, 'lose');
     assert.ok(q.down && q.hp === 0);

@@ -36,15 +36,33 @@ html, body {
 }
 .hud-perf:empty { display: none; }
 
-/* Top HUD: own bars on the left, the running combo in the middle, the
-   target on the right. Never takes touches. */
+/* Top HUD: the clock and own bars on the left, the running combo in the
+   middle, the target on the right. Never takes touches. */
 .hud-top {
     position: absolute; z-index: 3; pointer-events: none; left: 0; right: 0;
     top: calc(env(safe-area-inset-top, 0px) + 8px);
     padding-inline: calc(env(safe-area-inset-left, 0px) + 56px) calc(env(safe-area-inset-right, 0px) + 12px);
     display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: 12px;
 }
-.hud-self { display: grid; gap: 4px; width: min(220px, 100%); }
+.hud-self { display: flex; gap: 8px; align-items: flex-start; width: min(282px, 100%); }
+.hud-bars { display: grid; gap: 4px; flex: 1; min-width: 0; padding-top: 4px; }
+/* The clock (ui/hud.js): a sun for a dial, noon at the top. Round its rim
+   the day's light by the hour -- day, sunrise and sunset, night -- and a hand
+   that goes round once a day; the badge is the sun or the moon. */
+.hud-clock { flex: none; width: 54px; height: 54px; margin: -4px 0 0 -2px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)); }
+.hud-clock svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.clock-rays { fill: #f2b544; stroke: #7a5310; stroke-width: 1.5; stroke-linejoin: round; }
+.clock-back { fill: #10141a; }
+.clock-ring path { fill: none; stroke-width: 8.5; }
+.clock-face { fill: #1b222c; stroke: #10141a; stroke-width: 1.5; }
+.clock-marks { fill: none; stroke: rgba(255, 255, 255, 0.45); stroke-width: 2.2; stroke-linecap: round; }
+.clock-hand { fill: #ffffff; stroke: #10141a; stroke-width: 1.4; stroke-linejoin: round; }
+.clock-pin { fill: #f2b544; stroke: #10141a; stroke-width: 1.4; }
+.badge-back { fill: #10141a; stroke: #f2b544; stroke-width: 2.4; }
+.badge-sun circle { fill: #ffd84a; }
+.badge-sun path { fill: none; stroke: #ffd84a; stroke-width: 2.2; stroke-linecap: round; }
+.badge-moon { fill: #c9d8ff; }
+.hud-clock[data-body="sun"] .badge-moon, .hud-clock[data-body="moon"] .badge-sun { display: none; }
 .bar { position: relative; height: 9px; border-radius: 3px; background: rgba(14, 18, 23, 0.55); overflow: hidden; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25); }
 .bar i { position: absolute; inset: 0 auto 0 0; width: 100%; transition: width 0.12s linear; }
 .bar-hp i { background: #6fcf5a; }
@@ -151,7 +169,7 @@ html, body {
 .hud-region span:empty { display: none; }
 .hud-toasts {
     position: absolute; z-index: 3; pointer-events: none; display: grid; gap: 4px; justify-items: start;
-    left: calc(env(safe-area-inset-left, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 58px);
+    left: calc(env(safe-area-inset-left, 0px) + 56px); top: calc(env(safe-area-inset-top, 0px) + 66px);
 }
 .toast { font-size: 13px; padding: 2px 8px; border-radius: 4px; background: var(--hud); transition: opacity 0.5s; }
 .toast.fade { opacity: 0; }

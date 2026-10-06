@@ -1,9 +1,10 @@
 // Items, gear and trade (design.md 7), as pure rules on the world's
 // progress ({ inventory: { gold, items }, loadout }, core/save.js): what
 // the gear worn adds to the base stats, putting gear on and off, the shop
-// (buying supplies, selling materials) and the smithy (making gear from
-// materials and gold). There is one bag: what is owned is what is carried
-// (the base's storage shows it). Gear is never lost; potions are used up.
+// (buying supplies and the ring of stealth, selling materials) and the
+// smithy (making gear from materials and gold). There is one bag: what is
+// owned is what is carried (the base's storage shows it). Gear is never
+// lost; potions are used up.
 // Every change returns '' when done, or why not (a line for the screen).
 const inventoryKit = (() => {
     const SLOTS = Object.freeze(['main', 'offhand', 'armor', 'accessory']);
@@ -29,6 +30,8 @@ const inventoryKit = (() => {
     }
     // What the offhand key does with what is worn there, or null.
     function offhandOf(loadout) { return itemOf(loadout?.offhand)?.offhand || null; }
+    // What a ring of stealth worn does ({ cooldown }), or null without one.
+    function stealthOf(loadout) { return itemOf(loadout?.accessory)?.stealth || null; }
     // The weapon type of the main hand (combo.weapons), which decides the
     // move tree; the starter sword's type when nothing fits.
     function weaponOf(loadout) {
@@ -106,5 +109,5 @@ const inventoryKit = (() => {
     const wanted = () => list(item => !!item.sell);
     const recipes = () => list(item => !!item.recipe);
     const gearFor = slot => list(item => item.slot === slot);
-    return { SLOTS, STATS, itemOf, count, give, starter, statsOf, offhandOf, weaponOf, canEquip, equip, canBuy, buy, canSell, sell, needs, canCraft, craft, forSale, wanted, recipes, gearFor };
+    return { SLOTS, STATS, itemOf, count, give, starter, statsOf, offhandOf, stealthOf, weaponOf, canEquip, equip, canBuy, buy, canSell, sell, needs, canCraft, craft, forSale, wanted, recipes, gearFor };
 })();
