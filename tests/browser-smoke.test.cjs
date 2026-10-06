@@ -320,7 +320,8 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         const cut = await page.evaluate(() => {
             const g = window.game, s = g.sim, p = s.player;
             s.monsters = s.monsters.filter(m => m.boss);
-            Object.assign(p, { x: 36.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
+            // (Just north of the chief's yard's south wall, three blocks high.)
+            Object.assign(p, { x: 43.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
             const gl = g.view.renderer.getContext(), N = 8, px = new Uint8Array(N * N * 4), ground = g.view.ground;
             // Share of bluish pixels in a small square at the chest (the cut
             // is a dither; it eases open while the wall hides the player, so
@@ -456,6 +457,8 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         const light = await page.evaluate(() => {
             const g = window.game, s = g.sim, p = s.player, gl = g.view.renderer.getContext(), N = 16, px = new Uint8Array(N * N * 4);
             s.monsters = [];
+            // Out in the hall, away from the torches that stand by the gate.
+            Object.assign(p, terrainKit.cellCentre(s.terrain, 24, 26));
             // The ground sampled lies east of the player: facing it, so it is in sight (not shaded).
             p.facing = 0;
             const sample = () => {
@@ -815,7 +818,8 @@ test('the map preview: boots clean without three.js, names the cell under the po
                 options: document.querySelectorAll('[data-map] option').length, maps: Object.keys(gameConfig.maps).length, monster: M.plan.monsters[0]
             };
         });
-        assert.deepEqual([info.map, info.three, info.options], ['field', 'undefined', info.maps]);
+        // (Every map, and the overview of them all before them.)
+        assert.deepEqual([info.map, info.three, info.options], ['field', 'undefined', info.maps + 1]);
         assert.deepEqual(info.drawn, [info.size[0] * 20, info.size[1] * 20], 'a cell is 20 pixels');
         // The middle of a cell, on the page.
         const at = (col, row) => page.evaluate(([c, r]) => {

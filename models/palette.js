@@ -35,7 +35,7 @@ const palette = Object.freeze({
     chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6',
     // world
     sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8', darkSky: '#05060a',
-    // the world's light by look (render/world_view.js): the sun warm, the
+    // the world's light by look (render/view_light.js): the sun warm, the
     // sky's light cool; sunrise and sunset, a grey day among the rocks, and
     // the night under the moon
     sunWarm: '#ffe4b8', skyCool: '#d9e8ff',

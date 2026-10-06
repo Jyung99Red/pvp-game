@@ -2,7 +2,7 @@
 // `lamps`): on a stand, or on a wall's face. All of them are one mesh, their
 // flames one more (a few bright cubes each, licking). They always burn;
 // `lights` is where each one's light is ([x, y, z], blocks) for the moving
-// lights and the block light (render/world_view.js). Drawn only.
+// lights and the block light (render/view_light.js). Drawn only.
 const lampView = (() => {
     const FLAMES = 2;
     // `material`: the lit material for the posts (vertex colours).

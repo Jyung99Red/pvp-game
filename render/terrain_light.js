@@ -27,10 +27,9 @@
 // The light of the hour is a factor laid on afterwards, so the hour
 // moving on needs no new look round.
 const terrainLight = (() => {
-    // Rays per face (over the half of the sky above the horizon it faces),
-    // how far they go (blocks), and how much of the sky's light a face that
-    // sees no sky at all keeps.
-    const SKY = { rays: 16, far: 8, floor: 0.15 };
+    // Rays per face, how far they go and what a face that sees no sky
+    // keeps: game_config.js graphics.openSky.
+    const SKY = gameConfig.graphics.openSky;
     // How far beyond the map the grid goes: tree crowns and roofs hang over
     // its edge.
     const MARGIN = 3;
