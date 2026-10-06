@@ -37,6 +37,7 @@
       "core/duel.js",
       "core/controls.js",
       "render/textures.js",
+      "render/terrain_light.js",
       "render/terrain_mesh.js",
       "render/effects.js",
       "render/world_view.js",

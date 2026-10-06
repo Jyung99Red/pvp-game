@@ -8,7 +8,9 @@
 // in the corners where they meet other blocks -- the ground at the foot of
 // a wall, a wall at its foot and in its inside corners, a crown under its
 // own leaves (corner shading, baked into the vertex colours) -- and each
-// block gets a slight shade of its own. The map's floor goes on under the
+// block gets a slight shade of its own. How much of the sky each face sees
+// dims the sky's light on it (render/terrain_light.js; a vertex attribute
+// of its own, `sky`, that only the sky's light is multiplied by). The map's floor goes on under the
 // blocks, so it is what shows where the camera's cut opens a wall.
 // Presentation only: nothing here is judged.
 //
@@ -68,6 +70,13 @@ const terrainMesh = (() => {
         };
         return material;
     }
+    // The engine's light on a face with the sky's (the hemisphere light's)
+    // multiplied by the face's `vSky`. A three.js whose shader reads
+    // otherwise is left as it is.
+    function skyLit(T) {
+        const chunk = T.ShaderChunk.lights_fragment_begin, hemi = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );';
+        return chunk.includes(hemi) ? chunk.replace(hemi, hemi.replace(';', ' * vSky;')) : '#include <lights_fragment_begin>';
+    }
     // Tile and shade spread per solid kind (by name).
     const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05], hedge: ['leaves', 0.12] };
 
@@ -110,16 +119,20 @@ const terrainMesh = (() => {
 
     // ---- one chunk's geometry ----
     function builder() {
-        const pos = [], nor = [], uv = [], col = [], idx = [];
+        const pos = [], nor = [], uv = [], col = [], sky = [], idx = [];
         return {
-            pos, nor, uv, col, idx,
+            pos, nor, uv, col, sky, idx,
+            // The sky light of quads given none (`skies`, below).
+            open: 1,
             // A quad p0..p3 counter-clockwise seen from outside; p0-p1 the
-            // bottom edge of the tile. `shades`: per-corner brightness.
-            quad(p, n, rect, rgb, shades = [1, 1, 1, 1]) {
+            // bottom edge of the tile. `shades`: per-corner brightness;
+            // `skies`: per-corner share of the sky's light.
+            quad(p, n, rect, rgb, shades = [1, 1, 1, 1], skies = null) {
                 const base = pos.length / 3, [u0, v0, u1, v1] = rect;
                 for (let i = 0; i < 4; i++) {
                     pos.push(...p[i]); nor.push(...n);
                     col.push(rgb[0] * shades[i], rgb[1] * shades[i], rgb[2] * shades[i]);
+                    sky.push(skies ? skies[i] : this.open);
                 }
                 uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
                 // Split along the brighter diagonal so corner shade stays even.
@@ -168,11 +181,12 @@ const terrainMesh = (() => {
         material.onBeforeCompile = shader => {
             Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
             shader.vertexShader = shader.vertexShader
-                .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos; varying vec3 vSide;')
-                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal;');
+                .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
+                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
             shader.fragmentShader = shader.fragmentShader
+                .replace('#include <lights_fragment_begin>', skyLit(T))
                 .replace('#include <common>', `#include <common>
-varying vec3 vCutPos; varying vec3 vSide;
+varying float vSky; varying vec3 vCutPos; varying vec3 vSide;
 ${SIGHT_UNIFORMS}
 uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
@@ -196,15 +210,16 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         const chunks = new Map();
         // Where nothing standing is in the way: ground under open air.
         const column = (c, r) => terrainKit.inside(t, c, r) && terrainKit.isSolid(terrainKit.kindAt(t, c, r));
-        // Does an opaque block fill (c, y, r)? The ground, a column, or decor.
-        function opaque(c, y, r) {
-            if (y < 0) return true;
-            if (terrainKit.inside(t, c, r)) {
-                const k = terrainKit.kindAt(t, c, r);
-                if (terrainKit.isSolid(k) && k !== K.gate && k !== K.fence && y < terrainKit.levelAt(t, c, r)) return true;
-            }
-            return decoKeys.has(decoKey(c, y, r));
-        }
+        // The opaque blocks (the ground, the columns, decor) as a grid, and
+        // the sky each open cell sees (render/terrain_light.js); both made
+        // anew when the terrain changes.
+        let blocks = null, skyAt = null;
+        // Does an opaque block fill (c, y, r)?
+        const opaque = (c, y, r) => blocks.solid(c, y, r);
+        // The sky light at the corners `points` of the face of block (c, y, r) that looks along `n`.
+        const skies = (points, n, c, y, r) => terrainLight.corners(blocks, skyAt, points, n, c, y, r);
+        // The sky light on the small things standing in open cell (c, y, r).
+        const openSky = (c, y, r) => terrainLight.skyShade(skyAt(c, y, r, FACES.top.n));
         // Corner shading of the face of block (c, y, r) that looks along
         // `n`, for its corners `points`: each corner looks at the three
         // cells it touches in the layer the face looks into -- one either
@@ -224,7 +239,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // One face of a block, shaded in its corners.
         function face(b, F, c, y, r, rect, rgb) {
             const points = F.at(c, y, r);
-            b.quad(points, F.n, rect, rgb, faceShades(points, F.n, c, y, r));
+            b.quad(points, F.n, rect, rgb, faceShades(points, F.n, c, y, r), skies(points, F.n, c, y, r));
         }
         // Does a block (the terrain's or decor) stand on the straight line
         // from `from` to `to` ([x, y, z], blocks)? Sampled every fifth of a
@@ -279,15 +294,18 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                         const dx = sx ? 1 : -1, dz = sz ? 1 : -1, s1 = column(c + dx, r), s2 = column(c, r + dz), corner = column(c + dx, r + dz);
                         return AO[s1 && s2 ? 0 : 3 - s1 - s2 - corner];
                     });
-                    b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[GROUND[k === K.herb ? t.floor : k]], tintOf(WHITE, c, -1, r, 0.06), shades);
-                    if (k === K.herb) { herb(b, c, r); continue; }
-                    if (k === K.grass && hash(c, r, 7) < 0.18 && !clear.some(s => Math.abs(c - s.col) <= 1 && Math.abs(r - s.row) <= 1)) flower(b, c, r);
+                    const points = FACES.top.at(c, -1, r);
+                    b.quad(points, FACES.top.n, tiles[GROUND[k === K.herb ? t.floor : k]], tintOf(WHITE, c, -1, r, 0.06), shades, skies(points, FACES.top.n, c, -1, r));
+                    b.open = openSky(c, 0, r);
+                    if (k === K.herb) herb(b, c, r);
+                    else if (k === K.grass && hash(c, r, 7) < 0.18 && !clear.some(s => Math.abs(c - s.col) <= 1 && Math.abs(r - s.row) <= 1)) flower(b, c, r);
+                    b.open = 1;
                     continue;
                 }
                 // Under a block (and a portal's opening) the map's floor goes on.
                 b.quad(FACES.top.at(c, -1, r), FACES.top.n, tiles[floorTile], tintOf(WHITE, c, -1, r, 0.06));
                 if (k === K.gate) continue;
-                if (k === K.fence) { fence(b, c, r); continue; }
+                if (k === K.fence) { b.open = openSky(c, 0, r); fence(b, c, r); b.open = 1; continue; }
                 const [tile, vary] = BLOCK[name], level = terrainKit.levelAt(t, c, r);
                 for (let y = 0; y < level; y++) {
                     const rgb = tintOf(WHITE, c, y, r, vary), own = k === K.stone && hash(c, y, r, 3) < 0.3 ? 'mossy' : tile;
@@ -298,7 +316,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                         face(b, F, c, y, r, tiles[fronts.get(`${c},${y},${r},${side}`) || own], rgb);
                     }
                 }
-                if (k === K.crystal) crystals(b, c, level, r);
+                if (k === K.crystal) { b.open = openSky(c, level, r); crystals(b, c, level, r); b.open = 1; }
             }
             // Decor that belongs to this chunk (by the cell under it; decor
             // off the map's edge goes to the nearest chunk).
@@ -319,13 +337,16 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // and the earth of the bank wherever the next cell is not water.
         function pond(b, c, r) {
             const y = -POND_DEPTH, wet = (dc, dr) => terrainKit.inside(t, c + dc, r + dr) && terrainKit.kindAt(t, c + dc, r + dr) === K.water;
-            b.quad([[c, y, r + 1], [c + 1, y, r + 1], [c + 1, y, r], [c, y, r]], FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05));
+            const surface = [[c, y, r + 1], [c + 1, y, r + 1], [c + 1, y, r], [c, y, r]];
+            b.quad(surface, FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05), undefined, skies(surface, FACES.top.n, c, -1, r));
+            b.open = openSky(c, 0, r);
             // The top strip of the dirt tile, as deep as the bank is high.
             const [u0, v0, u1, v1] = tiles.dirt, bank = [u0, v1 - (v1 - v0) * POND_DEPTH, u1, v1], rgb = tintOf(WHITE, c, -2, r, 0.06).map(v => v * POND_BANK);
             if (!wet(0, -1)) b.quad([[c, y, r], [c + 1, y, r], [c + 1, 0, r], [c, 0, r]], [0, 0, 1], bank, rgb);
             if (!wet(0, 1)) b.quad([[c + 1, y, r + 1], [c, y, r + 1], [c, 0, r + 1], [c + 1, 0, r + 1]], [0, 0, -1], bank, rgb);
             if (!wet(-1, 0)) b.quad([[c, y, r + 1], [c, y, r], [c, 0, r], [c, 0, r + 1]], [1, 0, 0], bank, rgb);
             if (!wet(1, 0)) b.quad([[c + 1, y, r], [c + 1, y, r + 1], [c + 1, 0, r + 1], [c + 1, 0, r]], [-1, 0, 0], bank, rgb);
+            b.open = 1;
         }
         // The cliff under each edge of cell (c, r) that the drop lies
         // beyond: a block of earth, then rock, CLIFF_DEPTH down in all,
@@ -396,6 +417,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             g.setAttribute('normal', new T.Float32BufferAttribute(b.nor, 3));
             g.setAttribute('uv', new T.Float32BufferAttribute(b.uv, 2));
             g.setAttribute('color', new T.Float32BufferAttribute(b.col, 3));
+            g.setAttribute('sky', new T.Float32BufferAttribute(b.sky, 1));
             g.setIndex(b.pos.length / 3 > 65535 ? new T.Uint32BufferAttribute(b.idx, 1) : new T.Uint16BufferAttribute(b.idx, 1));
             g.computeBoundingSphere();
             const m = new T.Mesh(g, material);
@@ -409,6 +431,8 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 decoKeys = new Set(); top = 0;
                 for (const key of deco.keys()) { const [x, y, z] = key.split(',').map(Number); decoKeys.add(decoKey(x, y, z)); top = Math.max(top, y + 1); }
                 for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) top = Math.max(top, terrainKit.levelAt(t, c, r));
+                blocks = terrainLight.blocks(t, [...deco.keys()].map(key => key.split(',').map(Number)));
+                skyAt = terrainLight.sky(blocks);
             }
             let rebuilt = 0;
             t.chunks.forEach((chunk, i) => {
