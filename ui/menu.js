@@ -22,12 +22,10 @@ const menuScreen = (() => {
             const own = window.devicePixelRatio || 1, used = Math.min(v, own);
             return `×${+used.toFixed(2)}${v > own ? '（手机上限）' : ''} ${Math.round(window.innerWidth * used)}×${Math.round(window.innerHeight * used)}`;
         }],
-        sunShadow: ['太阳影子', v => v ? String(v) : '关'],
+        sunShadow: ['太阳影子', v => String(v)],
         torchShadow: ['火把影子', v => String(v)],
         torchTaps: ['火把柔边', v => `${v} 点`],
-        bounce: ['反弹光', v => ({ off: '关', vertex: '逐顶点', pixel: '逐像素' })[v]],
-        blockLight: ['方块光', v => v ? '开' : '关'],
-        lights: ['会动的光', v => `${v} 盏`]
+        bounce: ['反弹光', v => v ? '开' : '关']
     };
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 

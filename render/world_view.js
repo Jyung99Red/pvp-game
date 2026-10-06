@@ -39,7 +39,7 @@ const worldView = (() => {
     // the bearer's middle to the flame, so the hand's movement still shows
     // a little, eased at `ease` a second; and, as for walls, short of
     // anyone else's body (`clear` blocks wider than it) on the way out.
-    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.06, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 };
+    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 };
     // A burning thicket's light: the flames' colour, flickering.
     const FIRE = { intensity: 4, reach: 5, decay: 1.4, height: 0.8 };
     // How soft the edge of the sun's shadows is, blocks: the reach of the
@@ -87,7 +87,7 @@ shadow /= ${taps}.0;${chunk.slice(to + end.length)}`;
     // texels of their 3D texture a pixel, and what they give back changes
     // slowly (a probe every two blocks), so a face's corners (a block
     // apart) hold it well enough, for far less (graphics.quality's
-    // `bounce`: 'vertex'). The engine's own reading goes into the vertex
+    // `bounce`). The engine's own reading goes into the vertex
     // shader of every lit material and hands its result on. The engine
     // tells only the fragment shader whether there are probes, so the
     // vertex shader always reads them (with none, an empty texture, and
@@ -134,15 +134,16 @@ varying vec3 vProbeIrradiance;`;
         Object.assign(T.ShaderChunk, pristine);
         smoothShadows(T);
         softTorchShadows(T, torchTaps);
-        if (bounce === 'vertex') probesByVertex(T);
+        if (bounce) probesByVertex(T);
     }
     // Block light (render/terrain_light.js; user, 2026-10-06): how many
     // cells a torch's, a burning thicket's and a doorway's light spreads
     // round corners, how bright a doorway's is against a torch's, and how
     // bright it is at its source for each unit of a torch's intensity
     // now (`power`). It is worked out again only when a source has moved
-    // a cell or changed.
-    const GLOW = { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.16 };
+    // a cell or changed. `power` was 0.16: that filled the shadow of a
+    // monster three cells from the torch (user, 2026-10-06).
+    const GLOW = { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.05 };
     // How much of the light the ground and the walls are lit by they give
     // back onto what is near (light probes; user, 2026-10-06).
     const BOUNCE = 0.7;
@@ -196,17 +197,15 @@ varying vec3 vProbeIrradiance;`;
         // hourShift: hours the time of day is drawn ahead, from ?hour=21
         // in the address (it starts at that hour and goes on; for testing,
         // never saved).
-        const tune = { zoom: 1, shadows: true, sunMap: 0, torchMap: 0, lights: 0, built: null, hourShift: 0 };
+        const tune = { zoom: 1, sunMap: 0, torchMap: 0, built: null, hourShift: 0 };
         // `level`: a quality's name (graphics.quality) or its values.
         // Returns whether the shaders must be built anew.
         function quality(level) {
             const q = typeof level === 'string' ? C.graphics.quality[level] : level;
-            tune.shadows = q.sunShadow > 0;
             tune.sunMap = small ? q.sunShadow : Math.min(SUN_LARGEST, 2 * q.sunShadow);
             tune.torchMap = q.torchShadow;
-            tune.lights = q.lights;
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
-            const built = { torchTaps: q.torchTaps, bounce: q.bounce, blockLight: q.blockLight };
+            const built = { torchTaps: q.torchTaps, bounce: q.bounce };
             if (tune.built && Object.keys(built).every(k => built[k] === tune.built[k])) return false;
             tune.built = built;
             patchShaders(T, built);
@@ -293,12 +292,11 @@ varying vec3 vProbeIrradiance;`;
         const scene = new T.Scene(), sky = now.colors[3].clone();
         scene.background = sky;
         scene.fog = new T.Fog(sky, C.camera.distance + now.fog[0], C.camera.distance + now.fog[1]);
-        // The sun's shadows follow the menu's settings (none in the power
-        // saver). The torch's are always cast: they keep its light from
-        // passing walls (user, 2026-10-06). A shadow map of a new size is
-        // made anew on the next frame.
+        // The shadows' maps follow the menu's settings. The torch's keep
+        // its light from passing walls (user, 2026-10-06). A shadow map of
+        // a new size is made anew on the next frame.
         function retune() {
-            sun.castShadow = !dark && tune.shadows;
+            sun.castShadow = !dark;
             const resize = (shadow, size) => {
                 if (shadow.mapSize.x === size) return false;
                 shadow.mapSize.set(size, size);
@@ -310,9 +308,6 @@ varying vec3 vProbeIrradiance;`;
                 sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
             }
             if (resize(torchLight.shadow, tune.torchMap)) torchLight.shadow.radius = TORCH.soft * tune.torchMap;
-            // Moving lights past the quality's count are left out of the
-            // scene's light (three.js builds its shaders for those shown).
-            pool.forEach((light, i) => { light.visible = i < tune.lights; });
         }
 
         const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
@@ -330,7 +325,7 @@ varying vec3 vProbeIrradiance;`;
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
         torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
-        const pool = Array.from({ length: Math.max(...C.graphics.choices.lights) }, () => {
+        const pool = Array.from({ length: C.graphics.lights }, () => {
             const light = new T.PointLight('#ffffff', 0, 1, 1);
             scene.add(light);
             return light;
@@ -402,7 +397,7 @@ varying vec3 vProbeIrradiance;`;
 
         // ---- terrain: chunk meshes (render/terrain_mesh.js) ----
         const t = sim.terrain;
-        const ground = terrainMesh.create(T, scene, sim, tx, { blockLight: tune.built.blockLight, probes: tune.built.bounce !== 'off' });
+        const ground = terrainMesh.create(T, scene, sim, tx, { probes: tune.built.bounce });
         // The map's own floor goes on beyond the map edge (grass, or a
         // cave's gravel), so the world does not end in sky: four sheets
         // round the map, a tile to a block. Not under the map itself,

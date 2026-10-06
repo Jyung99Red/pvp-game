@@ -561,19 +561,19 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
             await page.click('[data-setting="quality"]');
             assert.equal(await page.textContent('[data-setting="quality"] b'), want);
         }
-        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '12 点', '逐顶点', '开', '4 盏']);
+        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '12 点', '开']);
         const slide = (key, index) => page.evaluate(([key, index]) => {
             const input = document.querySelector(`[data-custom="${key}"]`);
             input.value = String(index);
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }, [key, index]);
-        await slide('pixelRatio', 2); await slide('sunShadow', 0); await slide('lights', 2); await slide('torchTaps', 1); await slide('bounce', 2);
+        await slide('pixelRatio', 1); await slide('sunShadow', 0); await slide('torchTaps', 1); await slide('bounce', 0);
         const custom = await state();
-        assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 0, torch: 256, lights: 2, byVertex: false, taps: [6], shown: undefined });
-        assert.deepEqual(custom.shown, ['×1.5 1266×585', '关', '256', '6 点', '逐像素', '开', '2 盏']);
+        assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 512, torch: 256, lights: 4, byVertex: false, taps: [6], shown: undefined });
+        assert.deepEqual(custom.shown, ['×1.5 1266×585', '512', '256', '6 点', '关']);
         // A ratio past the phone's own draws at the phone's own.
-        await slide('pixelRatio', 8);
+        await slide('pixelRatio', 4);
         assert.deepEqual([(await state()).ratio, (await state()).shown[0]], [3, '×3 2532×1170']);
         await shot(page, 'custom-quality');
         // Kept: after a reload the custom values are drawn again.
@@ -581,7 +581,7 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
         await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
         await page.evaluate(() => window.game.pause(true));
         const kept = await state();
-        assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps], [3, 0, 2, [6]]);
+        assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps], [3, 512, 4, [6]]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

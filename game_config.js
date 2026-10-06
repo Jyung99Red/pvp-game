@@ -405,34 +405,34 @@ const gameConfig = (() => {
         // to 2 from 3, 45 frames a second on the user's phone; ultra 3,
         // down from 4: most phones' own ratio is 3 or less); sunShadow, the
         // sun's shadow map in texels a side on a small screen (short side
-        // under 700 CSS px; twice that on a large one, at most 4096), 0 for
-        // no sun shadows; torchShadow, the torch's (it always casts them:
+        // under 700 CSS px; twice that on a large one, at most 4096; never
+        // off, which changed the picture's tone: user, 2026-10-06);
+        // torchShadow, the torch's (it always casts them:
         // they keep its light from passing walls; user, 2026-10-06) and
         // torchTaps, the samples its soft edge takes; bounce, the light
-        // probes' colour ('off', 'vertex': worked out at each corner of a
-        // face, 'pixel': at each pixel; by corner looks the same and costs
-        // far less, user's question, 2026-10-06); blockLight, the block light on or
-        // off; lights, how many moving lights without shadows are lit at
-        // once (the nearest: a burning thicket, a doorway's glow, someone
-        // else's torch). `custom` is the menu's own (user, 2026-10-06):
-        // each setting a slider over its `choices`, starting from `high`.
+        // probes' colour on or off (worked out at each corner of a face:
+        // at each pixel looked the same and cost far more, so that choice
+        // is gone; the block light is always on: user, 2026-10-06).
+        // `custom` is the menu's own (user, 2026-10-06): each setting a
+        // slider over its `choices`, starting from `high`. lights: how
+        // many moving lights without shadows are lit at once (the nearest:
+        // a burning thicket, a doorway's glow, someone else's torch).
         // shadowExtent is the half-width in blocks of the shadowed area
         // around the player.
         graphics: {
             quality: {
-                saver: { pixelRatio: 1, sunShadow: 0, torchShadow: 256, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 },
-                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 },
-                ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 }
+                saver: { pixelRatio: 1, sunShadow: 512, torchShadow: 128, torchTaps: 8, bounce: true },
+                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 12, bounce: true },
+                ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 16, bounce: true }
             },
             choices: {
-                pixelRatio: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3],
-                sunShadow: [0, 512, 1024, 2048, 4096],
+                pixelRatio: [1, 1.5, 2, 2.5, 3],
+                sunShadow: [512, 1024, 2048, 4096],
                 torchShadow: [128, 256, 512, 1024],
                 torchTaps: [4, 6, 8, 12, 16],
-                bounce: ['off', 'vertex', 'pixel'],
-                blockLight: [false, true],
-                lights: [0, 1, 2, 3, 4]
+                bounce: [false, true]
             },
+            lights: 4,
             shadowExtent: 13
         },
 
