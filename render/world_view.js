@@ -642,8 +642,11 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         const FIRES = 48, fires = new T.InstancedMesh(unitBox, new T.MeshBasicMaterial(), FIRES);
         fires.frustumCulled = false; fires.count = 0;
         scene.add(fires);
+        // The torches that stand in the map (render/lamp_view.js), fading as the terrain does.
+        const lamps = lampView.create(T, scene, sim, embodied(T, new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true }), solid, ground.fade));
         const place = new T.Object3D(), tint = new T.Color();
         function props(current, me) {
+            lamps.update(clock);
             for (const { body, plane } of portals) {
                 const locked = body.requires && !current.progress?.bosses?.[body.requires];
                 plane.material.color.set(P[propModels.portal[locked ? 'locked' : 'open']]);
@@ -934,6 +937,10 @@ void main() {
                 const [x, , z] = space.toBlocks(e.x, e.y), life = Math.max(0, 1 - e.burning / C.props.burnSeconds);
                 glowing.push({ at: [x, FIRE.height, z], color: P.flame, intensity: FIRE.intensity * Math.sqrt(life) * flicker(e.col * 3 + e.row), reach: FIRE.reach, decay: FIRE.decay });
                 glows.push({ at: [x, FIRE.height, z], reach: GLOW.fire, rgb: rgbOf(P.flame, Math.sqrt(life)) });
+            }
+            for (const l of lamps.lights) {
+                glowing.push({ at: l.at, color: P.flame, intensity: now.torch * C.graphics.lamp.light * flicker(l.seed), reach: C.graphics.lamp.reach, decay: C.graphics.lamp.decay });
+                glows.push({ at: l.at, reach: C.graphics.lamp.glow, rgb: rgbOf(P.flame, C.graphics.lamp.light) });
             }
             const door = DOORWAY.night + (1 - DOORWAY.night) * now.outside;
             for (const at of doorways) {

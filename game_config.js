@@ -362,8 +362,9 @@ const gameConfig = (() => {
         // Props: chestRadius (a chest is solid); arriveDistance, how far
         // in front of the portal back someone arriving stands. A thicket
         // set alight sets its neighbours alight after burnSpread seconds
-        // and is gone after burnSeconds.
-        props: { chestRadius: 14, arriveDistance: 64, burnSpread: 0.35, burnSeconds: 1.4 },
+        // and is gone after burnSeconds. lampRadius: the post of a
+        // standing torch, in the way as a chest is.
+        props: { chestRadius: 14, arriveDistance: 64, burnSpread: 0.35, burnSeconds: 1.4, lampRadius: 5 },
         // Resources (design.md 6.5): held `hold` seconds with the interact
         // key, each throws out its loot table and is gone until it grows
         // back: once regrowSeconds of play have passed, the next visit to
@@ -424,7 +425,10 @@ const gameConfig = (() => {
         // many moving lights without shadows are lit at once (the nearest:
         // a burning thicket, a doorway's glow, someone else's torch).
         // shadowExtent is the half-width in blocks of the shadowed area
-        // around the player.
+        // around the player. lamp: the torches that stand in a map (on a
+        // stand or a wall; user, 2026-10-06), each one of the moving lights:
+        // `light` of a carried torch's intensity now, `reach` blocks,
+        // `decay`; `glow`, the cells its block light spreads.
         graphics: {
             quality: {
                 saver: { pixelRatio: 1, sunShadow: 512, torchShadow: 128, torchTaps: 8, bounce: true },
@@ -439,7 +443,8 @@ const gameConfig = (() => {
                 bounce: [false, true]
             },
             lights: 4,
-            shadowExtent: 13
+            shadowExtent: 13,
+            lamp: { light: 0.5, reach: 6, decay: 1.3, glow: 6 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
@@ -486,6 +491,9 @@ const gameConfig = (() => {
         // where the player starts when not arriving through a portal (a
         // duel: the host on the first, the guest on the second, in reading
         // order), `D` the training dummy (facing `dummyFacing`, radians),
+        // `i` a torch on a stand and `!` a torch on the wall beside its
+        // cell (the wall to the north, else west, east, south; a block at
+        // least 2 high), both always burning,
         // and monster homes: `g` goblin, `w` wolf, `G` the goblin chief, `K`
         // the wolf king; `B` a dry thicket (2 high, burnt away by a lit
         // torch). Rows run north (screen top) to south.
@@ -500,49 +508,60 @@ const gameConfig = (() => {
         // only a torch lights it (drawn). `floor`: the letter of the ground
         // the markers lie on (grass by default).
         maps: {
-            // The base, a village (design.md 6.3): no monsters. Four
-            // buildings and the cheat chest by the spawn; the north gate to
-            // the field, the east gate to the training ground (the valley is reached through the field only:
-            // user, 2026-10-04). Every portal goes
-            // out by the side its map lies on, and comes in on the far map's
-            // opposite side (user, 2026-10-04).
+            // The base, a village (design.md 6.3; the first draft of the
+            // redrawn map, 45 x 28: user, 2026-10-06): no monsters. A wooden
+            // fence on the north with the gate to the field, a rocky ridge on
+            // the west, low rocks on the south, low rocks and a few trees on
+            // the east with the gate to the training ground (the valley is
+            // reached through the field only: user, 2026-10-04). A cobbled
+            // square in the middle, streets from it to both gates and lanes
+            // to the four buildings; the spawn and the cheat chest south of
+            // the square; the south-east is left open for later. Torches on
+            // the walls by the doors and the gates, on stands at the
+            // square's corners. Every portal goes out by the side its map
+            // lies on, and comes in on the far map's opposite side (user,
+            // 2026-10-04).
             base: {
                 name: '曙光村', safe: true,
                 rows: [
-                    '.....TT........T.....T...T........',
-                    '...TTT...............T.....T...T..',
-                    'T................................T',
-                    '...333333333333#P#3333333333333..T',
-                    '.T.3............:.............3...',
-                    '...3..HHHH......:....HHHH.....3...',
-                    '.T.3..HHHH......:....HHHH.....3..T',
-                    'T..3..HHHH......:....HHHH.....3..T',
-                    'T..3....================......#...',
-                    '...3....================::::::P...',
-                    '...3....================......#...',
-                    '...3....================HHHH..3...',
-                    '...3....================HHHH..3...',
-                    '...3....================HHHH..3...',
-                    'T..3....================......3..T',
-                    '...3........:.................3...',
-                    '...3..HHHH..:...@..C..........3.TT',
-                    '...3..HHHH..:.................3...',
-                    '...3..HHHH..:.................3...',
-                    '...3.....::::.................3...',
-                    '.T.3222222222222222222222222223...',
-                    '..................................',
-                    '..................................',
-                    '..................................'
+                    '4331....T.........T...:......T..........T...T',
+                    '4421..........T.......:...T.......T........T.',
+                    '5321..T....T..........:........T.......T.....',
+                    '5321++++++++++++++++2#P#2++++++++++++++++1..T',
+                    '5331................!:::!................21..',
+                    '4321....HHHH...T.....:::......HHHH.......1...',
+                    '54321...HHHH.........:::......HHHH......11.T.',
+                    '4321....HHHH.........:::......HHHH.......12..',
+                    '4331.....!:..........:::.......!:........21..',
+                    '4421......:::::::::::::::::::::::.HHHH...11.T',
+                    '5321.................:::..........HHHH...1...',
+                    '64421...........i===========i.....HHHH...12..',
+                    '54321T..........=============......!:...!21..',
+                    '4321............=============:::::::::::.#1..',
+                    '4321....HHHH....=============::::::::::::P1.T',
+                    '4321....HHHH....=============:::::::::::.#1..',
+                    '4331....HHHH....i===========i...........!21..',
+                    '54421....!:..........:::.................1...',
+                    '5321......::::::::::::::.................11.T',
+                    '5321.................:::................11...',
+                    '5331..................@..C...............1...',
+                    '55331....................................12T.',
+                    '4321..........T...................T......21..',
+                    '4321....................................12..T',
+                    '454311111112112111111121121111111211211111112',
+                    '554422332222222223322222222233222222222332222',
+                    '454322432333333224323333332243233333322432333',
+                    '554434443354443344433544433444335444334443354'
                 ],
                 buildings: [
-                    { kind: 'hotSpring', at: [6, 5, 4, 3] }, { kind: 'smithy', at: [21, 5, 4, 3] },
-                    { kind: 'shop', at: [24, 11, 4, 3] }, { kind: 'storage', at: [6, 16, 4, 3] }
+                    { kind: 'hotSpring', at: [8, 5, 4, 3] }, { kind: 'smithy', at: [30, 5, 4, 3] },
+                    { kind: 'shop', at: [34, 9, 4, 3] }, { kind: 'storage', at: [8, 14, 4, 3] }
                 ],
                 portals: [
-                    { at: [16, 3], to: 'field', facing: 'south' },
-                    { at: [30, 9], to: 'clearing', facing: 'west' }
+                    { at: [22, 3], to: 'field', facing: 'south' },
+                    { at: [41, 14], to: 'clearing', facing: 'west' }
                 ],
-                chests: [{ at: [19, 16], loot: 'cheatChest' }]
+                chests: [{ at: [25, 20], loot: 'cheatChest' }]
             },
             // The first region, wide and open (the second draft of the
             // redrawn map: user, 2026-10-04): a rocky ridge on the west and
@@ -657,45 +676,59 @@ const gameConfig = (() => {
                 ],
                 chests: [{ at: [49, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
-            // A dark cave off the valley (design.md 2.5): nothing to see
-            // without a lit torch. Its treasure room is shut by a thicket the
-            // torch burns away.
+            // A dark cave off the valley (design.md 2.5; the first draft of
+            // the redrawn map, 55 x 40: user, 2026-10-06): little to see
+            // without a lit torch. One wide hall of pillars, rock coming in
+            // from its walls; the gate in the south-west, two torches on
+            // stands by it. The treasure room in the north-east is shut by a
+            // thicket the torch burns away, a torch on the wall either side
+            // of it.
             cave: {
                 name: '千柱窟', dark: true, floor: ';',
                 rows: [
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
-                    ';;;333333333333333333333333333333333333;;;',
-                    ';;;33333;;;;33333;;;;;;;;;;;3;;;;;;;;;3;;;',
-                    ';;;33333;;;;33333;;;2X;;;;;;3;;;;;;;;;3;;;',
-                    ';;;33333;;;;33333;;;;;;;;;;;3;;;;;;C;;3;;;',
-                    ';;;3;;;;;;;;33333;;;;;;;;;;;3;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;33333;;;w;;;;;;;3;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;3;;;;;;;;X3;;;',
-                    ';;;3;;;;g;;;;;;;;;;;;;;;;;;;3;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;;;;;;333333;;;;;333BBB33333;;;',
-                    ';;;3;;;;;;22X;;;;333333;;;;;;;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;;;;;;333333;;;;;;;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;;;w;;333333;;;;;2;X;2;;;;;3;;;',
-                    ';;;3;;;;;;;;;;;;;333333;3333;;;;;;;;;;3;;;',
-                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;;;;;;3;;;',
-                    ';;;3333333;;;;;;;;;;;;;;3333;;;w;;;;;;3;;;',
-                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;333333;;;',
-                    ';;;3333333;;;;;;;;;;;;;;3333;;;;;333333;;;',
-                    ';;;3;;;;;;;33333;;;;;;;;3333;;;;;333333;;;',
-                    ';;;3;;;;;;;33333;;;;;;;;3333;;g;;333333;;;',
-                    ';;;3;;;;;;;33333;;;;;;;;3333;;;;;;;;;;3;;;',
-                    ';;;3;;;;2O;;;;;;;;;;;2;;3333;;2;;;;;;;3;;;',
-                    ';;;3;;;;;;;;@;;;;;;;;;;;;;;;;;;;;;;;;;3;;;',
-                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3;;;',
-                    ';;;333333#P#333333333333333333333333333;;;',
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
-                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;'
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;3333333333333333333333333333333333333333333333333;;;',
+                    ';;;3333333;;;;;;33333;;;;;;;;;3333;;;;;;3;;;;;;;;;;3;;;',
+                    ';;;3333333;;;;;;33333;;;;X;2;;3333;;;;;;3;;;;;;;;;;3;;;',
+                    ';;;3333333;;;;1;33333;;;;;;;;;;33;;;;3;;3;;;;;C;;;;3;;;',
+                    ';;;3333;;;;;;;;;33333;;3;;;;;;;;;;;;;;;;3;;;;;;;;;;3;;;',
+                    ';;;3333;;;;;;;;;;333;;;;;;;;;3;;;;;;;;;;3;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;33;;;;;;;;;;w;33;;;;;;33;;;;3;;;;;;;;X;3;;;',
+                    ';;;3;;;3;;;;33;;;;;1;;;;;;33;;;;;;33;;;;3;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;3;;;;;3;;;;;;;;;;;;;;;;;3333BBB33333;;;',
+                    ';;;3;;;;;;2;;;;;;;;;;;;;;1;;;;33;2;;;;;;;;;!;;;!3333;;;',
+                    ';;;3;;;;;3;;;;;;;;;;;;;;;;;;;;;;;;;;;3;;;;;;;;;;3333;;;',
+                    ';;;3;;;;;;;;;3;;;;;;;;;3333;;;;;;;;;X3;;;;;;;;;;3333;;;',
+                    ';;;3;;;;;;g;;3;;;;33;;333333;;;;;3;;;;;;;33;;;;;;;;3;;;',
+                    ';;;3;;;3;;;;;X;;;;33;;3333333;;;;;;;;;;;;33;;3;;;;;3;;;',
+                    ';;;3;;;;;;;33;;;;;;;;;3333333;;;;;;;2;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;3;;;;;;3333333;;;;;;;;;3;;;;;;;;1;;;3;;;',
+                    ';;;333333;;;;;;;;;;;;;333333;;;33;;;;;;w;;;;;;;;;;;3;;;',
+                    ';;;33333333;;;;;;w;;;;;;333;;;;33;;;;;;;;;;;;3333333;;;',
+                    ';;;33333333;;;;;;;3;;;;;;;;;;1;;;;;3;;;;;;;333333333;;;',
+                    ';;;33333333;;;33;;;;;;;;;;;;;;;;;;;;;;;;3;;333333333;;;',
+                    ';;;333333;;;1;33;;;;;;;;;;3;;;;;;;;;;;;;3;;333333333;;;',
+                    ';;;333;;;;;;;;;;;;;;;;2;;;;;;;;;;;;;;;3;;;;333333333;;;',
+                    ';;;333;;;;;;;;;;;3;;;;;;;;;;;;;33333;;;;;;;333333333;;;',
+                    ';;;333;;;;;;3;;;;3;;;;;;;;;;3;;333333;;;;;;;;;333333;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;3;;333333;;;;;;;;;333333;;;',
+                    ';;;3;;;;;3;;;;;;;;;;33;;;;;;;;;333333;;;;;1;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;33;;;33;;;;33333;;;33;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;3;;;;;;;;;33;;;;33333;;g33;;3;;;;;;;3;;;',
+                    ';;;3;;;O2;;;;;;;;;;;;;;;;;;;;;;;333;;;;;;;;;;;33;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;333;;;;3;;;333;;3;;;;;;;;33;;;3;;;',
+                    ';;;3;;;;i;;;;;;;i3;;33333;;;;;;;;;;;;;;;33333;;;;;;3;;;',
+                    ';;;3333;;;;;;;@;;;;;33333;;;;;2;;;;;;;;;33333;;;;;;3;;;',
+                    ';;;3333;;;;;;;;;;;;;33333;;;;;;;;;;;;;;;33333;;;;;;3;;;',
+                    ';;;33333333#P#33333333333333333333333333333333333333;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;'
                 ],
-                portals: [{ at: [10, 26], to: 'valley', facing: 'north' }],
-                chests: [{ at: [35, 6], loot: 'caveChest' }]
+                portals: [{ at: [12, 36], to: 'valley', facing: 'north' }],
+                chests: [{ at: [46, 6], loot: 'caveChest' }]
             },
             clearing: {
                 name: '训练场', training: true,

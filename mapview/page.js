@@ -31,7 +31,7 @@ const mapApp = (() => {
     // Stone by its height in blocks: a low stone light, a wall darker the higher.
     const STONE = Object.freeze(['#b9bec6', '#b9bec6', '#7a8089', '#5c626b', '#454a52']);
     const MARK = Object.freeze({
-        building: '#ffd27a', door: '#fff3c4', chest: '#f2b544', spawn: '#4fe3ff', dummy: '#c58b4a', portal: '#ecd9ff',
+        building: '#ffd27a', door: '#fff3c4', chest: '#f2b544', spawn: '#4fe3ff', dummy: '#c58b4a', portal: '#ecd9ff', lamp: '#ff9a2e',
         select: '#f2b544', walk: '#ff6fb7', ink: '#20252b', plate: 'rgba(16, 20, 24, 0.82)'
     });
     // Monsters by the model they are built on; bosses apart.
@@ -149,6 +149,12 @@ const mapApp = (() => {
                 ctx.fillStyle = MARK.chest; ctx.fillRect(x - w / 2, y - h / 2, w, h);
                 ctx.strokeStyle = MARK.ink; ctx.lineWidth = 1.5; ctx.strokeRect(x - w / 2, y - h / 2, w, h);
                 tag('宝箱', x, y, 'above', s / 2);
+            }
+            // A torch: a flame-coloured dot, a wall's against the wall it hangs on.
+            for (const l of plan.lamps) {
+                const [dx, dy] = l.side ? propKit.DIRS[l.side] : [0, 0], x = (l.col + 0.5 + dx * 0.3) * s, y = (l.row + 0.5 + dy * 0.3) * s;
+                ctx.fillStyle = MARK.lamp; disc(ctx, x, y, s * 0.2); ctx.fill();
+                ctx.strokeStyle = MARK.ink; ctx.lineWidth = 1.5; ctx.stroke();
             }
             for (const p of plan.spawns) {
                 const x = (p.col + 0.5) * s, y = (p.row + 0.5) * s;
@@ -390,6 +396,7 @@ const mapApp = (() => {
             ].filter(Boolean).join('；')));
             section('宝箱', plan.chests.map(k => `${go(k.col, k.row)}${k.loot ? ` 掉落表 <code>${escape(k.loot)}</code>` : ' 没有登记'}${k.requires ? `（${escape(k.requiresName)}守着）` : ''}`));
             section('建筑', plan.buildings.map(b => `${escape(b.name)} <code>${escape(b.kind)}</code> ${escape(lab.refOf(plan.id, [b.col, b.row], [b.col + b.w - 1, b.row + b.d - 1]).replace(`${plan.id} `, ''))}${b.front ? `，门口 ${go(b.front[0], b.front[1])}` : ''}`));
+            section('火把', [['墙上的火把 <code>!</code>', 'wall'], ['立着的火炬 <code>i</code>', 'stand']].map(([name, kind]) => [name, plan.lamps.filter(l => l.kind === kind)]).filter(([, ls]) => ls.length).map(([name, ls]) => `${name} × ${ls.length}：${ls.map(l => go(l.col, l.row)).join(' ')}`));
             section('出生点和木桩', [...plan.spawns.map(p => `${plan.spawns.length > 1 ? `出生点 ${p.index + 1}` : '出生点'} ${go(p.col, p.row)}`), ...(plan.dummy ? [`${escape(plan.dummy.name)} ${go(plan.dummy.col, plan.dummy.row)}`] : [])]);
             info.innerHTML = html.join('');
         }
@@ -398,7 +405,7 @@ const mapApp = (() => {
         function showLegend() {
             legend.textContent = '';
             if (!plan) return;
-            const marked = new Set([...plan.monsters, ...plan.spawns, ...plan.chests, ...(plan.dummy ? [plan.dummy] : [])].map(m => m.row * plan.width + m.col));
+            const marked = new Set([...plan.monsters, ...plan.spawns, ...plan.chests, ...plan.lamps, ...(plan.dummy ? [plan.dummy] : [])].map(m => m.row * plan.width + m.col));
             const looks = new Map(), order = Object.keys(terrainKit.KIND), floor = COLOURS[plan.floor] || UNKNOWN;
             plan.cells.forEach((cell, i) => {
                 const key = `${cell.kind}/${cell.solid}/${cell.hides}`;

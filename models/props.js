@@ -34,6 +34,29 @@ const propModels = Object.freeze({
         crystal: { size: [0.1, 0.24, 0.1], color: 'crystal' },
         herb: { size: [0.22, 0.08, 0.16], color: 'herbLight' }
     },
+    // Torches that stand in a map (core/props.js `lamp`), in blocks: boxes
+    // ({ size, at, color }) and where the flame burns. `stand` from the
+    // middle of its cell's ground; `wall` from the foot of the wall's face,
+    // +z out of the wall.
+    lamps: {
+        stand: {
+            parts: [
+                { size: [0.34, 0.08, 0.34], at: [0, 0.04, 0], color: 'steelDark' },
+                { size: [0.12, 1.14, 0.12], at: [0, 0.65, 0], color: 'woodDark' },
+                { size: [0.3, 0.14, 0.3], at: [0, 1.29, 0], color: 'steelDark' },
+                { size: [0.2, 0.08, 0.2], at: [0, 1.4, 0], color: 'torchWrap' }
+            ],
+            flame: [0, 1.52, 0]
+        },
+        wall: {
+            parts: [
+                { size: [0.12, 0.08, 0.26], at: [0, 1.3, 0.13], color: 'steelDark' },
+                { size: [0.1, 0.46, 0.1], at: [0, 1.45, 0.24], color: 'woodDark' },
+                { size: [0.16, 0.12, 0.16], at: [0, 1.72, 0.24], color: 'torchWrap' }
+            ],
+            flame: [0, 1.86, 0.24]
+        }
+    },
     // Roof colour by building kind (multiplies the roof tile).
     roofs: { hotSpring: 'roofSpring', smithy: 'roofSmithy', shop: 'roofShop', storage: 'roofStorage' },
     // A portal's opening: open, or waiting on a boss.

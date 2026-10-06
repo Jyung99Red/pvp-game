@@ -21,6 +21,7 @@ const mapPlan = (() => {
         grass: '草地', path: '土路', cobble: '石板地', gravel: '碎石地', stone: '石墙', tree: '树', wood: '建筑墙',
         portal: '传送门柱', gate: '传送门', brush: '枯木丛', ore: '铁矿', crystal: '晶石', herb: '草药', water: '水潭', hedge: '灌木', drop: '断崖外', fence: '木栅栏'
     });
+    const SIDE_NAMES = Object.freeze({ north: '北', south: '南', east: '东', west: '西' });
     const kindName = kind => gameConfig.gather[kind]?.name || KIND_NAMES[kind] || String(kind);
     const bossName = kind => gameConfig.monsters[kind]?.name || kind;
     const letters = Object.fromEntries(Object.entries(terrainKit.MONSTERS).map(([letter, kind]) => [kind, letter]));
@@ -69,6 +70,8 @@ const mapPlan = (() => {
             const k = (map.chests || []).find(q => q.at?.[0] === col && q.at?.[1] === row);
             return { col, row, loot: k?.loot || null, requires: k?.requires || null, requiresName: k?.requires ? bossName(k.requires) : null };
         });
+        // Torches that stand in the map: on a stand, or on the wall on `side` of the cell.
+        const lamps = t.lamps.map(({ kind, col, row }) => ({ kind, col, row, side: null }));
         const portals = t.portals.map(({ col, row }) => {
             const p = (map.portals || []).find(q => q.at?.[0] === col && q.at?.[1] === row);
             if (!p) return { col, row, to: null, toName: null, facing: null, requires: null, requiresName: null, arrival: null, lands: null };
@@ -87,13 +90,15 @@ const mapPlan = (() => {
             return { kind: b.kind, name: gameConfig.buildings[b.kind]?.name || b.kind, col, row, w, d, side: b.door || 'south', door, front };
         });
         const problems = [];
-        try { propKit.place(map, t, null, id); } catch (error) { problems.push(error.message); }
+        try {
+            for (const e of propKit.place(map, t, null, id)) if (e.type === 'lamp') lamps.find(l => l.col === e.col && l.row === e.row).side = e.side;
+        } catch (error) { problems.push(error.message); }
         return {
             id, name: map.name || id, width: t.width, height: t.height, unit: u, floor: T.NAMES[t.floor],
             safe: !!map.safe, training: !!map.training, duel: !!map.duel, dark: !!map.dark,
             cells, spawns: t.spawns.map(({ col, row }, index) => ({ col, row, index })),
             dummy: t.dummy ? { ...t.dummy, name: gameConfig.dummy.name, facing: map.dummyFacing ?? Math.PI } : null,
-            monsters, chests, portals, buildings, problems
+            monsters, chests, lamps, portals, buildings, problems
         };
     }
     // Plans by map id, built once: the page never changes a map.
@@ -125,6 +130,8 @@ const mapPlan = (() => {
         if (plan.dummy && here(plan.dummy)) return plan.dummy.name;
         const chest = plan.chests.find(here);
         if (chest) return `宝箱${chest.requires ? `（${chest.requiresName}守着）` : ''}`;
+        const lamp = plan.lamps.find(here);
+        if (lamp) return lamp.kind === 'wall' ? `墙上的火把${SIDE_NAMES[lamp.side] ? `（${SIDE_NAMES[lamp.side]}边的墙）` : ''}` : '立着的火炬';
         const portal = plan.portals.find(here);
         if (portal) return portal.to ? `传送门 → ${portal.toName} ${portal.to}${portal.requires ? `（击败${portal.requiresName}后开启）` : ''}` : '传送门（没有登记去向）';
         let text = ground(cell);

@@ -34,8 +34,11 @@ const terrainKit = (() => {
     const TREE_HEIGHT = 4, HOUSE_HEIGHT = 3, PORTAL_HEIGHT = 3, BRUSH_HEIGHT = 2;
     // Map letters that put a monster's home on a grass block.
     const MONSTERS = Object.freeze({ g: 'goblin', w: 'wolf', G: 'goblinChief', K: 'wolfKing' });
-    // Letters that mark a spot on grass: the spawn, the training dummy, a chest.
-    const MARKS = new Set(['.', '@', 'D', 'C', ...Object.keys(MONSTERS)]);
+    // Map letters that put a lamp on a ground block (core/props.js): a
+    // torch on a stand, and one on the wall beside the block.
+    const LAMPS = Object.freeze({ i: 'stand', '!': 'wall' });
+    // Letters that mark a spot on grass: the spawn, the training dummy, a chest, a lamp.
+    const MARKS = new Set(['.', '@', 'D', 'C', ...Object.keys(MONSTERS), ...Object.keys(LAMPS)]);
     // How far, in cells, a change shows beyond its own cell when drawn (a
     // tree's crown, a neighbour's hidden face): chunks that near are redrawn.
     const REACH = 3;
@@ -69,7 +72,8 @@ const terrainKit = (() => {
     // that many blocks, `T` tree, `H` a building's wall, `#` a portal's
     // pillar, `P` a portal's opening, `B` a dry thicket, `*` a hedge, `O` iron ore, `X`
     // crystal, `h` a herb, `C` a chest, `@` a
-    // spawn, `D` the training dummy, and the monster letters (MONSTERS).
+    // spawn, `D` the training dummy, `i` a standing torch, `!` a torch on
+    // the wall beside the cell, and the monster letters (MONSTERS).
     // A portal's opening is solid: it is used from in front, not walked into.
     // Markers are collected for the world to place what stands on them.
     // `floor`: the letter of the ground markers lie on ('.' grass by default).
@@ -82,7 +86,7 @@ const terrainKit = (() => {
         const t = {
             width, height, unit, cw, ch, rows: [...rows], floor: ground[0], rev: 0, edits: {},
             chunks: Array.from({ length: cw * ch }, () => ({ kind: new Uint8Array(CHUNK * CHUNK), level: new Uint8Array(CHUNK * CHUNK), rev: 0 })),
-            spawn: null, spawns: [], dummy: null, monsters: [], portals: [], chests: []
+            spawn: null, spawns: [], dummy: null, monsters: [], portals: [], chests: [], lamps: []
         };
         rows.forEach((row, r) => [...row].forEach((letter, c) => {
             const cell = cellOf(letter, t.floor);
@@ -94,6 +98,7 @@ const terrainKit = (() => {
                 t.dummy = { col: c, row: r };
             } else if (letter === 'P') t.portals.push({ col: c, row: r });
             else if (letter === 'C') t.chests.push({ col: c, row: r });
+            else if (LAMPS[letter]) t.lamps.push({ kind: LAMPS[letter], col: c, row: r });
             else if (MONSTERS[letter]) t.monsters.push({ kind: MONSTERS[letter], col: c, row: r });
         }));
         if (!t.spawns.length) throw new Error('A map needs a spawn (@)');
@@ -474,7 +479,7 @@ const terrainKit = (() => {
         return out;
     }
     return {
-        CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, BRUSH_HEIGHT, MONSTERS,
+        CHUNK, MAX_LEVEL, KIND, NAMES, TREE_HEIGHT, HOUSE_HEIGHT, PORTAL_HEIGHT, BRUSH_HEIGHT, MONSTERS, LAMPS,
         cellOf, fromRows, inside, kindAt, levelAt, solidAt, closedAt, isSolid, isOpen, isResource, generated, cellCentre,
         chunkIndex, chunkCells, set, edits, applyEdits,
         blocked, lineClear, sightClear, sightFan, moveCircle, openWay, wayTo

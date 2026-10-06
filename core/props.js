@@ -18,10 +18,16 @@
 //   back: once gather.regrowSeconds of play (the progress `clock`) have
 //   passed, the next visit to the region finds it again. Where and when it
 //   was gathered is kept in the progress (`gathered`), not as an edit.
+// - lamp: a torch that always burns (user, 2026-10-06), on a stand (`i`: a
+//   post in the way, as a chest is) or on the wall beside its cell (`!`:
+//   the wall to the north, else west, east, south). Its light is drawn
+//   only; nothing is done with it.
 // A map lists its buildings, portals and chests next to its rows; each entry
 // must sit on the letters that draw it, so a map cannot disagree with itself.
 const propKit = (() => {
     const DIRS = Object.freeze({ north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] });
+    // The sides a wall torch looks for its wall on, in order.
+    const LAMP_SIDES = ['north', 'west', 'east', 'south'], LAMP_WALLS = ['stone', 'wood', 'portal'];
     const angleOf = side => Math.atan2(DIRS[side][1], DIRS[side][0]);
     const letter = (map, c, r) => map.rows[r]?.[c];
     const emit = (sim, type, data) => combatKit.emit(sim, type, data);
@@ -105,6 +111,17 @@ const propKit = (() => {
             });
         }
         for (const { col, row } of terrain.chests) if (!chests.has(`${col},${row}`)) throw new Error(`${map.name}: C at ${col},${row} is in no chest list`);
+        // A wall torch hangs on the first wall round its cell, as drawn: a
+        // block at least two high.
+        const holds = (c, r) => { const cell = terrainKit.cellOf(letter(map, c, r) ?? '.'); return !!cell && LAMP_WALLS.includes(terrainKit.NAMES[cell[0]]) && cell[1] >= 2; };
+        for (const { kind, col, row } of terrain.lamps) {
+            const at = centre(col, row), side = kind === 'wall' ? LAMP_SIDES.find(s => holds(col + DIRS[s][0], row + DIRS[s][1])) : null;
+            if (kind === 'wall' && !side) throw new Error(`${map.name}: the wall torch at ${col},${row} has no wall beside it`);
+            out.push({
+                id: `lamp-${col}-${row}`, type: 'lamp', kind, col, row, side, x: at.x, y: at.y, h: 0, facing: side ? angleOf(side) + Math.PI : 0,
+                radius: kind === 'stand' ? gameConfig.props.lampRadius : 0, solid: kind === 'stand'
+            });
+        }
         // Thickets still standing (saved edits may have burnt some), and
         // resources not gathered lately.
         for (let r = 0; r < terrain.height; r++) for (let c = 0; c < terrain.width; c++) {

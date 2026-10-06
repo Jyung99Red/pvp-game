@@ -276,6 +276,22 @@ test('a map whose lists and letters disagree does not load', () => {
     for (const map of broken) assert.throws(() => W.create({ map }), undefined, JSON.stringify(map.portals?.[0]));
 });
 
+test('torches stand in a map: one on a stand is in the way, one on a wall hangs on the wall beside its cell (user, 2026-10-06)', () => {
+    const sim = W.create({ map: { name: 'lamps', rows: ['33333', '3!..3', '3.i.3', '3@.!3', '33333'] } }), lamps = sim.entities.filter(e => e.type === 'lamp');
+    assert.deepEqual(plain(lamps.map(l => [l.kind, l.col, l.row, l.side, l.solid])), [['wall', 1, 1, 'north', false], ['stand', 2, 2, null, true], ['wall', 3, 3, 'east', false]]);
+    // Their cells are the map's ground; only the stand's post is in the way.
+    for (const l of lamps) assert.equal(T.kindAt(sim.terrain, l.col, l.row), T.KIND.grass);
+    assert.equal(lamps[1].radius, gameConfig.props.lampRadius);
+    // Nothing is done with them, and they go on through steps.
+    for (const l of lamps) assert.equal(propKit.offer(sim, l, sim.player), null);
+    step(sim, 0.1);
+    assert.equal(sim.entities.filter(e => e.type === 'lamp').length, 3);
+    // A wall torch with no wall beside it (a low stone is none) does not load.
+    assert.throws(() => W.create({ map: { name: 'lamps', rows: ['..1..', '.1!@.', '.....'] } }), /no wall beside it/);
+    // The maps that have them: the base, and the cave by its gate and its treasure room.
+    for (const [id, least] of [['base', 8], ['cave', 4]]) assert.ok(W.create({ region: id }).entities.filter(e => e.type === 'lamp').length >= least, id);
+});
+
 test('arriving through a portal: in front of the portal back, facing in, with the HP carried', () => {
     const sim = W.create({ region: 'field', arrival: 'base', carry: { hp: 100 } }), p = sim.player;
     const portal = sim.entities.find(e => e.id === 'p-base');
