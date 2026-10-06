@@ -49,3 +49,34 @@ test('sky visibility: open ground sees all the sky; a wall, a narrow way and a r
     const corners = L.corners(g, sky, [[11, 0, 6], [12, 0, 6], [12, 0, 5], [11, 0, 5]], UP, 11, -1, 5);
     assert.ok(corners[0] < corners[1], `the corner at the wall is darker: ${corners}`);
 });
+
+test('block light: it spreads round corners and fades, a wall two high stops it, low things let it by', () => {
+    const rows = [
+        '@...............',
+        '................',
+        '....#######.....',
+        '....#######.....',
+        '..........#.....',
+        '..........#.....',
+        '..........#.+*O.',
+        '................'
+    ];
+    // '#' walls three high; '+' a fence, '*' a hedge, 'O' ore: one high.
+    const t = T.fromRows(rows.map(r => r.replace(/#/g, '.')));
+    rows.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === '#') T.set(t, c, r, 'stone', 3); }));
+    const at = (light, c, r) => light[(r * t.width + c) * 4];
+    const one = L.blockLight(t, [{ c: 6, r: 1, reach: 8, rgb: [1, 0.5, 0] }]);
+    assert.equal(at(one, 6, 1), 255, 'full at the source');
+    assert.equal(one[(1 * t.width + 6) * 4 + 1], 128, 'in its colour');
+    assert.ok(at(one, 7, 1) < 255 && at(one, 8, 1) < at(one, 7, 1), 'fading a cell at a time');
+    assert.ok(at(one, 3, 4) > 0, 'round the corner of the wall');
+    assert.equal(at(one, 6, 4), 0, 'behind the wall, two thick, nothing (the way round is longer than its reach)');
+    assert.equal(at(one, 6, 2), 0, 'nor in the wall');
+    assert.equal(at(one, 15, 1), 0, 'nothing past its reach');
+    // Over a fence, a hedge and ore: from (15, 6) westwards along the row.
+    const low = L.blockLight(t, [{ c: 15, r: 6, reach: 6, rgb: [1, 1, 1] }]);
+    assert.ok(at(low, 12, 6) > 0 && at(low, 12, 6) < at(low, 14, 6), 'low blocks let it by');
+    // Two sources add up.
+    const two = L.blockLight(t, [{ c: 6, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }, { c: 7, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }]);
+    assert.ok(at(two, 6, 1) > at(L.blockLight(t, [{ c: 6, r: 1, reach: 8, rgb: [0.4, 0.4, 0.4] }]), 6, 1));
+});

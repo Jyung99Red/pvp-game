@@ -125,11 +125,16 @@ diffuseColor.a = max(mix(diffuseColor.a, 1.0, waterEdge), min(1.0, dot(waterShin
         return material;
     }
     // The engine's light on a face with the sky's (the hemisphere light's)
-    // multiplied by the face's `vSky`. A three.js whose shader reads
-    // otherwise is left as it is.
+    // multiplied by the face's `vSky`, and the block light added (read in
+    // the cell the face looks into: `glowMap`, a texel a cell, times
+    // `glowPower`). A three.js whose shader reads otherwise has the sky's
+    // light whole.
     function skyLit(T) {
         const chunk = T.ShaderChunk.lights_fragment_begin, hemi = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );';
-        return chunk.includes(hemi) ? chunk.replace(hemi, hemi.replace(';', ' * vSky;')) : '#include <lights_fragment_begin>';
+        return `${chunk.includes(hemi) ? chunk.replace(hemi, hemi.replace(';', ' * vSky;')) : chunk}
+#if defined( RE_IndirectDiffuse )
+irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb * glowPower;
+#endif`;
     }
     // The engine's light with the point lights' (torches, fires) wide
     // sheen gathered in `waterFire` (WATER.fireSpread). A three.js whose
@@ -236,12 +241,31 @@ diffuseColor.a = max(mix(diffuseColor.a, 1.0, waterEdge), min(1.0, dot(waterShin
         // little way out in front of itself: the wall that ends the sight
         // is itself seen, its top and its far side not.
         const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
+        // Block light (render/terrain_light.js): a texel a cell, made anew
+        // by `glow` when what gives light has moved a cell or changed.
+        const glowData = new Uint8Array(t.width * t.height * 4), glowMap = new T.DataTexture(glowData, t.width, t.height);
+        glowMap.magFilter = glowMap.minFilter = T.LinearFilter; glowMap.needsUpdate = true;
+        const glowPower = { value: 0 };
+        let glowKey = '';
+        // `sources`: { at: [x, y, z] (blocks), reach (cells), rgb (0..1) }
+        // each; `power`: how bright a source's own cell is lit. Returns
+        // whether the light was made anew.
+        function glow(sources, power) {
+            glowPower.value = power;
+            const list = sources.map(g => ({ c: Math.floor(g.at[0]), r: Math.floor(g.at[2]), reach: g.reach, rgb: g.rgb }));
+            const key = `${t.rev}|${list.map(g => `${g.c},${g.r},${g.reach},${g.rgb.map(v => v.toFixed(2))}`).sort().join(';')}`;
+            if (key === glowKey) return false;
+            glowKey = key;
+            terrainLight.blockLight(t, list, glowData);
+            glowMap.needsUpdate = true;
+            return true;
+        }
         const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
         // Hidden faces are left out, so the back faces three.js would cast
         // shadows with are often missing: cast with both sides.
         material.shadowSide = T.DoubleSide;
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone, glowMap: { value: glowMap }, glowSize: { value: new T.Vector2(t.width, t.height) }, glowPower });
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
@@ -249,6 +273,7 @@ diffuseColor.a = max(mix(diffuseColor.a, 1.0, waterEdge), min(1.0, dot(waterShin
                 .replace('#include <lights_fragment_begin>', skyLit(T))
                 .replace('#include <common>', `#include <common>
 varying float vSky; varying vec3 vCutPos; varying vec3 vSide;
+uniform sampler2D glowMap; uniform vec2 glowSize; uniform float glowPower;
 ${SIGHT_UNIFORMS}
 uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
@@ -522,11 +547,11 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         }
         update();
         return {
-            cut, sight, water, material, update, hides,
+            cut, sight, water, glow, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const chunk of chunks.values()) drop(chunk);
-                chunks.clear(); material.dispose(); wetMaterial.dispose();
+                chunks.clear(); material.dispose(); wetMaterial.dispose(); glowMap.dispose();
             }
         };
     }

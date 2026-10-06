@@ -10,6 +10,13 @@
 // the foot of a wall or a house are darker, the open field is not (user,
 // 2026-10-06). Only the sky's light is dimmed: the sun's has its own
 // shadows.
+//
+// Block light: what gives light (a torch, a burning thicket, the glow at a
+// cave's doors) spreads it over the ground cell by cell, round corners,
+// fading a step at a time; a wall at least two blocks high stops it, so
+// behind a wall stays dark (user, 2026-10-06). The terrain's material
+// reads it from a small texture, a texel a cell; near a torch its real
+// light and shadows are on top, so this is the soft glow further off.
 const terrainLight = (() => {
     // Rays per face (over the half of the sky above the horizon it faces),
     // how far they go (blocks), and how much of the sky's light a face that
@@ -118,5 +125,51 @@ const terrainLight = (() => {
         });
     }
 
-    return { SKY, blocks, sky, corners, skyShade };
+    // ---- block light ----
+    // Does cell (c, r) stop light? Off the map, and blocks two high or
+    // more (the portal's glowing opening lets it by).
+    function shuts(t, c, r) {
+        if (!terrainKit.inside(t, c, r)) return true;
+        const k = terrainKit.kindAt(t, c, r);
+        return terrainKit.isSolid(k) && k !== terrainKit.KIND.gate && terrainKit.levelAt(t, c, r) >= 2;
+    }
+    const STEPS = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+    // The light over the map from `sources` ({ c, r, reach, rgb: [r, g, b] }
+    // each: the cell it is in, how many cells its light goes, its colour
+    // 0..1): from each, the way round blocks to every cell (a step aslant
+    // only where both cells beside it are open), its light falling off
+    // in a straight line to nothing at `reach`; the sources' light adds
+    // up. Written as RGBA bytes, a texel a cell, row by row from the north
+    // (into `out` if given). Cells that stop light get none.
+    function blockLight(t, sources, out = new Uint8Array(t.width * t.height * 4)) {
+        const w = t.width, sum = new Float32Array(w * t.height * 3), far = new Float32Array(w * t.height).fill(Infinity), seen = [];
+        out.fill(0);
+        for (const { c, r, reach, rgb } of sources) {
+            if (shuts(t, c, r) || reach <= 0) continue;
+            far[r * w + c] = 0; seen.push(r * w + c);
+            // Short ways first, near enough: the cells are few.
+            for (let queue = [r * w + c]; queue.length;) {
+                const at = queue.shift(), ac = at % w, ar = (at - ac) / w, d0 = far[at];
+                for (const [dc, dr, cost] of STEPS) {
+                    const nc = ac + dc, nr = ar + dr, d = d0 + cost;
+                    if (d >= reach || shuts(t, nc, nr) || (dc && dr && (shuts(t, ac + dc, ar) || shuts(t, ac, ar + dr)))) continue;
+                    const n = nr * w + nc;
+                    if (d < far[n]) { if (far[n] === Infinity) seen.push(n); far[n] = d; queue.push(n); }
+                }
+            }
+            for (const n of seen) {
+                const k = 1 - far[n] / reach;
+                for (let i = 0; i < 3; i++) sum[n * 3 + i] += rgb[i] * k;
+                far[n] = Infinity;
+            }
+            seen.length = 0;
+        }
+        for (let n = 0; n < w * t.height; n++) {
+            for (let i = 0; i < 3; i++) out[n * 4 + i] = Math.round(255 * Math.min(1, sum[n * 3 + i]));
+            out[n * 4 + 3] = 255;
+        }
+        return out;
+    }
+
+    return { SKY, blocks, sky, corners, skyShade, shuts, blockLight };
 })();

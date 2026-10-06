@@ -83,6 +83,13 @@ for ( int k = 0; k < ${TORCH_TAPS}; k ++ ) {
 }
 shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
     }
+    // Block light (render/terrain_light.js; user, 2026-10-06): how many
+    // cells a torch's, a burning thicket's and a doorway's light spreads
+    // round corners, how bright a doorway's is against a torch's, and how
+    // bright it is at its source for each unit of a torch's intensity
+    // now (`power`). It is worked out again only when a source has moved
+    // a cell or changed.
+    const GLOW = { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.16 };
     // How bright the sky a pond gives back is (the sky's own colour, paler
     // low down), for each unit of the sky's light.
     const WATER_SKY = 0.5;
@@ -783,15 +790,28 @@ void main() {
             // (Drawn at least once: a shadow map never drawn is no texture, and nothing lit would draw.)
             torchLight.shadow.autoUpdate = !!bearer || !torchLight.shadow.map;
             const glowing = [];
-            for (const d of drawn) if (d.id !== selfId && d.body.lit) glowing.push({ at: flameOf(d), color: P.flame, intensity: now.torch * flicker(d.solved.parts.length), reach: TORCH.reach, decay: TORCH.decay });
+            // Block light from the same sources, in steps of a tenth.
+            const glows = [], tenth = v => Math.round(v * 10) / 10, rgbOf = (color, k) => glowColour.set(color).toArray().map(v => tenth(v * k));
+            if (bearer) glows.push({ at: torchLight.position.toArray(), reach: GLOW.torch, rgb: rgbOf(P.flame, 1) });
+            for (const d of drawn) if (d.id !== selfId && d.body.lit) {
+                const at = flameOf(d);
+                glowing.push({ at, color: P.flame, intensity: now.torch * flicker(d.solved.parts.length), reach: TORCH.reach, decay: TORCH.decay });
+                glows.push({ at, reach: GLOW.torch, rgb: rgbOf(P.flame, 1) });
+            }
             for (const e of current.entities) {
                 if (e.type !== 'brush' || e.burning < 0) continue;
                 const [x, , z] = space.toBlocks(e.x, e.y), life = Math.max(0, 1 - e.burning / C.props.burnSeconds);
                 glowing.push({ at: [x, FIRE.height, z], color: P.flame, intensity: FIRE.intensity * Math.sqrt(life) * flicker(e.col * 3 + e.row), reach: FIRE.reach, decay: FIRE.decay });
+                glows.push({ at: [x, FIRE.height, z], reach: GLOW.fire, rgb: rgbOf(P.flame, Math.sqrt(life)) });
             }
             const door = DOORWAY.night + (1 - DOORWAY.night) * now.outside;
-            for (const at of doorways) glowing.push({ at, color: other.set(P.moon).lerp(glowColour.set(P.skyLight), now.outside).getHex(), intensity: DOORWAY.intensity * door, reach: DOORWAY.reach, decay: DOORWAY.decay });
+            for (const at of doorways) {
+                const color = other.set(P.moon).lerp(glowColour.set(P.skyLight), now.outside).getHex();
+                glowing.push({ at, color, intensity: DOORWAY.intensity * door, reach: DOORWAY.reach, decay: DOORWAY.decay });
+                glows.push({ at, reach: GLOW.doorway, rgb: rgbOf(color, GLOW.door * door) });
+            }
             kindle(glowing, me);
+            ground.glow(glows, now.torch * GLOW.power);
             const foes = [];
             if (dummyView && current.dummy) {
                 const visible = inSight(current.dummy);
