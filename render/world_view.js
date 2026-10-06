@@ -83,6 +83,9 @@ for ( int k = 0; k < ${TORCH_TAPS}; k ++ ) {
 }
 shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
     }
+    // How bright the sky a pond gives back is (the sky's own colour, paler
+    // low down), for each unit of the sky's light.
+    const WATER_SKY = 0.5;
     // In a dark region a little daylight comes in by each portal: a soft
     // light `inside` blocks in from it, so the dark does not shut at the
     // doorway (user, 2026-10-03). At night it is the moon's, `night` as
@@ -745,6 +748,10 @@ void main() {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
+            // The ponds give back the sky as the hour lights it, and ripple.
+            ground.water.time.value = clock;
+            ground.water.sky.value.copy(now.colors[3]).multiplyScalar(now.sky * WATER_SKY);
+            ground.water.horizon.value.copy(now.colors[3]).lerp(now.colors[0], 0.5).multiplyScalar(now.sky * WATER_SKY);
             // The torch light: near this fighter, a little towards its
             // flame (TORCH), flickering a little -- short of any block or
             // body the flame pokes into, or the light would be shut inside

@@ -68,7 +68,7 @@
 
 - [x] 2 天空可见度（`render/terrain_light.js`，测试 `tests/light.test.cjs`）
 - [x] 画质档：清晰 3、极高 4（含第 9 项；手机小屏的极高档太阳影子 1024 → 2048，大屏 2048 → 4096）
-- [ ] 5 水面
+- [x] 5 水面（`render/terrain_mesh.js` 的 `WATER`；天色由 `render/world_view.js` 每帧给，用着色器里的渐变代替环境贴图）
 - [ ] 1 方块光照传播
 - [ ] 4 光照探针网格
 - [ ] 结果写进 `design.md` / `parameters.md` / `roadmap.md`，删除本文件

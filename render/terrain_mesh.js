@@ -38,9 +38,22 @@ const terrainMesh = (() => {
         return ((h ^ h >>> 16) >>> 0) / 4294967296;
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
-    // How far a pond's surface lies below the ground (blocks), and how dark
-    // the earth of its banks is.
-    const POND_DEPTH = 0.25, POND_BANK = 0.8;
+    // How far a pond's surface and its bed lie below the ground (blocks),
+    // how dark the earth of its banks is at the top and at the bed, and
+    // how dark its bed (the earth's colour under water: palette.pondBed).
+    const POND_DEPTH = 0.25, POND_BED = 0.8, POND_BANK = [0.8, 0.45], POND_FLOOR = 0.9;
+    // A pond's water (user, 2026-10-06): see-through, so its bed shows,
+    // most where it is looked straight down into (`opacity` there, none
+    // edge on); it gives back the sky (`sky`, the sky's colour above and
+    // `horizon` low down, set by the view with the hour), the more the
+    // more aslant it is seen (fresnel: `mirror` straight down, all of it
+    // edge on); slow ripples (`waves`:
+    // [x, z, length (blocks), speed, height] each) turn its face, and the
+    // sun's, the moon's and a torch's light glint on it (`glint` how
+    // bright, `shine` how small); a torch's or a fire's light also shows on
+    // it as a wide warm sheen (`fire` how bright, `fireSpread` how narrow),
+    // where its true glint would lie under the bank.
+    const WATER = { opacity: 0.55, mirror: 0.3, glint: '#484848', shine: 300, fire: 0.5, fireSpread: 6, waves: [[1, 0.35, 2.3, 0.45, 0.05], [-0.4, 1, 1.6, 0.6, 0.04], [0.7, -0.8, 0.9, 0.9, 0.02]] };
     // A cliff: blocks of earth and rock drawn down from its edge, each this
     // much darker than the one above.
     const CLIFF_DEPTH = 4, CLIFF_SHADE = 0.12;
@@ -59,14 +72,55 @@ const terrainMesh = (() => {
     // ground beyond the map, the mist under a cliff): `sight` is the
     // terrain's (`create`).
     function shadeUnseen(material, sight) {
+        material.onBeforeCompile = shader => unseen(shader, sight);
+        return material;
+    }
+    function unseen(shader, sight) {
+        Object.assign(shader.uniforms, { sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nvarying vec2 vSightAt;')
+            .replace('#include <project_vertex>', '#include <project_vertex>\nvSightAt = (modelMatrix * vec4(transformed, 1.0)).xz;');
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>\nvarying vec2 vSightAt; ${SIGHT_UNIFORMS}`)
+            .replace('#include <fog_fragment>', `${sightShade('vSightAt')}\n#include <fog_fragment>`);
+    }
+    // The water's material (WATER): the engine's shiny one, its face turned
+    // by the ripples, the sky mixed in by fresnel and its see-through-ness
+    // going with it; shaded where unseen as the terrain is. `water` holds
+    // its uniforms: `time` (seconds), `sky` and `horizon` (colours).
+    function waterMaterial(T, sight, water) {
+        const material = new T.MeshPhongMaterial({ color: palette.water, specular: WATER.glint, shininess: WATER.shine, transparent: true, opacity: WATER.opacity, depthWrite: false });
+        const waves = WATER.waves.map(([x, z, length, speed, height]) => {
+            const d = Math.hypot(x, z), k = 2 * Math.PI / length;
+            return `w = dot(p, vec2(${(x / d * k).toFixed(4)}, ${(z / d * k).toFixed(4)})) + waterTime * ${(speed * k).toFixed(4)}; slope += vec2(${(x / d * k * height).toFixed(4)}, ${(z / d * k * height).toFixed(4)}) * cos(w);`;
+        }).join('\n    ');
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
+            unseen(shader, sight);
+            Object.assign(shader.uniforms, { waterTime: water.time, waterSky: water.sky, waterHorizon: water.horizon });
             shader.vertexShader = shader.vertexShader
-                .replace('#include <common>', '#include <common>\nvarying vec2 vSightAt;')
-                .replace('#include <project_vertex>', '#include <project_vertex>\nvSightAt = (modelMatrix * vec4(transformed, 1.0)).xz;');
+                .replace('#include <common>', '#include <common>\nvarying vec3 vWaterAt;')
+                .replace('#include <project_vertex>', '#include <project_vertex>\nvWaterAt = (modelMatrix * vec4(transformed, 1.0)).xyz;');
             shader.fragmentShader = shader.fragmentShader
-                .replace('#include <common>', `#include <common>\nvarying vec2 vSightAt; ${SIGHT_UNIFORMS}`)
-                .replace('#include <fog_fragment>', `${sightShade('vSightAt')}\n#include <fog_fragment>`);
+                .replace('#include <lights_fragment_begin>', fireSheen(T))
+                .replace('#include <common>', `#include <common>
+varying vec3 vWaterAt; uniform float waterTime; uniform vec3 waterSky; uniform vec3 waterHorizon;
+// The water's face (world) at p, turned by the ripples.
+vec3 waterFace(vec2 p) {
+    vec2 slope = vec2(0.0); float w;
+    ${waves}
+    return normalize(vec3(-slope.x, 1.0, -slope.y));
+}`)
+                .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+vec3 waterUp = waterFace(vWaterAt.xz);
+normal = normalize((viewMatrix * vec4(waterUp, 0.0)).xyz);`)
+                .replace('#include <opaque_fragment>', `vec3 waterEye = normalize(cameraPosition - vWaterAt);
+float waterEdge = pow(1.0 - max(dot(waterEye, waterUp), 0.0), 5.0), waterMirror = ${WATER.mirror.toFixed(3)} + ${(1 - WATER.mirror).toFixed(3)} * waterEdge;
+vec3 waterSeen = reflect(-waterEye, waterUp);
+vec3 waterBack = mix(waterHorizon, waterSky, smoothstep(0.0, 0.7, waterSeen.y));
+vec3 waterShine = reflectedLight.directSpecular + waterFire * ${WATER.fire.toFixed(3)};
+outgoingLight = mix(outgoingLight - reflectedLight.directSpecular, waterBack, waterMirror) + waterShine;
+diffuseColor.a = max(mix(diffuseColor.a, 1.0, waterEdge), min(1.0, dot(waterShine, vec3(0.333))));
+#include <opaque_fragment>`);
         };
         return material;
     }
@@ -76,6 +130,14 @@ const terrainMesh = (() => {
     function skyLit(T) {
         const chunk = T.ShaderChunk.lights_fragment_begin, hemi = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );';
         return chunk.includes(hemi) ? chunk.replace(hemi, hemi.replace(';', ' * vSky;')) : '#include <lights_fragment_begin>';
+    }
+    // The engine's light with the point lights' (torches, fires) wide
+    // sheen gathered in `waterFire` (WATER.fireSpread). A three.js whose
+    // shader reads otherwise gets none.
+    function fireSheen(T) {
+        const chunk = T.ShaderChunk.lights_fragment_begin, from = chunk.indexOf('#if ( NUM_POINT_LIGHTS > 0 )'), call = 'RE_Direct( directLight,', at = chunk.indexOf(call, from);
+        const sheen = `waterFire += directLight.color * pow(saturate(dot(geometryNormal, normalize(directLight.direction + geometryViewDir))), ${WATER.fireSpread.toFixed(1)});\n\t\t`;
+        return `vec3 waterFire = vec3(0.0);\n${from < 0 || at < 0 ? chunk : chunk.slice(0, at) + sheen + chunk.slice(at)}`;
     }
     // Tile and shade spread per solid kind (by name).
     const BLOCK = { stone: ['stone', 0.07], tree: ['bark', 0.05], wood: ['plank', 0.04], portal: ['portalStone', 0.06], brush: ['brush', 0.1], ore: ['ore', 0.06], crystal: ['crystalRock', 0.05], hedge: ['leaves', 0.12] };
@@ -206,6 +268,9 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
 }`)
                 .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vSide.xz * 0.3')}\n#include <fog_fragment>`);
         };
+        // The ponds' water (WATER): its own material, a mesh of its own per chunk.
+        const water = { time: { value: 0 }, sky: { value: new T.Color() }, horizon: { value: new T.Color() } };
+        const wetMaterial = waterMaterial(T, sight, water);
         let deco = null, decoRev = -1;
         const chunks = new Map();
         // Where nothing standing is in the way: ground under open air.
@@ -279,14 +344,15 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // Spots kept free of flowers: spawns, homes, doors and portals.
         const clear = [...t.spawns, ...t.monsters, ...sim.entities.map(e => ({ col: Math.floor(e.x / t.unit), row: Math.floor(e.y / t.unit) }))];
 
+        // One chunk: its blocks and ground (`b`), and its ponds' water (`wet`).
         function build(i) {
-            const b = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
+            const b = builder(), wet = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
             for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
                 const k = terrainKit.kindAt(t, c, r), name = terrainKit.NAMES[k];
                 // Beyond a cliff's edge nothing is drawn; the cells along it show its face.
                 if (k === K.drop) continue;
                 cliff(b, c, r);
-                if (k === K.water) { pond(b, c, r); continue; }
+                if (k === K.water) { pond(b, wet, c, r); continue; }
                 if (!terrainKit.isSolid(k)) {
                     // Ground, shaded at corners that meet a wall; a herb
                     // grows on the map's own floor.
@@ -331,21 +397,24 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                     if (!opaque(x + F.d[0], y, z + F.d[1])) face(b, F, x, y, z, tiles[d.tile], rgb);
                 }
             }
-            return b;
+            return { b, wet };
         }
-        // A pond on cell (c, r): its surface POND_DEPTH below the ground,
-        // and the earth of the bank wherever the next cell is not water.
-        function pond(b, c, r) {
-            const y = -POND_DEPTH, wet = (dc, dr) => terrainKit.inside(t, c + dc, r + dr) && terrainKit.kindAt(t, c + dc, r + dr) === K.water;
-            const surface = [[c, y, r + 1], [c + 1, y, r + 1], [c + 1, y, r], [c, y, r]];
-            b.quad(surface, FACES.top.n, tiles.water, tintOf(WHITE, c, -1, r, 0.05), undefined, skies(surface, FACES.top.n, c, -1, r));
+        // A pond on cell (c, r): its water (into `wet`) POND_DEPTH below the
+        // ground, its bed POND_BED below, and the earth of the bank, darker
+        // going down, wherever the next cell is not water.
+        function pond(b, wet, c, r) {
+            const y = -POND_BED, water = (dc, dr) => terrainKit.inside(t, c + dc, r + dr) && terrainKit.kindAt(t, c + dc, r + dr) === K.water;
+            const at = h => [[c, h, r + 1], [c + 1, h, r + 1], [c + 1, h, r], [c, h, r]];
+            wet.quad(at(-POND_DEPTH), FACES.top.n, tiles.white, WHITE);
+            const bed = at(y);
+            b.quad(bed, FACES.top.n, tiles.gravel, tintOf(colour.set(palette.pondBed).toArray(), c, -2, r, 0.08).map(v => v * POND_FLOOR), undefined, skies(bed, FACES.top.n, c, -1, r));
             b.open = openSky(c, 0, r);
             // The top strip of the dirt tile, as deep as the bank is high.
-            const [u0, v0, u1, v1] = tiles.dirt, bank = [u0, v1 - (v1 - v0) * POND_DEPTH, u1, v1], rgb = tintOf(WHITE, c, -2, r, 0.06).map(v => v * POND_BANK);
-            if (!wet(0, -1)) b.quad([[c, y, r], [c + 1, y, r], [c + 1, 0, r], [c, 0, r]], [0, 0, 1], bank, rgb);
-            if (!wet(0, 1)) b.quad([[c + 1, y, r + 1], [c, y, r + 1], [c, 0, r + 1], [c + 1, 0, r + 1]], [0, 0, -1], bank, rgb);
-            if (!wet(-1, 0)) b.quad([[c, y, r + 1], [c, y, r], [c, 0, r], [c, 0, r + 1]], [1, 0, 0], bank, rgb);
-            if (!wet(1, 0)) b.quad([[c + 1, y, r], [c + 1, y, r + 1], [c + 1, 0, r + 1], [c + 1, 0, r]], [-1, 0, 0], bank, rgb);
+            const [u0, v0, u1, v1] = tiles.dirt, bank = [u0, v1 - (v1 - v0) * POND_BED, u1, v1], rgb = tintOf(WHITE, c, -2, r, 0.06), [hi, lo] = POND_BANK, shades = [lo, lo, hi, hi];
+            if (!water(0, -1)) b.quad([[c, y, r], [c + 1, y, r], [c + 1, 0, r], [c, 0, r]], [0, 0, 1], bank, rgb, shades);
+            if (!water(0, 1)) b.quad([[c + 1, y, r + 1], [c, y, r + 1], [c, 0, r + 1], [c + 1, 0, r + 1]], [0, 0, -1], bank, rgb, shades);
+            if (!water(-1, 0)) b.quad([[c, y, r + 1], [c, y, r], [c, 0, r], [c, 0, r + 1]], [1, 0, 0], bank, rgb, shades);
+            if (!water(1, 0)) b.quad([[c + 1, y, r], [c + 1, y, r + 1], [c + 1, 0, r + 1], [c + 1, 0, r]], [-1, 0, 0], bank, rgb, shades);
             b.open = 1;
         }
         // The cliff under each edge of cell (c, r) that the drop lies
@@ -411,7 +480,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 smallBox(b, [x, level + h / 2, z], [0.13, h, 0.13], hash(c, r, 70 + k) * Math.PI, tiles.white, k === 1 ? deep : glow);
             }
         }
-        function mesh(b) {
+        function mesh(b, material) {
             const g = new T.BufferGeometry();
             g.setAttribute('position', new T.Float32BufferAttribute(b.pos, 3));
             g.setAttribute('normal', new T.Float32BufferAttribute(b.nor, 3));
@@ -421,8 +490,12 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             g.setIndex(b.pos.length / 3 > 65535 ? new T.Uint32BufferAttribute(b.idx, 1) : new T.Uint16BufferAttribute(b.idx, 1));
             g.computeBoundingSphere();
             const m = new T.Mesh(g, material);
-            m.castShadow = true; m.receiveShadow = true;
+            m.castShadow = material !== wetMaterial; m.receiveShadow = true;
             return m;
+        }
+        // Take a chunk's meshes out of the scene.
+        function drop({ mesh: m, water: w }) {
+            for (const one of [m, w]) if (one) { scene.remove(one); one.geometry.dispose(); }
         }
         // Rebuild every chunk whose revision moved (all of them the first time).
         function update() {
@@ -438,21 +511,22 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             t.chunks.forEach((chunk, i) => {
                 const have = chunks.get(i);
                 if (have && have.rev === chunk.rev) return;
-                if (have) { scene.remove(have.mesh); have.mesh.geometry.dispose(); }
-                const m = mesh(build(i));
+                if (have) drop(have);
+                const { b, wet } = build(i), m = mesh(b, material), w = wet.pos.length ? mesh(wet, wetMaterial) : null;
                 scene.add(m);
-                chunks.set(i, { rev: chunk.rev, mesh: m });
+                if (w) scene.add(w);
+                chunks.set(i, { rev: chunk.rev, mesh: m, water: w });
                 rebuilt++;
             });
             return rebuilt;
         }
         update();
         return {
-            cut, sight, material, update, hides,
+            cut, sight, water, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
-                for (const { mesh: m } of chunks.values()) { scene.remove(m); m.geometry.dispose(); }
-                chunks.clear(); material.dispose();
+                for (const chunk of chunks.values()) drop(chunk);
+                chunks.clear(); material.dispose(); wetMaterial.dispose();
             }
         };
     }
