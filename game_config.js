@@ -397,9 +397,8 @@ const gameConfig = (() => {
         // saver draws at saverPixelRatio and without sun shadows. lights:
         // how many moving lights without shadows are lit at once (the
         // nearest; a burning thicket, a doorway's glow), besides the
-        // torch, which casts shadows of torchShadowMap texels a side (not
-        // in the power saver, where its light is kept off what it does
-        // not see by a mask instead).
+        // torch, which always casts shadows, of torchShadowMap texels a
+        // side (they keep its light from passing walls; user, 2026-10-06).
         graphics: { pixelRatioMax: 2, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 13, lights: 4, torchShadowMap: 256 },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

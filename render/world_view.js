@@ -91,7 +91,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const mapSize = small ? C.graphics.shadowMapSmall : C.graphics.shadowMapLarge;
         let world = null;
         // The menu's settings (ui/settings.js): the camera's distance
-        // multiplier, and shadows (off in the power saver). hourShift: hours
+        // multiplier, and sun shadows (off in the power saver). hourShift: hours
         // the time of day is drawn ahead, from ?hour=21 in the address (it
         // starts at that hour and goes on; for testing, never saved).
         const tune = { zoom: 1, shadows: true, hourShift: 0 };
@@ -115,7 +115,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
-        // zoom: camera distance multiplier; saver: fewer pixels, no shadows.
+        // zoom: camera distance multiplier; saver: fewer pixels, no sun shadows.
         function settings({ zoom, saver }) {
             tune.zoom = zoom; tune.shadows = !saver;
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, saver ? C.graphics.saverPixelRatio : C.graphics.pixelRatioMax));
@@ -169,13 +169,11 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const scene = new T.Scene(), sky = now.colors[3].clone();
         scene.background = sky;
         scene.fog = new T.Fog(sky, C.camera.distance + now.fog[0], C.camera.distance + now.fog[1]);
-        // Shadows follow the menu's settings: the sun's and the torch's, or
-        // in the power saver neither, the torch's light then kept off what
-        // it does not see by a mask (`shine`, below).
+        // The sun's shadows follow the menu's settings (none in the power
+        // saver). The torch's are always cast: they keep its light from
+        // passing walls (user, 2026-10-06).
         function retune() {
             sun.castShadow = !dark && tune.shadows;
-            torchLight.castShadow = tune.shadows;
-            ground.torch.masked.value = tune.shadows ? 0 : 1;
         }
 
         const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
@@ -188,6 +186,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         // gives light -- a burning thicket, a doorway's glow, someone
         // else's torch -- and the rest of them are at zero.
         const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay), TS = C.graphics.torchShadowMap;
+        torchLight.castShadow = true;
         torchLight.shadow.mapSize.set(TS, TS);
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
         torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
@@ -536,8 +535,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         // straight above into a small texture, north up, and blurred along
         // and then across: white where the rays do not reach, soft at the
         // edge. `size` texels across the `2 * half` blocks round its middle.
-        // The shade of sight is one, where the torch's light does not get
-        // to is another. ----
+        // The shade of sight is drawn with one. ----
         const BLUR = 1.1;
         // A nine-texel bell curve in five taps; `along` is one texel's step.
         const blur = new T.ShaderMaterial({
@@ -631,25 +629,6 @@ void main() {
             return { update };
         })();
 
-        // ---- the torch lights only what it sees. With shadows its own
-        // shadows see to that; in the power saver its light is kept off
-        // what lies behind blocks at least eye high (as sight; all the way
-        // round) by this mask, which the terrain reads for the torch's
-        // light (render/terrain_mesh.js). Recast when the flame has
-        // moved. ----
-        const shine = (() => {
-            const mask = fanMask(128, TORCH.reach + 1), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
-            ground.torch.mask.value = mask.texture; ground.torch.at.value.set(0, 0, mask.half);
-            let lastX = NaN, lastZ = NaN, lastRev = -1;
-            return (x, z) => {
-                if (x === lastX && z === lastZ && lastRev === t.rev) return;
-                lastX = x; lastZ = z; lastRev = t.rev;
-                terrainKit.sightFan(t, x * U, z * U, mask.half * U, { out: fan });
-                ground.torch.at.value.set(x, z, mask.half);
-                mask.draw(x, z, fan);
-            };
-        })();
-
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let clock = 0;
         const seen = new Set();
@@ -721,7 +700,6 @@ void main() {
             if (bearer) {
                 torchLight.position.set(...flameOf(bearer));
                 torchLight.intensity = now.torch * flicker(0);
-                if (!tune.shadows) shine(torchLight.position.x, torchLight.position.z);
             } else torchLight.intensity = 0;
             // (Drawn at least once: a shadow map never drawn is no texture, and nothing lit would draw.)
             torchLight.shadow.autoUpdate = !!bearer || !torchLight.shadow.map;

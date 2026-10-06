@@ -291,7 +291,7 @@
 | `camera.yaw` / `pitch` | 0 / 0.96 | 镜头在正南，俯角约 55° |
 | `camera.distance` / `fov` / `lookHeight` | 11.5 / 34 / 0.8 | 距离（格，用户 2026-10-02 从 10.5 拉远一点）、竖直视角（度）、注视点高度（格） |
 | `camera.zoom` | 近 0.85 / 中 1 / 远 1.15 | 菜单"镜头"设定乘在距离上 |
-| `graphics.pixelRatioMax` / `saverPixelRatio` | 2 / 1 | 像素比上限；菜单"画质"选省电时用 1，并关掉太阳和火把的影子 |
+| `graphics.pixelRatioMax` / `saverPixelRatio` | 2 / 1 | 像素比上限；菜单"画质"选省电时用 1，并关掉太阳阴影（火把的影子一直开着，用户 2026-10-06） |
 | `graphics.lights` | 4 | 同时亮几盏不投影的会动的光（离自己最近的：燃烧的枯木丛、洞口的光、别人的火把） |
 | `graphics.torchShadowMap` | 256 | 火把影子贴图每面的像素 |
 | `graphics.shadowMapSmall` / `Large` / `shadowExtent` | 1024 / 2048 / 13 | 阴影贴图（短边小于 700 像素用小的）；阴影范围半宽（格） |

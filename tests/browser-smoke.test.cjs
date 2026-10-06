@@ -471,7 +471,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
     } finally { await context.close(); }
 });
 
-test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, a mask in the power saver', { timeout: 300000 }, async t => {
+test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, the power saver too', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const look = async query => {
         const { context, page, errors } = await openPhone(844, 390, query);
@@ -496,8 +496,8 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
     assert.ok(night.sum[2] / bright(night) > noon.sum[2] / bright(noon), 'the night is bluer');
     assert.ok(bright(night) > 0.1 * bright(noon), 'out of doors the night is still to be seen by (user)');
     assert.ok(morning.toSun[0] > 0.5 && noon.toSun[1] > morning.toSun[1], `the sun in the east in the morning, higher at noon: ${morning.toSun} ${noon.toSun}`);
-    // A torch in the cave: its light casts shadows, and the power saver
-    // turns them off for the mask that keeps the light from passing walls.
+    // A torch in the cave: its light casts shadows (they keep it from
+    // passing walls), in the power saver too (user, 2026-10-06).
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
     await context.addInitScript(() => localStorage.setItem('blocky-rpg-save', JSON.stringify({ v: 2, inventory: { gold: 0, items: { wooden_sword: 1, torch: 1, cloth_armor: 1 } }, loadout: { main: 'wooden_sword', offhand: 'torch', armor: 'cloth_armor', accessory: null } })));
     const { page, errors } = await openPage(context, '?map=cave');
@@ -506,13 +506,13 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
             const g = window.game; g.pause(true);
             worldSim.command(g.sim, { type: 'press', button: 'offhand' }); worldSim.command(g.sim, { type: 'release', button: 'offhand' });
             g.run(0.3); g.view.render(g.sim, 0.016);
-            const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map, masked: g.view.ground.torch.masked.value };
+            const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
             g.view.settings({ zoom: 1, saver: true }); g.view.render(g.sim, 0.016);
-            return { before, saver: { shadows: light.castShadow, masked: g.view.ground.torch.masked.value } };
+            return { before, saver: { shadows: light.castShadow } };
         });
         assert.ok(torch.before.lit > 0);
-        assert.deepEqual([torch.before.shadows, torch.before.map, torch.before.masked], [true, true, 0]);
-        assert.deepEqual(torch.saver, { shadows: false, masked: 1 });
+        assert.deepEqual([torch.before.shadows, torch.before.map], [true, true]);
+        assert.deepEqual(torch.saver, { shadows: true });
         await shot(page, 'cave-torch');
         assert.deepEqual(errors, []);
     } finally { await context.close(); }

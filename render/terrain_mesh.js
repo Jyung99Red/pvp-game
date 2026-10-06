@@ -156,34 +156,24 @@ const terrainMesh = (() => {
         // the hole is open, 0..1: the view opens it only while blocks do
         // hide the player (`hides`, below).
         const cut = { center: { value: new T.Vector3() }, eye: { value: new T.Vector3() }, radius: { value: 1.3 }, on: { value: 1 }, open: { value: 0 } };
-        // The torch's light (the first point light) reaches only what the
-        // torch sees. With shadows, its shadows see to that; in the power
-        // saver (`masked` 1) a mask does instead: `mask` is white where it
-        // does not see (a ground mask of render/world_view.js, north up),
-        // `at` its middle (x, z) and half its width, blocks. A face reads it
-        // a little way out in front of itself, where the light comes from,
-        // not on its own edge.
-        const torch = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, masked: { value: 1 } };
         // The shade of sight (`sightShade`, above): nothing is shaded until
         // the view gives it a mask and a tone. A face reads the mask a
-        // little way out in front of itself, as for the torch: the wall
-        // that ends the sight is itself seen, its top and its far side not.
+        // little way out in front of itself: the wall that ends the sight
+        // is itself seen, its top and its far side not.
         const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
         const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
         // Hidden faces are left out, so the back faces three.js would cast
         // shadows with are often missing: cast with both sides.
         material.shadowSide = T.DoubleSide;
         material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, torchMask: torch.mask, torchAt: torch.at, torchMasked: torch.masked, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone });
             shader.vertexShader = shader.vertexShader
-                .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos; varying vec3 vTorchSide;')
-                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vTorchSide = normal;');
-            const lit = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
-            if (!T.ShaderChunk.lights_fragment_begin.includes(lit)) throw new Error('The point light loop of this three.js is not the one the torch mask was written for');
+                .replace('#include <common>', '#include <common>\nvarying vec3 vCutPos; varying vec3 vSide;')
+                .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal;');
             shader.fragmentShader = shader.fragmentShader
                 .replace('#include <common>', `#include <common>
-varying vec3 vCutPos; varying vec3 vTorchSide;
-uniform sampler2D torchMask; uniform vec3 torchAt; uniform float torchMasked; ${SIGHT_UNIFORMS}
+varying vec3 vCutPos; varying vec3 vSide;
+${SIGHT_UNIFORMS}
 uniform vec3 cutCenter; uniform vec3 cutEye; uniform float cutRadius; uniform float cutOn; uniform float cutOpen;
 float cutDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
@@ -200,13 +190,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
     float fade = (1.0 - smoothstep(cutRadius * 0.55, cutRadius, length(rel - axis * along))) * smoothstep(0.1, 0.35, ahead);
     if (fade * 0.85 * cutOpen > cutDither(gl_FragCoord.xy)) discard;
 }`)
-                .replace('#include <lights_fragment_begin>', `vec2 torchUv = vec2(0.5) + vec2(vCutPos.x + vTorchSide.x * 0.3 - torchAt.x, torchAt.y - vCutPos.z - vTorchSide.z * 0.3) / (2.0 * torchAt.z);
-float torchSeen = torchMasked > 0.5 ? 1.0 - texture2D(torchMask, torchUv).g : 1.0;
-${T.ShaderChunk.lights_fragment_begin.replace(lit, `${lit}
-#if UNROLLED_LOOP_INDEX == 0
-directLight.color *= torchSeen;
-#endif`)}`)
-                .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vTorchSide.xz * 0.3')}\n#include <fog_fragment>`);
+                .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vSide.xz * 0.3')}\n#include <fog_fragment>`);
         };
         let deco = null, decoRev = -1;
         const chunks = new Map();
@@ -440,7 +424,7 @@ directLight.color *= torchSeen;
         }
         update();
         return {
-            cut, torch, sight, material, update, hides,
+            cut, sight, material, update, hides,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const { mesh: m } of chunks.values()) { scene.remove(m); m.geometry.dispose(); }
