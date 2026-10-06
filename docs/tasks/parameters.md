@@ -291,10 +291,11 @@
 | `camera.yaw` / `pitch` | 0 / 0.96 | 镜头在正南，俯角约 55° |
 | `camera.distance` / `fov` / `lookHeight` | 11.5 / 34 / 0.8 | 距离（格，用户 2026-10-02 从 10.5 拉远一点）、竖直视角（度）、注视点高度（格） |
 | `camera.zoom` | 近 0.85 / 中 1 / 远 1.15 | 菜单"镜头"设定乘在距离上 |
-| `graphics.pixelRatioMax` / `saverPixelRatio` | 2 / 1 | 像素比上限；菜单"画质"选省电时用 1，并关掉太阳阴影（火把的影子一直开着，用户 2026-10-06） |
+| `graphics.pixelRatioMax` / `ultraPixelRatio` / `saverPixelRatio` | 3 / 4 / 1 | 像素比上限，按菜单"画质"：清晰 3、极高 4（多数手机屏幕本身在 3 以内，等于不设上限）、省电 1（用户 2026-10-06）；省电还关掉太阳阴影（火把的影子一直开着，用户 2026-10-06） |
 | `graphics.lights` | 4 | 同时亮几盏不投影的会动的光（离自己最近的：燃烧的枯木丛、洞口的光、别人的火把） |
-| `graphics.torchShadowMap` | 256 | 火把影子贴图每面的像素 |
-| `graphics.shadowMapSmall` / `Large` / `shadowExtent` | 1024 / 2048 / 13 | 阴影贴图（短边小于 700 像素用小的）；阴影范围半宽（格） |
+| `graphics.torchShadowMap` / `ultraTorchShadowMap` | 256 / 512 | 火把影子贴图每面的像素；极高档用后一个 |
+| `graphics.shadowMapSmall` / `Large` / `shadowExtent` | 1024 / 2048 / 13 | 太阳阴影贴图（短边小于 700 像素用小的）；阴影范围半宽（格） |
+| `graphics.ultraShadowMapSmall` / `Large` | 2048 / 4096 | 极高档的太阳阴影贴图，影子边更清楚；2048 以上的贴图用 12 个采样点，否则 5 个 |
 | `input.deadZone` / `ramp` / `stickRadius` | 12 / 32 / 52 | 摇杆死区、再拖多少到满速、底座半径 |
 | `input.maxTouches` | 2 | 同时有效的触点 |
 | `input.keys` | WASD/方向键、J、K、L、E | 移动、攻击、副手、格挡、交互 |

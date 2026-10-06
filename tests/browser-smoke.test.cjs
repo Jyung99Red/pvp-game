@@ -507,7 +507,7 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
             worldSim.command(g.sim, { type: 'press', button: 'offhand' }); worldSim.command(g.sim, { type: 'release', button: 'offhand' });
             g.run(0.3); g.view.render(g.sim, 0.016);
             const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
-            g.view.settings({ zoom: 1, saver: true }); g.view.render(g.sim, 0.016);
+            g.view.settings({ zoom: 1, quality: 'saver' }); g.view.render(g.sim, 0.016);
             // Swinging with a monster up against it: the light stays out of
             // the monster's body, and moves only a little (user, 2026-10-06).
             const f = g.sim.fighters[0], m = g.sim.monsters[0], stick = () => { m.x = f.x + Math.cos(f.facing) * (f.radius + m.radius + 2); m.y = f.y + Math.sin(f.facing) * (f.radius + m.radius + 2); m.phase = 'idle'; m.t = 0; };

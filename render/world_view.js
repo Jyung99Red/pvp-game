@@ -48,19 +48,25 @@ const worldView = (() => {
     // (user, 2026-10-04: soft, like the shade of sight).
     const SUN_SOFT = 0.1;
     // The engine's soft shadows take five samples in a disc that noise
-    // turns from pixel to pixel; on a large shadow map that disc is many
-    // texels wide and the five show as grain. There, SUN_TAPS samples of
-    // the same disc are taken instead (a small map keeps the engine's
-    // five: its disc is narrow, and phones are spared the cost). The
+    // turns from pixel to pixel; on a large shadow map (SUN_WIDE texels
+    // or more) that disc is many texels wide and the five show as grain.
+    // There, SUN_TAPS samples of the same disc are taken instead (a small
+    // map keeps the engine's five: its disc is narrow, and phones are
+    // spared the cost). The map's size is the light's own, so the choice
+    // follows a change of picture quality with no new shader. The
     // engine's shader is patched before any material is compiled; a
     // three.js whose shader reads otherwise is left as it is.
-    const SUN_TAPS = 12;
+    const SUN_TAPS = 12, SUN_WIDE = 2048;
     function smoothShadows(T) {
         const chunk = T.ShaderChunk.shadowmap_pars_fragment, from = chunk.indexOf('shadow = ('), end = ') * 0.2;', to = chunk.indexOf(end, from);
-        if (from < 0 || to < 0 || !chunk.slice(from, to).includes('vogelDiskSample( 4, 5, phi )')) return;
+        if (from < 0 || to < 0 || !chunk.slice(from, to).includes('vogelDiskSample( 4, 5, phi )') || !chunk.includes('vec2 shadowMapSize')) return;
         T.ShaderChunk.shadowmap_pars_fragment = `${chunk.slice(0, from)}shadow = 0.0;
-for ( int k = 0; k < ${SUN_TAPS}; k ++ ) shadow += texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( k, ${SUN_TAPS}, phi ) * radius, shadowCoord.z ) );
-shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
+int taps = shadowMapSize.x >= ${SUN_WIDE}.0 ? ${SUN_TAPS} : 5;
+for ( int k = 0; k < ${SUN_TAPS}; k ++ ) {
+    if ( k >= taps ) break;
+    shadow += texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( k, taps, phi ) * radius, shadowCoord.z ) );
+}
+shadow /= float( taps );${chunk.slice(to + end.length)}`;
     }
     // The engine's point light shadows take five samples; TORCH_TAPS
     // samples of the same disc are taken instead, or a soft edge shows as
@@ -107,28 +113,38 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
-        if (!small) smoothShadows(T);
+        smoothShadows(T);
         softTorchShadows(T);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, C.graphics.pixelRatioMax));
         // Bright ground eases towards white instead of being cut off at
         // it; colours below that are left as they are.
         renderer.toneMapping = T.NeutralToneMapping;
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = T.PCFShadowMap;
         const camera = new T.PerspectiveCamera(C.camera.fov, 1, 0.1, 120);
-        const mapSize = small ? C.graphics.shadowMapSmall : C.graphics.shadowMapLarge;
         let world = null;
         // The menu's settings (ui/settings.js): the camera's distance
-        // multiplier, and sun shadows (off in the power saver). hourShift: hours
-        // the time of day is drawn ahead, from ?hour=21 in the address (it
-        // starts at that hour and goes on; for testing, never saved).
-        const tune = { zoom: 1, shadows: true, hourShift: 0 };
+        // multiplier, sun shadows (off in the power saver) and the size of
+        // the sun's and the torch's shadow maps (texels a side; larger in
+        // the finest quality). hourShift: hours the time of day is drawn
+        // ahead, from ?hour=21 in the address (it starts at that hour and
+        // goes on; for testing, never saved).
+        const tune = { zoom: 1, shadows: true, sunMap: 0, torchMap: 0, hourShift: 0 };
+        // Picture quality (ui/settings.js): `saver` (few pixels, no sun
+        // shadows), `high`, or `ultra` (more pixels, sharper shadows).
+        function quality(level) {
+            const G = C.graphics, ultra = level === 'ultra';
+            tune.shadows = level !== 'saver';
+            tune.sunMap = small ? (ultra ? G.ultraShadowMapSmall : G.shadowMapSmall) : (ultra ? G.ultraShadowMapLarge : G.shadowMapLarge);
+            tune.torchMap = ultra ? G.ultraTorchShadowMap : G.torchShadowMap;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, level === 'saver' ? G.saverPixelRatio : ultra ? G.ultraPixelRatio : G.pixelRatioMax));
+        }
+        quality('high');
         const asked = new URLSearchParams(window.location.search).get('hour');
         if (asked !== null && Number.isFinite(Number(asked))) tune.hourShift = Number(asked) - dayKit.hourOf(sim);
 
         function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
-            world = build(T, renderer, next, camera, mapSize, selfId, tune);
+            world = build(T, renderer, next, camera, selfId, tune);
         }
         load(sim, opts);
         // `bodies`: fighters and monsters as shown, by id -- a blend between
@@ -143,10 +159,10 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
             renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
-        // zoom: camera distance multiplier; saver: fewer pixels, no sun shadows.
-        function settings({ zoom, saver }) {
-            tune.zoom = zoom; tune.shadows = !saver;
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, saver ? C.graphics.saverPixelRatio : C.graphics.pixelRatioMax));
+        // zoom: camera distance multiplier; quality: 'saver', 'high' or 'ultra'.
+        function settings({ zoom, quality: level }) {
+            tune.zoom = zoom;
+            quality(level);
             world.retune();
         }
         // A point in blocks to CSS pixels on the canvas, or null behind the camera.
@@ -174,7 +190,7 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
     // blocks one under another.
     const MIST = { layers: 4, step: 0.9, opacity: 0.42 };
     // ---- one world: scene, terrain, characters, effects ----
-    function build(T, renderer, sim, camera, mapSize, selfId, tune) {
+    function build(T, renderer, sim, camera, selfId, tune) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
         // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
@@ -199,9 +215,21 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         scene.fog = new T.Fog(sky, C.camera.distance + now.fog[0], C.camera.distance + now.fog[1]);
         // The sun's shadows follow the menu's settings (none in the power
         // saver). The torch's are always cast: they keep its light from
-        // passing walls (user, 2026-10-06).
+        // passing walls (user, 2026-10-06). A shadow map of a new size is
+        // made anew on the next frame.
         function retune() {
             sun.castShadow = !dark && tune.shadows;
+            const resize = (shadow, size) => {
+                if (shadow.mapSize.x === size) return false;
+                shadow.mapSize.set(size, size);
+                if (shadow.map) { shadow.map.dispose(); shadow.map = null; }
+                return true;
+            };
+            if (resize(sun.shadow, tune.sunMap)) {
+                texel = 2 * extent / tune.sunMap;
+                sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
+            }
+            if (resize(torchLight.shadow, tune.torchMap)) torchLight.shadow.radius = TORCH.soft * tune.torchMap;
         }
 
         const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
@@ -213,11 +241,11 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         // (graphics.lights): each frame they go to the nearest of what
         // gives light -- a burning thicket, a doorway's glow, someone
         // else's torch -- and the rest of them are at zero.
-        const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay), TS = C.graphics.torchShadowMap;
+        // (Its shadow map's size and softness: `retune`.)
+        const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
         torchLight.castShadow = true;
-        torchLight.shadow.mapSize.set(TS, TS);
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
-        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias; torchLight.shadow.radius = TORCH.soft * TS;
+        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
         const pool = Array.from({ length: C.graphics.lights }, () => {
             const light = new T.PointLight('#ffffff', 0, 1, 1);
@@ -238,7 +266,6 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
             });
         }
         const doorways = dark ? sim.entities.filter(e => e.type === 'portal').map(e => space.toBlocks(e.x + Math.cos(e.facing) * DOORWAY.inside * U, e.y + Math.sin(e.facing) * DOORWAY.inside * U, 0)).map(([x, , z]) => [x, DOORWAY.height, z]) : [];
-        sun.shadow.mapSize.set(mapSize, mapSize);
         Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: 60 });
         sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
         scene.add(sun, sun.target);
@@ -255,8 +282,9 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
             lightRight.crossVectors(upward, lightDir).normalize();
             lightUp.crossVectors(lightDir, lightRight);
         }
-        const texel = 2 * extent / mapSize, focus = new T.Vector3();
-        sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
+        // One texel of the sun's shadow map, blocks (`retune`).
+        let texel = 1;
+        const focus = new T.Vector3();
         function placeSun(x, y, z) {
             focus.set(x, y, z);
             const u = Math.round(focus.dot(lightRight) / texel) * texel, v = Math.round(focus.dot(lightUp) / texel) * texel, w = focus.dot(lightDir);

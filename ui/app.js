@@ -320,7 +320,7 @@ const app = (() => {
         const perf = root.querySelector('[data-perf]'), portrait = window.matchMedia('(orientation: portrait)');
         // This phone's settings, from the menu.
         gameSettings.apply(v => {
-            view?.settings({ zoom: gameConfig.camera.zoom[v.camera], saver: v.quality === 'saver' });
+            view?.settings({ zoom: gameConfig.camera.zoom[v.camera], quality: v.quality });
             perf.hidden = !v.perf;
         });
         let clock = 0;

@@ -391,15 +391,19 @@ const gameConfig = (() => {
         // distance multiplier each camera setting of the menu picks.
         camera: { yaw: 0, pitch: 0.96, distance: 11.5, fov: 34, lookHeight: 0.8, zoom: { near: 0.85, mid: 1, far: 1.15 } },
 
-        // 6. Rendering cost. Shadow map size by screen class (short side
-        // under 700 CSS px is small); shadowExtent is the half-width in
-        // blocks of the shadowed area around the player. The menu's power
-        // saver draws at saverPixelRatio and without sun shadows. lights:
-        // how many moving lights without shadows are lit at once (the
-        // nearest; a burning thicket, a doorway's glow), besides the
-        // torch, which always casts shadows, of torchShadowMap texels a
-        // side (they keep its light from passing walls; user, 2026-10-06).
-        graphics: { pixelRatioMax: 2, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 13, lights: 4, torchShadowMap: 256 },
+        // 6. Rendering cost, by the menu's picture quality (user,
+        // 2026-10-06): `high` draws at most pixelRatioMax device pixels
+        // to a CSS pixel, `ultra` ultraPixelRatio (most phones' own ratio
+        // is 3 or less, so there no cap) with shadow maps of the `ultra`
+        // sizes, the power saver saverPixelRatio and without sun shadows.
+        // Sun shadow map size by screen class (short side under 700 CSS px
+        // is small); shadowExtent is the half-width in blocks of the
+        // shadowed area around the player. lights: how many moving lights
+        // without shadows are lit at once (the nearest; a burning thicket,
+        // a doorway's glow), besides the torch, which always casts
+        // shadows, of torchShadowMap texels a side (they keep its light
+        // from passing walls; user, 2026-10-06).
+        graphics: { pixelRatioMax: 3, ultraPixelRatio: 4, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, ultraShadowMapSmall: 2048, ultraShadowMapLarge: 4096, shadowExtent: 13, lights: 4, torchShadowMap: 256, ultraTorchShadowMap: 512 },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full
