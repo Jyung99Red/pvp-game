@@ -471,7 +471,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
     } finally { await context.close(); }
 });
 
-test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, the power saver too', { timeout: 300000 }, async t => {
+test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, the power saver too, its light kept out of monsters', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const look = async query => {
         const { context, page, errors } = await openPhone(844, 390, query);
@@ -508,11 +508,25 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
             g.run(0.3); g.view.render(g.sim, 0.016);
             const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
             g.view.settings({ zoom: 1, saver: true }); g.view.render(g.sim, 0.016);
-            return { before, saver: { shadows: light.castShadow } };
+            // Swinging with a monster up against it: the light stays out of
+            // the monster's body, and moves only a little (user, 2026-10-06).
+            const f = g.sim.fighters[0], m = g.sim.monsters[0], stick = () => { m.x = f.x + Math.cos(f.facing) * (f.radius + m.radius + 2); m.y = f.y + Math.sin(f.facing) * (f.radius + m.radius + 2); m.phase = 'idle'; m.t = 0; };
+            let closest = Infinity, jump = 0, last = null;
+            for (let k = 0; k < 60; k++) {
+                if (k % 30 === 0) { worldSim.command(g.sim, { type: 'press', button: 'attack' }); worldSim.command(g.sim, { type: 'release', button: 'attack' }); }
+                stick(); g.run(0.02); g.view.render(g.sim, 0.02);
+                const p = light.position.clone();
+                closest = Math.min(closest, Math.hypot(p.x - m.x / 40, p.z - m.y / 40) - m.radius / 40);
+                if (last) jump = Math.max(jump, p.distanceTo(last));
+                last = p;
+            }
+            return { before, saver: { shadows: light.castShadow }, closest, jump };
         });
         assert.ok(torch.before.lit > 0);
         assert.deepEqual([torch.before.shadows, torch.before.map], [true, true]);
         assert.deepEqual(torch.saver, { shadows: true });
+        assert.ok(torch.closest > 0.05, `the torch's light ${torch.closest} blocks from the monster's body`);
+        assert.ok(torch.jump < 0.08, `the torch's light moved ${torch.jump} blocks in a frame`);
         await shot(page, 'cave-torch');
         assert.deepEqual(errors, []);
     } finally { await context.close(); }

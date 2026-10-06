@@ -30,8 +30,17 @@ const worldView = (() => {
     const SUN_STEP = 0.05;
     // A torch lights `reach` blocks round it. Its shadows (graphics.
     // torchShadowMap) are the torch's own, cast by blocks and bodies alike;
-    // `bias` keeps a face from shadowing itself.
-    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02 };
+    // `bias` keeps a face from shadowing itself. Their edge is soft (user,
+    // 2026-10-06): blurred over `soft` radians as seen from the light, in
+    // TORCH_TAPS samples.
+    // Its light is not on the flame, which a swing pokes into a monster's
+    // body, the shadows then turning all about (user, 2026-10-06), but
+    // near its bearer: `follow` of the way from a point `height` blocks up
+    // the bearer's middle to the flame, so the hand's movement still shows
+    // a little, eased at `ease` a second; and, as for walls, short of
+    // anyone else's body (`clear` blocks wider than it) on the way out.
+    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.06, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 };
+    const TORCH_TAPS = 12;
     // A burning thicket's light: the flames' colour, flickering.
     const FIRE = { intensity: 4, reach: 5, decay: 1.4, height: 0.8 };
     // How soft the edge of the sun's shadows is, blocks: the reach of the
@@ -53,6 +62,21 @@ const worldView = (() => {
 for ( int k = 0; k < ${SUN_TAPS}; k ++ ) shadow += texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( k, ${SUN_TAPS}, phi ) * radius, shadowCoord.z ) );
 shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
     }
+    // The engine's point light shadows take five samples; TORCH_TAPS
+    // samples of the same disc are taken instead, or a soft edge shows as
+    // grain. Patched before any material is compiled; a three.js whose
+    // shader reads otherwise is left as it is.
+    function softTorchShadows(T) {
+        const chunk = T.ShaderChunk.shadowmap_pars_fragment, start = 'vec2 sample0 = vogelDiskSample( 0, 5, phi );', end = ') * 0.2;';
+        const from = chunk.indexOf(start), to = chunk.indexOf(end, from);
+        if (from < 0 || to < 0 || !chunk.slice(from, to).includes('bd3D + ( tangent * sample4.x + bitangent * sample4.y ) * texelSize')) return;
+        T.ShaderChunk.shadowmap_pars_fragment = `${chunk.slice(0, from)}shadow = 0.0;
+for ( int k = 0; k < ${TORCH_TAPS}; k ++ ) {
+    vec2 s = vogelDiskSample( k, ${TORCH_TAPS}, phi );
+    shadow += texture( shadowMap, vec4( bd3D + ( tangent * s.x + bitangent * s.y ) * texelSize, dp ) );
+}
+shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
+    }
     // In a dark region a little daylight comes in by each portal: a soft
     // light `inside` blocks in from it, so the dark does not shut at the
     // doorway (user, 2026-10-03). At night it is the moon's, `night` as
@@ -63,12 +87,15 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const c = Math.floor(x), r = Math.floor(z);
         return !terrainKit.inside(t, c, r) || (terrainKit.solidAt(t, c, r) && y < terrainKit.levelAt(t, c, r));
     }
-    // The last point going from `from` to `to` that is not inside a block.
-    function clearOf(t, from, to, steps = 12) {
+    // Is the point inside one of `bodies` ([x, z, radius, top], blocks: upright cylinders)?
+    const inBody = (bodies, [x, y, z]) => bodies.some(([bx, bz, r, top]) => y < top && (x - bx) ** 2 + (z - bz) ** 2 < r * r);
+    // The last point going from `from` to `to` that is not inside a block
+    // (or one of `bodies`).
+    function clearOf(t, from, to, bodies = [], steps = 12) {
         let last = from;
         for (let k = 1; k <= steps; k++) {
             const at = from.map((v, i) => v + (to[i] - v) * k / steps);
-            if (inBlock(t, at)) break;
+            if (inBlock(t, at) || inBody(bodies, at)) break;
             last = at;
         }
         return last;
@@ -81,6 +108,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
         if (!small) smoothShadows(T);
+        softTorchShadows(T);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, C.graphics.pixelRatioMax));
         // Bright ground eases towards white instead of being cut off at
         // it; colours below that are left as they are.
@@ -189,7 +217,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         torchLight.castShadow = true;
         torchLight.shadow.mapSize.set(TS, TS);
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
-        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
+        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias; torchLight.shadow.radius = TORCH.soft * TS;
         scene.add(torchLight);
         const pool = Array.from({ length: C.graphics.lights }, () => {
             const light = new T.PointLight('#ffffff', 0, 1, 1);
@@ -629,6 +657,8 @@ void main() {
             return { update };
         })();
 
+        // Each torch's light's way out from its bearer towards the flame, eased (TORCH).
+        const torchOffsets = new Map();
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let clock = 0;
         const seen = new Set();
@@ -687,14 +717,28 @@ void main() {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
-            // The torch light sits on this fighter's flame, flickering a
-            // little -- short of any block the flame pokes into, or the light
-            // would be shut inside it and the wall's near side go dark.
-            // Anyone else's burning torch is one of the moving lights.
+            // The torch light: near this fighter, a little towards its
+            // flame (TORCH), flickering a little -- short of any block or
+            // body the flame pokes into, or the light would be shut inside
+            // it (a wall's near side would go dark, a monster's shadow turn
+            // all about). Anyone else's burning torch is one of the moving
+            // lights.
             const flicker = k => 1 + 0.08 * Math.sin(clock * 13 + k) + 0.05 * Math.sin(clock * 23.7 + 2 * k);
+            const standing = [];
+            const stand = (b, top) => { const [x, , z] = space.toBlocks(b.x, b.y); standing.push([x, z, b.radius / U + TORCH.clear, top]); };
+            for (const d of drawn) stand(d.shown, 1.9);
+            if (current.dummy) stand(current.dummy, 1.95);
+            for (const m of current.monsters) if (m.phase !== 'dead') stand(shownOf(m), monsterKit.height(m.kind));
             const flameOf = d => {
                 const flame = d.rig.parts.findIndex(part => part.tag === 'flame'), m = d.solved.parts[flame];
-                return clearOf(current.terrain, space.toBlocks(d.shown.x, d.shown.y, d.shown.h + U), [m[12], m[13] + 0.15, m[14]]);
+                const base = space.toBlocks(d.shown.x, d.shown.y, d.shown.h);
+                base[1] += TORCH.height;
+                const want = [m[12] - base[0], m[13] + 0.15 - base[1], m[14] - base[2]].map(v => v * TORCH.follow);
+                let off = torchOffsets.get(d.id);
+                if (!off) torchOffsets.set(d.id, off = want);
+                else for (let i = 0; i < 3; i++) off[i] += (want[i] - off[i]) * Math.min(1, frameSeconds * TORCH.ease);
+                const others = standing.filter((_, i) => i >= drawn.length || drawn[i] !== d);
+                return clearOf(current.terrain, base, base.map((v, i) => v + off[i]), others);
             };
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
             if (bearer) {
