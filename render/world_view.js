@@ -17,13 +17,18 @@ const worldView = (() => {
     // of doors (user). A dark region stays `dark` whatever the hour: its
     // sky's light is enough to make out the walls and the way, and no more
     // (user, 2026-10-06: nobody gets lost there without a torch; it was
-    // 0.05, all black).
+    // 0.05, all black, then 0.4). `bodies`: what the sky's light, and what
+    // the ground gives back of it, does on every body but this phone's own
+    // fighter: [the share of it they take, how far their colours go to
+    // grey in it]. In the dark a goblin's green stood out of the gloom, a
+    // grey wolf did not (user, 2026-10-06): there colours fade, as they do
+    // to the eye; a torch's light brings them back.
     const LIGHT = {
-        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1 },
-        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1 },
-        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1 },
-        night: { sky: 1.1, sun: 0.9, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7 },
-        dark: { sky: 0.4, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1 }
+        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1, bodies: [1, 0] },
+        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1, bodies: [1, 0] },
+        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1, bodies: [1, 0] },
+        night: { sky: 1.1, sun: 0.9, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7, bodies: [1, 0] },
+        dark: { sky: 0.3, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1, bodies: [1, 0.8] }
     };
     // A region whose day looks other than `day`: grey among the rocks.
     const LOOK = { valley: 'grey' };
@@ -139,26 +144,33 @@ varying vec3 vProbeIrradiance;`;
         softTorchShadows(T, torchTaps);
         if (bounce) probesByVertex(T);
     }
-    // A fighter a ring of stealth hides (fighterKit.hidden; user,
-    // 2026-10-06) is drawn thinned out: GHOST of its pixels are left out,
-    // in the pattern of the camera's cut (render/terrain_mesh.js). Nothing
-    // is blended, so nothing needs sorting and its shadow stays; `ghost`
-    // is a uniform, so the shader is the same hidden or not. Drawn only:
-    // the body is hit as ever.
+    // What every character's material reads each frame, both uniforms
+    // ({ value }), so the shader is one and the same for them all:
+    // `ghost`: a fighter a ring of stealth hides (fighterKit.hidden; user,
+    // 2026-10-06) is drawn thinned out, GHOST of its pixels left out in the
+    // pattern of the camera's cut (render/terrain_mesh.js). Nothing is
+    // blended, so nothing needs sorting and its shadow stays.
+    // `sky` (a vector: LIGHT's `bodies`): the share it takes of the sky's
+    // light and of the ground's bounce, and how far its colours go to grey
+    // in that light; the lights that shine on it -- the sun, a torch, a
+    // fire -- it takes whole and in colour.
+    // Drawn only: the body is hit as ever.
     const GHOST = 0.4;
-    function ghostly(material, ghost) {
+    function embodied(material, ghost, sky) {
         material.onBeforeCompile = shader => {
-            shader.uniforms.ghost = ghost;
+            shader.uniforms.ghost = ghost; shader.uniforms.bodySky = sky;
             shader.fragmentShader = shader.fragmentShader
                 .replace('#include <common>', `#include <common>
-uniform float ghost;
+uniform float ghost; uniform vec2 bodySky;
 float ghostDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
     ivec2 i = ivec2(mod(p, 4.0));
     return (m[i.x + i.y * 4] + 0.5) / 16.0;
 }`)
                 .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
+if (ghost > ghostDither(gl_FragCoord.xy)) discard;`)
+                .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(dot(reflectedLight.indirectDiffuse, vec3(0.2126, 0.7152, 0.0722))), bodySky.y) * bodySky.x;`);
         };
         return material;
     }
@@ -307,12 +319,12 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         // The light now, a blend of two looks: intensities, the four
         // colours, fog, the torch, the shadows' darkness; `outside`, how
         // much of it is day (0 at night), for the light at a cave's doors.
-        const now = { sky: 0, sun: 0, fog: [0, 0], torch: 0, shadow: 1, outside: 1, colors: [0, 1, 2, 3].map(() => new T.Color()) };
+        const now = { sky: 0, sun: 0, fog: [0, 0], torch: 0, shadow: 1, bodies: [1, 0], outside: 1, colors: [0, 1, 2, 3].map(() => new T.Color()) };
         const other = new T.Color();
         function blend(hour) {
             const l = dayKit.look(hour), a = lookOf(l.from), b = lookOf(l.to), u = l.mix, mix = (p, q) => p + (q - p) * u;
             for (const k of ['sky', 'sun', 'torch', 'shadow']) now[k] = mix(a[k], b[k]);
-            now.fog[0] = mix(a.fog[0], b.fog[0]); now.fog[1] = mix(a.fog[1], b.fog[1]);
+            for (const k of ['fog', 'bodies']) { now[k][0] = mix(a[k][0], b[k][0]); now[k][1] = mix(a[k][1], b[k][1]); }
             now.colors.forEach((c, i) => c.set(P[a.colors[i]]).lerp(other.set(P[b.colors[i]]), u));
             now.outside = mix(l.from === 'night' ? 0 : 1, l.to === 'night' ? 0 : 1);
         }
@@ -493,9 +505,12 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         const shunned = new T.MeshDistanceMaterial({ depthWrite: false, colorWrite: false });
         const pad = C.combat.weaponPad / U, colour = new T.Color();
         // `look` swaps palette colours by name (playerModel.looks). `ghost`
-        // ({ value }): the share of its pixels left out (`ghostly`).
-        function character(rig, apart = () => false, look = {}, ghost = null) {
-            const thin = made => ghost ? ghostly(made, ghost) : made;
+        // and `sky` are what its materials read (`embodied`): none of it
+        // left out, and the sky's light as the look has it on bodies,
+        // unless told.
+        const solid = { value: 0 }, whole = { value: new T.Vector2(1, 0) }, dimmed = { value: new T.Vector2(1, 0) };
+        function character(rig, apart = () => false, look = {}, { ghost = solid, sky = dimmed } = {}) {
+            const thin = made => embodied(made, ghost, sky);
             const material = thin(new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true }));
             const pos = [], nor = [], uv = [], col = [], skin = [], weight = [], index = [], bones = [], boned = [], loose = [], lines = [];
             rig.parts.forEach((part, i) => {
@@ -589,12 +604,14 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         // modelled, any other as the rival; armor may swap the tunic's
         // colours. The blade and torch flames are meshes of their own (the
         // blade glows while charging).
+        // (This phone's own fighter takes the sky's light whole and in
+        // colour: in the dark it is still to be found.)
         const rigOf = id => sim.rigs.fighters[id], playerRig = rigOf(selfId) || rigOf(sim.fighters[0].id);
         const fighters = new Map(sim.fighters.map(f => {
-            const ghost = { value: 0 };
+            const ghost = { value: 0 }, own = f.id === selfId;
             return [f.id, {
                 rig: rigOf(f.id), ghost,
-                view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }, ghost),
+                view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(own ? {} : playerModel.looks.rival) }, { ghost, sky: own ? whole : dimmed }),
                 lastFacing: f.facing, lean: 0
             }];
         }));
@@ -858,6 +875,7 @@ void main() {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
+            dimmed.value.set(now.bodies[0], now.bodies[1]);
             // The ground and the walls give back the hour's light, their
             // colour (render/terrain_light.js, the probes): the sky's and
             // the sun's (or the moon's) as it falls on open ground.
