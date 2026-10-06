@@ -122,9 +122,19 @@
 
 在哪儿跑决定了浏览器怎么用：
 
-- **用户的 Windows 电脑**（Claude 桌面版）：没装 Playwright，`tests/browser-smoke.test.cjs` 的 10 条会跳过。
-  用内置浏览器面板打开本地服务（这台电脑上 `.claude/launch.json` 里的 `game-dev`，端口 8423，被别的会话占着就用 `game-dev-2`、`game-dev-3`；这个文件没进仓库），用下面的 `window.game` 摆好场面再截图。
-  要跑浏览器测试：把 `playwright-core` 装在任意目录，设 `PLAYWRIGHT_MODULE=<该目录>/node_modules/playwright-core` 和 `PLAYWRIGHT_CHANNEL=chrome`。
+- **用户的 Windows 电脑**（Claude 桌面版）：`playwright-core` 装在仓库外的 `C:\Users\USER\pw-tools`，用本机的 Chrome 跑（没有 Chrome 就把 `chrome` 换成 `msedge`）。
+  不设下面两个变量时 `tests/browser-smoke.test.cjs` 的 10 条照旧跳过；设了以后全部测试约一分半钟：
+
+  ```powershell
+  $env:PLAYWRIGHT_MODULE = "C:\Users\USER\pw-tools\node_modules\playwright-core"
+  $env:PLAYWRIGHT_CHANNEL = "chrome"
+  node --test "tests/*.test.cjs"
+  ```
+
+  Claude 的 Bash 里：`PLAYWRIGHT_MODULE="C:/Users/USER/pw-tools/node_modules/playwright-core" PLAYWRIGHT_CHANNEL=chrome node --test "tests/*.test.cjs"`。
+  换一台电脑：在任意目录 `npm install playwright-core`，把 `PLAYWRIGHT_MODULE` 指到那里的 `node_modules/playwright-core`。
+  对战那条偶尔多出一条 `net::ERR_NO_BUFFER_SPACE`（这台电脑的网络缓冲一时满了，四次里见过一次），重跑就过。
+  要自己看画面：用内置浏览器面板打开本地服务（这台电脑上 `.claude/launch.json` 里的 `game-dev`，端口 8423，被别的会话占着就用 `game-dev-2`、`game-dev-3`；这个文件没进仓库），用下面的 `window.game` 摆好场面再截图。
 - **云端容器**：预装了 Chromium 和 Playwright（`/opt/node22/lib/node_modules/playwright`），无头模式用软件渲染，浏览器测试能跑。
 
 ### 4.1 浏览器测试的写法
