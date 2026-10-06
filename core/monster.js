@@ -4,8 +4,9 @@
 // monster turns to the player if it must and picks what to do from the
 // table of the distance band the player is in (design.md 5.2), on the
 // world's own dice; it enrages when low. Past the leash it walks home,
-// whoever is by it, and a blow on the way does not turn it round (user,
-// 2026-10-06). A fighter a ring hides (fighterKit.hidden) is not noticed.
+// whoever is by it, mending as it goes, and a blow on the way does not
+// turn it round (user, 2026-10-06). A fighter a ring hides
+// (fighterKit.hidden) is not noticed.
 // Their blows hit by the same box test as the player's sword (design.md
 // 5); the wolf's leap rams with its whole body along its path. How far a move reaches, and the warning
 // on the ground, are swept out of its key poses once (`reach`).
@@ -383,6 +384,8 @@ const monsterKit = (() => {
         const S = configOf(m.kind), tempo = m.enraged ? S.enrage.tempo : 1;
         walked = 0;
         think(sim, m, dt * tempo);
+        // Walking home it mends (user, 2026-10-06); home, it is whole (`think`).
+        if (m.phase === 'return') m.hp = Math.min(m.maxHp, m.hp + m.maxHp * M().returnHeal * dt);
         m.gait += walked / cycleLength(m.kind);
         m.speed = walked / dt;
         m.moveBlend = approach(m.moveBlend, walked > 1e-6 ? 1 : 0, dt / gameConfig.animation.blendSeconds);

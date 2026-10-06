@@ -495,7 +495,7 @@ test('lured past its leash it gives up and walks home, then patrols again', () =
     assert.ok(dist(m, m.home) < S.patrolRadius + 4);
 });
 
-test('past its leash it goes home though the player stands by it, and a blow on the way does not turn it round (user, 2026-10-06)', () => {
+test('past its leash it goes home though the player stands by it, mending as it walks, and a blow on the way does not turn it round (user, 2026-10-06)', () => {
     const sim = field('goblin'), m = sim.monsters[0], p = sim.player, S = MON.goblin;
     m.phase = 'chase'; m.wait = 0;
     put(m, m.home.x - S.leash - 10, m.home.y, 0);
@@ -503,9 +503,18 @@ test('past its leash it goes home though the player stands by it, and a blow on 
     W.step(sim, 0.01);
     assert.equal(m.phase, 'return', 'the player within its reach, and still it goes');
     // Cut in the back as it walks: hurt, and walking on.
-    tap(sim); step(sim, 0.3);
+    tap(sim);
+    for (let i = 0; i < 40 && sim.stats.hits === 0; i++) W.step(sim, 0.01);
     assert.equal(sim.stats.hits, 1);
     assert.ok(m.hp < m.maxHp && m.phase === 'return');
+    // It mends three tenths of its HP a second on the way (once the blow's hitstop is over), and no further than whole.
+    assert.equal(MON.returnHeal, 0.3);
+    step(sim, 0.1);
+    m.hp = 10; step(sim, 1);
+    assert.ok(Math.abs(m.hp - 10 - MON.returnHeal * m.maxHp) < 0.5 && m.phase === 'return', `mended to ${m.hp}`);
+    m.hp = m.maxHp - 1; step(sim, 0.2);
+    assert.equal(m.hp, m.maxHp);
+    m.hp = 40;
     // A blow that would have made it reel does not.
     monsterKit.struck(sim, m, { amount: 1, stagger: F.stagger.threshold });
     assert.deepEqual([m.phase, m.stagger], ['return', 0]);

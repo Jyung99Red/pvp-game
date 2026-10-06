@@ -209,7 +209,8 @@ const gameConfig = (() => {
         // at trackTurn until `lock` seconds before the swing (a bite only
         // the last moment: it follows a step aside). Past `leash`
         // from home it walks back home, wherever the player is, and a blow
-        // on the way does not turn it round (user, 2026-10-06).
+        // on the way does not turn it round (user, 2026-10-06); walking
+        // home it mends returnHeal of its HP a second (user, 2026-10-06).
         // At enrage.threshold of its HP it enrages for good: damage times
         // enrage.atk, its whole clock (cooldowns too) times enrage.tempo.
         // HP is the old value times the old hpScale 3, and so is ATK, to
@@ -232,7 +233,7 @@ const gameConfig = (() => {
         // built on, `scale` how much bigger, `look` their colours
         // (models/); a boss down stays down and opens what waits on it.
         monsters: {
-            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5,
+            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5, returnHeal: 0.3,
             goblin: {
                 name: '哥布林', loot: 'goblin', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
