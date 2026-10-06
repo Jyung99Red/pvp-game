@@ -326,6 +326,13 @@ const gameConfig = (() => {
             chiefChest: [{ item: 'gold', chance: 1, amount: [40, 60] }, { item: 'goblin_ear', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 1, amount: [1, 2] }],
             kingChest: [{ item: 'gold', chance: 1, amount: [60, 90] }, { item: 'wolf_pelt', chance: 1, amount: [3, 5] }],
             caveChest: [{ item: 'gold', chance: 1, amount: [50, 80] }, { item: 'crystal', chance: 1, amount: [2, 3] }, { item: 'wolf_pelt', chance: 1, amount: [2, 3] }],
+            // The cheat chest in the village (user, 2026-10-06): gold and
+            // materials enough for everything the smithy makes.
+            cheatChest: [
+                { item: 'gold', chance: 1, amount: [500, 500] }, { item: 'iron_ore', chance: 1, amount: [20, 20] }, { item: 'wolf_pelt', chance: 1, amount: [10, 10] },
+                { item: 'goblin_ear', chance: 1, amount: [5, 5] }, { item: 'herb', chance: 1, amount: [5, 5] }, { item: 'crystal', chance: 1, amount: [5, 5] },
+                { item: 'chief_tusk', chance: 1, amount: [1, 1] }, { item: 'king_fang', chance: 1, amount: [1, 1] }
+            ],
             ironOre: [{ item: 'iron_ore', chance: 1, amount: [1, 2] }],
             crystal: [{ item: 'crystal', chance: 1, amount: [1, 1] }],
             herb: [{ item: 'herb', chance: 1, amount: [1, 2] }]
@@ -488,8 +495,8 @@ const gameConfig = (() => {
         // the markers lie on (grass by default).
         maps: {
             // The base, a village (design.md 6.3): no monsters. Four
-            // buildings; the north gate to the field, the east gate to the
-            // training ground (the valley is reached through the field only:
+            // buildings and the cheat chest by the spawn; the north gate to
+            // the field, the east gate to the training ground (the valley is reached through the field only:
             // user, 2026-10-04). Every portal goes
             // out by the side its map lies on, and comes in on the far map's
             // opposite side (user, 2026-10-04).
@@ -512,7 +519,7 @@ const gameConfig = (() => {
                     '...3....================HHHH..3...',
                     'T..3....================......3..T',
                     '...3........:.................3...',
-                    '...3..HHHH..:...@.............3.TT',
+                    '...3..HHHH..:...@..C..........3.TT',
                     '...3..HHHH..:.................3...',
                     '...3..HHHH..:.................3...',
                     '...3.....::::.................3...',
@@ -528,7 +535,8 @@ const gameConfig = (() => {
                 portals: [
                     { at: [16, 3], to: 'field', facing: 'south' },
                     { at: [30, 9], to: 'clearing', facing: 'west' }
-                ]
+                ],
+                chests: [{ at: [19, 16], loot: 'cheatChest' }]
             },
             // The first region, wide and open (the second draft of the
             // redrawn map: user, 2026-10-04): a rocky ridge on the west and
