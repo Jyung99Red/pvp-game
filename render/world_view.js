@@ -14,7 +14,8 @@ const worldView = (() => {
     // (user, 2026-10-04). The looks follow the time of day (core/daytime.js,
     // day.looks); `dawn` is sunrise and sunset, the base's old morning light
     // (user, 2026-10-06). At night the moon's light is enough to see by out
-    // of doors (user). A dark region stays `dark` whatever the hour: its
+    // of doors (user; a little darker since, 1.1 and 0.9 to 1.0 and 0.8:
+    // user, 2026-10-06). A dark region stays `dark` whatever the hour: its
     // sky's light is enough to make out the walls and the way, and no more
     // (user, 2026-10-06: nobody gets lost there without a torch; it was
     // 0.05, all black, then 0.4). `fade`: how far colours go to grey in
@@ -22,15 +23,16 @@ const worldView = (() => {
     // moon's (render/terrain_mesh.js `fadeLight`); a torch's light brings
     // them back. Two numbers: for the terrain and this phone's own fighter,
     // and for every other body. At night all of it a little (user,
-    // 2026-10-06). In the dark the other bodies nearly all the way: a
-    // goblin's green stood out of the gloom, a grey wolf did not (user,
-    // 2026-10-06; the tone mapping takes dark greys down and leaves dark
-    // colours as they are) -- this phone's own fighter not, to be found.
+    // 2026-10-06: 0.2, down from the first 0.3). In the dark the other
+    // bodies nearly all the way: a goblin's green stood out of the gloom,
+    // a grey wolf did not (user, 2026-10-06; the tone mapping takes dark
+    // greys down and leaves dark colours as they are) -- this phone's own
+    // fighter not, to be found.
     const LIGHT = {
         day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
         dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
         grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
-        night: { sky: 1.1, sun: 0.9, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7, fade: [0.3, 0.3] },
+        night: { sky: 1.0, sun: 0.8, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7, fade: [0.2, 0.2] },
         dark: { sky: 0.3, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1, fade: [0, 0.8] }
     };
     // A region whose day looks other than `day`: grey among the rocks.
