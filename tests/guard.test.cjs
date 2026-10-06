@@ -171,10 +171,9 @@ test('without a shield the weapon guards, weaker: more damage and guard bar per 
 
 test('a perfect parry shoves the guarding arm forward once the hitstop is over, and back again; a block does not; nothing waits for it (user, 2026-10-05)', () => {
     const V = GU.shove, near = (a, b) => Math.abs(a - b) < 1e-6;
-    // Quick out, slow back (user, 2026-10-05): going out and held three tenths of it, coming back seven;
-    // out in a few steps, held long enough to be seen, and a little past its pose at first.
-    assert.ok(Math.abs((V.out + V.stay) / (V.out + V.stay + V.back) - 0.3) < 0.01);
-    assert.ok(V.out <= 0.05 && V.stay >= 0.1 && V.back >= 0.4 && V.over > 0 && V.over <= 0.3);
+    // Quick out, slow back (user): three tenths of the time going out, seven coming back; no holding
+    // out there and no going past the pose (user, 2026-10-06).
+    assert.ok(Math.abs(V.out / (V.out + V.back) - 0.3) < 0.01 && V.stay === undefined && V.over === undefined);
     const parried = () => {
         const sim = setup(); step(sim, impactTime - GU.startup - 0.05 - sim.time); press(sim, 'guard');
         for (let i = 0; i < 200 && !sim.stats.parries; i++) W.step(sim, 0.01);
@@ -182,13 +181,15 @@ test('a perfect parry shoves the guarding arm forward once the hitstop is over, 
         return sim;
     };
     const sim = parried(), p = sim.player;
-    // Held still by the hitstop, the arm has not moved; then out, kept there, and back, the guard up all the while.
-    assert.ok(p.freeze > 0 && p.shoveOut === 0);
-    step(sim, F.impact.hitstop.parry); assert.equal(p.shoveOut, 0);
+    // Inside the hitstop the guard gives, driven back by the blow (user, 2026-10-05), and does not go out;
+    // then out, kept there, and back, the guard up all the while.
+    assert.ok(p.freeze > 0 && p.shoveOut === 0 && near(p.shoveFor, V.in + V.out));
+    assert.ok(V.in > 0 && V.in <= F.impact.hitstop.parry && V.give > 0 && V.give <= 0.5);
+    step(sim, V.in / 2); assert.ok(p.freeze > 0 && near(p.shoveFor, V.in / 2 + V.out), 'giving');
+    step(sim, F.impact.hitstop.parry - V.in / 2); assert.ok(p.shoveOut === 0 && near(p.shoveFor, V.out), 'given, not out yet');
     step(sim, 0.02); assert.ok(near(p.shoveOut, 0.02 / V.out), `on its way out: ${p.shoveOut}`);
     step(sim, V.out - 0.02); assert.ok(near(p.shoveOut, 1));
-    step(sim, V.stay - 0.01); assert.ok(near(p.shoveOut, 1), 'kept out');
-    step(sim, 0.01 + 0.1); assert.ok(near(p.shoveOut, 1 - 0.1 / V.back), `on its way back: ${p.shoveOut}`);
+    step(sim, 0.1); assert.ok(near(p.shoveOut, 1 - 0.1 / V.back), `straight on its way back: ${p.shoveOut}`);
     step(sim, V.back - 0.1); assert.ok(near(p.shoveOut, 0));
     assert.equal(p.guard.state, 'up');
     // A block is no parry: no shove.

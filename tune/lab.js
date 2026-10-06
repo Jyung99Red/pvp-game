@@ -467,12 +467,12 @@ const moveLab = (() => {
             stance: { duration: 1.6, key: 0, body: () => ({}) },
             torch: { duration: 1.6, key: 0, body: () => ({}) },
             guard: { duration: 1.4, key: at + F.guard.startup, body: t => ({ guardBlend: t < 1.1 ? ramp(t, at, F.guard.startup) : 1 - ramp(t, 1.1, gameConfig.animation.blendSeconds) }) },
-            // (Its key is where it has settled onto the pose: it goes past it first.)
+            // (Its key is where it is right out: it gives first.)
             guardShove: {
-                duration: at + V.out + V.stay + V.back + TAIL, key: at + V.out + V.stay,
+                duration: at + V.in + V.out + V.back + TAIL, key: at + V.in + V.out,
                 body: t => ({
-                    guardBlend: 1, shoveFor: t < at ? 0 : Math.max(0, at + V.out + V.stay - t),
-                    shoveOut: t < at + V.out + V.stay ? ramp(t, at, V.out) : 1 - ramp(t, at + V.out + V.stay, V.back)
+                    guardBlend: 1, shoveFor: t < at ? 0 : Math.max(0, at + V.in + V.out - t),
+                    shoveOut: t < at + V.in + V.out ? ramp(t, at + V.in, V.out) : 1 - ramp(t, at + V.in + V.out, V.back)
                 })
             },
             drink: { duration: at + F.potion.seconds + TAIL, key: at + 0.2, body: t => ({ drink: t >= at && t < at + F.potion.seconds ? { phase: 'drink', t: t - at } : null }) },

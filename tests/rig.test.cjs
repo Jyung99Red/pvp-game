@@ -208,14 +208,15 @@ test('guarding, the body bends forward at the waist with the head kept up; a par
         if (offhand) assert.ok(dot(axis(out.parts[guards], 2), axis(up.parts[guards], 2)) > 0.99, 'the board upright as it was');
         for (const k of [0, 1, 2]) assert.ok(dot(axis(out.parts[guards], k), axis(up.parts[guards], k)) > (offhand ? 0.94 : 0.99), `${offhand}: turned little (axis ${k})`);
         assert.ok(lean(out) > lean(up), 'the body leans in behind it');
-        // With force (user, 2026-10-05): going out it is well ahead of where
-        // it is coming back at the same level, and at first it goes past the
-        // pose, settling onto it while it is held.
+        // First it gives (user, 2026-10-05): driven back as the blow is
+        // taken; then out from there, fastest at the start, to the pose
+        // and no further (user, 2026-10-06).
         const V = gameConfig.combat.guard.shove, going = (level, held) => R.solve(rig, playerAnim.pose(rig, { ...body(1, level), shoveFor: held }));
-        assert.ok(z(going(0.5, V.stay + V.out / 2)) > z(mid) + 0.04, `${offhand}: it snaps out`);
-        const past = z(going(1, V.stay)) - z(out), settling = z(going(1, V.stay / 2)) - z(out);
-        assert.ok(past > 0.02 && past < 0.1, `${offhand}: ${past.toFixed(3)} blocks past the pose at first`);
-        assert.ok(settling > 0 && settling < past / 2 && Math.abs(z(going(1, 1e-12)) - z(out)) < 1e-6, `${offhand}: settling onto it`);
+        const given = z(up) - z(going(0, V.out)), giving = z(up) - z(going(0, V.out + V.in / 2));
+        assert.ok(given > 0.03 && given < 0.15, `${offhand}: driven ${given.toFixed(3)} blocks back`);
+        assert.ok(giving > 0 && giving < given && Math.abs(z(going(0, V.out + V.in)) - z(up)) < 1e-9);
+        assert.ok(z(going(0.5, V.out / 2)) > z(mid) + 0.02, `${offhand}: it snaps out`);
+        assert.ok(Math.abs(z(going(1, 1e-12)) - z(out)) < 1e-6, `${offhand}: to the pose and no further`);
         // Part of the guard: with the guard down there is no shove to show.
         assert.deepEqual(plain(playerAnim.pose(rig, body(0, 1))), plain(playerAnim.pose(rig, body(0, 0))));
     }

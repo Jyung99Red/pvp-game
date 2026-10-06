@@ -137,15 +137,15 @@ const playerAnim = (() => {
         return rigKit.add(rigKit.pick(pose, lower), rigKit.scale(rigKit.add(playerMoves.guardLegs, rigKit.scale(stance, -1)), 1 - moveBlend), rigKit.scale(playerMoves.guardBend, moveBlend));
     }
     // How far a perfect parry's shove is out (fighter.shoveOut, shoveFor),
-    // as a share of the way from the guard to its shoved pose. Going out it
-    // snaps: fastest at the start, and past the pose by combat.guard.shove
-    // `over`, settling onto the pose while it is held. Coming back it eases
-    // out and in.
+    // as a share of the way from the guard to its shoved pose. First it
+    // gives: driven back the other way by combat.guard.shove `give` as the
+    // blow is taken. Then it snaps out from there to the pose, fastest at
+    // the start, and comes straight back, easing out and in.
     function shoveShare(body) {
         const S = gameConfig.combat.guard.shove, level = clamp01(body.shoveOut || 0);
         if (!(body.shoveFor > 0)) return smooth(level);
-        const fresh = clamp01(body.shoveFor / S.stay);
-        return easeOut(level) * (1 + S.over * fresh * fresh);
+        const given = S.give * easeOut(clamp01(1 - (body.shoveFor - S.out) / S.in)), k = easeOut(level);
+        return k - given * (1 - k);
     }
     // The judged pose. `body` needs { gait, moveBlend, runBlend }, and for a
     // fighter { act, guardBlend, shoveOut, shoveFor, stun, down, downT, drink,
@@ -178,7 +178,7 @@ const playerAnim = (() => {
         if (body.guardBlend > 0) {
             const legs = guardLegs(pose, body.moveBlend || 0), shield = inventoryKit.offhandOf(body.loadout) === 'shield';
             const held = shield ? playerMoves.guard : playerMoves.guardWeapon, shoved = shield ? playerMoves.guardShove : playerMoves.guardWeaponShove;
-            const up = body.shoveOut > 0 ? rigKit.mix(held, shoved, shoveShare(body)) : held;
+            const up = body.shoveOut > 0 || body.shoveFor > 0 ? rigKit.mix(held, shoved, shoveShare(body)) : held;
             const raised = shield ? { ...legs, ...up } : { ...pose, ...legs, ...up };
             pose = rigKit.mix(pose, raised, body.guardBlend);
         }

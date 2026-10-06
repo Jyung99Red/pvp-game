@@ -86,16 +86,17 @@ const gameConfig = (() => {
             // guard bar; a hit within parryWindow of the guard coming up is a
             // perfect parry. shove: a perfect parry pushes the shield (or
             // the weapon hand) forward, as if throwing the blow back (user,
-            // 2026-10-05): out over `out` seconds once the hitstop is over,
-            // held `stay`, back over `back` -- going out and held three
-            // tenths of it, coming back seven (user). With force (user): it
-            // snaps out, fastest at the start, and `over` of the way past
-            // its pose, settling onto the pose while it is held; coming back
-            // it eases. A pose only: it locks nothing, and goes with the
-            // guard as soon as the guard is lowered.
+            // 2026-10-06): first it gives -- over `in` seconds, inside the
+            // hitstop, the guard is driven back, `give` of the shove's way
+            // the other way, as the blow is taken; then it goes out to its
+            // pose over `out` seconds, fastest at the start, and straight
+            // back over `back`, three tenths of the time going out and
+            // seven coming back. No going past the pose and no holding
+            // there (user). A pose only: it locks nothing, and goes with
+            // the guard as soon as the guard is lowered.
             guard: {
                 startup: 0.16, moveMultiplier: 0.3, turnMultiplier: 0.5, frontAngle: Math.PI / 3,
-                shove: { out: 0.04, stay: 0.14, back: 0.42, over: 0.25 },
+                shove: { in: 0.06, give: 0.4, out: 0.1, back: 0.24 },
                 shield: { blockMultiplier: 0.2, blockCostScale: 2, parryWindow: 0.22 },
                 weapon: { blockMultiplier: 0.3, blockCostScale: 3, parryWindow: 0.15 }
             },

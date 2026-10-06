@@ -24,7 +24,7 @@
 //   combo  the inputs of the running combo, for display: 'a', 'b', '-'
 //   guard  { state: down|raising|up, t, readyAt, bar, locked, queued }
 //   shoveOut, shoveFor  a perfect parry's shove: how far out the guarding
-//          arm is (0..1), and how long it still goes out and stays there
+//          arm is (0..1), and how long it still gives and goes out
 //   stun, freeze (hitstop), push (knockback)
 //   press  the attack key's press: null or { at, held, upAt, as (null while
 //          it is still telling, then 'a' or 'b'), free (nothing has stood in
@@ -264,12 +264,14 @@ const fighterKit = (() => {
                 if (g.t >= F().guard.startup - 1e-9) { g.state = 'up'; g.readyAt = sim.time; }
             }
             // A perfect parry's shove (combatKit.strike): the guarding arm
-            // goes out, stays and comes back. It is a pose and no more
+            // gives (shoveFor counts that down first, through the hitstop:
+            // `tick`), then goes out and comes straight back. It is a pose and no more
             // (core/player_anim.js): nothing waits for it, and with the
             // guard down it is on its way back at once.
-            const S = F().guard.shove, out = g.state === 'up' && p.shoveFor > 1e-9;
+            const S = F().guard.shove, out = g.state === 'up' && p.shoveFor > 1e-9, giving = p.shoveFor > S.out + 1e-9;
             p.shoveFor = out ? Math.max(0, p.shoveFor - dt) : 0;
-            p.shoveOut = out ? Math.min(1, p.shoveOut + dt / S.out) : Math.max(0, p.shoveOut - dt / S.back);
+            if (!out) p.shoveOut = Math.max(0, p.shoveOut - dt / S.back);
+            else if (!giving) p.shoveOut = Math.min(1, p.shoveOut + dt / S.out);
         }
     };
     // ---- the offhand key: the item carried there (a shield is the guard
@@ -428,7 +430,15 @@ const fighterKit = (() => {
         if (p.down) { p.downT += dt; p.speed = 0; blends(p, dt, B); return; }
         // The guard bar runs on under the hitstop.
         combatKit.tickGuardBar(sim, p, dt);
-        if (p.freeze > 0) { p.freeze = Math.max(0, p.freeze - dt); blends(p, dt, B); return; }
+        if (p.freeze > 0) {
+            p.freeze = Math.max(0, p.freeze - dt);
+            // A parried blow drives the guard back while the hitstop holds
+            // everything else (user, 2026-10-05); the shove waits for its end.
+            const S = F().guard.shove, held = S.out;
+            if (p.shoveFor > held) p.shoveFor = Math.max(held, p.shoveFor - dt);
+            blends(p, dt, B);
+            return;
+        }
         // A buffered input expires, unless it is a B still held down: that is
         // an opening charge waiting for its turn, not a stale press.
         const b = p.buffer;
