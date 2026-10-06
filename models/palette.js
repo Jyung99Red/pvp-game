@@ -36,10 +36,12 @@ const palette = Object.freeze({
     // world
     sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8', darkSky: '#05060a',
     // the world's light by look (render/world_view.js): the sun warm, the
-    // sky's light cool; a dawn, and a grey day among the rocks
+    // sky's light cool; sunrise and sunset, a grey day among the rocks, and
+    // the night under the moon
     sunWarm: '#ffe4b8', skyCool: '#d9e8ff',
     sunDawn: '#ffd9a8', skyDawn: '#e6e0f3', groundDawn: '#786048', skyDawnBack: '#e8d3c0',
     sunGrey: '#eef1f6', skyGrey: '#d2dbe8', groundGrey: '#625d59', skyGreyBack: '#b9c4cf',
+    moon: '#b8c9f2', skyNight: '#7f95c8', groundNight: '#2c2f40', skyNightBack: '#141c30',
     brush: '#8a6a3c', brushDark: '#4e3a20', water: '#4d8cbd', waterLight: '#8fc4e4', waterDeep: '#366f9d',
     fencePost: '#5e4630', fenceRail: '#8a7052',
     // resources

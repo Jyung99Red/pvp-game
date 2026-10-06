@@ -44,8 +44,10 @@ const worldSim = (() => {
     // fighter's stats are the base plus that gear (core/inventory.js).
     // A duel puts one fighter on each of the map's first two spawns, each
     // facing the other; `loadouts` are their gear, [host, guest] (each one
-    // picked from duelKit's fair sets; the starter gear when left out).
-    function create({ map = null, region = null, progress = null, arrival = null, carry = null, spot = null, seed = 1, loadout = null, duel = false, loadouts = null } = {}) {
+    // picked from duelKit's fair sets; the starter gear when left out),
+    // and `dayFrom` the hour it is played at, as seconds into the day
+    // (core/daytime.js).
+    function create({ map = null, region = null, progress = null, arrival = null, carry = null, spot = null, seed = 1, loadout = null, duel = false, loadouts = null, dayFrom = 0 } = {}) {
         if (!map) map = gameConfig.maps[region || 'clearing'];
         if (!map) throw new Error(`Unknown map ${region}`);
         region = region || regionOf(map);
@@ -87,7 +89,7 @@ const worldSim = (() => {
         const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i)).filter(m => !(m.boss && world.bosses[m.kind]));
         const kinds = [...new Set(terrain.monsters.map(m => m.kind))];
         return aliases({
-            time: 0, tick: 0, terrain, map: map.name || '', region, duel, seed: seed >>> 0, serial: 0,
+            time: 0, tick: 0, terrain, map: map.name || '', region, duel, seed: seed >>> 0, serial: 0, dayFrom: duel ? dayFrom : 0,
             rigs: { fighters: Object.fromEntries(ids.map((id, i) => [id, rigOf(gear[i])])), dummy: dummy ? dummyKit.rig() : null, monsters: Object.fromEntries(kinds.map(k => [k, monsterKit.rig(k)])) },
             fighters, entities: [...(dummy ? [dummy] : []), ...monsters, ...propKit.place(map, terrain, saved, region)],
             progress: world, events: [], result: null

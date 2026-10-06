@@ -171,13 +171,13 @@ test('snapshot checks turn away broken or foreign state', () => {
 // `jitter()`: extra seconds a message takes, each its own (they still
 // arrive in order). A phone in the background (`sleep`) runs no frames,
 // only a pulse a second (ui/app.js).
-function pair({ latency = 0, weapons = {}, jitter = null } = {}) {
+function pair({ latency = 0, weapons = {}, jitter = null, day = null } = {}) {
     let clock = 100, lastDue = 0;
     const queue = [], log = {}, ends = {}, asleep = new Map();
     for (const role of ['host', 'guest']) {
         log[role] = { starts: 0, results: [], ends: [], rematch: 0, sent: [] };
         ends[role] = duelKit.create({
-            role, now: () => clock, ...(weapons[role] ? { weapon: weapons[role] } : {}),
+            role, now: () => clock, ...(weapons[role] ? { weapon: weapons[role] } : {}), ...(day ? { day: day[role] } : {}),
             send: msg => {
                 const copy = plain(msg);
                 lastDue = Math.max(lastDue, clock + latency + (jitter ? jitter() : 0));
@@ -227,6 +227,18 @@ test('two phones: hello, start, ready, a countdown, then the fight on both', () 
     assert.ok(p.host.sim.fighters[1].x > 820, 'the stick held through the countdown walks at once');
     const snaps = p.log.host.sent.filter(m => m.t === 'snap');
     assert.ok(snaps.length >= (PV.countdown + 0.2) / PV.snapshotSeconds - 2, `${snaps.length} snapshots`);
+});
+
+test('the duel is played at the host\'s time of day, and a rematch goes on from where the last ended', () => {
+    const at = gameConfig.day.seconds * 0.6, p = pair({ day: { host: () => at, guest: () => 5 } });
+    assert.deepEqual([p.host.sim.dayFrom, p.guest.sim.dayFrom], [at, at]);
+    assert.equal(p.log.host.sent.find(m => m.t === 'start').day, at);
+    fightNow(p);
+    p.guest.surrender(); p.run(0.1);
+    const ended = p.host.sim.dayFrom + p.host.sim.time;
+    p.host.rematch(); p.run(0.05); p.guest.rematch(); p.run(0.1);
+    assert.equal(p.log.host.starts, 2);
+    assert.ok(Math.abs(p.host.sim.dayFrom - ended) < 0.2 && p.guest.sim.dayFrom === p.host.sim.dayFrom);
 });
 
 test('different rules on the other phone end it before it starts', () => {

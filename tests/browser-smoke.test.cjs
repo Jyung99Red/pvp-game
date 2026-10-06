@@ -471,6 +471,53 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
     } finally { await context.close(); }
 });
 
+test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, a mask in the power saver', { timeout: 300000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const look = async query => {
+        const { context, page, errors } = await openPhone(844, 390, query);
+        try {
+            const info = await page.evaluate(() => {
+                const g = window.game, sun = g.view.scene.children.find(o => o.isDirectionalLight), sky = g.view.scene.children.find(o => o.isHemisphereLight);
+                g.view.render(g.sim, 0);
+                const gl = g.view.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(4), sum = [0, 0, 0];
+                for (let i = 1; i < 8; i++) for (let j = 1; j < 6; j++) {
+                    gl.readPixels(Math.floor(w * i / 8), Math.floor(h * j / 6), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                    for (let k = 0; k < 3; k++) sum[k] += px[k];
+                }
+                return { sum, sky: sky.intensity, toSun: sun.position.clone().sub(sun.target.position).normalize().toArray() };
+            });
+            assert.deepEqual(errors, []);
+            return info;
+        } finally { await context.close(); }
+    };
+    const noon = await look('?map=field&hour=13'), night = await look('?map=field&hour=23'), morning = await look('?map=field&hour=8.5');
+    const bright = v => v.sum[0] + v.sum[1] + v.sum[2];
+    assert.ok(bright(night) < bright(noon) * 0.6, `night ${bright(night)} against noon ${bright(noon)}`);
+    assert.ok(night.sum[2] / bright(night) > noon.sum[2] / bright(noon), 'the night is bluer');
+    assert.ok(bright(night) > 0.1 * bright(noon), 'out of doors the night is still to be seen by (user)');
+    assert.ok(morning.toSun[0] > 0.5 && noon.toSun[1] > morning.toSun[1], `the sun in the east in the morning, higher at noon: ${morning.toSun} ${noon.toSun}`);
+    // A torch in the cave: its light casts shadows, and the power saver
+    // turns them off for the mask that keeps the light from passing walls.
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+    await context.addInitScript(() => localStorage.setItem('blocky-rpg-save', JSON.stringify({ v: 2, inventory: { gold: 0, items: { wooden_sword: 1, torch: 1, cloth_armor: 1 } }, loadout: { main: 'wooden_sword', offhand: 'torch', armor: 'cloth_armor', accessory: null } })));
+    const { page, errors } = await openPage(context, '?map=cave');
+    try {
+        const torch = await page.evaluate(() => {
+            const g = window.game; g.pause(true);
+            worldSim.command(g.sim, { type: 'press', button: 'offhand' }); worldSim.command(g.sim, { type: 'release', button: 'offhand' });
+            g.run(0.3); g.view.render(g.sim, 0.016);
+            const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map, masked: g.view.ground.torch.masked.value };
+            g.view.settings({ zoom: 1, saver: true }); g.view.render(g.sim, 0.016);
+            return { before, saver: { shadows: light.castShadow, masked: g.view.ground.torch.masked.value } };
+        });
+        assert.ok(torch.before.lit > 0);
+        assert.deepEqual([torch.before.shadows, torch.before.map, torch.before.masked], [true, true, 0]);
+        assert.deepEqual(torch.saver, { shadows: false, masked: 1 });
+        await shot(page, 'cave-torch');
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
 test('two phones in one browser (?link=local): a room code, a duel to a result, a rematch, then one leaves', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });

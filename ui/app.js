@@ -244,6 +244,8 @@ const app = (() => {
             persist();
             const session = duelKit.create({
                 role, weapon, now: () => performance.now() / 1000, send: msg => link.send(msg),
+                // The adventure's time of day: a host's duel is played at it.
+                day: () => dayKit.secondsAt(dayKit.hourOf(sim)),
                 on: {
                     start: next => {
                         Object.assign(duel, { outcome: null, resultAt: null, shown: false });

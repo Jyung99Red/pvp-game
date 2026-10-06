@@ -5,21 +5,35 @@
 // world (`load`), so switching maps or restarting needs no reload.
 const worldView = (() => {
     const UP = [0, 1, 0];
-    // Lighting by look: the sky's (hemisphere) and the sun's intensity,
-    // their colours (palette names: the sky's light, the light off the
-    // ground, the sun, and the fog far off), fog start and end past the
-    // camera distance (blocks), and the torch's intensity. By day the sun
-    // is warm and the sky's light cool, so what lies in shadow turns a
-    // little blue (user, 2026-10-04). A torch lights `reach` blocks round it.
+    // Lighting by look: the sky's (hemisphere) and the sun's (or the
+    // moon's) intensity, their colours (palette names: the sky's light,
+    // the light off the ground, the sun, and the fog far off), fog start
+    // and end past the camera distance (blocks), the torch's intensity, and
+    // how dark the sun's shadows are (1 full). By day the sun is warm and
+    // the sky's light cool, so what lies in shadow turns a little blue
+    // (user, 2026-10-04). The looks follow the time of day (core/daytime.js,
+    // day.looks); `dawn` is sunrise and sunset, the base's old morning light
+    // (user, 2026-10-06). At night the moon's light is enough to see by out
+    // of doors (user). A dark region stays `dark` whatever the hour.
     const LIGHT = {
-        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3 },
-        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3 },
-        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3 },
-        dark: { sky: 0.05, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9 }
+        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1 },
+        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1 },
+        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1 },
+        night: { sky: 1.1, sun: 0.9, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7 },
+        dark: { sky: 0.05, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1 }
     };
-    // The look of each region: a dark one is 'dark', any not named here 'day'.
-    const LOOK = { base: 'dawn', valley: 'grey' };
-    const TORCH = { reach: 7, decay: 1.2 };
+    // A region whose day looks other than `day`: grey among the rocks.
+    const LOOK = { valley: 'grey' };
+    // The sun's direction moves on in steps of this many hours (its shadow
+    // map is snapped to whole texels, and a light turning every frame
+    // would make the shadows' edges crawl).
+    const SUN_STEP = 0.05;
+    // A torch lights `reach` blocks round it. Its shadows (graphics.
+    // torchShadowMap) are the torch's own, cast by blocks and bodies alike;
+    // `bias` keeps a face from shadowing itself.
+    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02 };
+    // A burning thicket's light: the flames' colour, flickering.
+    const FIRE = { intensity: 4, reach: 5, decay: 1.4, height: 0.8 };
     // How soft the edge of the sun's shadows is, blocks: the reach of the
     // shadow filter, the same on a small shadow map as on a large one
     // (user, 2026-10-04: soft, like the shade of sight).
@@ -41,8 +55,9 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
     }
     // In a dark region a little daylight comes in by each portal: a soft
     // light `inside` blocks in from it, so the dark does not shut at the
-    // doorway (user, 2026-10-03).
-    const DOORWAY = { intensity: 4, reach: 6, decay: 1.4, inside: 1, height: 1.6 };
+    // doorway (user, 2026-10-03). At night it is the moon's, `night` as
+    // bright.
+    const DOORWAY = { intensity: 4, reach: 6, decay: 1.4, inside: 1, height: 1.6, night: 0.4 };
     // Is the point (blocks) inside a block of the terrain (or off the map)?
     function inBlock(t, [x, y, z]) {
         const c = Math.floor(x), r = Math.floor(z);
@@ -76,8 +91,12 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const mapSize = small ? C.graphics.shadowMapSmall : C.graphics.shadowMapLarge;
         let world = null;
         // The menu's settings (ui/settings.js): the camera's distance
-        // multiplier, and sun shadows (off in the power saver).
-        const tune = { zoom: 1, shadows: true };
+        // multiplier, and shadows (off in the power saver). hourShift: hours
+        // the time of day is drawn ahead, from ?hour=21 in the address (it
+        // starts at that hour and goes on; for testing, never saved).
+        const tune = { zoom: 1, shadows: true, hourShift: 0 };
+        const asked = new URLSearchParams(window.location.search).get('hour');
+        if (asked !== null && Number.isFinite(Number(asked))) tune.hourShift = Number(asked) - dayKit.hourOf(sim);
 
         function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
@@ -131,41 +150,84 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
         // A dark region (design.md 2.5) has no daylight to speak of:
         // dim sky light, no sun shadows, black fog close in; a torch is the
-        // light there.
-        const dark = !!C.maps[sim.region]?.dark, L = LIGHT[dark ? 'dark' : LOOK[sim.region] || 'day'];
-        const [skyColor, groundColor, sunColor, farColor] = L.colors.map(name => P[name]);
-        const scene = new T.Scene(), sky = new T.Color(farColor);
+        // light there. Anywhere else the light is the hour's (`daylight`).
+        const dark = !!C.maps[sim.region]?.dark, dayLook = LOOK[sim.region] || 'day';
+        const lookOf = name => LIGHT[dark ? 'dark' : name === 'day' ? dayLook : name];
+        // The light now, a blend of two looks: intensities, the four
+        // colours, fog, the torch, the shadows' darkness; `outside`, how
+        // much of it is day (0 at night), for the light at a cave's doors.
+        const now = { sky: 0, sun: 0, fog: [0, 0], torch: 0, shadow: 1, outside: 1, colors: [0, 1, 2, 3].map(() => new T.Color()) };
+        const other = new T.Color();
+        function blend(hour) {
+            const l = dayKit.look(hour), a = lookOf(l.from), b = lookOf(l.to), u = l.mix, mix = (p, q) => p + (q - p) * u;
+            for (const k of ['sky', 'sun', 'torch', 'shadow']) now[k] = mix(a[k], b[k]);
+            now.fog[0] = mix(a.fog[0], b.fog[0]); now.fog[1] = mix(a.fog[1], b.fog[1]);
+            now.colors.forEach((c, i) => c.set(P[a.colors[i]]).lerp(other.set(P[b.colors[i]]), u));
+            now.outside = mix(l.from === 'night' ? 0 : 1, l.to === 'night' ? 0 : 1);
+        }
+        blend(dayKit.hourOf(sim, tune.hourShift));
+        const scene = new T.Scene(), sky = now.colors[3].clone();
         scene.background = sky;
-        scene.fog = new T.Fog(sky, C.camera.distance + L.fog[0], C.camera.distance + L.fog[1]);
-        // Fog and shadows follow the menu's settings.
+        scene.fog = new T.Fog(sky, C.camera.distance + now.fog[0], C.camera.distance + now.fog[1]);
+        // Shadows follow the menu's settings: the sun's and the torch's, or
+        // in the power saver neither, the torch's light then kept off what
+        // it does not see by a mask (`shine`, below).
         function retune() {
-            const d = C.camera.distance * tune.zoom;
-            scene.fog.near = d + L.fog[0]; scene.fog.far = d + L.fog[1];
             sun.castShadow = !dark && tune.shadows;
+            torchLight.castShadow = tune.shadows;
+            ground.torch.masked.value = tune.shadows ? 0 : 1;
         }
 
-        scene.add(new T.HemisphereLight(skyColor, groundColor, L.sky));
-        const sun = new T.DirectionalLight(sunColor, L.sun), extent = C.graphics.shadowExtent;
-        sun.castShadow = !dark && tune.shadows;
+        const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
+        scene.add(hemisphere);
+        const sun = new T.DirectionalLight(now.colors[2], now.sun), extent = C.graphics.shadowExtent;
         // The torch's light: always there (lights coming and going would
-        // rebuild every shader), at zero while no torch burns.
-        const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
+        // rebuild every shader), at zero while no torch burns, its shadow
+        // map then not redrawn. Then the moving lights without shadows
+        // (graphics.lights): each frame they go to the nearest of what
+        // gives light -- a burning thicket, a doorway's glow, someone
+        // else's torch -- and the rest of them are at zero.
+        const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay), TS = C.graphics.torchShadowMap;
+        torchLight.shadow.mapSize.set(TS, TS);
+        Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
+        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
-        if (dark) for (const e of sim.entities) {
-            if (e.type !== 'portal') continue;
-            const glow = new T.PointLight(P.skyLight, DOORWAY.intensity, DOORWAY.reach, DOORWAY.decay), [x, , z] = space.toBlocks(e.x + Math.cos(e.facing) * DOORWAY.inside * U, e.y + Math.sin(e.facing) * DOORWAY.inside * U);
-            glow.position.set(x, DOORWAY.height, z);
-            scene.add(glow);
+        const pool = Array.from({ length: C.graphics.lights }, () => {
+            const light = new T.PointLight('#ffffff', 0, 1, 1);
+            scene.add(light);
+            return light;
+        });
+        const glowColour = new T.Color();
+        // The nearest of `glowing` ({ at: [x, y, z], color, intensity,
+        // reach, decay }, blocks) to `me` get the moving lights.
+        function kindle(glowing, me) {
+            const [x, , z] = space.toBlocks(me.x, me.y, me.h), far = g => (g.at[0] - x) ** 2 + (g.at[2] - z) ** 2;
+            glowing.sort((a, b) => far(a) - far(b));
+            pool.forEach((light, i) => {
+                const g = glowing[i];
+                if (!g) { light.intensity = 0; return; }
+                light.position.set(...g.at); light.color.set(g.color);
+                light.intensity = g.intensity; light.distance = g.reach; light.decay = g.decay;
+            });
         }
+        const doorways = dark ? sim.entities.filter(e => e.type === 'portal').map(e => space.toBlocks(e.x + Math.cos(e.facing) * DOORWAY.inside * U, e.y + Math.sin(e.facing) * DOORWAY.inside * U, 0)).map(([x, , z]) => [x, DOORWAY.height, z]) : [];
         sun.shadow.mapSize.set(mapSize, mapSize);
         Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: 60 });
         sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
         scene.add(sun, sun.target);
-        // Shadow box follows the player, snapped to whole shadow texels in
-        // the light's frame so edges do not shimmer while walking.
-        const lightDir = new T.Vector3(7, 14, -5).normalize();
-        const lightRight = new T.Vector3().crossVectors(new T.Vector3(...UP), lightDir).normalize();
-        const lightUp = new T.Vector3().crossVectors(lightDir, lightRight);
+        // The sun (or the moon) goes where the hour puts it (dayKit.sky);
+        // its shadow box follows the player, snapped to whole shadow texels
+        // in the light's frame so edges do not shimmer while walking.
+        const lightDir = new T.Vector3(), lightRight = new T.Vector3(), lightUp = new T.Vector3(), upward = new T.Vector3(...UP);
+        let aimedAt = NaN;
+        function aim(hour) {
+            const stepped = Math.round(hour / SUN_STEP) * SUN_STEP;
+            if (stepped === aimedAt) return;
+            aimedAt = stepped;
+            lightDir.set(...dayKit.sky(stepped).dir);
+            lightRight.crossVectors(upward, lightDir).normalize();
+            lightUp.crossVectors(lightDir, lightRight);
+        }
         const texel = 2 * extent / mapSize, focus = new T.Vector3();
         sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
         function placeSun(x, y, z) {
@@ -173,6 +235,21 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             const u = Math.round(focus.dot(lightRight) / texel) * texel, v = Math.round(focus.dot(lightUp) / texel) * texel, w = focus.dot(lightDir);
             sun.target.position.copy(lightRight).multiplyScalar(u).addScaledVector(lightUp, v).addScaledVector(lightDir, w);
             sun.position.copy(sun.target.position).addScaledVector(lightDir, 25);
+        }
+        // The hour's light on everything: the sky's, the sun's or the moon's
+        // (fading in after it rises and out before it sets), the fog and
+        // what is seen past the map.
+        const mists = [];
+        function daylight(hour) {
+            blend(hour);
+            aim(hour);
+            hemisphere.color.copy(now.colors[0]); hemisphere.groundColor.copy(now.colors[1]); hemisphere.intensity = now.sky;
+            sun.color.copy(now.colors[2]); sun.intensity = now.sun * (dark ? 1 : dayKit.sky(hour).fade);
+            sun.shadow.intensity = now.shadow;
+            sky.copy(now.colors[3]); scene.fog.color.copy(sky);
+            for (const m of mists) m.color.copy(sky);
+            const d = C.camera.distance * tune.zoom;
+            scene.fog.near = d + now.fog[0]; scene.fog.far = d + now.fog[1];
         }
 
         const tx = renderTextures.create(T);
@@ -225,6 +302,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             for (let r = 0; r < h && !cliffs; r++) for (let c = 0; c < w; c++) if (dropAt(c, r)) { cliffs = true; break; }
             if (cliffs) for (let k = 1; k <= MIST.layers; k++) {
                 const mist = new T.Mesh(new T.PlaneGeometry(w + 2 * span, h + 2 * span), terrainMesh.shadeUnseen(new T.MeshBasicMaterial({ color: sky, transparent: true, opacity: MIST.opacity, depthWrite: false, fog: false }), ground.sight));
+                mists.push(mist.material);
                 mist.rotation.x = -Math.PI / 2; mist.position.set(w / 2, -k * MIST.step, h / 2);
                 // The lowest first.
                 mist.renderOrder = -k;
@@ -250,6 +328,8 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
         // one struck. With ?boxes in the address, hit boxes are outlined:
         // body boxes in cyan, weapon boxes (grown by combat.weaponPad) red.
         const showBoxes = /[?&]boxes(=|&|$)/.test(window.location.search);
+        // What casts no shadow in point lights: writes nothing.
+        const shunned = new T.MeshDistanceMaterial({ depthWrite: false, colorWrite: false });
         const pad = C.combat.weaponPad / U, colour = new T.Color();
         // `look` swaps palette colours by name (playerModel.looks).
         function character(rig, apart = () => false, look = {}) {
@@ -313,6 +393,9 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             let lit = false;
             return {
                 mesh, blade: loose.find(l => rig.parts[l.i].kind === 'weapon')?.mesh.material || null, flames,
+                // Cast no shadow in a torch's light (its bearer's own body
+                // would shade all in front of it); the sun's still.
+                shunTorch() { for (const m of [mesh, ...loose.map(l => l.mesh)]) m.customDistanceMaterial = shunned; },
                 materials: [material, ...loose.filter(l => rig.parts[l.i].tag !== 'flame').map(l => l.mesh.material)],
                 light(on) { lit = on; for (const f of flames) f.visible = on && mesh.visible; },
                 // Show the shield white (or not); false when there is no shield.
@@ -349,6 +432,7 @@ shadow /= ${SUN_TAPS}.0;${chunk.slice(to + end.length)}`;
             view: character(rigOf(f.id), part => part.kind === 'weapon' || part.tag === 'flame', { ...equipmentModels.lookOf(f.loadout), ...(f.id === selfId ? {} : playerModel.looks.rival) }),
             lastFacing: f.facing, lean: 0
         }]));
+        fighters.get(selfId)?.view.shunTorch();
         const dummyView = sim.dummy ? character(sim.rigs.dummy) : null;
         const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null }]));
         // Characters this far (blocks) from the camera's focus cannot be on
@@ -547,10 +631,12 @@ void main() {
             return { update };
         })();
 
-        // ---- the torch lights only what it sees: its light does not pass
-        // blocks at least eye high (as sight; all the way round). The
-        // terrain reads this mask for the torch's light
-        // (render/terrain_mesh.js). Recast when the flame has moved. ----
+        // ---- the torch lights only what it sees. With shadows its own
+        // shadows see to that; in the power saver its light is kept off
+        // what lies behind blocks at least eye high (as sight; all the way
+        // round) by this mask, which the terrain reads for the torch's
+        // light (render/terrain_mesh.js). Recast when the flame has
+        // moved. ----
         const shine = (() => {
             const mask = fanMask(128, TORCH.reach + 1), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
             ground.torch.mask.value = mask.texture; ground.torch.at.value.set(0, 0, mask.half);
@@ -619,17 +705,36 @@ void main() {
                 entry.view.light(!!f.lit);
                 drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials, flash: entry.view.flash });
             }
+            // The hour's light.
+            const hour = dayKit.hourOf(current, tune.hourShift);
+            daylight(hour);
             // The torch light sits on this fighter's flame, flickering a
             // little -- short of any block the flame pokes into, or the light
             // would be shut inside it and the wall's near side go dark.
+            // Anyone else's burning torch is one of the moving lights.
+            const flicker = k => 1 + 0.08 * Math.sin(clock * 13 + k) + 0.05 * Math.sin(clock * 23.7 + 2 * k);
+            const flameOf = d => {
+                const flame = d.rig.parts.findIndex(part => part.tag === 'flame'), m = d.solved.parts[flame];
+                return clearOf(current.terrain, space.toBlocks(d.shown.x, d.shown.y, d.shown.h + U), [m[12], m[13] + 0.15, m[14]]);
+            };
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
             if (bearer) {
-                const flame = bearer.rig.parts.findIndex(part => part.tag === 'flame'), m = bearer.solved.parts[flame];
-                const body = space.toBlocks(bearer.shown.x, bearer.shown.y, bearer.shown.h + U);
-                torchLight.position.set(...clearOf(current.terrain, body, [m[12], m[13] + 0.15, m[14]]));
-                torchLight.intensity = L.torch * (1 + 0.08 * Math.sin(clock * 13) + 0.05 * Math.sin(clock * 23.7));
-                shine(torchLight.position.x, torchLight.position.z);
+                torchLight.position.set(...flameOf(bearer));
+                torchLight.intensity = now.torch * flicker(0);
+                if (!tune.shadows) shine(torchLight.position.x, torchLight.position.z);
             } else torchLight.intensity = 0;
+            // (Drawn at least once: a shadow map never drawn is no texture, and nothing lit would draw.)
+            torchLight.shadow.autoUpdate = !!bearer || !torchLight.shadow.map;
+            const glowing = [];
+            for (const d of drawn) if (d.id !== selfId && d.body.lit) glowing.push({ at: flameOf(d), color: P.flame, intensity: now.torch * flicker(d.solved.parts.length), reach: TORCH.reach, decay: TORCH.decay });
+            for (const e of current.entities) {
+                if (e.type !== 'brush' || e.burning < 0) continue;
+                const [x, , z] = space.toBlocks(e.x, e.y), life = Math.max(0, 1 - e.burning / C.props.burnSeconds);
+                glowing.push({ at: [x, FIRE.height, z], color: P.flame, intensity: FIRE.intensity * Math.sqrt(life) * flicker(e.col * 3 + e.row), reach: FIRE.reach, decay: FIRE.decay });
+            }
+            const door = DOORWAY.night + (1 - DOORWAY.night) * now.outside;
+            for (const at of doorways) glowing.push({ at, color: other.set(P.moon).lerp(glowColour.set(P.skyLight), now.outside).getHex(), intensity: DOORWAY.intensity * door, reach: DOORWAY.reach, decay: DOORWAY.decay });
+            kindle(glowing, me);
             const foes = [];
             if (dummyView && current.dummy) {
                 const visible = inSight(current.dummy);
@@ -684,7 +789,9 @@ void main() {
             for (const mask of masks) mask.dispose();
             blur.dispose(); full.geometry.dispose();
             // The shadow map is the light's own render target.
-            sun.dispose();
+            sun.dispose(); torchLight.dispose();
+            for (const light of pool) light.dispose();
+            shunned.dispose();
         }
         retune();
         return { scene, render, dispose, retune, playerRig, seen, ground };

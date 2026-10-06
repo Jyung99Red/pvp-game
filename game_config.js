@@ -368,6 +368,21 @@ const gameConfig = (() => {
             shop: { name: '商店', verb: '进入', action: 'open' },
             storage: { name: '仓库', verb: '进入', action: 'open' }
         },
+        // The time of day (design.md 2.5; user, 2026-10-06): a day is
+        // `seconds` of play (20 minutes), light from `sunrise` to `sunset`
+        // (hours); a new game starts at `startHour`. looks: the sky's look
+        // named at hours round the clock (render/world_view.js), the light
+        // going over from one to the next between them; `dawn` is the warm
+        // light of sunrise and sunset (user: the base's old morning light).
+        // sun, moon: the highest and the lowest they stand above the
+        // horizon (radians; lower, the shadows would run off the shadowed
+        // ground round the player); fadeHours: how long each takes to come
+        // up after rising, and to go down before setting.
+        day: {
+            seconds: 1200, startHour: 8, sunrise: 7, sunset: 19, fadeHours: 0.75,
+            looks: [[6, 'night'], [7.75, 'dawn'], [9.5, 'day'], [16.5, 'day'], [18.25, 'dawn'], [20, 'night']],
+            sun: { high: 1.1, low: 0.35 }, moon: { high: 0.95, low: 0.45 }
+        },
 
         // 5. Fixed oblique camera (design.md 1). yaw 0 keeps
         // screen-up on -z; pitch is the angle down from the horizon;
@@ -379,8 +394,13 @@ const gameConfig = (() => {
         // 6. Rendering cost. Shadow map size by screen class (short side
         // under 700 CSS px is small); shadowExtent is the half-width in
         // blocks of the shadowed area around the player. The menu's power
-        // saver draws at saverPixelRatio and without sun shadows.
-        graphics: { pixelRatioMax: 2, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 13 },
+        // saver draws at saverPixelRatio and without sun shadows. lights:
+        // how many moving lights without shadows are lit at once (the
+        // nearest; a burning thicket, a doorway's glow), besides the
+        // torch, which casts shadows of torchShadowMap texels a side (not
+        // in the power saver, where its light is kept off what it does
+        // not see by a mask instead).
+        graphics: { pixelRatioMax: 2, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, shadowExtent: 13, lights: 4, torchShadowMap: 256 },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full

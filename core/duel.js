@@ -23,7 +23,7 @@
 // again. Whoever waits gives up after pvp.awaySeconds.
 //
 // Messages: hello { protocol, rules, weapon } both ways on connect; host start
-// { battle }; guest ready; host snap { serial, ack, stamp, wait, hold,
+// { battle, day }; guest ready; host snap { serial, ack, stamp, wait, hold,
 // aways, countdown, state, events } every pvp.snapshotSeconds; guest input
 // { seq, cmd }; either way beat (nothing else to say), away { n } and back,
 // surrender, rematch, abort (the match is off), leave (the room is
@@ -32,7 +32,7 @@
 // had and how long ago (`wait`), which times the way there and back.
 // `aways` is the guest's last `away` the host has had.
 const duelKit = (() => {
-    const PROTOCOL = 6;
+    const PROTOCOL = 7;
     const P = () => gameConfig.pvp;
     const STEP = simLoop.STEP;
     // The guest's own events it already showed when it predicted them; the
@@ -65,7 +65,9 @@ const duelKit = (() => {
         if (!weaponOk(main)) throw new Error(`Not a duel weapon: ${main}`);
         return { ...inventoryKit.starter(), main };
     }
-    const arena = mains => worldSim.create({ map: gameConfig.maps.arena, duel: true, loadouts: mains.map(loadoutFor) });
+    // `day`: the time of day the match is played at, seconds into the day
+    // (core/daytime.js; the host's).
+    const arena = (mains, day) => worldSim.create({ map: gameConfig.maps.arena, duel: true, loadouts: mains.map(loadoutFor), dayFrom: day });
     const newBattle = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
     // ---- a snapshot from the other phone is checked before it is used ----
@@ -113,6 +115,8 @@ const duelKit = (() => {
 
     // One end of a duel. role: 'host' | 'guest'. send(message): to the other
     // phone. now(): seconds. weapon: this side's main hand (pvp.weapons).
+    // day(): the host's time of day, seconds into the day (the guest plays
+    // at the host's).
     // `on` (all optional): start(sim) a new match;
     // result(outcome) 'win' | 'lose' | 'draw'; rematch() the other side asks
     // for another; end(reason) 'incompatible' | 'timeout' | 'lost' (the
@@ -121,7 +125,7 @@ const duelKit = (() => {
     // phase: hello -> starting -> countdown -> fight -> over (-> starting
     // again on a rematch) | ended; countdown and fight give way to hold
     // while a phone is away, and a countdown follows it.
-    function create({ role, send, now, on = {}, weapon = P().weapons[0] }) {
+    function create({ role, send, now, on = {}, weapon = P().weapons[0], day = () => 0 }) {
         if (role !== 'host' && role !== 'guest') throw new Error(`Unknown duel role ${role}`);
         loadoutFor(weapon);
         const host = role === 'host', self = host ? 0 : 1, other = 1 - self;
@@ -192,9 +196,9 @@ const duelKit = (() => {
         }
 
         // ---- starting a match ----
-        function begin(id) {
+        function begin(id, at) {
             const mains = [weapon, peerWeapon];
-            battle = id; sim = arena(host ? mains : mains.reverse()); phase = 'starting';
+            battle = id; sim = arena(host ? mains : mains.reverse(), at); phase = 'starting';
             wantRematch = peerRematch = false; countdown = P().countdown;
             receivedSeq = eventId = serial = stampSeen = 0; history = []; lastSnap = -Infinity; stampAt = now();
             inputSeq = stamp = 0; pending = []; applied = -1; seenEvent = 0; snapCountdown = countdown; snapAt = now();
@@ -202,9 +206,11 @@ const duelKit = (() => {
             loop.reset(); outbox.length = 0; offsets = new Map(); remember();
             on.start?.(sim);
         }
+        // A rematch goes on from the hour the last match ended at.
         function hostStart() {
-            begin(newBattle());
-            post({ t: 'start' });
+            const at = sim ? (sim.dayFrom + sim.time) % gameConfig.day.seconds : day();
+            begin(newBattle(), at);
+            post({ t: 'start', day: at });
         }
         // The host holds the fight still while either phone is away, and
         // counts down again once both are back.
@@ -311,7 +317,7 @@ const duelKit = (() => {
             if (msg.t === 'start') {
                 if (host || typeof msg.battle !== 'string' || msg.battle === battle) return;
                 if (phase !== 'hello' && !(phase === 'over' && wantRematch)) return;
-                begin(msg.battle);
+                begin(msg.battle, within(msg.day, 0, gameConfig.day.seconds) ? msg.day : 0);
                 post({ t: 'ready' });
                 return;
             }
