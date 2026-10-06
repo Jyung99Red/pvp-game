@@ -532,7 +532,36 @@ const gameConfig = (() => {
             shade: { color: [5, 7, 13], opacity: 0.48 },
             // The mist under a map with a cliff: sheets of the sky's
             // colour, `step` blocks one under another.
-            mist: { layers: 4, step: 0.9, opacity: 0.42 }
+            mist: { layers: 4, step: 0.9, opacity: 0.42 },
+            // Corner shading by how many of the three cells round a corner
+            // are filled (both sides, two, one, none): on the ground, and
+            // the lighter one on the faces of blocks.
+            corners: { ground: [0.5, 0.68, 0.84, 1], faces: [0.58, 0.74, 0.88, 1] },
+            // How much sky a face sees (render/terrain_light.js; user,
+            // 2026-10-06): rays per face (over the half of the sky above
+            // the horizon it faces), how far they go (blocks), and how much
+            // of the sky's light a face that sees no sky at all keeps.
+            openSky: { rays: 16, far: 8, floor: 0.15 },
+            // How far a pond's surface (`depth`) and its bed lie below the
+            // ground (blocks), how dark the earth of its banks is at the
+            // top and at the bed, and how dark its bed (`floor`; the
+            // earth's colour under water: palette.pondBed).
+            pond: { depth: 0.25, bed: 0.8, bank: [0.8, 0.45], floor: 0.9 },
+            // A pond's water (user, 2026-10-06): see-through, so its bed
+            // shows, most where it is looked straight down into (`opacity`
+            // there, none edge on); it gives back the sky, the more the
+            // more aslant it is seen (fresnel: `mirror` straight down, all
+            // of it edge on); slow ripples (`waves`: [x, z, length
+            // (blocks), speed, height] each) turn its face, and the sun's,
+            // the moon's and a torch's light glint on it (`glint` how
+            // bright, a colour value; `shine` how small); a torch's or a
+            // fire's light also shows on it as a wide warm sheen (`fire`
+            // how bright, `fireSpread` how narrow), where its true glint
+            // would lie under the bank.
+            water: { opacity: 0.55, mirror: 0.3, glint: '#484848', shine: 300, fire: 0.5, fireSpread: 6, waves: [[1, 0.35, 2.3, 0.45, 0.05], [-0.4, 1, 1.6, 0.6, 0.04], [0.7, -0.8, 0.9, 0.9, 0.02]] },
+            // A cliff: blocks of earth and rock drawn down from its edge,
+            // `depth` of them, each `shade` darker than the one above.
+            cliff: { depth: 4, shade: 0.12 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

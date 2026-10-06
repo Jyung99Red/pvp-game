@@ -26,10 +26,13 @@
 // (`sight`), so the blocks, the plants and the stones there go dark with
 // the ground they stand on (user, 2026-10-05).
 const terrainMesh = (() => {
-    // Corner shading by how many of the three cells round a corner are
-    // filled (both sides, two, one, none): on the ground, and the lighter
-    // one on the faces of blocks.
-    const AO = [0.5, 0.68, 0.84, 1], FACE_AO = [0.58, 0.74, 0.88, 1];
+    // The picture's numbers here are game_config.js `graphics` (what each
+    // is for is written there): the corners' shading, the ponds and their
+    // water, the cliffs.
+    const {
+        corners: { ground: AO, faces: FACE_AO }, water: WATER,
+        pond: { depth: POND_DEPTH, bed: POND_BED, bank: POND_BANK, floor: POND_FLOOR }, cliff: { depth: CLIFF_DEPTH, shade: CLIFF_SHADE }
+    } = gameConfig.graphics;
     // Whole-number hash of a cell to [0, 1): the same world every time, and
     // the same after one chunk is rebuilt.
     function hash(a, b, c = 0) {
@@ -38,25 +41,6 @@ const terrainMesh = (() => {
         return ((h ^ h >>> 16) >>> 0) / 4294967296;
     }
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
-    // How far a pond's surface and its bed lie below the ground (blocks),
-    // how dark the earth of its banks is at the top and at the bed, and
-    // how dark its bed (the earth's colour under water: palette.pondBed).
-    const POND_DEPTH = 0.25, POND_BED = 0.8, POND_BANK = [0.8, 0.45], POND_FLOOR = 0.9;
-    // A pond's water (user, 2026-10-06): see-through, so its bed shows,
-    // most where it is looked straight down into (`opacity` there, none
-    // edge on); it gives back the sky (`sky`, the sky's colour above and
-    // `horizon` low down, set by the view with the hour), the more the
-    // more aslant it is seen (fresnel: `mirror` straight down, all of it
-    // edge on); slow ripples (`waves`:
-    // [x, z, length (blocks), speed, height] each) turn its face, and the
-    // sun's, the moon's and a torch's light glint on it (`glint` how
-    // bright, `shine` how small); a torch's or a fire's light also shows on
-    // it as a wide warm sheen (`fire` how bright, `fireSpread` how narrow),
-    // where its true glint would lie under the bank.
-    const WATER = { opacity: 0.55, mirror: 0.3, glint: '#484848', shine: 300, fire: 0.5, fireSpread: 6, waves: [[1, 0.35, 2.3, 0.45, 0.05], [-0.4, 1, 1.6, 0.6, 0.04], [0.7, -0.8, 0.9, 0.9, 0.02]] };
-    // A cliff: blocks of earth and rock drawn down from its edge, each this
-    // much darker than the one above.
-    const CLIFF_DEPTH = 4, CLIFF_SHADE = 0.12;
     // The tile of a map's own floor.
     const floorOf = t => GROUND[t.floor] || 'grassTop';
     // The shade of sight (render/world_view.js), as shader text: the colour

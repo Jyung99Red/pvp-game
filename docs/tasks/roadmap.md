@@ -137,6 +137,35 @@
   要自己看画面：用内置浏览器面板打开本地服务（这台电脑上 `.claude/launch.json` 里的 `game-dev`，端口 8423，被别的会话占着就用 `game-dev-2`、`game-dev-3`；这个文件没进仓库），用下面的 `window.game` 摆好场面再截图。
 - **云端容器**：预装了 Chromium 和 Playwright（`/opt/node22/lib/node_modules/playwright`），无头模式用软件渲染，浏览器测试能跑。
 
+### 4.0 画面层整理：做到哪、留下的问题（2026-10-06）
+
+做完的：
+
+- 浏览器冒烟测试能在这台电脑上跑（见上）。
+- 画面的可调数都搬进了 `game_config.js` 的 `graphics`（对照表在 `parameters.md` 第 9 节），数值没变。
+  留在 `render/` 里没搬的是实现细节：`PROBES`、`MARGIN`、`MASK`、`SIGHT_FAR`、`BLUR`、`SUN_TAPS` / `SUN_WIDE` / `SUN_LARGEST`、`FAR`、`CUT_RATE`。
+
+没做的：**拆 `render/world_view.js` 的 `build()`**。分法用户已同意，下次照做，纯搬动：
+
+| 新文件（登记在 `world_view.js` 前面） | 装什么 |
+|---|---|
+| `render/view_shaders.js` | 改写 three.js 着色器文字的函数（`smoothShadows`、`softTorchShadows`、`probesByVertex`、`patchShaders`）和人物材质的 `embodied` |
+| `render/view_light.js` | 光照和时刻：按钟点混合、天光、太阳、火把的光、会动的光、洞口的光；`render` 里每帧的光那约 70 行（反弹光、水面天色、火把的光放哪、方块光的光源）作为一个函数跟过来 |
+| `render/view_bodies.js` | `character()` |
+| `render/view_props.js` | 传送门、宝箱、掉落物、火焰、怪物红区 |
+| `render/view_sight.js` | 视野遮罩和暗部（`fanMask`、`blur`、`shade`） |
+| `render/world_view.js` | `create()`、组装、地图外的地面和雾、镜头和遮挡透明、每帧的 `render`、`dispose` |
+
+共用的变量放进 `build()` 开头建的一个 `stage` 对象（`T`、`renderer`、`camera`、`scene`、`sim`、`selfId`、`tune`、`dark`、贴图、地形），每块只收它；不在场景里的东西各块自己 `dispose`。
+
+留下的问题：
+
+- **对战那条浏览器测试不稳**：和全部 Node 测试一起跑时偶尔不过（见过两种：多一条 `net::ERR_NO_BUFFER_SPACE`；跑了约 70 秒后失败，原因没来得及看）。
+  单独跑 `node --test tests/browser-smoke.test.cjs` 每次都过。对局靠真实时间，怀疑是和别的测试文件抢 CPU；没有改测试。
+- **量像素的脚本没进仓库**：改画面代码前后各量一次整幅画面的指纹（Playwright 加软件渲染，把 `requestAnimationFrame` 换成空函数、固定 `Math.random`，
+  `game.pause()` 后 `game.view.render(game.sim, 0)` 再 `readPixels`），同一份代码两次结果一字不差。这次的 15 个场面改前改后都一样。拆 `build()` 时要重写一份，或者把它放进 `tests/`。
+- 画面效果仍靠改写着色器文字，除了上面的像素对比没有自动测试。
+
 ### 4.1 浏览器测试的写法
 
 - 启动：`chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })`。
