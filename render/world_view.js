@@ -5,60 +5,15 @@
 // world (`load`), so switching maps or restarting needs no reload.
 const worldView = (() => {
     const UP = [0, 1, 0];
-    // Lighting by look: the sky's (hemisphere) and the sun's (or the
-    // moon's) intensity, their colours (palette names: the sky's light,
-    // the light off the ground, the sun, and the fog far off), fog start
-    // and end past the camera distance (blocks), the torch's intensity, and
-    // how dark the sun's shadows are (1 full). By day the sun is warm and
-    // the sky's light cool, so what lies in shadow turns a little blue
-    // (user, 2026-10-04). The looks follow the time of day (core/daytime.js,
-    // day.looks); `dawn` is sunrise and sunset, the base's old morning light
-    // (user, 2026-10-06). At night the moon's light is enough to see by out
-    // of doors (user; a little darker since, 1.1 and 0.9 to 1.0 and 0.8:
-    // user, 2026-10-06). A dark region stays `dark` whatever the hour: its
-    // sky's light is enough to make out the walls and the way, and no more
-    // (user, 2026-10-06: nobody gets lost there without a torch; it was
-    // 0.05, all black, then 0.4). `fade`: how far colours go to grey in
-    // the natural light -- the sky's, the ground's bounce, the sun's or the
-    // moon's (render/terrain_mesh.js `fadeLight`); a torch's light brings
-    // them back. Two numbers: for the terrain and this phone's own fighter,
-    // and for every other body. At night all of it a little (user,
-    // 2026-10-06: 0.2, down from the first 0.3). In the dark the other
-    // bodies nearly all the way: a goblin's green stood out of the gloom,
-    // a grey wolf did not (user, 2026-10-06; the tone mapping takes dark
-    // greys down and leaves dark colours as they are) -- this phone's own
-    // fighter not, to be found.
-    const LIGHT = {
-        day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
-        dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
-        grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
-        night: { sky: 1.0, sun: 0.8, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7, fade: [0.2, 0.2] },
-        dark: { sky: 0.3, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1, fade: [0, 0.8] }
-    };
-    // A region whose day looks other than `day`: grey among the rocks.
-    const LOOK = { valley: 'grey' };
-    // The sun's direction moves on in steps of this many hours (its shadow
-    // map is snapped to whole texels, and a light turning every frame
-    // would make the shadows' edges crawl).
-    const SUN_STEP = 0.05;
-    // A torch lights `reach` blocks round it. Its shadows (graphics.
-    // quality's torchShadow) are the torch's own, cast by blocks and bodies
-    // alike; `bias` keeps a face from shadowing itself. Their edge is soft
-    // (user, 2026-10-06): blurred over `soft` radians as seen from the
-    // light, in the quality's torchTaps samples.
-    // Its light is not on the flame, which a swing pokes into a monster's
-    // body, the shadows then turning all about (user, 2026-10-06), but
-    // near its bearer: `follow` of the way from a point `height` blocks up
-    // the bearer's middle to the flame, so the hand's movement still shows
-    // a little, eased at `ease` a second; and, as for walls, short of
-    // anyone else's body (`clear` blocks wider than it) on the way out.
-    const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 };
-    // A burning thicket's light: the flames' colour, flickering.
-    const FIRE = { intensity: 4, reach: 5, decay: 1.4, height: 0.8 };
-    // How soft the edge of the sun's shadows is, blocks: the reach of the
-    // shadow filter, the same on a small shadow map as on a large one
-    // (user, 2026-10-04: soft, like the shade of sight).
-    const SUN_SOFT = 0.1;
+    // The picture's tunable numbers are game_config.js `graphics` (what
+    // each is for is written there): the looks' light, a region's own day
+    // look, the sun's steps and soft edge, the torch, a fire, a doorway,
+    // block light, bounce, the ponds' sky, the ghost, the shade of sight,
+    // the mist.
+    const {
+        looks: LIGHT, dayLook: LOOK, sunStep: SUN_STEP, sunSoft: SUN_SOFT, torch: TORCH, fire: FIRE, doorway: DOORWAY,
+        glow: GLOW, bounce: BOUNCE, waterSky: WATER_SKY, ghost: GHOST, shade: SHADE, mist: MIST
+    } = gameConfig.graphics;
     // The engine's soft shadows take five samples in a disc that noise
     // turns from pixel to pixel; on a large shadow map (SUN_WIDE texels
     // or more) that disc is many texels wide and the five show as grain.
@@ -152,13 +107,12 @@ varying vec3 vProbeIrradiance;`;
     // What every character's material reads each frame, both uniforms
     // ({ value }), so the shader is one and the same for them all:
     // `ghost`: a fighter a ring of stealth hides (fighterKit.hidden; user,
-    // 2026-10-06) is drawn thinned out, GHOST of its pixels left out in the
+    // 2026-10-06) is drawn thinned out, graphics.ghost of its pixels left out in the
     // pattern of the camera's cut (render/terrain_mesh.js). Nothing is
     // blended, so nothing needs sorting and its shadow stays.
-    // `fade`: how far its colours go to grey in the natural light (LIGHT's
+    // `fade`: how far its colours go to grey in the natural light (the look's
     // `fade`; render/terrain_mesh.js `fadeLight`).
     // Drawn only: the body is hit as ever.
-    const GHOST = 0.4;
     function embodied(T, material, ghost, fade) {
         material.onBeforeCompile = shader => {
             shader.uniforms.ghost = ghost;
@@ -176,25 +130,6 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         };
         return material;
     }
-    // Block light (render/terrain_light.js; user, 2026-10-06): how many
-    // cells a torch's, a burning thicket's and a doorway's light spreads
-    // round corners, how bright a doorway's is against a torch's, and how
-    // bright it is at its source for each unit of a torch's intensity
-    // now (`power`). It is worked out again only when a source has moved
-    // a cell or changed. `power` was 0.16: that filled the shadow of a
-    // monster three cells from the torch (user, 2026-10-06).
-    const GLOW = { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.05 };
-    // How much of the light the ground and the walls are lit by they give
-    // back onto what is near (light probes; user, 2026-10-06).
-    const BOUNCE = 0.7;
-    // How bright the sky a pond gives back is (the sky's own colour, paler
-    // low down), for each unit of the sky's light.
-    const WATER_SKY = 0.5;
-    // In a dark region a little daylight comes in by each portal: a soft
-    // light `inside` blocks in from it, so the dark does not shut at the
-    // doorway (user, 2026-10-03). At night it is the moon's, `night` as
-    // bright.
-    const DOORWAY = { intensity: 4, reach: 6, decay: 1.4, inside: 1, height: 1.6, night: 0.4 };
     // Is the point (blocks) inside a block of the terrain (or off the map)?
     function inBlock(t, [x, y, z]) {
         const c = Math.floor(x), r = Math.floor(z);
@@ -307,9 +242,6 @@ if (ghost > ghostDither(gl_FragCoord.xy)) discard;`);
         };
     }
 
-    // The mist under a map with a cliff: sheets of the sky's colour, `step`
-    // blocks one under another.
-    const MIST = { layers: 4, step: 0.9, opacity: 0.42 };
     // ---- one world: scene, terrain, characters, effects ----
     function build(T, renderer, sim, camera, selfId, tune) {
         const C = gameConfig, P = palette, U = C.world.unitsPerBlock;
@@ -798,7 +730,7 @@ void main() {
         // `opacity` of the way at most. It is in the material, not a dark
         // sheet over the ground, so that what stands on the ground --
         // blocks, plants, stones -- goes dark with it (user, 2026-10-05). ----
-        const SIGHT_FAR = 20, MASK = 256, SHADE = { color: [5, 7, 13], opacity: 0.48 };
+        const SIGHT_FAR = 20, MASK = 256;
         const shade = (() => {
             const mask = fanMask(MASK, SIGHT_FAR), fan = { n: 0, angle: new Float64Array(0), reach: new Float64Array(0) };
             ground.sight.mask.value = mask.texture; ground.sight.at.value.set(0, 0, mask.half);

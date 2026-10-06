@@ -439,7 +439,100 @@ const gameConfig = (() => {
                 bounce: [false, true]
             },
             lights: 4,
-            shadowExtent: 13
+            shadowExtent: 13,
+
+            // The picture's own numbers (render/ reads them; no rule does).
+            // They are here, in `graphics`, because the duel's rules
+            // fingerprint leaves `graphics` out (core/duel.js `rules`):
+            // tuning one does not make both phones refresh.
+            //
+            // looks: lighting by look: the sky's (hemisphere) and the sun's
+            // (or the moon's) intensity, their colours (palette names: the
+            // sky's light, the light off the ground, the sun, and the fog
+            // far off), fog start and end past the camera distance
+            // (blocks), the torch's intensity, and how dark the sun's
+            // shadows are (1 full). By day the sun is warm and the sky's
+            // light cool, so what lies in shadow turns a little blue (user,
+            // 2026-10-04). The looks follow the time of day
+            // (core/daytime.js, day.looks); `dawn` is sunrise and sunset,
+            // the base's old morning light (user, 2026-10-06). At night the
+            // moon's light is enough to see by out of doors (user; a little
+            // darker since, 1.1 and 0.9 to 1.0 and 0.8: user, 2026-10-06).
+            // A dark region stays `dark` whatever the hour: its sky's light
+            // is enough to make out the walls and the way, and no more
+            // (user, 2026-10-06: nobody gets lost there without a torch; it
+            // was 0.05, all black, then 0.4). `fade`: how far colours go to
+            // grey in the natural light -- the sky's, the ground's bounce,
+            // the sun's or the moon's (render/terrain_mesh.js `fadeLight`);
+            // a torch's light brings them back. Two numbers: for the
+            // terrain and this phone's own fighter, and for every other
+            // body. At night all of it a little (user, 2026-10-06: 0.2,
+            // down from the first 0.3). In the dark the other bodies nearly
+            // all the way: a goblin's green stood out of the gloom, a grey
+            // wolf did not (user, 2026-10-06; the tone mapping takes dark
+            // greys down and leaves dark colours as they are) -- this
+            // phone's own fighter not, to be found.
+            looks: {
+                day: { sky: 1.9, sun: 2.7, colors: ['skyCool', 'groundLight', 'sunWarm', 'sky'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
+                dawn: { sky: 1.7, sun: 2.9, colors: ['skyDawn', 'groundDawn', 'sunDawn', 'skyDawnBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
+                grey: { sky: 2.2, sun: 2.0, colors: ['skyGrey', 'groundGrey', 'sunGrey', 'skyGreyBack'], fog: [8, 26], torch: 3, shadow: 1, fade: [0, 0] },
+                night: { sky: 1.0, sun: 0.8, colors: ['skyNight', 'groundNight', 'moon', 'skyNightBack'], fog: [6, 22], torch: 6, shadow: 0.7, fade: [0.2, 0.2] },
+                dark: { sky: 0.3, sun: 0.03, colors: ['skyLight', 'groundLight', 'sun', 'darkSky'], fog: [1, 9], torch: 9, shadow: 1, fade: [0, 0.8] }
+            },
+            // A region whose day looks other than `day`: grey among the rocks.
+            dayLook: { valley: 'grey' },
+            // sunStep: the sun's direction moves on in steps of this many
+            // hours (its shadow map is snapped to whole texels, and a light
+            // turning every frame would make the shadows' edges crawl).
+            // sunSoft: how soft the edge of the sun's shadows is, blocks:
+            // the reach of the shadow filter, the same on a small shadow
+            // map as on a large one (user, 2026-10-04: soft, like the shade
+            // of sight).
+            sunStep: 0.05, sunSoft: 0.1,
+            // A torch lights `reach` blocks round it. Its shadows (the
+            // quality's torchShadow) are the torch's own, cast by blocks
+            // and bodies alike; `bias` keeps a face from shadowing itself.
+            // Their edge is soft (user, 2026-10-06): blurred over `soft`
+            // radians as seen from the light, in the quality's torchTaps
+            // samples. Its light is not on the flame, which a swing pokes
+            // into a monster's body, the shadows then turning all about
+            // (user, 2026-10-06), but near its bearer: `follow` of the way
+            // from a point `height` blocks up the bearer's middle to the
+            // flame, so the hand's movement still shows a little, eased at
+            // `ease` a second; and, as for walls, short of anyone else's
+            // body (`clear` blocks wider than it) on the way out.
+            torch: { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 },
+            // A burning thicket's light: the flames' colour, flickering.
+            fire: { intensity: 4, reach: 5, decay: 1.4, height: 0.8 },
+            // In a dark region a little daylight comes in by each portal: a
+            // soft light `inside` blocks in from it, so the dark does not
+            // shut at the doorway (user, 2026-10-03). At night it is the
+            // moon's, `night` as bright.
+            doorway: { intensity: 4, reach: 6, decay: 1.4, inside: 1, height: 1.6, night: 0.4 },
+            // Block light (render/terrain_light.js; user, 2026-10-06): how
+            // many cells a torch's, a burning thicket's and a doorway's
+            // light spreads round corners, how bright a doorway's is
+            // against a torch's (`door`), and how bright it is at its
+            // source for each unit of a torch's intensity now (`power`).
+            // `power` was 0.16: that filled the shadow of a monster three
+            // cells from the torch (user, 2026-10-06).
+            glow: { torch: 8, fire: 6, doorway: 7, door: 0.5, power: 0.05 },
+            // bounce: how much of the light the ground and the walls are
+            // lit by they give back onto what is near (light probes; user,
+            // 2026-10-06). waterSky: how bright the sky a pond gives back
+            // is (the sky's own colour, paler low down), for each unit of
+            // the sky's light.
+            bounce: 0.7, waterSky: 0.5,
+            // ghost: a fighter a ring of stealth hides (user, 2026-10-06)
+            // is drawn thinned out, this share of its pixels left out.
+            ghost: 0.4,
+            // The shade of sight (design.md 2.5): what the fighter does not
+            // see goes towards `color` (red, green, blue of 255), `opacity`
+            // of the way at most (user, 2026-10-06).
+            shade: { color: [5, 7, 13], opacity: 0.48 },
+            // The mist under a map with a cliff: sheets of the sky's
+            // colour, `step` blocks one under another.
+            mist: { layers: 4, step: 0.9, opacity: 0.42 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

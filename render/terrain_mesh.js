@@ -77,8 +77,8 @@ const terrainMesh = (() => {
         return material;
     }
     // Colours fading to grey in the natural light -- the sky's, what the
-    // ground gives back of it, the sun's or the moon's (LIGHT's `fade`
-    // in render/world_view.js; user, 2026-10-06) -- as shader text
+    // ground gives back of it, the sun's or the moon's (graphics.looks'
+    // `fade`; user, 2026-10-06) -- as shader text
     // for a material lit as the engine's Lambert is: its own colour goes
     // `lightFade` (the uniform `fade`: { value }) of the way to grey once
     // the point lights (a torch, a fire, a doorway's glow) have been taken
