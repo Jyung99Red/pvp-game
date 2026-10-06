@@ -127,13 +127,13 @@ diffuseColor.a = max(mix(diffuseColor.a, 1.0, waterEdge), min(1.0, dot(waterShin
     // The engine's light on a face with the sky's (the hemisphere light's)
     // multiplied by the face's `vSky`, and the block light added (read in
     // the cell the face looks into: `glowMap`, a texel a cell, times
-    // `glowPower`). A three.js whose shader reads otherwise has the sky's
-    // light whole.
-    function skyLit(T) {
+    // `glowPower`; not read at all where `glows` is false). A three.js
+    // whose shader reads otherwise has the sky's light whole.
+    function skyLit(T, glows) {
         const chunk = T.ShaderChunk.lights_fragment_begin, hemi = 'irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );';
         return `${chunk.includes(hemi) ? chunk.replace(hemi, hemi.replace(';', ' * vSky;')) : chunk}
 #if defined( RE_IndirectDiffuse )
-irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb * glowPower;
+${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb * glowPower;' : ''}
 #endif`;
     }
     // The engine's light with the point lights' (torches, fires) wide
@@ -229,7 +229,9 @@ irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb *
         b.quad([P(-hx, -hy, -hz), P(-hx, -hy, hz), P(-hx, hy, hz), P(-hx, hy, -hz)], N(-1, 0, 0), rect, rgb);
     }
 
-    function create(T, scene, sim, tx) {
+    // `blockLight`: the block light is drawn (graphics.quality); `probes`:
+    // the light probes are.
+    function create(T, scene, sim, tx, { blockLight = true, probes = true } = {}) {
         const t = sim.terrain, K = terrainKit.KIND, tiles = tx.tiles, colour = new T.Color(), floorTile = floorOf(t);
         // The cut: centre (the player's chest) and eye (the camera), blocks.
         // `on` is the switch (1, or 0 for none at all); `open` is how far
@@ -251,6 +253,7 @@ irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb *
         // each; `power`: how bright a source's own cell is lit. Returns
         // whether the light was made anew.
         function glow(sources, power) {
+            if (!blockLight) return false;
             glowPower.value = power;
             const list = sources.map(g => ({ c: Math.floor(g.at[0]), r: Math.floor(g.at[2]), reach: g.reach, rgb: g.rgb }));
             const key = `${t.rev}|${list.map(g => `${g.c},${g.r},${g.reach},${g.rgb.map(v => v.toFixed(2))}`).sort().join(';')}`;
@@ -270,7 +273,7 @@ irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glowSize).rgb *
                 .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
             shader.fragmentShader = shader.fragmentShader
-                .replace('#include <lights_fragment_begin>', skyLit(T))
+                .replace('#include <lights_fragment_begin>', skyLit(T, blockLight))
                 .replace('#include <common>', `#include <common>
 varying float vSky; varying vec3 vCutPos; varying vec3 vSide;
 uniform sampler2D glowMap; uniform vec2 glowSize; uniform float glowPower;
@@ -527,7 +530,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // either end. ----
         const probeGrid = new T.Object3D();
         Object.assign(probeGrid, { isLightProbeGrid: true, texture: null, boundingBox: new T.Box3(), resolution: new T.Vector3() });
-        scene.add(probeGrid);
+        if (probes) scene.add(probeGrid);
         let baked = null;
         const lastBounce = [-1, -1, -1];
         // The colour things give back, linear, by what terrainLight names.
@@ -558,6 +561,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // their own over pi. Laid into the texture only when it has moved
         // by more than a few hundredths.
         function bounce(light) {
+            if (!baked) return false;
             if (light.every((v, i) => Math.abs(v - lastBounce[i]) <= 0.02 * Math.max(0.05, lastBounce[i]))) return false;
             light.forEach((v, i) => { lastBounce[i] = v; });
             const [nx, ny, nz] = baked.count, data = probeGrid.texture.image.data, slices = nz + 2, half = T.DataUtils.toHalfFloat;
@@ -584,7 +588,7 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) top = Math.max(top, terrainKit.levelAt(t, c, r));
                 blocks = terrainLight.blocks(t, [...deco].map(([key, d]) => [...key.split(',').map(Number), d.tile]));
                 skyAt = terrainLight.sky(blocks);
-                bake();
+                if (probes) bake();
             }
             let rebuilt = 0;
             t.chunks.forEach((chunk, i) => {

@@ -29,10 +29,10 @@ const worldView = (() => {
     // would make the shadows' edges crawl).
     const SUN_STEP = 0.05;
     // A torch lights `reach` blocks round it. Its shadows (graphics.
-    // torchShadowMap) are the torch's own, cast by blocks and bodies alike;
-    // `bias` keeps a face from shadowing itself. Their edge is soft (user,
-    // 2026-10-06): blurred over `soft` radians as seen from the light, in
-    // TORCH_TAPS samples.
+    // quality's torchShadow) are the torch's own, cast by blocks and bodies
+    // alike; `bias` keeps a face from shadowing itself. Their edge is soft
+    // (user, 2026-10-06): blurred over `soft` radians as seen from the
+    // light, in the quality's torchTaps samples.
     // Its light is not on the flame, which a swing pokes into a monster's
     // body, the shadows then turning all about (user, 2026-10-06), but
     // near its bearer: `follow` of the way from a point `height` blocks up
@@ -40,7 +40,6 @@ const worldView = (() => {
     // a little, eased at `ease` a second; and, as for walls, short of
     // anyone else's body (`clear` blocks wider than it) on the way out.
     const TORCH = { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.06, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 };
-    const TORCH_TAPS = 12;
     // A burning thicket's light: the flames' colour, flickering.
     const FIRE = { intensity: 4, reach: 5, decay: 1.4, height: 0.8 };
     // How soft the edge of the sun's shadows is, blocks: the reach of the
@@ -56,7 +55,7 @@ const worldView = (() => {
     // follows a change of picture quality with no new shader. The
     // engine's shader is patched before any material is compiled; a
     // three.js whose shader reads otherwise is left as it is.
-    const SUN_TAPS = 12, SUN_WIDE = 2048;
+    const SUN_TAPS = 12, SUN_WIDE = 2048, SUN_LARGEST = 4096;
     function smoothShadows(T) {
         const chunk = T.ShaderChunk.shadowmap_pars_fragment, from = chunk.indexOf('shadow = ('), end = ') * 0.2;', to = chunk.indexOf(end, from);
         if (from < 0 || to < 0 || !chunk.slice(from, to).includes('vogelDiskSample( 4, 5, phi )') || !chunk.includes('vec2 shadowMapSize')) return;
@@ -68,20 +67,74 @@ for ( int k = 0; k < ${SUN_TAPS}; k ++ ) {
 }
 shadow /= float( taps );${chunk.slice(to + end.length)}`;
     }
-    // The engine's point light shadows take five samples; TORCH_TAPS
-    // samples of the same disc are taken instead, or a soft edge shows as
-    // grain. Patched before any material is compiled; a three.js whose
-    // shader reads otherwise is left as it is.
-    function softTorchShadows(T) {
+    // The engine's point light shadows take five samples; `taps` samples
+    // of the same disc are taken instead, or a soft edge shows as grain.
+    // Patched before any material is compiled; a three.js whose shader
+    // reads otherwise is left as it is.
+    function softTorchShadows(T, taps) {
         const chunk = T.ShaderChunk.shadowmap_pars_fragment, start = 'vec2 sample0 = vogelDiskSample( 0, 5, phi );', end = ') * 0.2;';
         const from = chunk.indexOf(start), to = chunk.indexOf(end, from);
         if (from < 0 || to < 0 || !chunk.slice(from, to).includes('bd3D + ( tangent * sample4.x + bitangent * sample4.y ) * texelSize')) return;
         T.ShaderChunk.shadowmap_pars_fragment = `${chunk.slice(0, from)}shadow = 0.0;
-for ( int k = 0; k < ${TORCH_TAPS}; k ++ ) {
-    vec2 s = vogelDiskSample( k, ${TORCH_TAPS}, phi );
+for ( int k = 0; k < ${taps}; k ++ ) {
+    vec2 s = vogelDiskSample( k, ${taps}, phi );
     shadow += texture( shadowMap, vec4( bd3D + ( tangent * s.x + bitangent * s.y ) * texelSize, dp ) );
 }
-shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
+shadow /= ${taps}.0;${chunk.slice(to + end.length)}`;
+    }
+    // The light probes (render/terrain_light.js) worked out at each corner
+    // of a face instead of at each of its pixels: the engine reads seven
+    // texels of their 3D texture a pixel, and what they give back changes
+    // slowly (a probe every two blocks), so a face's corners (a block
+    // apart) hold it well enough, for far less (graphics.quality's
+    // `bounce`: 'vertex'). The engine's own reading goes into the vertex
+    // shader of every lit material and hands its result on. The engine
+    // tells only the fragment shader whether there are probes, so the
+    // vertex shader always reads them (with none, an empty texture, and
+    // the fragment shader does not take it). A three.js whose shaders
+    // read otherwise keeps reading per pixel.
+    function probesByVertex(T) {
+        const S = T.ShaderChunk, read = S.lightprobes_pars_fragment, light = S.lights_fragment_begin, guard = '#ifdef USE_LIGHT_PROBES_GRID';
+        const from = light.indexOf(guard), to = light.indexOf('#endif', from);
+        if (from < 0 || to < 0 || !read.trim().startsWith(guard) || !read.trim().endsWith('#endif') || !read.includes('vec3 getLightProbeGridIrradiance(') || !S.shadowmap_vertex.includes('vec4 shadowWorldPosition;')) return;
+        const unguarded = read.trim().slice(guard.length, -'#endif'.length);
+        S.lights_fragment_begin = `${light.slice(0, from)}#ifdef USE_LIGHT_PROBES_GRID
+		irradiance += vProbeIrradiance;
+	${light.slice(to)}`;
+        S.lightprobes_pars_fragment = `${read}
+#ifdef USE_LIGHT_PROBES_GRID
+varying vec3 vProbeIrradiance;
+#endif`;
+        S.shadowmap_pars_vertex = `${S.shadowmap_pars_vertex}
+${unguarded}
+varying vec3 vProbeIrradiance;`;
+        S.shadowmap_vertex = `${S.shadowmap_vertex}
+{
+	vec4 probeAt = vec4( transformed, 1.0 );
+	#ifdef USE_BATCHING
+		probeAt = batchingMatrix * probeAt;
+	#endif
+	#ifdef USE_INSTANCING
+		probeAt = instanceMatrix * probeAt;
+	#endif
+	#ifdef HAS_NORMAL
+		vProbeIrradiance = getLightProbeGridIrradiance( ( modelMatrix * probeAt ).xyz, transformNormalByInverseViewMatrix( transformedNormal, viewMatrix ) );
+	#else
+		vProbeIrradiance = getLightProbeGridIrradiance( ( modelMatrix * probeAt ).xyz, vec3( 0.0, 1.0, 0.0 ) );
+	#endif
+}`;
+    }
+    // The engine's shaders as they came, patched afresh for the quality's
+    // shader-deep settings (torch shadow samples, probes by vertex): every
+    // material compiled from then on reads them.
+    const CHUNKS = ['shadowmap_pars_fragment', 'lights_fragment_begin', 'lightprobes_pars_fragment', 'shadowmap_pars_vertex', 'shadowmap_vertex'];
+    let pristine = null;
+    function patchShaders(T, { torchTaps, bounce }) {
+        pristine ??= Object.fromEntries(CHUNKS.map(k => [k, T.ShaderChunk[k]]));
+        Object.assign(T.ShaderChunk, pristine);
+        smoothShadows(T);
+        softTorchShadows(T, torchTaps);
+        if (bounce === 'vertex') probesByVertex(T);
     }
     // Block light (render/terrain_light.js; user, 2026-10-06): how many
     // cells a torch's, a burning thicket's and a doorway's light spreads
@@ -126,8 +179,6 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
-        smoothShadows(T);
-        softTorchShadows(T);
         // Bright ground eases towards white instead of being cut off at
         // it; colours below that are left as they are.
         renderer.toneMapping = T.NeutralToneMapping;
@@ -136,27 +187,40 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         const camera = new T.PerspectiveCamera(C.camera.fov, 1, 0.1, 120);
         let world = null;
         // The menu's settings (ui/settings.js): the camera's distance
-        // multiplier, sun shadows (off in the power saver) and the size of
-        // the sun's and the torch's shadow maps (texels a side; larger in
-        // the finest quality). hourShift: hours the time of day is drawn
-        // ahead, from ?hour=21 in the address (it starts at that hour and
-        // goes on; for testing, never saved).
-        const tune = { zoom: 1, shadows: true, sunMap: 0, torchMap: 0, hourShift: 0 };
-        // Picture quality (ui/settings.js): `saver` (few pixels, no sun
-        // shadows), `high`, or `ultra` (more pixels, sharper shadows).
+        // multiplier, and the picture quality's (graphics.quality): sun
+        // shadows and the size of the sun's and the torch's shadow maps
+        // (texels a side; a large screen's sun map twice a phone's, at most
+        // SUN_LARGEST), how many moving lights, and what the shaders are
+        // built with (`built`: torch shadow samples, the probes' light
+        // and block light, which need a new world when they change).
+        // hourShift: hours the time of day is drawn ahead, from ?hour=21
+        // in the address (it starts at that hour and goes on; for testing,
+        // never saved).
+        const tune = { zoom: 1, shadows: true, sunMap: 0, torchMap: 0, lights: 0, built: null, hourShift: 0 };
+        // `level`: a quality's name (graphics.quality) or its values.
+        // Returns whether the shaders must be built anew.
         function quality(level) {
-            const G = C.graphics, ultra = level === 'ultra';
-            tune.shadows = level !== 'saver';
-            tune.sunMap = small ? (ultra ? G.ultraShadowMapSmall : G.shadowMapSmall) : (ultra ? G.ultraShadowMapLarge : G.shadowMapLarge);
-            tune.torchMap = ultra ? G.ultraTorchShadowMap : G.torchShadowMap;
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, level === 'saver' ? G.saverPixelRatio : ultra ? G.ultraPixelRatio : G.pixelRatioMax));
+            const q = typeof level === 'string' ? C.graphics.quality[level] : level;
+            tune.shadows = q.sunShadow > 0;
+            tune.sunMap = small ? q.sunShadow : Math.min(SUN_LARGEST, 2 * q.sunShadow);
+            tune.torchMap = q.torchShadow;
+            tune.lights = q.lights;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
+            const built = { torchTaps: q.torchTaps, bounce: q.bounce, blockLight: q.blockLight };
+            if (tune.built && Object.keys(built).every(k => built[k] === tune.built[k])) return false;
+            tune.built = built;
+            patchShaders(T, built);
+            return true;
         }
         quality('high');
         const asked = new URLSearchParams(window.location.search).get('hour');
         if (asked !== null && Number.isFinite(Number(asked))) tune.hourShift = Number(asked) - dayKit.hourOf(sim);
 
+        // The world now and whose it is, to build again when the shaders change.
+        let shown = null;
         function load(next, { selfId = 'player' } = {}) {
             if (world) world.dispose();
+            shown = { sim: next, selfId };
             world = build(T, renderer, next, camera, selfId, tune);
         }
         load(sim, opts);
@@ -172,11 +236,14 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
             renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
-        // zoom: camera distance multiplier; quality: 'saver', 'high' or 'ultra'.
+        // zoom: camera distance multiplier; quality: a quality's name
+        // ('saver', 'high', 'ultra') or its values (the menu's own). A
+        // change the shaders are built with builds the world again (its
+        // materials go, and their programs with them).
         function settings({ zoom, quality: level }) {
             tune.zoom = zoom;
-            quality(level);
-            world.retune();
+            if (quality(level)) load(shown.sim, { selfId: shown.selfId });
+            else world.retune();
         }
         // A point in blocks to CSS pixels on the canvas, or null behind the camera.
         const projected = new T.Vector3();
@@ -243,6 +310,9 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
                 sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
             }
             if (resize(torchLight.shadow, tune.torchMap)) torchLight.shadow.radius = TORCH.soft * tune.torchMap;
+            // Moving lights past the quality's count are left out of the
+            // scene's light (three.js builds its shaders for those shown).
+            pool.forEach((light, i) => { light.visible = i < tune.lights; });
         }
 
         const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
@@ -260,7 +330,7 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
         torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
-        const pool = Array.from({ length: C.graphics.lights }, () => {
+        const pool = Array.from({ length: Math.max(...C.graphics.choices.lights) }, () => {
             const light = new T.PointLight('#ffffff', 0, 1, 1);
             scene.add(light);
             return light;
@@ -332,7 +402,7 @@ shadow /= ${TORCH_TAPS}.0;${chunk.slice(to + end.length)}`;
 
         // ---- terrain: chunk meshes (render/terrain_mesh.js) ----
         const t = sim.terrain;
-        const ground = terrainMesh.create(T, scene, sim, tx);
+        const ground = terrainMesh.create(T, scene, sim, tx, { blockLight: tune.built.blockLight, probes: tune.built.bounce !== 'off' });
         // The map's own floor goes on beyond the map edge (grass, or a
         // cave's gravel), so the world does not end in sky: four sheets
         // round the map, a tile to a block. Not under the map itself,

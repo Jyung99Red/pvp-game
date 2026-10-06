@@ -532,6 +532,60 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
     } finally { await context.close(); }
 });
 
+test('picture quality: the custom quality\'s sliders set what is drawn, a shader-deep one builds the world again, and they are kept', { timeout: 300000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+    const { page, errors } = await openPage(context, '?map=field');
+    try {
+        await page.evaluate(() => window.game.pause(true));
+        // What the view draws with now.
+        const state = () => page.evaluate(() => {
+            const g = window.game, sc = g.view.scene, r = g.view.renderer, gl = r.getContext();
+            g.run(0.05);
+            const sun = sc.children.find(o => o.isDirectionalLight), torch = sc.children.find(o => o.isPointLight && o.castShadow);
+            const sources = r.info.programs.map(p => gl.getShaderSource(p.vertexShader) + gl.getShaderSource(p.fragmentShader));
+            return {
+                ratio: r.getPixelRatio(), sun: sun.castShadow ? sun.shadow.mapSize.x : 0, torch: torch.shadow.mapSize.x,
+                lights: sc.children.filter(o => o.isPointLight && !o.castShadow && o.visible).length,
+                byVertex: sources.some(v => v.includes('vProbeIrradiance = getLightProbeGridIrradiance')),
+                taps: [4, 6, 8, 12, 16].filter(n => sources.some(v => v.includes(`vogelDiskSample( k, ${n}, phi )`))),
+                shown: [...document.querySelectorAll('[data-custom-shown]')].map(b => b.textContent)
+            };
+        });
+        const high = await state();
+        assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [12], shown: undefined }, 'high: twice the pixels, the probes by corner');
+        // The menu: settings, then the quality key round to 自定义, which starts from high.
+        await page.evaluate(() => window.game.menu.open());
+        await page.click('[data-menu-act="settings"]');
+        for (const want of ['极高', '省电', '自定义']) {
+            await page.click('[data-setting="quality"]');
+            assert.equal(await page.textContent('[data-setting="quality"] b'), want);
+        }
+        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '12 点', '逐顶点', '开', '4 盏']);
+        const slide = (key, index) => page.evaluate(([key, index]) => {
+            const input = document.querySelector(`[data-custom="${key}"]`);
+            input.value = String(index);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }, [key, index]);
+        await slide('pixelRatio', 2); await slide('sunShadow', 0); await slide('lights', 2); await slide('torchTaps', 1); await slide('bounce', 2);
+        const custom = await state();
+        assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 0, torch: 256, lights: 2, byVertex: false, taps: [6], shown: undefined });
+        assert.deepEqual(custom.shown, ['×1.5 1266×585', '关', '256', '6 点', '逐像素', '开', '2 盏']);
+        // A ratio past the phone's own draws at the phone's own.
+        await slide('pixelRatio', 8);
+        assert.deepEqual([(await state()).ratio, (await state()).shown[0]], [3, '×3 2532×1170']);
+        await shot(page, 'custom-quality');
+        // Kept: after a reload the custom values are drawn again.
+        await page.reload({ waitUntil: 'load' });
+        await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
+        await page.evaluate(() => window.game.pause(true));
+        const kept = await state();
+        assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps], [3, 0, 2, [6]]);
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
 test('two phones in one browser (?link=local): a room code, a duel to a result, a rematch, then one leaves', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });

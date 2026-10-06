@@ -392,21 +392,41 @@ const gameConfig = (() => {
         camera: { yaw: 0, pitch: 0.96, distance: 11.5, fov: 34, lookHeight: 0.8, zoom: { near: 0.85, mid: 1, far: 1.15 } },
 
         // 6. Rendering cost, by the menu's picture quality (user,
-        // 2026-10-06): `high` draws at most pixelRatioMax device pixels
-        // to a CSS pixel (back to 2 from 3: 45 frames a second on the
-        // user's phone; user, 2026-10-06), `ultra` ultraPixelRatio (3,
-        // down from 4: most phones' own ratio is 3 or less, so there
-        // their own resolution; user, 2026-10-06) with shadow
-        // maps of the `ultra` sizes, the power saver saverPixelRatio and
-        // without sun shadows.
-        // Sun shadow map size by screen class (short side under 700 CSS px
-        // is small); shadowExtent is the half-width in blocks of the
-        // shadowed area around the player. lights: how many moving lights
-        // without shadows are lit at once (the nearest; a burning thicket,
-        // a doorway's glow), besides the torch, which always casts
-        // shadows, of torchShadowMap texels a side (they keep its light
-        // from passing walls; user, 2026-10-06).
-        graphics: { pixelRatioMax: 2, ultraPixelRatio: 3, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, ultraShadowMapSmall: 2048, ultraShadowMapLarge: 4096, shadowExtent: 13, lights: 4, torchShadowMap: 256, ultraTorchShadowMap: 512 },
+        // 2026-10-06). Each quality: pixelRatio, the most device pixels
+        // drawn to a CSS pixel (never more than the phone's own; high back
+        // to 2 from 3, 45 frames a second on the user's phone; ultra 3,
+        // down from 4: most phones' own ratio is 3 or less); sunShadow, the
+        // sun's shadow map in texels a side on a small screen (short side
+        // under 700 CSS px; twice that on a large one, at most 4096), 0 for
+        // no sun shadows; torchShadow, the torch's (it always casts them:
+        // they keep its light from passing walls; user, 2026-10-06) and
+        // torchTaps, the samples its soft edge takes; bounce, the light
+        // probes' colour ('off', 'vertex': worked out at each corner of a
+        // face, 'pixel': at each pixel; by corner looks the same and costs
+        // far less, user's question, 2026-10-06); blockLight, the block light on or
+        // off; lights, how many moving lights without shadows are lit at
+        // once (the nearest: a burning thicket, a doorway's glow, someone
+        // else's torch). `custom` is the menu's own (user, 2026-10-06):
+        // each setting a slider over its `choices`, starting from `high`.
+        // shadowExtent is the half-width in blocks of the shadowed area
+        // around the player.
+        graphics: {
+            quality: {
+                saver: { pixelRatio: 1, sunShadow: 0, torchShadow: 256, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 },
+                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 },
+                ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 12, bounce: 'vertex', blockLight: true, lights: 4 }
+            },
+            choices: {
+                pixelRatio: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3],
+                sunShadow: [0, 512, 1024, 2048, 4096],
+                torchShadow: [128, 256, 512, 1024],
+                torchTaps: [4, 6, 8, 12, 16],
+                bounce: ['off', 'vertex', 'pixel'],
+                blockLight: [false, true],
+                lights: [0, 1, 2, 3, 4]
+            },
+            shadowExtent: 13
+        },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full

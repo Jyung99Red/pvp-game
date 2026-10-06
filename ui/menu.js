@@ -13,6 +13,22 @@ const menuScreen = (() => {
     const K = inventoryKit, { SLOT_NAMES, STAT_NAMES } = itemScreens;
     // Radians the figure turns per CSS pixel dragged.
     const TURN = 0.012;
+    // The custom picture quality's sliders (ui/settings.js), one per value
+    // of graphics.choices: the label, and how a value reads. The pixel
+    // ratio reads as what is drawn: never more than the phone's own, and
+    // the picture's size in device pixels.
+    const SLIDERS = {
+        pixelRatio: ['像素比', v => {
+            const own = window.devicePixelRatio || 1, used = Math.min(v, own);
+            return `×${+used.toFixed(2)}${v > own ? '（手机上限）' : ''} ${Math.round(window.innerWidth * used)}×${Math.round(window.innerHeight * used)}`;
+        }],
+        sunShadow: ['太阳影子', v => v ? String(v) : '关'],
+        torchShadow: ['火把影子', v => String(v)],
+        torchTaps: ['火把柔边', v => `${v} 点`],
+        bounce: ['反弹光', v => ({ off: '关', vertex: '逐顶点', pixel: '逐像素' })[v]],
+        blockLight: ['方块光', v => v ? '开' : '关'],
+        lights: ['会动的光', v => `${v} 盏`]
+    };
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
     // hooks: progress() the world's progress; player() the fighter shown
@@ -82,11 +98,31 @@ const menuScreen = (() => {
             acts.settings.setAttribute('aria-expanded', String(!folded));
             settingsEl.innerHTML = Object.entries(gameSettings.CHOICES).map(([key, c]) => {
                 const now = c.options.find(([v]) => v === gameSettings.get(key))?.[1] ?? '';
-                return `<button type="button" class="setting" data-setting="${key}" aria-label="${c.label}：${now}，点一下换">${c.label}<b>${now}</b></button>`;
+                const button = `<button type="button" class="setting" data-setting="${key}" aria-label="${c.label}：${now}，点一下换">${c.label}<b>${now}</b></button>`;
+                return key === 'quality' && gameSettings.get('quality') === 'custom' ? button + sliders() : button;
             }).join('');
             if (fig) fig.show(p.loadout);
             life(true);
         }
+        // The custom quality's sliders, under the quality's key.
+        function sliders() {
+            const custom = gameSettings.get('custom'), choices = gameConfig.graphics.choices;
+            return `<div class="sliders">${Object.entries(SLIDERS).map(([key, [label, read]]) => {
+                const options = choices[key], at = Math.max(0, options.indexOf(custom[key]));
+                return `<label class="slider"><span>${label}<b data-custom-shown="${key}">${esc(read(options[at]))}</b></span>`
+                    + `<input type="range" min="0" max="${options.length - 1}" step="1" value="${at}" data-custom="${key}" aria-label="${label}"></label>`;
+            }).join('')}</div>`;
+        }
+        // A slider moved: its value reads at once; let go, it is kept and drawn.
+        const slid = e => {
+            const input = e.target.closest?.('[data-custom]');
+            if (!input) return null;
+            const key = input.dataset.custom, value = gameConfig.graphics.choices[key][Number(input.value)];
+            el.querySelector(`[data-custom-shown="${key}"]`).textContent = SLIDERS[key][1](value);
+            return { key, value };
+        };
+        el.addEventListener('input', slid);
+        el.addEventListener('change', e => { const s = slid(e); if (s) gameSettings.setCustom(s.key, s.value); });
         // HP goes on changing under the open menu.
         function life(force = false) {
             const f = hooks.player(), text = `${Math.ceil(f.hp)} / ${f.maxHp}`;
