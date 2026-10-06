@@ -144,26 +144,30 @@
 - 浏览器冒烟测试能在这台电脑上跑（见上）。
 - 画面的可调数都搬进了 `game_config.js` 的 `graphics`（对照表在 `parameters.md` 第 9 节），数值没变。
   留在 `render/` 里没搬的是实现细节：`PROBES`、`MARGIN`、`MASK`、`SIGHT_FAR`、`BLUR`、`SUN_TAPS` / `SUN_WIDE` / `SUN_LARGEST`、`FAR`、`CUT_RATE`。
+- `render/world_view.js` 的 `build()` 拆成了几块（纯搬动，下面 22 个场面改前改后一个像素都没变）：
 
-没做的：**拆 `render/world_view.js` 的 `build()`**。分法用户已同意，下次照做，纯搬动：
+  | 文件（登记在 `world_view.js` 前面） | 装什么 |
+  |---|---|
+  | `render/view_shaders.js` | 改写 three.js 着色器文字（太阳和火把软影子的取样、光照探针按顶点算）和人物材质的 `embodied`（隐形、褪色） |
+  | `render/view_light.js` | 光照和时刻：按钟点混合、天光、太阳、火把的光、会动的光、洞口的光；每帧的 `frame`（反弹光、水面天色、火把的光放哪、方块光的光源） |
+  | `render/view_bodies.js` | `character()`：主角、对手、怪物、木桩、宝箱各是一个蒙皮网格 |
+  | `render/view_props.js` | 传送门、宝箱、掉落物、火焰、怪物红区 |
+  | `render/view_sight.js` | 视野遮罩和暗部 |
+  | `render/world_view.js` | `create()`、组装、地图外的地面和雾、镜头和遮挡透明、每帧的 `render`、`dispose` |
 
-| 新文件（登记在 `world_view.js` 前面） | 装什么 |
-|---|---|
-| `render/view_shaders.js` | 改写 three.js 着色器文字的函数（`smoothShadows`、`softTorchShadows`、`probesByVertex`、`patchShaders`）和人物材质的 `embodied` |
-| `render/view_light.js` | 光照和时刻：按钟点混合、天光、太阳、火把的光、会动的光、洞口的光；`render` 里每帧的光那约 70 行（反弹光、水面天色、火把的光放哪、方块光的光源）作为一个函数跟过来 |
-| `render/view_bodies.js` | `character()` |
-| `render/view_props.js` | 传送门、宝箱、掉落物、火焰、怪物红区 |
-| `render/view_sight.js` | 视野遮罩和暗部（`fanMask`、`blur`、`shade`） |
-| `render/world_view.js` | `create()`、组装、地图外的地面和雾、镜头和遮挡透明、每帧的 `render`、`dispose` |
-
-共用的变量放进 `build()` 开头建的一个 `stage` 对象（`T`、`renderer`、`camera`、`scene`、`sim`、`selfId`、`tune`、`dark`、贴图、地形），每块只收它；不在场景里的东西各块自己 `dispose`。
+  `build()` 开头建一个 `stage`（`T`、`renderer`、`camera`、`scene`、`sim`、`selfId`、`tune`、`dark`、贴图 `tx`、地形网格 `ground`、`far`），每块 `create(stage)`；
+  宝箱要用 `character()`，所以 `view_props` 另外收人物那块。不在场景里的东西（光、遮罩、红区的形状、不投影子的材质）各块自己 `dispose`。
+- **量像素的脚本** `tests/pixels.cjs`（不是测试，`node --test` 不跑它）：改画面代码前 `node tests/pixels.cjs <文件>` 存一份指纹，
+  改完用同一条命令比对，有变化的场面列出来并以 1 退出；`PIXELS_SHOTS=<目录>` 同时存每个场面的截图。
+  22 个场面：五个区域、日出正午黄昏夜里、火把、着火的枯木丛、掉落物、怪物红区、隐形、三档画质和关掉反弹光、`?boxes`；没拍到的只有对战里别人的火把（要两个页面）。
+  办法：软件渲染，`requestAnimationFrame` 换成空函数（游戏自己的循环不跑；等页面加载好要用 `polling: 100`，Playwright 默认靠它轮询）、固定 `Math.random`，
+  `game.run` 推进模拟、`game.view.render` 画、`readPixels` 取整幅画面。同一份代码在同一台机器上每次一字不差；换机器或浏览器结果会不同，所以只能前后比，不存固定答案。
+  `PLAYWRIGHT_MODULE`、`PLAYWRIGHT_CHANNEL` 和冒烟测试一样认。
 
 留下的问题：
 
 - **对战那条浏览器测试不稳**：和全部 Node 测试一起跑时偶尔不过（见过两种：多一条 `net::ERR_NO_BUFFER_SPACE`；跑了约 70 秒后失败，原因没来得及看）。
   单独跑 `node --test tests/browser-smoke.test.cjs` 每次都过。对局靠真实时间，怀疑是和别的测试文件抢 CPU；没有改测试。
-- **量像素的脚本没进仓库**：改画面代码前后各量一次整幅画面的指纹（Playwright 加软件渲染，把 `requestAnimationFrame` 换成空函数、固定 `Math.random`，
-  `game.pause()` 后 `game.view.render(game.sim, 0)` 再 `readPixels`），同一份代码两次结果一字不差。这次的 15 个场面改前改后都一样。拆 `build()` 时要重写一份，或者把它放进 `tests/`。
 - 画面效果仍靠改写着色器文字，除了上面的像素对比没有自动测试。
 
 ### 4.1 浏览器测试的写法

@@ -385,7 +385,7 @@ const gameConfig = (() => {
         // The time of day (design.md 2.5; user, 2026-10-06): a day is
         // `seconds` of play (20 minutes), light from `sunrise` to `sunset`
         // (hours); a new game starts at `startHour`. looks: the sky's look
-        // named at hours round the clock (render/world_view.js), the light
+        // named at hours round the clock (render/view_light.js), the light
         // going over from one to the next between them; `dawn` is the warm
         // light of sunrise and sunset (user: the base's old morning light).
         // sun, moon: the highest and the lowest they stand above the

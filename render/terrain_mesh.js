@@ -43,7 +43,7 @@ const terrainMesh = (() => {
     const GROUND = { 0: 'grassTop', 1: 'path', 5: 'cobble', 6: 'gravel' };
     // The tile of a map's own floor.
     const floorOf = t => GROUND[t.floor] || 'grassTop';
-    // The shade of sight (render/world_view.js), as shader text: the colour
+    // The shade of sight (render/view_sight.js), as shader text: the colour
     // on its way to the screen is mixed towards the shade where the ground
     // mask is white at `at`, a world (x, z) in blocks. Uniforms: `sightMask`
     // (white where the fighter does not see, north up), `sightAt` (its
