@@ -394,8 +394,9 @@ const gameConfig = (() => {
         // 6. Rendering cost, by the menu's picture quality (user,
         // 2026-10-06): `high` draws at most pixelRatioMax device pixels
         // to a CSS pixel (back to 2 from 3: 45 frames a second on the
-        // user's phone; user, 2026-10-06), `ultra` ultraPixelRatio (most
-        // phones' own ratio is 3 or less, so there no cap) with shadow
+        // user's phone; user, 2026-10-06), `ultra` ultraPixelRatio (3,
+        // down from 4: most phones' own ratio is 3 or less, so there
+        // their own resolution; user, 2026-10-06) with shadow
         // maps of the `ultra` sizes, the power saver saverPixelRatio and
         // without sun shadows.
         // Sun shadow map size by screen class (short side under 700 CSS px
@@ -405,7 +406,7 @@ const gameConfig = (() => {
         // a doorway's glow), besides the torch, which always casts
         // shadows, of torchShadowMap texels a side (they keep its light
         // from passing walls; user, 2026-10-06).
-        graphics: { pixelRatioMax: 2, ultraPixelRatio: 4, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, ultraShadowMapSmall: 2048, ultraShadowMapLarge: 4096, shadowExtent: 13, lights: 4, torchShadowMap: 256, ultraTorchShadowMap: 512 },
+        graphics: { pixelRatioMax: 2, ultraPixelRatio: 3, saverPixelRatio: 1, shadowMapSmall: 1024, shadowMapLarge: 2048, ultraShadowMapSmall: 2048, ultraShadowMapLarge: 4096, shadowExtent: 13, lights: 4, torchShadowMap: 256, ultraTorchShadowMap: 512 },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full
