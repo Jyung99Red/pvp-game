@@ -465,7 +465,7 @@ const gameConfig = (() => {
                 bounce: [false, true]
             },
             lights: 4,
-            shadowExtent: 13,
+            shadowExtent: 15,
             lamp: { light: 0.5, reach: 6, decay: 1.3, glow: 6 },
 
             // The picture's own numbers (render/ reads them; no rule does).
