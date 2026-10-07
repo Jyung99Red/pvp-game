@@ -37,9 +37,8 @@ const terrainKit = (() => {
     // Map letters that put a lamp on a ground block (core/props.js): a
     // torch on a stand, and one on the wall beside the block.
     const LAMPS = Object.freeze({ i: 'stand', '!': 'wall' });
-    // Letters that mark a spot on grass: the spawn, the training dummy, a
-    // chest, a boss's altar, a lamp.
-    const MARKS = new Set(['.', '@', 'D', 'C', 'A', ...Object.keys(MONSTERS), ...Object.keys(LAMPS)]);
+    // Letters that mark a spot on grass: the spawn, the training dummy, a chest, a lamp.
+    const MARKS = new Set(['.', '@', 'D', 'C', ...Object.keys(MONSTERS), ...Object.keys(LAMPS)]);
     // How far, in cells, a change shows beyond its own cell when drawn (a
     // tree's crown, a neighbour's hidden face): chunks that near are redrawn.
     const REACH = 3;
@@ -87,7 +86,7 @@ const terrainKit = (() => {
         const t = {
             width, height, unit, cw, ch, rows: [...rows], floor: ground[0], rev: 0, edits: {},
             chunks: Array.from({ length: cw * ch }, () => ({ kind: new Uint8Array(CHUNK * CHUNK), level: new Uint8Array(CHUNK * CHUNK), rev: 0 })),
-            spawn: null, spawns: [], dummy: null, monsters: [], portals: [], chests: [], altars: [], lamps: []
+            spawn: null, spawns: [], dummy: null, monsters: [], portals: [], chests: [], lamps: []
         };
         rows.forEach((row, r) => [...row].forEach((letter, c) => {
             const cell = cellOf(letter, t.floor);
@@ -99,7 +98,6 @@ const terrainKit = (() => {
                 t.dummy = { col: c, row: r };
             } else if (letter === 'P') t.portals.push({ col: c, row: r });
             else if (letter === 'C') t.chests.push({ col: c, row: r });
-            else if (letter === 'A') t.altars.push({ col: c, row: r });
             else if (LAMPS[letter]) t.lamps.push({ kind: LAMPS[letter], col: c, row: r });
             else if (MONSTERS[letter]) t.monsters.push({ kind: MONSTERS[letter], col: c, row: r });
         }));

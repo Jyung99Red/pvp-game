@@ -232,10 +232,12 @@ const gameConfig = (() => {
         // Bosses (design.md 5): `model` is the skeleton they are
         // built on, `scale` how much bigger, `look` their colours
         // (models/); a boss down stays down and opens what waits on it.
-        // `revive`: the materials an altar near its home takes to call it
-        // back for another fight (user, 2026-10-07; design.md 6.4).
+        // `revive`: the materials its grave takes to call it back for
+        // another fight (user, 2026-10-07; design.md 5): it rises out of the
+        // ground at home over riseSeconds, and cannot be struck until it is
+        // up.
         monsters: {
-            corpseSeconds: 2.5, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5, returnHeal: 0.3,
+            corpseSeconds: 2.5, riseSeconds: 1.2, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5, returnHeal: 0.3,
             goblin: {
                 name: '哥布林', loot: 'goblin', maxHp: 105, atk: 36, def: 3, radius: 12, speed: 54, turnRate: 3, trackTurn: 1.6,
                 patrolRadius: 60, patrolSpeed: 16, patrolRest: 1.4, alertRange: 150, alertSeconds: 0.5, leash: 260, standOff: 0.85,
@@ -371,18 +373,20 @@ const gameConfig = (() => {
         // distance plus facingWeight per radian off the facing; the target
         // already picked keeps it out to `release` and scores holdBonus
         // better. chestHold: seconds the key is held to open a chest;
-        // altarHold, to call a boss back at its altar.
+        // graveHold, to call a boss back at its grave.
         // hand: the left hand goes a little forward to interact (user,
         // 2026-10-04): out over `out` seconds, kept out while a hold fills
         // and `stay` seconds after a use, back over `back`.
-        interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6, altarHold: 1.0, hand: { out: 0.12, stay: 0.3, back: 0.2 } },
+        interact: { reach: 56, release: 72, facingWeight: 18, holdBonus: 10, chestHold: 0.6, graveHold: 1.0, hand: { out: 0.12, stay: 0.3, back: 0.2 } },
         // Props: chestRadius (a chest is solid); arriveDistance, how far
         // in front of the portal back someone arriving stands. A thicket
         // set alight sets its neighbours alight after burnSpread seconds
         // and is gone after burnSeconds. lampRadius: the post of a
-        // standing torch, in the way as a chest is; altarRadius, a boss's
-        // altar.
-        props: { chestRadius: 14, altarRadius: 14, arriveDistance: 64, burnSpread: 0.35, burnSeconds: 1.4, lampRadius: 5 },
+        // standing torch, in the way as a chest is. A boss's grave
+        // (graveRadius, solid while it shows) shows graveAfter seconds after
+        // the boss falls (its body has sunk by then); called, it glows for
+        // graveCall seconds before the boss rises.
+        props: { chestRadius: 14, graveRadius: 14, graveAfter: 5, graveCall: 3, arriveDistance: 64, burnSpread: 0.35, burnSeconds: 1.4, lampRadius: 5 },
         // Resources (design.md 6.5): held `hold` seconds with the interact
         // key, each throws out its loot table and is gone until it grows
         // back: once regrowSeconds of play have passed, the next visit to
@@ -627,7 +631,7 @@ const gameConfig = (() => {
         // pillar (3 high), `P` a portal's opening, `B` a dry thicket (2
         // high), `*` a hedge (1 high, seen over: a map's soft edge), `O` iron
         // ore and `X` crystal (1-high boulders), `h` a herb
-        // (walked through), `C` a chest, `A` a boss's altar, `@` grass
+        // (walked through), `C` a chest, `@` grass
         // where the player starts when not arriving through a portal (a
         // duel: the host on the first, the guest on the second, in reading
         // order), `D` the training dummy (facing `dummyFacing`, radians),
@@ -641,8 +645,7 @@ const gameConfig = (() => {
         // depth] over its H blocks, door: side, south by default}),
         // `portals` ({ at: [col, row] of its P, to: map, facing: the side
         // that leads into this map, requires: a boss to be down first }),
-        // `chests` ({ at, loot, requires }), `altars` ({ at, boss: whom it
-        // calls back }). Someone arriving stands in front
+        // `chests` ({ at, loot, requires }). Someone arriving stands in front
         // of the portal that leads back. `training`: nobody falls there (an
         // emptied HP bar refills); elsewhere the player can fall. `safe`: no
         // monsters. `duel`: the map is for PVP only. `dark`: no daylight,
@@ -725,7 +728,7 @@ const gameConfig = (() => {
                     '4321.............w.......................3......G......3___',
                     '4321.....................................3.............3___',
                     '4321.....................................3.............3___',
-                    '64421......T.................h..T........3..A......1...3___',
+                    '64421......T.................h..T........3.........1...3___',
                     '654321...................................3.............3___',
                     '54321....................................3.............3___',
                     '4321....................h...............333333..33333333___',
@@ -759,8 +762,7 @@ const gameConfig = (() => {
                     { at: [10, 36], to: 'base', facing: 'north' },
                     { at: [48, 3], to: 'valley', facing: 'south', requires: 'goblinChief' }
                 ],
-                chests: [{ at: [53, 5], loot: 'chiefChest', requires: 'goblinChief' }],
-                altars: [{ at: [44, 11], boss: 'goblinChief' }]
+                chests: [{ at: [53, 5], loot: 'chiefChest', requires: 'goblinChief' }]
             },
             // The second region, the way from the field to the cave (the
             // second draft of the redrawn map: user, 2026-10-04; no gate to
@@ -784,7 +786,7 @@ const gameConfig = (() => {
                     '4321;;;;;::;;;;..~~~~..2O;;;;;;;;;;;;;3;;;;;;;K;;;;;1334',
                     '4321;;;;;::;;;;...~~...;;;;;;;;;;;;;;;2;;;;;;;;;;;;;1234',
                     '4321;;;;;;::;;;...~~..;;;;;;2;;;;;;;;;2;;;;2;;;;;;;;1235',
-                    '5331;;;;;;::;;;..~~...;;;;;;;;;;;;;;;;3;;A;;;;;;2;;;1334',
+                    '5331;;;;;;::;;;..~~...;;;;;;;;;;;;;;;;3;;;;;;;;;2;;;1334',
                     '4321;;;;;;::;;;..~~..;;;;;;;;;;;;;;;;;2;;;;;;1;;;;;;1244',
                     '4321;;;g;;::;;g..~~.h.;;;;1;;;;;;;;;;;3;;;::;;;;;;;;1234',
                     '4321;;;;;;::;;;...~~..;;;;;;;;;;;;;;;;333:::222222231345',
@@ -816,8 +818,7 @@ const gameConfig = (() => {
                     { at: [10, 34], to: 'field', facing: 'north' },
                     { at: [9, 3], to: 'cave', facing: 'south' }
                 ],
-                chests: [{ at: [49, 5], loot: 'kingChest', requires: 'wolfKing' }],
-                altars: [{ at: [41, 11], boss: 'wolfKing' }]
+                chests: [{ at: [49, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
             // A dark cave off the valley (design.md 2.5; redrawn, 55 x 40:
             // user, 2026-10-06, kept 2026-10-07): little to see without a

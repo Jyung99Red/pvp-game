@@ -119,7 +119,7 @@ const renderEffects = (() => {
                     flash.set(e.target, 0.12); blinks.set(e.side, BLINK); shake = Math.max(shake, 0.1);
                 }
                 else if (e.type === 'defeated') burst(e.at, e.boss ? 30 : 14, FALLEN[e.kind] || ['#ffffff'], 1.2, e.boss ? 3.4 : 2.6, e.boss ? 0.1 : 0.08);
-                else if (e.type === 'revive') burst(e.at, 30, ['#a183ff', '#ecd9ff', ...(FALLEN[e.kind] || [])], 1.4, 3.4, 0.1);
+                else if (e.type === 'revive') { burst(e.at, 30, ['#a183ff', '#ecd9ff', '#6b4a2a', ...(FALLEN[e.kind] || [])], 1.4, 3.4, 0.1); shake = Math.max(shake, 0.12); }
                 else if (e.type === 'chest_open') burst(e.at, 16, ['#ffe066', '#d8b04a', '#ffffff'], 1.2, 3, 0.06);
                 else if (e.type === 'pickup' && e.side === selfId) burst(e.at, 3, ['#fff3b0', '#ffffff'], 0.6, 1.2, 0.04);
                 else if (e.type === 'rest' && e.side === selfId) rested = 0.9;
@@ -151,6 +151,12 @@ const renderEffects = (() => {
                 if (e.type !== 'brush' || e.burning < 0 || rnd() > 0.7) continue;
                 const [x, , z] = space.toBlocks(e.x, e.y);
                 burst([x + (rnd() - 0.5) * 0.9, 0.3 + rnd() * 1.6, z + (rnd() - 0.5) * 0.9], 2, ['#ffb13b', '#ff6a2a', '#fff1a8'], 0.2, 0.6, 0.08 + rnd() * 0.06, true);
+            }
+            // A boss's grave called: violet motes rise round it, more as it goes on.
+            for (const e of sim.entities) {
+                if (e.type !== 'grave' || e.state !== 'calling' || rnd() > 0.35 + 0.6 * Math.min(1, e.t / gameConfig.props.graveCall)) continue;
+                const [x, , z] = space.toBlocks(e.x, e.y), a2 = rnd() * Math.PI * 2, r = 0.3 + rnd() * 0.5;
+                burst([x + Math.cos(a2) * r, 0.1 + rnd() * 0.5, z + Math.sin(a2) * r], 2, ['#a183ff', '#ecd9ff', '#6a4ad8'], 0.3, 0.9, 0.06 + rnd() * 0.05, true);
             }
             for (const f of view.fighters) {
                 const a = f.body.act, trail = trailOf(f.id);

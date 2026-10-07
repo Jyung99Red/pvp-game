@@ -203,7 +203,7 @@ const worldView = (() => {
         fighters.get(selfId)?.view.shunTorch();
         const dummyView = sim.dummy ? cast.character(sim.rigs.dummy) : null;
         // A monster that comes into the world later (a boss called back at
-        // its altar) gets its body when it is first drawn.
+        // its grave) gets its body when it is first drawn.
         const monsterView = m => ({ body: m, view: cast.character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null });
         const monsters = new Map(sim.monsters.map(m => [m.id, monsterView(m)]));
         // ---- props (render/view_props.js), the shade of sight

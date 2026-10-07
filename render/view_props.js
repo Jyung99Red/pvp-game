@@ -1,5 +1,5 @@
 // Props for the world view (render/world_view.js): portal openings,
-// chests, bosses' altars, loot on the ground, burning thickets, the torches that stand in
+// chests, bosses' graves, loot on the ground, burning thickets, the torches that stand in
 // the map and a monster's range warning. Drawing only.
 const viewProps = (() => {
     // `stage`: what the world's parts share (render/world_view.js `build`);
@@ -18,9 +18,10 @@ const viewProps = (() => {
         });
         const chestRig = rigKit.build(propModels.chest), chests = new Map();
         for (const e of sim.entities) if (e.type === 'chest') chests.set(e.id, character(chestRig));
-        // Altars never move: placed once.
-        const altarRig = rigKit.build(propModels.altar);
-        for (const e of sim.entities) if (e.type === 'altar') character(altarRig).place(rigKit.solve(altarRig, {}, space.toBlocks(e.x, e.y, e.h), space.yawOf(e.facing)));
+        // Graves: shown while they show (core/props.js), coming up out of the
+        // ground when they first do; called, the stone trembles as it glows.
+        const graveRig = rigKit.build(propModels.grave), graves = new Map();
+        for (const e of sim.entities) if (e.type === 'grave') graves.set(e.id, character(graveRig));
         const unitBox = new T.BoxGeometry(1, 1, 1), DROPS = 64, drops = new T.InstancedMesh(unitBox, new T.MeshLambertMaterial({ map: tx.grain }), DROPS);
         drops.castShadow = true; drops.frustumCulled = false; drops.count = 0;
         scene.add(drops);
@@ -47,6 +48,17 @@ const viewProps = (() => {
                 if (!view) continue;
                 const k = e.open ? Math.min(1, e.t / 0.45) : 0, lid = rigKit.scale(propModels.chest.open, 1 - (1 - k) * (1 - k));
                 view.place(rigKit.solve(chestRig, lid, space.toBlocks(e.x, e.y, e.h), space.yawOf(e.facing)));
+            }
+            for (const e of current.entities) {
+                if (e.type !== 'grave') continue;
+                const view = graves.get(e.id);
+                if (!view) continue;
+                view.show(e.state !== 'hidden');
+                if (e.state === 'hidden') continue;
+                const up = e.state === 'ready' ? Math.min(1, e.t / 0.6) : 1, shake = e.state === 'calling' ? 0.02 * Math.min(1, e.t) * Math.sin(clock * 47) : 0;
+                const [x, , z] = space.toBlocks(e.x, e.y, e.h);
+                view.place(rigKit.solve(graveRig, {}, [x + shake, -1.2 * (1 - up) * (1 - up), z], space.yawOf(e.facing)));
+                for (const m of view.materials) m.emissive.set(P.portalGlow).multiplyScalar(e.state === 'calling' ? 0.25 * Math.min(1, e.t / C.props.graveCall) : 0);
             }
             let n = 0;
             for (const e of current.entities) {

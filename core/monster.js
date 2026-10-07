@@ -25,7 +25,9 @@
 //   has met something), stagger, flinch, freeze, push, enraged, patrolAt
 //   (angle of the next waypoint), rest, gait, speed, moveBlend }
 // phase: patrol | alert | chase | approach | windup | swing | recover | reel
-//   | return | dead
+//   | return | dead | rise (a boss called back at its grave, core/props.js,
+//   coming up out of the ground: it cannot be struck until it is up, then
+//   stands alert)
 // A kind's `model` names the skeleton it is built on (its own kind if not
 // given), `scale` sizes it and `look` swaps colours (models/).
 const monsterKit = (() => {
@@ -36,7 +38,7 @@ const monsterKit = (() => {
     // What a kind carries or wears: by kind, else by model.
     const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [], spider: () => [], goblinChief: () => [goblinPoses.club(), goblinPoses.helmet()], wolfKing: () => [wolfPoses.mane()] };
     // Phases in which a monster is in a fight.
-    const FIGHTING = new Set(['alert', 'chase', 'approach', 'windup', 'swing', 'recover', 'reel']);
+    const FIGHTING = new Set(['rise', 'alert', 'chase', 'approach', 'windup', 'swing', 'recover', 'reel']);
     const emit = (sim, m, type, data) => combatKit.emit(sim, type, { side: 'monster', id: m.id, kind: m.kind, ...data });
     const clamp01 = v => Math.min(1, Math.max(0, v));
     const easeOut = t => 1 - (1 - t) * (1 - t);
@@ -115,11 +117,14 @@ const monsterKit = (() => {
         } else if (m.phase === 'dead') pose = rigKit.mix(walk, P.dead, easeOut(clamp01(m.t / 0.45)));
         if (m.flinch > 0 && m.phase !== 'dead') pose = rigKit.add(pose, rigKit.scale(P.flinch, m.flinch / S.flinchSeconds));
         pose = grounded(rigData, pose);
+        // Rising out of the ground: all of it below at first, what it wears
+        // over its head too.
+        if (m.phase === 'rise') hop -= (height(m.kind) + 0.6) / (S.scale || 1) * (1 - easeOut(clamp01(m.t / M().riseSeconds)));
         return hop ? rigKit.add(pose, { base: { py: hop } }) : pose;
     }
     function rigOf(sim, m) { return sim.rigs.monsters[m.kind]; }
     function solve(sim, m) { return rigKit.solve(rigOf(sim, m), pose(rigOf(sim, m), m), space.toBlocks(m.x, m.y, m.h), space.yawOf(m.facing)); }
-    function hurtboxes(sim, m) { return combatKit.hurtboxes(rigOf(sim, m), solve(sim, m)); }
+    function hurtboxes(sim, m) { return m.phase === 'rise' ? [] : combatKit.hurtboxes(rigOf(sim, m), solve(sim, m)); }
     // What strikes in a move, and how much it grows for the hit test.
     const striking = move => move.ram ? { kinds: ['body', 'weapon'], pad: 0 } : { kinds: ['weapon'], pad: F().weaponPad / UNIT() };
 
@@ -289,6 +294,10 @@ const monsterKit = (() => {
                 if (walkTo(sim, m, x, y, S.patrolSpeed, dt)) { m.patrolAt += 2.4; m.rest = S.patrolRest; }
                 return;
             }
+            case 'rise':
+                m.t += dt;
+                if (m.t >= M().riseSeconds - 1e-9) { m.phase = 'alert'; m.t = 0; emit(sim, m, 'alert'); }
+                return;
             case 'alert':
                 face(m, p, S.turnRate, dt);
                 m.t += dt;

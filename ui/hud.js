@@ -4,8 +4,8 @@
 // clock (the hour of the day), the running combo with the move's name,
 // and floating damage numbers. The
 // world (design.md 6): the interact key names what it would do (dim
-// with nothing in reach, greyed when it cannot now, a ring filling while a
-// hold runs) and a tag over the target says what it is and why not; the
+// with nothing in reach, greyed when it cannot now), a tag over the target
+// says what it is and why not, and a ring over it fills while a hold runs; the
 // region's name as it is entered, a banner when a boss falls, and what is
 // picked up. In a duel: the rival's HP in the foe panel and over its head,
 // the countdown, and an arrow at the edge of the screen while the rival is
@@ -40,7 +40,7 @@ const hud = (() => {
             combo: $('[data-hud="combo"]'), chips: $('[data-hud="chips"]'), move: $('[data-hud="move"]'),
             floats: $('[data-hud="floats"]'), mobs: $('[data-hud="mobs"]'), banner: $('[data-hud="banner"]'), arrow: $('[data-hud="arrow"]'),
             boss: $('[data-hud="boss"]'), key: $('[data-button="interact"]'), keyText: $('[data-hud="interact"]'),
-            tag: $('[data-hud="tag"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
+            tag: $('[data-hud="tag"]'), hold: $('[data-hud="hold"]'), tagName: $('[data-hud="tag-name"]'), tagWhy: $('[data-hud="tag-why"]'), toasts: $('[data-hud="toasts"]'),
             region: $('[data-hud="region"]'), regionTitle: $('[data-hud="region-title"]'), regionNote: $('[data-hud="region-note"]'),
             guardKey: $('[data-button="guard"]'), offhand: $('[data-button="offhand"]'), offhandCount: $('[data-hud="offhand-count"]'),
             clock: $('[data-hud="clock"]'), clockRing: $('[data-hud="clock-ring"]'), clockHand: $('[data-hud="clock-hand"]')
@@ -54,7 +54,10 @@ const hud = (() => {
         const nameOf = body => body.kind === 'fighter' ? '对手' : body.kind === 'dummy' ? gameConfig.dummy.name : gameConfig.monsters[body.kind].name;
         const topOf = body => body.kind === 'fighter' ? 2.15 : body.kind === 'dummy' ? 1.95 : monsterKit.height(body.kind) + 0.25;
         // Where a target's tag floats, in blocks above its spot.
-        const TAG = { building: 2.7, portal: 3.6, chest: 1.2 };
+        const TAG = { building: 2.7, portal: 3.6, chest: 1.2, grave: 1.6 };
+        // Where the ring of a hold under way sits, in blocks above the
+        // target's spot: about the top of it.
+        const HOLD = { chest: 0.75, grave: 1.1, ore: 1.05, crystal: 1.1, herb: 0.45 };
         // A line in the middle of the screen for `seconds`: the region
         // entered, a boss down.
         function announce(title, note, seconds, now) {
@@ -138,17 +141,25 @@ const hud = (() => {
             const t = sim.duel || p.down ? null : interactKit.target(sim, p);
             els.key.classList.toggle('idle', !t);
             els.key.classList.toggle('blocked', !!t && !t.offer.ready);
-            els.key.style.setProperty('--hold', String(t ? t.progress : 0));
-            els.key.classList.toggle('holding', !!t && t.progress > 0);
             els.keyText.textContent = t ? t.offer.verb : '交互';
             els.key.setAttribute('aria-label', t ? `${t.offer.verb} ${t.offer.name}` : '交互');
             els.tag.hidden = !t;
+            els.hold.hidden = true;
             if (!t) return;
             els.tagName.textContent = t.offer.name;
             els.tagWhy.textContent = t.offer.ready ? '' : t.offer.why;
             const e = t.entity, at = space.toBlocks(e.x, e.y, e.h);
+            const ring = [at[0], at[1] + (HOLD[e.type === 'node' ? e.kind : e.type] ?? 0.8), at[2]];
             at[1] += TAG[e.type] ?? 1.5;
             els.tag.hidden = !place(els.tag, view, at);
+            if (t.progress > 0) {
+                const xy = view?.project(ring);
+                els.hold.hidden = !xy;
+                if (xy) {
+                    els.hold.style.transform = `translate(${xy.x.toFixed(1)}px, ${xy.y.toFixed(1)}px) translate(-50%, -50%)`;
+                    els.hold.style.setProperty('--hold', t.progress.toFixed(3));
+                }
+            }
         }
         // duel (optional): { countdown, phase, waiting } from the duel session.
         function update(sim, view, now, bodies = null, { self = 'player', duel = null } = {}) {

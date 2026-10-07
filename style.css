@@ -157,6 +157,15 @@ html, body {
 .hud-tag b { font-size: 13px; font-weight: 600; }
 .hud-tag span { font-size: 11px; color: #ffb4a6; }
 .hud-tag span:empty { display: none; }
+/* A hold under way (mining, opening a chest): a ring fills over the target. */
+.hud-hold {
+    position: absolute; z-index: 2; left: 0; top: 0; width: 40px; height: 40px; border-radius: 50%; pointer-events: none; --hold: 0;
+    background: conic-gradient(var(--accent) calc(var(--hold) * 360deg), rgba(14, 18, 23, 0.55) 0);
+    -webkit-mask: radial-gradient(circle, transparent calc(50% - 6px), #000 calc(50% - 5.5px));
+    mask: radial-gradient(circle, transparent calc(50% - 6px), #000 calc(50% - 5.5px));
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+.hud-hold[hidden] { display: none; }
 .hud-region {
     position: absolute; z-index: 3; pointer-events: none; left: 50%; top: 24%; transform: translate(-50%, -50%);
     display: grid; justify-items: center; gap: 4px; text-align: center; white-space: nowrap;
@@ -331,18 +340,10 @@ html, body {
     display: grid; place-items: center; font: 600 12px/1 var(--font); background: var(--accent); color: #1d1606;
 }
 .ctl-count[hidden] { display: none; }
-.ctl-interact { font-size: 14px; letter-spacing: 0.05em; --hold: 0; white-space: nowrap; }
+.ctl-interact { font-size: 14px; letter-spacing: 0.05em; white-space: nowrap; }
 .ctl.idle { opacity: 0.5; }
 .ctl-interact:not(.idle) { border-color: var(--accent); }
 .ctl-interact.blocked { border-color: var(--ctl-line); color: var(--muted); }
-/* A hold under way (opening a chest): a ring fills round the key. */
-.ctl-interact::after {
-    content: ''; position: absolute; inset: -6px; border-radius: 50%; pointer-events: none; opacity: 0;
-    background: conic-gradient(var(--accent) calc(var(--hold) * 360deg), rgba(255, 255, 255, 0.15) 0);
-    -webkit-mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3.5px));
-    mask: radial-gradient(circle, transparent calc(50% - 4px), #000 calc(50% - 3.5px));
-}
-.ctl-interact.holding::after { opacity: 1; }
 .ctl.disabled { opacity: 0.28; filter: grayscale(1); cursor: default; }
 
 /* Portrait: cover everything and ask for landscape. */

@@ -1,5 +1,5 @@
 // Models of the world's props (design.md 6): the chest (a rig with a
-// hinged lid), a boss's altar, the shapes of things lying on the ground, the roof colour of
+// hinged lid), a boss's grave, the shapes of things lying on the ground, the roof colour of
 // each building, and the colours of a portal's opening. Data only; the
 // renderer builds them.
 const propModels = Object.freeze({
@@ -23,16 +23,18 @@ const propModels = Object.freeze({
         // Fully open, the lid swings back this far.
         open: { lid: { rx: -1.9 } }
     },
-    // A boss's altar: a stone about 0.7 blocks high, a glowing mark on its
-    // top where the materials are laid. Faces +z.
-    altar: {
+    // A boss's grave: a mound of earth with a headstone at its back, a
+    // glowing mark cut in the stone. Faces +z (the mound in front).
+    grave: {
         bones: [{ name: 'base', parent: null, at: [0, 0, 0] }],
         parts: [
-            { bone: 'base', size: [0.9, 0.16, 0.9], at: [0, 0.08, 0], color: 'stoneDark' },
-            { bone: 'base', size: [0.6, 0.44, 0.6], at: [0, 0.38, 0], color: 'stone' },
-            { bone: 'base', size: [0.8, 0.12, 0.8], at: [0, 0.66, 0], color: 'stoneLight' },
-            { bone: 'base', size: [0.34, 0.02, 0.34], at: [0, 0.73, 0], color: 'portalGlow', kind: 'deco' },
-            { bone: 'base', size: [0.12, 0.2, 0.02], at: [0, 0.4, 0.31], color: 'portalGlow', kind: 'deco' }
+            { bone: 'base', size: [0.7, 0.16, 0.9], at: [0, 0.08, 0.05], color: 'dirt' },
+            { bone: 'base', size: [0.5, 0.1, 0.66], at: [0, 0.21, 0.08], color: 'dirt' },
+            { bone: 'base', size: [0.66, 0.14, 0.2], at: [0, 0.07, -0.36], color: 'stoneDark' },
+            { bone: 'base', size: [0.54, 0.86, 0.14], at: [0, 0.57, -0.36], color: 'stone' },
+            { bone: 'base', size: [0.38, 0.12, 0.14], at: [0, 1.06, -0.36], color: 'stone' },
+            { bone: 'base', size: [0.08, 0.36, 0.02], at: [0, 0.66, -0.28], color: 'portalGlow', kind: 'deco' },
+            { bone: 'base', size: [0.24, 0.08, 0.02], at: [0, 0.74, -0.28], color: 'portalGlow', kind: 'deco' }
         ],
         mounts: {}
     },

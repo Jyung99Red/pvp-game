@@ -1,11 +1,11 @@
 // The world (design.md 6): terrain in chunks that can change at run
 // time, the regions and how their portals join up, entities, the interact
 // key, chests, loot on the ground, bosses that stay down (and their
-// altars, which call them back), and the save.
+// graves, which call them back), and the save.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
-const { worldSim: W, terrainKit: T, propKit, interactKit, saveKit, monsterKit, gameConfig } = load();
+const { worldSim: W, terrainKit: T, propKit, interactKit, saveKit, monsterKit, rigKit, space, math3d, gameConfig } = load();
 const U = gameConfig.world.unitsPerBlock, MAPS = gameConfig.maps, MON = gameConfig.monsters;
 const plain = value => JSON.parse(JSON.stringify(value));
 const step = (sim, seconds) => { for (let i = 0; i < Math.round(seconds / 0.01); i++) W.step(sim, 0.01); };
@@ -492,61 +492,82 @@ test('the goblin chief: a bigger goblin; down, it stays down, and the gate and c
     assert.equal(again.monsters.length, sim.terrain.monsters.length - 1);
 });
 
-test('a boss\'s altar calls it back for another fight: only once it is down and gone, for the materials it asks; down again, it drops its loot again (user, 2026-10-07)', () => {
-    const H = gameConfig.interact.altarHold;
+test('a boss\'s grave: none while it stands; it shows where the boss stood once its body has sunk, and called with the materials it asks it glows, then the boss rises out of the ground and fights again (user, 2026-10-07)', () => {
+    const H = gameConfig.interact.graveHold, G = gameConfig.props, RISE = MON.riseSeconds;
     for (const [region, kind] of [['field', 'goblinChief'], ['valley', 'wolfKing']]) {
-        const cost = Object.entries(MON[kind].revive), [[need, n]] = cost;
+        const cost = Object.entries(MON[kind].revive), [[need, n]] = cost, name = MON[kind].name;
         assert.equal(cost.length, 1, `${kind} asks for one material`);
-        const sim = W.create({ region }), p = sim.player, altar = sim.entities.find(e => e.type === 'altar');
-        assert.equal(altar.boss, kind);
-        // Standing: the altar has nothing to call back.
-        before(p, altar, Math.PI / 2, 34); step(sim, 0.02);
-        assert.equal(p.focus, altar.id);
-        assert.deepEqual(plain(interactKit.target(sim, p).offer), { verb: '复活', name: MON[kind].name, hold: H, ready: false, why: `${MON[kind].name}还在` });
-        // Down, the materials short.
+        // Standing, it has no grave to speak of: hidden, not in the way, offering nothing.
+        const sim = W.create({ region }), p = sim.player, boss = sim.monsters.find(m => m.kind === kind), grave = sim.entities.find(e => e.type === 'grave');
+        const home = T.cellCentre(sim.terrain, ...(({ col, row }) => [col, row])(sim.terrain.monsters.find(m => m.kind === kind)));
+        assert.deepEqual([grave.boss, grave.x, grave.y, grave.state, grave.solid], [kind, home.x, home.y, 'hidden', false]);
+        // Down: its grave shows once its body has sunk.
+        sim.monsters = [boss];
+        boss.hp = 1; boss.rest = 99;
+        put(p, boss.x - 60, boss.y, 0);
+        tap(sim); step(sim, 0.3);
+        assert.equal(boss.phase, 'dead');
+        step(sim, G.graveAfter - boss.t - 0.05);
+        assert.equal(grave.state, 'hidden', 'its body still lies there');
+        step(sim, 0.1);
+        assert.deepEqual([grave.state, grave.solid], ['ready', true]);
+        // In a region whose boss the save has down, it is there from the start; materials short, it says what is missing.
         const save = saveKit.fresh();
         save.bosses[kind] = true; save.inventory.items[need] = n - 1;
-        const down = W.create({ region, progress: save }), q = down.player, stone = down.entities.find(e => e.type === 'altar');
+        const down = W.create({ region, progress: save }), q = down.player, stone = down.entities.find(e => e.type === 'grave');
         assert.equal(down.monsters.some(m => m.kind === kind), false);
-        before(q, stone, Math.PI / 2, 34); step(down, 0.02);
-        const short = interactKit.target(down, q).offer;
-        assert.equal(short.ready, false);
-        assert.equal(short.why, `要${gameConfig.items[need].name} ×${n}（有 ${n - 1}）`);
-        // Enough: held for altarHold, they are laid on it and the boss stands at home again, turned to its caller.
+        assert.equal(stone.state, 'ready');
+        before(q, stone, Math.PI / 2, 40); step(down, 0.02);
+        assert.equal(q.focus, stone.id);
+        assert.deepEqual(plain(interactKit.target(down, q).offer), { verb: '复活', name: `${name}之墓`, hold: H, ready: false, why: `要${gameConfig.items[need].name} ×${n}（有 ${n - 1}）` });
+        // Enough: held for graveHold, the materials are spent and it glows; nothing more to offer.
         down.progress.inventory.items[need] = n + 2;
-        press(down, 'interact'); step(down, H - 0.05);
-        assert.equal(down.monsters.some(m => m.kind === kind), false, 'not yet');
-        step(down, 0.07); release(down, 'interact');
-        const boss = down.monsters.find(m => m.kind === kind), spawn = down.terrain.monsters.find(m => m.kind === kind);
-        assert.ok(boss && boss.hp === boss.maxHp && boss.phase === 'alert', `${kind} back`);
-        assert.ok(Math.hypot(boss.x - T.cellCentre(down.terrain, spawn.col, spawn.row).x, boss.y - T.cellCentre(down.terrain, spawn.col, spawn.row).y) < 1e-9, 'at home');
-        assert.ok(Math.abs(boss.facing - Math.atan2(q.y - boss.y, q.x - boss.x)) < 1e-9);
+        press(down, 'interact'); step(down, H + 0.02); release(down, 'interact');
+        assert.equal(stone.state, 'calling');
         assert.equal(down.progress.inventory.items[need], 2, 'the materials are spent');
-        const ev = W.drain(down).filter(e => e.type === 'revive');
-        assert.deepEqual(plain(ev.map(e => [e.kind, e.name, e.target])), [[kind, MON[kind].name, boss.id]]);
+        assert.deepEqual(plain(W.drain(down).filter(e => e.type === 'grave_call').map(e => e.kind)), [kind]);
         step(down, 0.02);
-        assert.equal(interactKit.target(down, q).offer.why, `${MON[kind].name}还在`, 'one at a time');
-        // It fights; down again, it drops its loot again and stays down in the save.
-        boss.hp = 1; down.monsters = [boss];
-        put(q, boss.x - 60, boss.y, 0); boss.rest = 99; boss.phase = 'patrol';
+        assert.equal(q.focus, null);
+        // After graveCall seconds the grave is gone and the boss rises where it stood, turned to its caller.
+        step(down, G.graveCall - 0.1);
+        assert.equal(down.monsters.some(m => m.kind === kind), false, 'still glowing');
+        step(down, 0.1);
+        const back = down.monsters.find(m => m.kind === kind);
+        assert.ok(back && back.phase === 'rise' && back.hp === back.maxHp, `${kind} rising`);
+        assert.deepEqual([back.x, back.y], [home.x, home.y]);
+        assert.ok(Math.abs(space.wrapAngle(back.facing - Math.atan2(q.y - back.y, q.x - back.x))) < 1e-9);
+        assert.deepEqual([stone.state, stone.solid], ['hidden', false]);
+        assert.deepEqual(plain(W.drain(down).filter(e => e.type === 'revive').map(e => [e.kind, e.name, e.target])), [[kind, name, back.id]]);
+        // Rising it is below the ground at first, and cannot be struck; up, it stands alert.
+        const rig = down.rigs.monsters[kind], top = m => Math.max(...rigKit.boxes(rig, rigKit.solve(rig, monsterKit.pose(rig, m)), ['body', 'weapon', 'deco']).flatMap(b => math3d.corners(b.box).map(c => c[1])));
+        assert.ok(top({ ...back, t: 0 }) < 0, 'under the ground, all of it');
+        assert.ok(top({ ...back, t: RISE }) > 1.5, 'up');
+        assert.equal(monsterKit.hurtboxes(down, back).length, 0);
+        step(down, RISE - back.t - 0.05);
+        assert.equal(back.phase, 'rise');
+        step(down, 0.06);
+        assert.equal(back.phase, 'alert');
+        assert.ok(monsterKit.hurtboxes(down, back).length > 0);
+        // Down again, it drops its own loot again, and stays down in the save.
+        back.hp = 1; down.monsters = [back];
+        put(q, back.x - 60, back.y, 0); back.phase = 'patrol'; back.rest = 99;
         tap(down); step(down, 0.3);
-        assert.equal(boss.phase, 'dead');
+        assert.equal(back.phase, 'dead');
         assert.ok(down.entities.some(e => e.type === 'drop' && gameConfig.loot[MON[kind].loot].some(l => l.item === e.item && l.item !== 'gold')), 'its own loot');
         assert.equal(down.progress.bosses[kind], true);
-        // Its corpse calls nothing; the altar can call it once more.
-        down.progress.inventory.items[need] = n;
-        before(q, stone, Math.PI / 2, 34); step(down, 0.02);
-        assert.equal(interactKit.target(down, q).offer.ready, true);
+        step(down, G.graveAfter + 0.1);
+        assert.equal(stone.state, 'ready', 'its grave is back');
         // A boss called back and left behind is gone on the next visit.
+        stone.state = 'ready'; down.progress.inventory.items[need] = n;
+        before(q, stone, Math.PI / 2, 40); step(down, 0.02);
+        press(down, 'interact'); step(down, H + G.graveCall + 0.1); release(down, 'interact');
+        assert.ok(down.monsters.some(m => m.kind === kind && m.phase === 'rise'));
         const later = W.create({ region, progress: saveKit.merge(saveKit.fresh(), down) });
         assert.equal(later.monsters.some(m => m.kind === kind), false);
+        assert.equal(later.entities.find(e => e.type === 'grave').state, 'ready');
     }
-    // An altar must stand on its letter and call a boss whose home is on the map.
-    const rows = ['1111111', '1@.A.G1', '1111111'];
-    assert.doesNotThrow(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [3, 1], boss: 'goblinChief' }] } }));
-    assert.throws(() => W.create({ map: { name: '祭坛', rows } }), /A at 3,1/);
-    assert.throws(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [3, 1], boss: 'wolfKing' }] } }), /no home here/);
-    assert.throws(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [2, 1], boss: 'goblinChief' }] } }), /needs A/);
+    // Only bosses have graves.
+    assert.equal(W.create({ region: 'cave' }).entities.some(e => e.type === 'grave'), false);
 });
 
 test('a monster that gives up the chase and gets home is whole again', () => {
