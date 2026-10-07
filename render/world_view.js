@@ -309,6 +309,13 @@ const worldView = (() => {
             const open = hidden(at) ? 1 : 0;
             ground.cut.open.value = cutSet ? ground.cut.open.value + (open - ground.cut.open.value) * Math.min(1, frameSeconds * CUT_RATE) : open;
             cutSet = true;
+            // Tree crowns fade over the bodies drawn (render/terrain_mesh.js), the nearest first.
+            const under = [
+                ...drawn.map(f => ({ at: space.toBlocks(f.shown.x, f.shown.y, f.shown.h), size: 1.8 })),
+                ...foes.map(f => { const b = f.shown || f.body; return { at: space.toBlocks(b.x, b.y, b.h), size: f.top }; })
+            ];
+            for (const u of under) { u.far = Math.hypot(u.at[0] - at[0], u.at[2] - at[2]); u.at[1] += u.size / 2; }
+            ground.seeThrough(under.sort((a, b) => a.far - b.far));
         }
         function dispose() {
             const seen = new Set();

@@ -551,6 +551,9 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
         const state = () => page.evaluate(() => {
             const g = window.game, sc = g.view.scene, r = g.view.renderer, gl = r.getContext();
             g.run(0.05);
+            // A world built again is compiled when first drawn: draw it now
+            // rather than wait on the page's next frame.
+            g.view.render(g.sim, 0);
             const sun = sc.children.find(o => o.isDirectionalLight), torch = sc.children.find(o => o.isPointLight && o.castShadow);
             const sources = r.info.programs.map(p => gl.getShaderSource(p.vertexShader) + gl.getShaderSource(p.fragmentShader));
             return {

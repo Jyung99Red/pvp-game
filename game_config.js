@@ -588,7 +588,12 @@ const gameConfig = (() => {
             water: { opacity: 0.55, mirror: 0.3, glint: '#484848', shine: 300, fire: 0.5, fireSpread: 6, waves: [[1, 0.35, 2.3, 0.45, 0.05], [-0.4, 1, 1.6, 0.6, 0.04], [0.7, -0.8, 0.9, 0.9, 0.02]] },
             // A cliff: blocks of earth and rock drawn down from its edge,
             // `depth` of them, each `shade` darker than the one above.
-            cliff: { depth: 4, shade: 0.12 }
+            cliff: { depth: 4, shade: 0.12 },
+            // Tree crowns over a body (user, 2026-10-07): the leaves on the
+            // line from it to the camera fade to `least` (of them left
+            // drawn), within `reach` blocks of the line (more for a body
+            // taller than the player), fading out to there.
+            leaves: { least: 0.25, reach: 1.3 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

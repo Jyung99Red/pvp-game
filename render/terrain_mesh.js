@@ -25,14 +25,22 @@
 // What the player's fighter does not see is shaded in the material too
 // (`sight`), so the blocks, the plants and the stones there go dark with
 // the ground they stand on (user, 2026-10-05).
+//
+// Tree crowns are a mesh of their own per chunk, in a see-through
+// material: where they come between the camera and a body (the player, a
+// monster, the dummy, a rival: `see`), they fade, smoothly, to
+// graphics.leaves.least, so nothing stands hidden under a tree (user,
+// 2026-10-07). The cut leaves them alone, and they do not open it.
 const terrainMesh = (() => {
     // The picture's numbers here are game_config.js `graphics` (what each
     // is for is written there): the corners' shading, the ponds and their
     // water, the cliffs.
     const {
-        corners: { ground: AO, faces: FACE_AO }, water: WATER,
+        corners: { ground: AO, faces: FACE_AO }, water: WATER, leaves: LEAVES,
         pond: { depth: POND_DEPTH, bed: POND_BED, bank: POND_BANK, floor: POND_FLOOR }, cliff: { depth: CLIFF_DEPTH, shade: CLIFF_SHADE }
     } = gameConfig.graphics;
+    // How many bodies the crowns fade over at once (the nearest).
+    const SEE_MAX = 8;
     // Whole-number hash of a cell to [0, 1): the same world every time, and
     // the same after one chunk is rebuilt.
     function hash(a, b, c = 0) {
@@ -158,12 +166,16 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
         const add = (x, y, z, tile, tint = null) => { if (!solidBlock(x, y, z)) out.set(`${x},${y},${z}`, { tile, tint }); };
         for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) {
             if (terrainKit.kindAt(t, c, r) !== K.tree) continue;
+            // A crown of three layers (user, 2026-10-07: fewer leaves): one
+            // wide layer round the trunk's top, its outer ring gappy, then a
+            // narrow one and a cross on top.
             const h = terrainKit.levelAt(t, c, r);
-            for (let y = h - 2; y <= h + 1; y++) {
+            for (let y = h - 1; y <= h + 1; y++) {
                 const rad = y >= h ? 1 : 2;
                 for (let dx = -rad; dx <= rad; dx++) for (let dz = -rad; dz <= rad; dz++) {
                     if (dx === 0 && dz === 0 && y < h) continue;
                     if (Math.abs(dx) === rad && Math.abs(dz) === rad && (rad === 2 || y === h + 1 || hash(c + dx, y, r + dz) < 0.5)) continue;
+                    if (rad === 2 && Math.max(Math.abs(dx), Math.abs(dz)) === 2 && hash(c + dx, y, r + dz, 9) < 0.45) continue;
                     if (y === h + 1 && Math.abs(dx) + Math.abs(dz) > 1) continue;
                     add(c + dx, y, r + dz, 'leaves');
                 }
@@ -247,6 +259,10 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
         // little way out in front of itself: the wall that ends the sight
         // is itself seen, its top and its far side not.
         const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
+        // The bodies the crowns fade over (`seeThrough`, below): each a
+        // point (blocks, about its middle) and how far round the line from
+        // it to the camera the leaves fade (w; 0 for none).
+        const see = { bodies: { value: Array.from({ length: SEE_MAX }, () => new T.Vector4()) }, least: { value: LEAVES.least } };
         // How far the terrain's colours fade to grey in the natural light
         // (`fadeLight`, above): the view sets it by the look of the hour.
         const fade = { value: 0 };
@@ -270,12 +286,10 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
             glowMap.needsUpdate = true;
             return true;
         }
-        const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
-        // Hidden faces are left out, so the back faces three.js would cast
-        // shadows with are often missing: cast with both sides.
-        material.shadowSide = T.DoubleSide;
-        material.onBeforeCompile = shader => {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone, glowMap: { value: glowMap }, glowSize: { value: new T.Vector2(t.width, t.height) }, glowPower });
+        // The terrain's shader text, for the blocks and (`leaves`) for the
+        // crowns: those take no cut, and fade over the bodies under them.
+        function terrainShader(shader, leaves) {
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone, glowMap: { value: glowMap }, glowSize: { value: new T.Vector2(t.width, t.height) }, glowPower, seeBodies: see.bodies, seeLeast: see.least });
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
@@ -290,9 +304,22 @@ float cutDither(vec2 p) {
     const float m[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);
     ivec2 i = ivec2(mod(p, 4.0));
     return (m[i.x + i.y * 4] + 0.5) / 16.0;
+}
+uniform vec4 seeBodies[${SEE_MAX}]; uniform float seeLeast;
+// How much of a crown stays: less on the line from a body to the camera.
+float leafStays() {
+    float k = 0.0;
+    for (int i = 0; i < ${SEE_MAX}; i++) {
+        vec4 b = seeBodies[i];
+        if (b.w <= 0.0) continue;
+        vec3 axis = normalize(cutEye - b.xyz), rel = vCutPos - b.xyz;
+        float along = dot(rel, axis), ahead = dot(rel.xz, normalize(axis.xz));
+        k = max(k, (1.0 - smoothstep(b.w * 0.45, b.w, length(rel - axis * along))) * smoothstep(-0.3, 0.2, ahead));
+    }
+    return 1.0 - k * (1.0 - seeLeast);
 }`)
                 .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
+if (${leaves ? 'false' : 'true'} && cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
     vec3 axis = normalize(cutEye - cutCenter);
     vec3 rel = vCutPos - cutCenter;
     float along = dot(rel, axis);
@@ -301,8 +328,25 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
     float fade = (1.0 - smoothstep(cutRadius * 0.55, cutRadius, length(rel - axis * along))) * smoothstep(0.1, 0.35, ahead);
     if (fade * 0.85 * cutOpen > cutDither(gl_FragCoord.xy)) discard;
 }`)
-                .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vSide.xz * 0.3')}\n#include <fog_fragment>`);
-        };
+                .replace('#include <fog_fragment>', `${sightShade('vCutPos.xz + vSide.xz * 0.3')}\n#include <fog_fragment>${leaves ? '\ngl_FragColor.a *= leafStays();' : ''}`);
+        }
+        const material = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true });
+        // Hidden faces are left out, so the back faces three.js would cast
+        // shadows with are often missing: cast with both sides.
+        material.shadowSide = T.DoubleSide;
+        material.onBeforeCompile = shader => terrainShader(shader, false);
+        // The crowns: the same, see-through (their shadows stay whole).
+        const leafMaterial = new T.MeshLambertMaterial({ map: tx.atlas, vertexColors: true, transparent: true });
+        leafMaterial.shadowSide = T.DoubleSide;
+        leafMaterial.onBeforeCompile = shader => terrainShader(shader, true);
+        // Up to SEE_MAX bodies, nearest first: { at: [x, y, z] (blocks,
+        // about its middle), size (blocks: how tall it is) }.
+        function seeThrough(list) {
+            see.bodies.value.forEach((v, i) => {
+                const b = list[i];
+                if (b) v.set(b.at[0], b.at[1], b.at[2], LEAVES.reach * Math.max(1, b.size / 1.8)); else v.set(0, 0, 0, 0);
+            });
+        }
         // The ponds' water (WATER): its own material, a mesh of its own per chunk.
         const water = { time: { value: 0 }, sky: { value: new T.Color() }, horizon: { value: new T.Color() } };
         const wetMaterial = waterMaterial(T, sight, water);
@@ -316,6 +360,9 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         let blocks = null, skyAt = null;
         // Does an opaque block fill (c, y, r)?
         const opaque = (c, y, r) => blocks.solid(c, y, r);
+        // Does it hide a block's face against it? A crown's leaves do not:
+        // they can be seen through (the trunk inside shows).
+        const shut = (c, y, r) => opaque(c, y, r) && deco.get(`${c},${y},${r}`)?.tile !== 'leaves';
         // The sky light at the corners `points` of the face of block (c, y, r) that looks along `n`.
         const skies = (points, n, c, y, r) => terrainLight.corners(blocks, skyAt, points, n, c, y, r);
         // The sky light on the small things standing in open cell (c, y, r).
@@ -379,9 +426,10 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
         // Spots kept free of flowers: spawns, homes, doors and portals.
         const clear = [...t.spawns, ...t.monsters, ...sim.entities.map(e => ({ col: Math.floor(e.x / t.unit), row: Math.floor(e.y / t.unit) }))];
 
-        // One chunk: its blocks and ground (`b`), and its ponds' water (`wet`).
+        // One chunk: its blocks and ground (`b`), its ponds' water (`wet`)
+        // and its tree crowns (`leaf`).
         function build(i) {
-            const b = builder(), wet = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
+            const b = builder(), wet = builder(), leaf = builder(), { c0, r0, c1, r1 } = terrainKit.chunkCells(t, i);
             for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
                 const k = terrainKit.kindAt(t, c, r), name = terrainKit.NAMES[k];
                 // Beyond a cliff's edge nothing is drawn; the cells along it show its face.
@@ -410,10 +458,10 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 const [tile, vary] = BLOCK[name], level = terrainKit.levelAt(t, c, r);
                 for (let y = 0; y < level; y++) {
                     const rgb = tintOf(WHITE, c, y, r, vary), own = k === K.stone && hash(c, y, r, 3) < 0.3 ? 'mossy' : tile;
-                    if (y === level - 1 && !opaque(c, y + 1, r)) face(b, FACES.top, c, y, r, tiles[k === K.tree ? 'barkTop' : own], rgb);
+                    if (y === level - 1 && !shut(c, y + 1, r)) face(b, FACES.top, c, y, r, tiles[k === K.tree ? 'barkTop' : own], rgb);
                     for (const side of SIDES) {
                         const F = FACES[side];
-                        if (opaque(c + F.d[0], y, r + F.d[1])) continue;
+                        if (shut(c + F.d[0], y, r + F.d[1])) continue;
                         face(b, F, c, y, r, tiles[fronts.get(`${c},${y},${r},${side}`) || own], rgb);
                     }
                 }
@@ -425,14 +473,14 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             for (const [key, d] of deco) {
                 const [x, y, z] = key.split(',').map(Number);
                 if (Math.min(t.cw - 1, Math.max(0, Math.floor(x / 16))) !== cx || Math.min(t.ch - 1, Math.max(0, Math.floor(z / 16))) !== cz) continue;
-                const base = d.tint ? colour.set(d.tint).toArray() : WHITE, rgb = tintOf(base, x, y, z, d.tile === 'leaves' ? 0.12 : 0.05);
-                if (!opaque(x, y + 1, z)) face(b, FACES.top, x, y, z, tiles[d.tile], rgb);
+                const base = d.tint ? colour.set(d.tint).toArray() : WHITE, rgb = tintOf(base, x, y, z, d.tile === 'leaves' ? 0.12 : 0.05), into = d.tile === 'leaves' ? leaf : b;
+                if (!opaque(x, y + 1, z)) face(into, FACES.top, x, y, z, tiles[d.tile], rgb);
                 for (const side of SIDES) {
                     const F = FACES[side];
-                    if (!opaque(x + F.d[0], y, z + F.d[1])) face(b, F, x, y, z, tiles[d.tile], rgb);
+                    if (!opaque(x + F.d[0], y, z + F.d[1])) face(into, F, x, y, z, tiles[d.tile], rgb);
                 }
             }
-            return { b, wet };
+            return { b, wet, leaf };
         }
         // A pond on cell (c, r): its water (into `wet`) POND_DEPTH below the
         // ground, its bed POND_BED below, and the earth of the bank, darker
@@ -583,15 +631,16 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
             return true;
         }
         // Take a chunk's meshes out of the scene.
-        function drop({ mesh: m, water: w }) {
-            for (const one of [m, w]) if (one) { scene.remove(one); one.geometry.dispose(); }
+        function drop({ mesh: m, water: w, leaves: l }) {
+            for (const one of [m, w, l]) if (one) { scene.remove(one); one.geometry.dispose(); }
         }
         // Rebuild every chunk whose revision moved (all of them the first time).
         function update() {
             if (decoRev !== t.rev) {
                 deco = decor(sim); fronts = facades(); decoRev = t.rev;
+                // (The crowns hide nothing from the cut: they fade by themselves.)
                 decoKeys = new Set(); top = 0;
-                for (const key of deco.keys()) { const [x, y, z] = key.split(',').map(Number); decoKeys.add(decoKey(x, y, z)); top = Math.max(top, y + 1); }
+                for (const [key, d] of deco) { const [x, y, z] = key.split(',').map(Number); if (d.tile !== 'leaves') decoKeys.add(decoKey(x, y, z)); top = Math.max(top, y + 1); }
                 for (let r = 0; r < t.height; r++) for (let c = 0; c < t.width; c++) if (terrainKit.isSolid(terrainKit.kindAt(t, c, r))) top = Math.max(top, terrainKit.levelAt(t, c, r));
                 blocks = terrainLight.blocks(t, [...deco].map(([key, d]) => [...key.split(',').map(Number), d.tile]));
                 skyAt = terrainLight.sky(blocks);
@@ -602,21 +651,22 @@ if (cutOn > 0.5 && cutOpen > 0.01 && vCutPos.y > 0.05) {
                 const have = chunks.get(i);
                 if (have && have.rev === chunk.rev) return;
                 if (have) drop(have);
-                const { b, wet } = build(i), m = mesh(b, material), w = wet.pos.length ? mesh(wet, wetMaterial) : null;
+                const { b, wet, leaf } = build(i), m = mesh(b, material), w = wet.pos.length ? mesh(wet, wetMaterial) : null, l = leaf.pos.length ? mesh(leaf, leafMaterial) : null;
                 scene.add(m);
                 if (w) scene.add(w);
-                chunks.set(i, { rev: chunk.rev, mesh: m, water: w });
+                if (l) scene.add(l);
+                chunks.set(i, { rev: chunk.rev, mesh: m, water: w, leaves: l });
                 rebuilt++;
             });
             return rebuilt;
         }
         update();
         return {
-            cut, sight, fade, water, glow, bounce, material, update, hides,
+            cut, sight, fade, water, glow, bounce, material, update, hides, seeThrough,
             meshes: () => [...chunks.values()].map(c => c.mesh),
             dispose() {
                 for (const chunk of chunks.values()) drop(chunk);
-                chunks.clear(); material.dispose(); wetMaterial.dispose(); glowMap.dispose();
+                chunks.clear(); material.dispose(); leafMaterial.dispose(); wetMaterial.dispose(); glowMap.dispose();
                 scene.remove(probeGrid); probeGrid.texture?.dispose();
             }
         };
