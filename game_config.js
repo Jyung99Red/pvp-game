@@ -535,14 +535,20 @@ const gameConfig = (() => {
             // and bodies alike; `bias` keeps a face from shadowing itself.
             // Their edge is soft (user, 2026-10-06): blurred over `soft`
             // radians as seen from the light, in the quality's torchTaps
-            // samples. Its light is not on the flame, which a swing pokes
-            // into a monster's body, the shadows then turning all about
-            // (user, 2026-10-06), but near its bearer: `follow` of the way
-            // from a point `height` blocks up the bearer's middle to the
-            // flame, so the hand's movement still shows a little, eased at
-            // `ease` a second; and, as for walls, short of anyone else's
-            // body (`clear` blocks wider than it) on the way out.
-            torch: { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12 },
+            // samples. Its light does not go with the flame, which a swing
+            // pokes into a monster's body, the shadows then turning all
+            // about (user, 2026-10-06): it is where the flame is while the
+            // torch is only carried -- beside the bearer, outside the body
+            // (which so casts its own shadow: user, 2026-10-07), turning
+            // with the body and not with the arm -- and goes `follow` of
+            // the flame's way from there, so the hand's movement still
+            // shows a little, eased at `ease` a second. On the way out
+            // from a point `height` blocks up the bearer's middle it stops
+            // short of a wall, and of anyone else's body (`clear` blocks
+            // wider than it). What is within `near` blocks of the light
+            // casts no shadow in it: the torch and the arm that holds it,
+            // which would darken the ground under the hand.
+            torch: { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12, near: 0.5 },
             // A burning thicket's light: the flames' colour, flickering.
             fire: { intensity: 4, reach: 5, decay: 1.4, height: 0.8 },
             // In a dark region a little daylight comes in by each portal: a

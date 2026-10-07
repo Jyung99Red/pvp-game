@@ -23,8 +23,9 @@ const viewLight = (() => {
     // Is the point inside one of `bodies` ([x, z, radius, top], blocks: upright cylinders)?
     const inBody = (bodies, [x, y, z]) => bodies.some(([bx, bz, r, top]) => y < top && (x - bx) ** 2 + (z - bz) ** 2 < r * r);
     // The last point going from `from` to `to` that is not inside a block
-    // (or one of `bodies`).
-    function clearOf(t, from, to, bodies = [], steps = 12) {
+    // (or one of `bodies`), tried every fiftieth of a block or nearer.
+    function clearOf(t, from, to, bodies = []) {
+        const steps = Math.max(12, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]) * 50));
         let last = from;
         for (let k = 1; k <= steps; k++) {
             const at = from.map((v, i) => v + (to[i] - v) * k / steps);
@@ -32,6 +33,22 @@ const viewLight = (() => {
             last = at;
         }
         return last;
+    }
+
+    // A vector ([x, y, z]) turned by `yaw` about the upright axis, as a rig's root is (core/rig.js).
+    const turned = (v, yaw) => math3d.transformDirection(math3d.compose(0, 0, 0, 0, yaw, 0), v);
+    // A torch's light is this far above the middle of its flame's box (blocks).
+    const FLAME_UP = 0.15;
+    // Where a skeleton's flame is while the torch is only carried: the
+    // bearer standing, in its own frame ([x, y, z], blocks, the light's
+    // FLAME_UP up). Worked out once a skeleton; `loadout`: what it carries.
+    const carried = new WeakMap();
+    function carriedAt(rig, loadout) {
+        if (!carried.has(rig)) {
+            const m = rigKit.solve(rig, playerAnim.pose(rig, { gait: 0, moveBlend: 0, runBlend: 0, loadout })).parts[rig.parts.findIndex(part => part.tag === 'flame')];
+            carried.set(rig, [m[12], m[13] + FLAME_UP, m[14]]);
+        }
+        return carried.get(rig);
     }
 
     // `stage`: what the world's parts share (render/world_view.js `build`).
@@ -92,7 +109,7 @@ const viewLight = (() => {
         // (Its shadow map's size and softness: `retune`.)
         const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
         torchLight.castShadow = true;
-        Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
+        Object.assign(torchLight.shadow.camera, { near: TORCH.near, far: TORCH.reach });
         torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
         // The standing torches' shadows (LAMP.shadow; user, 2026-10-07):
@@ -187,13 +204,14 @@ const viewLight = (() => {
             begun = true;
         }
         // The bearer's own body in its torch's light (user, 2026-10-07).
-        // The light is kept by the bearer's middle (TORCH), inside the
-        // body, which could only shut it in; so its shadow is cast as the
-        // flame casts it. While the torch's shadows are drawn, `meshes`
-        // (the body) are drawn moved by `flameShift`, from the flame to
-        // the light: to the light they then stand as they do to the flame.
-        // The body shades what lies beyond it from the flame, and every
-        // other shadow keeps as still as before. In any other light it
+        // The light is where the torch is carried, outside the body, which
+        // so casts its shadow as anything does. Only where a wall or
+        // another body holds the light back (`frame`) is it in by the
+        // bearer's middle, where the body could only shut it in: then,
+        // while the torch's shadows are drawn, `meshes` (the body) are
+        // drawn moved by `flameShift`, from where the light would be to
+        // where it is -- to the light they then stand as they would have,
+        // and the shadow falls much as it did. In any other light the body
         // casts where it stands.
         const flameShift = new T.Vector3(), stood = new T.Matrix4();
         function flameLit(meshes) {
@@ -297,13 +315,15 @@ const viewLight = (() => {
             ground.water.time.value = clock;
             ground.water.sky.value.copy(now.colors[3]).multiplyScalar(now.sky * WATER_SKY);
             ground.water.horizon.value.copy(now.colors[3]).lerp(now.colors[0], 0.5).multiplyScalar(now.sky * WATER_SKY);
-            // The torch light: near this fighter, a little towards its
-            // flame (TORCH), flickering a little -- short of any block or
-            // body the flame pokes into, or the light would be shut inside
-            // it (a wall's near side would go dark, a monster's shadow turn
-            // all about). Anyone else's burning torch is one of the moving
-            // lights. `shift`, if given, is set to the way from the flame
-            // (eased as the light is) to the light (`flameLit`).
+            // The torch light (TORCH), flickering a little: where the flame
+            // is while the torch is only carried (`carriedAt`: beside the
+            // bearer, turning with the body and not with the arm), and
+            // `follow` of the flame's way from there, eased -- short of any
+            // block or body on the way out from the bearer's middle, or the
+            // light would be shut inside it (a wall's near side would go
+            // dark, a monster's shadow turn all about). Anyone else's
+            // burning torch is one of the moving lights. `shift`, if given,
+            // is set to how far the light was held back (`flameLit`).
             const flicker = k => 1 + 0.08 * Math.sin(clock * 13 + k) + 0.05 * Math.sin(clock * 23.7 + 2 * k);
             const standing = [];
             const stand = (b, top) => { const [x, , z] = space.toBlocks(b.x, b.y); standing.push([x, z, b.radius / U + TORCH.clear, top]); };
@@ -311,16 +331,17 @@ const viewLight = (() => {
             if (current.dummy) stand(current.dummy, 1.95);
             for (const m of current.monsters) if (m.phase !== 'dead') stand(shownOf(m), monsterKit.height(m.kind));
             const flameOf = (d, shift = null) => {
-                const flame = d.rig.parts.findIndex(part => part.tag === 'flame'), m = d.solved.parts[flame];
-                const base = space.toBlocks(d.shown.x, d.shown.y, d.shown.h);
-                base[1] += TORCH.height;
-                const want = [m[12] - base[0], m[13] + 0.15 - base[1], m[14] - base[2]].map(v => v * TORCH.follow);
+                const m = d.solved.parts[d.rig.parts.findIndex(part => part.tag === 'flame')];
+                const root = space.toBlocks(d.shown.x, d.shown.y, d.shown.h), yaw = space.yawOf(d.shown.facing), rest = carriedAt(d.rig, d.body.loadout);
+                // The flame's way from where it is carried, in the bearer's own frame.
+                const flame = turned([m[12] - root[0], m[13] + FLAME_UP - root[1], m[14] - root[2]], -yaw), want = flame.map((v, i) => (v - rest[i]) * TORCH.follow);
                 let off = torchOffsets.get(d.id);
                 if (!off) torchOffsets.set(d.id, off = want);
                 else for (let i = 0; i < 3; i++) off[i] += (want[i] - off[i]) * Math.min(1, frameSeconds * TORCH.ease);
+                const to = turned(rest.map((v, i) => v + off[i]), yaw).map((v, i) => v + root[i]);
                 const others = standing.filter((_, i) => i >= drawn.length || drawn[i] !== d);
-                const at = clearOf(current.terrain, base, base.map((v, i) => v + off[i]), others);
-                if (shift) shift.set(...at.map((v, i) => v - base[i] - off[i] / TORCH.follow));
+                const at = clearOf(current.terrain, [root[0], root[1] + TORCH.height, root[2]], to, others);
+                if (shift) shift.set(at[0] - to[0], at[1] - to[1], at[2] - to[2]);
                 return at;
             };
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
