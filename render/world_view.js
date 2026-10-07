@@ -21,6 +21,12 @@ const worldView = (() => {
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
         const small = Math.min(window.innerWidth, window.innerHeight) < 700;
+        // Is the page drawn by Direct3D (Chrome and Edge on Windows)? The
+        // torch's shadow samples are written its way then (render/view_shaders.js).
+        const direct3d = (() => {
+            const gl = renderer.getContext(), named = gl.getExtension('WEBGL_debug_renderer_info');
+            return /Direct3D/.test(String(gl.getParameter(named ? named.UNMASKED_RENDERER_WEBGL : gl.RENDERER)));
+        })();
         // Bright ground eases towards white instead of being cut off at
         // it; colours below that are left as they are.
         renderer.toneMapping = T.NeutralToneMapping;
@@ -49,7 +55,7 @@ const worldView = (() => {
             const built = { torchTaps: q.torchTaps, bounce: q.bounce };
             if (tune.built && Object.keys(built).every(k => built[k] === tune.built[k])) return false;
             tune.built = built;
-            viewShaders.patchShaders(T, built);
+            viewShaders.patchShaders(T, built, direct3d);
             return true;
         }
         quality('high');
