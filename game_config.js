@@ -256,6 +256,18 @@ const gameConfig = (() => {
                 near: { bite: 1 },
                 mid: { leap: 1, approach: 2 }
             },
+            // The cave spider (千柱窟): low and quick on its legs, little HP.
+            spider: {
+                name: '洞穴蜘蛛', loot: 'spider', maxHp: 80, atk: 44, def: 2, radius: 16, speed: 70, turnRate: 3.4, trackTurn: 1.8,
+                patrolRadius: 60, patrolSpeed: 20, patrolRest: 1.6, alertRange: 150, alertSeconds: 0.4, leash: 280, standOff: 0.85,
+                firstDelay: 0.3, delay: 0.45, flinchSeconds: 0.22, enrage: { threshold: 0.3, atk: 1.3, tempo: 1.2 },
+                moves: {
+                    strike: { name: '刺足', windup: 0.8, lock: 0.3, swing: 0.14, recovery: 1.4, ratio: 0.6, step: 40 },
+                    spring: { name: '跳扑', windup: 1.2, lock: 0.35, swing: 0.42, recovery: 2.2, ratio: 0.85, step: 110, ram: true, cooldown: 5 }
+                },
+                near: { strike: 1 },
+                mid: { spring: 1, approach: 2 }
+            },
             goblinChief: {
                 name: '哥布林头目', model: 'goblin', scale: 1.45, look: 'chief', boss: true, loot: 'goblinChief', stagger: 10,
                 maxHp: 450, atk: 48, def: 5, radius: 18, speed: 50, turnRate: 2.6, trackTurn: 1.4,
@@ -308,6 +320,7 @@ const gameConfig = (() => {
             king_fang: { kind: 'material', name: '狼王之牙', icon: '🦴', sell: 40, desc: '狼王的牙。能打成项链。' },
             iron_ore: { kind: 'material', name: '铁矿石', icon: '🪨', sell: 3, desc: '原野和山谷的铁矿石块里采来的。铁匠铺打造铁器要用。' },
             crystal: { kind: 'material', name: '晶石', icon: '💎', sell: 10, desc: '千柱窟里采来的晶石。能镶在饰品上。' },
+            spider_silk: { kind: 'material', name: '蛛丝', icon: '🕸️', sell: 5, desc: '千柱窟的洞穴蜘蛛掉的。商店收。' },
             herb: { kind: 'material', name: '草药', icon: '🌿', sell: 2, desc: '野外的草药丛采来的。能编进护符，商店也收。' },
             potion: { kind: 'supply', slot: 'offhand', offhand: 'potion', name: '药水', icon: '🧪', price: 15, max: 5, desc: '放在副手。按副手键喝一口，回复三成生命；挨打会洒掉这一口（药水还在）。' },
             torch: { kind: 'gear', slot: 'offhand', offhand: 'torch', name: '火把', icon: '🔥', price: 30, max: 1, desc: '放在副手。按副手键点燃或熄灭，照亮暗处；带着它对枯木丛按交互键就能烧掉。拿着火把时只能用武器挡，也不能拿火把打。' },
@@ -327,6 +340,7 @@ const gameConfig = (() => {
         loot: {
             goblin: [{ item: 'gold', chance: 1, amount: [2, 5] }, { item: 'goblin_ear', chance: 0.85, amount: [1, 2] }],
             wolf: [{ item: 'gold', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 0.9, amount: [1, 2] }],
+            spider: [{ item: 'gold', chance: 1, amount: [2, 4] }, { item: 'spider_silk', chance: 0.85, amount: [1, 2] }],
             goblinChief: [{ item: 'gold', chance: 1, amount: [20, 30] }, { item: 'chief_tusk', chance: 1, amount: [1, 1] }],
             wolfKing: [{ item: 'gold', chance: 1, amount: [25, 35] }, { item: 'king_fang', chance: 1, amount: [1, 1] }],
             chiefChest: [{ item: 'gold', chance: 1, amount: [40, 60] }, { item: 'goblin_ear', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 1, amount: [1, 2] }],
@@ -616,9 +630,9 @@ const gameConfig = (() => {
         // `i` a torch on a stand and `!` a torch on the wall beside its
         // cell (the wall to the north, else west, east, south; a block at
         // least 2 high), both always burning,
-        // and monster homes: `g` goblin, `w` wolf, `G` the goblin chief, `K`
-        // the wolf king; `B` a dry thicket (2 high, burnt away by a lit
-        // torch). Rows run north (screen top) to south.
+        // and monster homes: `g` goblin, `w` wolf, `s` cave spider, `G` the
+        // goblin chief, `K` the wolf king; `B` a dry thicket (2 high, burnt
+        // away by a lit torch). Rows run north (screen top) to south.
         // Next to the rows: `buildings` ({ kind, at: [col, row, width,
         // depth] over its H blocks, door: side, south by default}),
         // `portals` ({ at: [col, row] of its P, to: map, facing: the side
@@ -630,8 +644,8 @@ const gameConfig = (() => {
         // only a torch lights it (drawn). `floor`: the letter of the ground
         // the markers lie on (grass by default).
         maps: {
-            // The base, a village (design.md 6.3; the first draft of the
-            // redrawn map, 45 x 28: user, 2026-10-06): no monsters. A wooden
+            // The base, a village (design.md 6.3; redrawn, 45 x 28: user,
+            // 2026-10-06, kept 2026-10-07): no monsters. A wooden
             // fence on the north with the gate to the field, a rocky ridge on
             // the west, low rocks on the south, low rocks and a few trees on
             // the east with the gate to the training ground (the valley is
@@ -798,13 +812,13 @@ const gameConfig = (() => {
                 ],
                 chests: [{ at: [49, 5], loot: 'kingChest', requires: 'wolfKing' }]
             },
-            // A dark cave off the valley (design.md 2.5; the first draft of
-            // the redrawn map, 55 x 40: user, 2026-10-06): little to see
-            // without a lit torch. One wide hall of pillars, rock coming in
-            // from its walls; the gate in the south-west, two torches on
-            // stands by it. The treasure room in the north-east is shut by a
-            // thicket the torch burns away, a torch on the wall either side
-            // of it.
+            // A dark cave off the valley (design.md 2.5; redrawn, 55 x 40:
+            // user, 2026-10-06, kept 2026-10-07): little to see without a
+            // lit torch. One wide hall of pillars, rock coming in from its
+            // walls; the gate in the south-west, two torches on stands by
+            // it. The treasure room in the north-east is shut by a thicket
+            // the torch burns away, a torch on the wall either side of it.
+            // Three cave spiders among the pillars (user, 2026-10-07).
             cave: {
                 name: '千柱窟', dark: true, floor: ';',
                 rows: [
@@ -825,7 +839,7 @@ const gameConfig = (() => {
                     ';;;3;;;;;;;;;3;;;;;;;;;3333;;;;;;;;;X3;;;;;;;;;;3333;;;',
                     ';;;3;;;;;;g;;3;;;;33;;333333;;;;;3;;;;;;;33;;;;;;;;3;;;',
                     ';;;3;;;3;;;;;X;;;;33;;3333333;;;;;;;;;;;;33;;3;;;;;3;;;',
-                    ';;;3;;;;;;;33;;;;;;;;;3333333;;;;;;;2;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;33;;;;;;;;;3333333;;;;;;;2;;;;;;;;;s;;;;3;;;',
                     ';;;3;;;;;;;;;;;3;;;;;;3333333;;;;;;;;;3;;;;;;;;1;;;3;;;',
                     ';;;333333;;;;;;;;;;;;;333333;;;33;;;;;;w;;;;;;;;;;;3;;;',
                     ';;;33333333;;;;;;w;;;;;;333;;;;33;;;;;;;;;;;;3333333;;;',
@@ -834,8 +848,8 @@ const gameConfig = (() => {
                     ';;;333333;;;1;33;;;;;;;;;;3;;;;;;;;;;;;;3;;333333333;;;',
                     ';;;333;;;;;;;;;;;;;;;;2;;;;;;;;;;;;;;;3;;;;333333333;;;',
                     ';;;333;;;;;;;;;;;3;;;;;;;;;;;;;33333;;;;;;;333333333;;;',
-                    ';;;333;;;;;;3;;;;3;;;;;;;;;;3;;333333;;;;;;;;;333333;;;',
-                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;3;;333333;;;;;;;;;333333;;;',
+                    ';;;333;;s;;;3;;;;3;;;;;;;;;;3;;333333;;;;;;;;;333333;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;;;;s;;3;;333333;;;;;;;;;333333;;;',
                     ';;;3;;;;;3;;;;;;;;;;33;;;;;;;;;333333;;;;;1;;;;;;;;3;;;',
                     ';;;3;;;;;;;;;;;;;;;;33;;;33;;;;33333;;;33;;;;;;;;;;3;;;',
                     ';;;3;;;;;;;;;;;3;;;;;;;;;33;;;;33333;;g33;;3;;;;;;;3;;;',

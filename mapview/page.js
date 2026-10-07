@@ -35,7 +35,7 @@ const mapApp = (() => {
         select: '#f2b544', walk: '#ff6fb7', ink: '#20252b', plate: 'rgba(16, 20, 24, 0.82)'
     });
     // Monsters by the model they are built on; bosses apart.
-    const MONSTER = Object.freeze({ goblin: '#ffb02e', wolf: '#8fd6ff', boss: '#ff4d4d', other: '#ffffff' });
+    const MONSTER = Object.freeze({ goblin: '#ffb02e', wolf: '#8fd6ff', spider: '#d59cff', boss: '#ff4d4d', other: '#ffffff' });
     const RULER = Object.freeze({ top: 22, left: 34, bg: '#181d23', tick: '#56626e', text: '#cfd8de' });
     // Pixels to a cell: the slider's ends, and the range a first visit starts in.
     const CELL = Object.freeze({ min: 6, max: 48, first: [14, 30], fallback: 20 });

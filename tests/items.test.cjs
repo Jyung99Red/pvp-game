@@ -90,7 +90,7 @@ test('the shop sells potions (five at most), a torch and the ring of stealth, an
     assert.equal(K.equip(p, 'accessory', 'stealth_ring'), '');
     assert.deepEqual(plain(K.stealthOf(p.loadout)), { cooldown: 5 });
     assert.ok(!K.recipes().includes('stealth_ring'), 'the smithy does not make it');
-    assert.deepEqual(plain(K.wanted()), ['goblin_ear', 'wolf_pelt', 'chief_tusk', 'king_fang', 'iron_ore', 'crystal', 'herb']);
+    assert.deepEqual(plain(K.wanted()), ['goblin_ear', 'wolf_pelt', 'chief_tusk', 'king_fang', 'iron_ore', 'crystal', 'spider_silk', 'herb']);
 });
 
 test('the smithy makes gear from materials and gold, once each', () => {

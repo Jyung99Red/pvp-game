@@ -1,5 +1,5 @@
-// Monsters (design.md 5): the goblin and the wolf. Patrol round home,
-// notice a player they can see and stand alert a moment, then fight,
+// Monsters (design.md 5): the goblin, the wolf and the cave spider. Patrol
+// round home, notice a player they can see and stand alert a moment, then fight,
 // walking round any wall between (terrainKit.wayTo): free again, a
 // monster turns to the player if it must and picks what to do from the
 // table of the distance band the player is in (design.md 5.2), on the
@@ -8,8 +8,9 @@
 // turn it round (user, 2026-10-06). A fighter a ring hides
 // (fighterKit.hidden) is not noticed.
 // Their blows hit by the same box test as the player's sword (design.md
-// 5); the wolf's leap rams with its whole body along its path. How far a move reaches, and the warning
-// on the ground, are swept out of its key poses once (`reach`).
+// 5); the wolf's leap and the spider's spring ram with the whole body along
+// the path. How far a move reaches, and the warning on the ground, are swept
+// out of its key poses once (`reach`).
 // Bosses (design.md 5) are the same skeletons made bigger, with a
 // look and moves of their own; a boss down stays down (the save), and the
 // portals and chests waiting on it open. A fallen monster drops its loot
@@ -30,10 +31,10 @@
 const monsterKit = (() => {
     const M = () => gameConfig.monsters, F = () => gameConfig.combat;
     const UNIT = () => gameConfig.world.unitsPerBlock;
-    const MODELS = { goblin: () => goblinModel, wolf: () => wolfModel };
-    const POSES = { goblin: () => goblinPoses, wolf: () => wolfPoses };
+    const MODELS = { goblin: () => goblinModel, wolf: () => wolfModel, spider: () => spiderModel };
+    const POSES = { goblin: () => goblinPoses, wolf: () => wolfPoses, spider: () => spiderPoses };
     // What a kind carries or wears: by kind, else by model.
-    const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [], goblinChief: () => [goblinPoses.club(), goblinPoses.helmet()], wolfKing: () => [wolfPoses.mane()] };
+    const GEAR = { goblin: () => [goblinPoses.club()], wolf: () => [], spider: () => [], goblinChief: () => [goblinPoses.club(), goblinPoses.helmet()], wolfKing: () => [wolfPoses.mane()] };
     // Phases in which a monster is in a fight.
     const FIGHTING = new Set(['alert', 'chase', 'approach', 'windup', 'swing', 'recover', 'reel']);
     const emit = (sim, m, type, data) => combatKit.emit(sim, type, { side: 'monster', id: m.id, kind: m.kind, ...data });

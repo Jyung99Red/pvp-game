@@ -101,7 +101,7 @@ const renderEffects = (() => {
         const blinks = new Map(), BLINK = 0.2;
         const blinking = id => (blinks.get(id) || 0) > 0;
         const FALLEN = {
-            goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'],
+            goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'], spider: ['#5b4a5f', '#6f5d73', '#b8432f'],
             goblinChief: ['#5f8a34', '#8a2f2a', '#7d8088', '#d8b04a'], wolfKing: ['#4c4d55', '#2c2d33', '#ff7a3a', '#d8b04a']
         };
         let shake = 0, cue = 0, rested = 0;

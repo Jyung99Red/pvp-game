@@ -1,4 +1,4 @@
-// Monsters (design.md 5): the goblin and wolf models, the player's
+// Monsters (design.md 5): the goblin, wolf and spider models, the player's
 // cuts landing on a short monster (design.md 4.3), their own
 // blows as bone hits with reach and warning swept from the key poses
 // (4.3, 4.4), and the AI: patrol, alert, the distance-band tables
@@ -18,10 +18,10 @@ const plain = value => JSON.parse(JSON.stringify(value));
 const player = R.build(playerModel, { equipment: equipmentModels.forLoadout(gameConfig.gear.starter) });
 const still = { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0 };
 const standing = kind => ({ kind, phase: 'patrol', t: 0, move: null, flinch: 0, gait: 0, moveBlend: 0 });
-const KINDS = ['goblin', 'wolf', 'goblinChief', 'wolfKing'];
+const KINDS = ['goblin', 'wolf', 'spider', 'goblinChief', 'wolfKing'];
 const rigs = Object.fromEntries(KINDS.map(k => [k, monsterKit.rig(k)]));
 // Moves drawn either way round, mirrored at random (models/: `either`).
-const either = (kind, name) => !!{ goblin: g.goblinPoses, wolf: g.wolfPoses }[monsterKit.modelOf(kind)].moves[MON[kind].moves[name].pose || name].either;
+const either = (kind, name) => !!{ goblin: g.goblinPoses, wolf: g.wolfPoses, spider: g.spiderPoses }[monsterKit.modelOf(kind)].moves[MON[kind].moves[name].pose || name].either;
 const extent = (rig, solved, kinds) => {
     let top = -Infinity, low = Infinity;
     rig.parts.forEach((p, i) => {
@@ -55,6 +55,27 @@ test('the wolf is a quadruped with its back about 0.8 and head about 1.0 blocks 
     assert.ok(Math.abs(hurt.top - 1.0) < 0.08, `head top at ${hurt.top.toFixed(2)}`);
     assert.ok(Math.abs(extent(rig, s).low) < 1e-6, 'standing on the ground');
     assert.equal(rig.parts.filter(p => p.kind === 'weapon').length, 1, 'the muzzle bites');
+});
+
+test('the cave spider is low on eight legs, its back about 0.85 blocks up; its front pair strike', () => {
+    const rig = rigs.spider, s = R.solve(rig, monsterKit.pose(rig, standing('spider')));
+    const legs = rig.bones.filter(b => /^leg[1-4][RL]$/.test(b.name));
+    assert.equal(legs.length, 8);
+    const hurt = extent(rig, s, ['body']);
+    assert.ok(Math.abs(hurt.top - 0.85) < 0.08, `back at ${hurt.top.toFixed(2)}`);
+    assert.ok(Math.abs(extent(rig, s).low) < 1e-6, 'standing on the ground');
+    const weapons = rig.parts.filter(p => p.kind === 'weapon').map(p => rig.bones[p.bone].name).sort();
+    assert.deepEqual(plain(weapons), ['leg1L', 'leg1R']);
+    // Walking turns its legs forward and back, on the ground all the way.
+    let moved = false;
+    for (let k = 0; k < 8; k++) {
+        const pose = monsterKit.pose(rig, { ...standing('spider'), gait: k / 8, moveBlend: 1 }), rest = monsterKit.pose(rig, standing('spider'));
+        assert.ok(Math.abs(extent(rig, R.solve(rig, pose)).low) < 1e-6, `grounded at phase ${k / 8}`);
+        if (Math.abs((pose.leg1R.ry || 0) - (rest.leg1R.ry || 0)) > 0.2) moved = true;
+    }
+    assert.ok(moved, 'legs swing');
+    const leg = g.spiderPoses.walk.leg;
+    assert.ok(Math.abs(monsterKit.cycleLength('spider') - 4 * leg.length * Math.sin(leg.amp) * U) < 1e-9);
 });
 
 test('walking swings the legs and keeps the feet on the ground; the stride follows the legs', () => {
@@ -244,7 +265,7 @@ test('the windup turns to follow the player until `lock` before the swing, then 
 
 // ---- choosing what to do (design.md 5.2) ----
 // An open walled square with one monster of `kind` at home in its middle.
-const LETTER = { goblin: 'g', wolf: 'w', goblinChief: 'G', wolfKing: 'K' }, HOME = { x: 820, y: 620 };
+const LETTER = { goblin: 'g', wolf: 'w', spider: 's', goblinChief: 'G', wolfKing: 'K' }, HOME = { x: 820, y: 620 };
 function open(kind, seed = 1, loadout = null) {
     const rows = Array.from({ length: 30 }, (_, r) => r === 0 || r === 29 ? '1'.repeat(40) : '1' + '.'.repeat(38) + '1');
     const mark = (r, c, ch) => { rows[r] = rows[r].slice(0, c) + ch + rows[r].slice(c + 1); };
@@ -450,6 +471,17 @@ test('the bite sweeps its head across a small fan, from either side at random: n
     assert.deepEqual([...seen].sort(), [false, true]);
     // Standing still is no way out.
     assert.equal(face('goblin', 'flail', 40, 0).hurt, 1);
+});
+
+test('the spider\'s strike stabs its front legs straight ahead: a step aside clears it, a step back does not', () => {
+    const r = monsterKit.reach('spider', 'strike'), close = MON.spider.radius + gameConfig.player.radius + 4;
+    const side = Math.max(...r.hull.map(p => p[0]));
+    assert.ok(side < 0.6, `about a block wide: ${side.toFixed(2)} blocks to each side`);
+    for (const d of [close, r.stand]) {
+        assert.equal(face('spider', 'strike', d, 0).hurt, 1, `standing still at ${(d / U).toFixed(2)} blocks`);
+        for (const way of [Math.PI / 2, -Math.PI / 2]) assert.equal(face('spider', 'strike', d, 0, { act: walk(0, way) }).hurt, 0, `a step aside at ${(d / U).toFixed(2)} blocks`);
+    }
+    assert.equal(face('spider', 'strike', close, 0, { act: walk(0, 0) }).hurt, 1, 'a step back from close by');
 });
 
 // Seconds a sword combo keeps the player from walking: every move up to its

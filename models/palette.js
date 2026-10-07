@@ -19,6 +19,8 @@ const palette = Object.freeze({
     // wolf
     wolf: '#9c9ea3', wolfLight: '#b5b7bc', wolfHead: '#a7a9ae', wolfMuzzle: '#cbccd0', wolfDark: '#8d8f94', wolfLeg: '#8f9196',
     wolfNose: '#26272b', wolfEye: '#f2c94c', fang: '#f4f1e6',
+    // cave spider
+    spider: '#5b4a5f', spiderLight: '#6f5d73', spiderDark: '#3f3344', spiderLeg: '#4e4053', spiderEye: '#ff5a3c', spiderFang: '#d9cfbf', spiderMark: '#b8432f',
     // bosses: the goblin chief, the wolf king
     chiefSkin: '#5f8a34', chiefSkinLight: '#6f9c3e', chiefSkinDark: '#527a2c', chiefRag: '#8a2f2a', chiefRagDark: '#6a2420', chiefRagLight: '#a8473d',
     chiefClub: '#3a2a1a', helmet: '#7d8088', horn: '#e8dcc0',
