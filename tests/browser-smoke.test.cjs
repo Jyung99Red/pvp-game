@@ -475,11 +475,19 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
             g.run(0.02);
             // Behind the bearer (out of its sight on both hands alike): the
             // torch is in its left hand, so its own shadow falls to its right.
-            return { dark, lit: sample(), on: p.lit, right: sample(-1.3, 1.3), left: sample(-1.3, -1.3) };
+            const out = { dark, lit: sample(), on: p.lit, right: sample(-1.3, 1.3), left: sample(-1.3, -1.3) };
+            // Open floor two and three blocks from the light, with nothing
+            // between: as bright with the torch's shadows as without them.
+            const torch = g.view.scene.children.find(o => o.isPointLight), [lx, lz] = [torch.position.x - p.x / 40, torch.position.z - p.y / 40];
+            const open = () => [sample(lx + 2.25, lz), sample(lx + 3, lz), sample(lx, lz - 2.25), sample(lx, lz - 3)];
+            out.shadowed = open();
+            torch.castShadow = false; out.bare = open(); torch.castShadow = true;
+            return out;
         });
         await shot(page, 'cave');
         assert.ok(light.on && light.lit > light.dark * 2 && light.dark < 40, `the torch lights the cave floor: ${JSON.stringify(light)}`);
         assert.ok(light.right < light.left * 0.8, `the bearer's own body shades the ground beyond it from the flame (user, 2026-10-07): ${JSON.stringify(light)}`);
+        light.shadowed.forEach((v, i) => assert.ok(v > light.bare[i] * 0.97, `the open floor does not shade itself in the torch's light (no brighter square about the bearer): ${light.shadowed} with its shadows, ${light.bare} without`));
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

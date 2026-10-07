@@ -109,8 +109,12 @@ const viewLight = (() => {
         // (Its shadow map's size and softness: `retune`.)
         const torchLight = new T.PointLight(P.flame, 0, TORCH.reach, TORCH.decay);
         torchLight.castShadow = true;
+        // A point light's shadow bias as its shadow map has it, in depth:
+        // TORCH.bias is in one over blocks, and the map's depth goes as
+        // near times far over (far less near), over the distance.
+        const depthBias = (near, far) => -TORCH.bias * near * far / (far - near);
         Object.assign(torchLight.shadow.camera, { near: TORCH.near, far: TORCH.reach });
-        torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
+        torchLight.shadow.bias = depthBias(TORCH.near, TORCH.reach); torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
         // The standing torches' shadows (LAMP.shadow; user, 2026-10-07):
         // so many lights that cast (the quality's lampShadows), each for
@@ -126,11 +130,13 @@ const viewLight = (() => {
         // revision then. (They are added after the torch's light: the
         // shaders tell them from it by their order, render/view_shaders.js.)
         const SHADE = LAMP.shadow;
+        // (Nothing stands nearer a standing torch's light than this, blocks.)
+        const LAMP_NEAR = 0.05;
         const casters = Array.from({ length: tune.built.lampShadows }, () => {
             const light = new T.PointLight(P.flame, 0, LAMP.reach, LAMP.decay);
             light.castShadow = true;
-            light.shadow.camera.near = 0.05;
-            light.shadow.bias = TORCH.bias; light.shadow.normalBias = TORCH.normalBias;
+            light.shadow.camera.near = LAMP_NEAR;
+            light.shadow.bias = depthBias(LAMP_NEAR, LAMP.reach); light.shadow.normalBias = TORCH.normalBias;
             // (Drawn at least once, as the torch's.)
             light.shadow.autoUpdate = false; light.shadow.needsUpdate = true;
             scene.add(light);

@@ -532,7 +532,14 @@ const gameConfig = (() => {
             sunStep: 0.05, sunSoft: 0.1,
             // A torch lights `reach` blocks round it. Its shadows (the
             // quality's torchShadow) are the torch's own, cast by blocks
-            // and bodies alike; `bias` keeps a face from shadowing itself.
+            // and bodies alike; `bias` keeps a face from shadowing itself:
+            // a face is shaded only by what is nearer the light by more than
+            // this, as the difference of one over their distances (one over
+            // blocks; a third of a block at two blocks). It is no number of
+            // the shadow map's depth, which goes with `near`: with `near`
+            // ten times further out and the same depth bias, the floor past
+            // the square right under the light shaded itself, and that
+            // square stood out bright (user, 2026-10-07).
             // Their edge is soft (user, 2026-10-06): blurred over `soft`
             // radians as seen from the light, in the quality's torchTaps
             // samples. Its light does not go with the flame, which a swing
@@ -548,7 +555,7 @@ const gameConfig = (() => {
             // wider than it). What is within `near` blocks of the light
             // casts no shadow in it: the torch and the arm that holds it,
             // which would darken the ground under the hand.
-            torch: { reach: 7, decay: 1.2, bias: -0.004, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12, near: 0.5 },
+            torch: { reach: 7, decay: 1.2, bias: 0.08, normalBias: 0.02, soft: 0.03, follow: 0.35, height: 1.45, ease: 14, clear: 0.12, near: 0.5 },
             // A burning thicket's light: the flames' colour, flickering.
             fire: { intensity: 4, reach: 5, decay: 1.4, height: 0.8 },
             // In a dark region a little daylight comes in by each portal: a
