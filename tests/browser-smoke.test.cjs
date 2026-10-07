@@ -462,9 +462,9 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
             Object.assign(p, terrainKit.cellCentre(s.terrain, 24, 26));
             // The ground sampled lies east of the player: facing it, so it is in sight (not shaded).
             p.facing = 0;
-            const sample = () => {
+            const sample = (east = 1.2, south = 0) => {
                 g.view.render(s, 0);
-                const at = g.view.project([p.x / 40 + 1.2, 0, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
+                const at = g.view.project([p.x / 40 + east, 0, p.y / 40 + south]), k = gl.drawingBufferWidth / innerWidth;
                 gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
                 let sum = 0;
                 for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
@@ -473,10 +473,13 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
             const dark = sample();
             worldSim.command(s, { type: 'press', button: 'offhand' }); worldSim.command(s, { type: 'release', button: 'offhand' });
             g.run(0.02);
-            return { dark, lit: sample(), on: p.lit };
+            // Behind the bearer (out of its sight on both hands alike): the
+            // torch is in its left hand, so its own shadow falls to its right.
+            return { dark, lit: sample(), on: p.lit, right: sample(-1.3, 1.3), left: sample(-1.3, -1.3) };
         });
         await shot(page, 'cave');
         assert.ok(light.on && light.lit > light.dark * 2 && light.dark < 40, `the torch lights the cave floor: ${JSON.stringify(light)}`);
+        assert.ok(light.right < light.left * 0.8, `the bearer's own body shades the ground beyond it from the flame (user, 2026-10-07): ${JSON.stringify(light)}`);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

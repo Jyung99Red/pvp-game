@@ -207,7 +207,7 @@ const worldView = (() => {
                 lastFacing: f.facing, lean: 0
             }];
         }));
-        fighters.get(selfId)?.view.shunTorch(light.shunTorch);
+        if (fighters.has(selfId)) light.flameLit(fighters.get(selfId).view.meshes);
         const dummyView = sim.dummy ? cast.character(sim.rigs.dummy) : null;
         // A monster that comes into the world later (a boss called back at
         // its grave) gets its body when it is first drawn.

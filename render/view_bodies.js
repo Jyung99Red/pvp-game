@@ -89,11 +89,9 @@ const viewBodies = (() => {
             let lit = false;
             return {
                 mesh, blade: loose.find(l => rig.parts[l.i].kind === 'weapon')?.mesh.material || null, flames,
-                // Cast no shadow in the torch's light (its bearer's own body
-                // would shade all in front of it): `shun` is the light's
-                // (render/view_light.js `shunTorch`). In the sun's and a
-                // standing torch's it casts as anyone.
-                shunTorch(shun) { shun([mesh, ...loose.map(l => l.mesh)]); },
+                // Every mesh of it: this phone's own fighter's cast their
+                // shadow in its torch's light another way (render/view_light.js `flameLit`).
+                meshes: [mesh, ...loose.map(l => l.mesh)],
                 materials: [material, ...loose.filter(l => rig.parts[l.i].tag !== 'flame').map(l => l.mesh.material)],
                 light(on) { lit = on; for (const f of flames) f.visible = on && mesh.visible; },
                 // Show the shield white (or not); false when there is no shield.

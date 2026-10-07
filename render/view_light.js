@@ -186,6 +186,31 @@ const viewLight = (() => {
             });
             begun = true;
         }
+        // The bearer's own body in its torch's light (user, 2026-10-07).
+        // The light is kept by the bearer's middle (TORCH), inside the
+        // body, which could only shut it in; so its shadow is cast as the
+        // flame casts it. While the torch's shadows are drawn, `meshes`
+        // (the body) are drawn moved by `flameShift`, from the flame to
+        // the light: to the light they then stand as they do to the flame.
+        // The body shades what lies beyond it from the flame, and every
+        // other shadow keeps as still as before. In any other light it
+        // casts where it stands.
+        const flameShift = new T.Vector3(), stood = new T.Matrix4();
+        function flameLit(meshes) {
+            const torch = torchLight.shadow.camera;
+            for (const mesh of meshes) {
+                // (Moved, it is not where its bounds say.)
+                mesh.frustumCulled = false;
+                mesh.onBeforeShadow = (renderer, object, camera, shadowCamera) => {
+                    if (shadowCamera !== torch) return;
+                    stood.copy(object.matrixWorld);
+                    const e = object.matrixWorld.elements;
+                    e[12] += flameShift.x; e[13] += flameShift.y; e[14] += flameShift.z;
+                    object.modelViewMatrix.multiplyMatrices(shadowCamera.matrixWorldInverse, object.matrixWorld);
+                };
+                mesh.onAfterShadow = (renderer, object, camera, shadowCamera) => { if (shadowCamera === torch) object.matrixWorld.copy(stood); };
+            }
+        }
         // `meshes` cast no shadow in the light of `lights` (point lights),
         // and as ever in any other: for a point light's shadows they have
         // a material of their own, which writes nothing while those
@@ -277,14 +302,15 @@ const viewLight = (() => {
             // body the flame pokes into, or the light would be shut inside
             // it (a wall's near side would go dark, a monster's shadow turn
             // all about). Anyone else's burning torch is one of the moving
-            // lights.
+            // lights. `shift`, if given, is set to the way from the flame
+            // (eased as the light is) to the light (`flameLit`).
             const flicker = k => 1 + 0.08 * Math.sin(clock * 13 + k) + 0.05 * Math.sin(clock * 23.7 + 2 * k);
             const standing = [];
             const stand = (b, top) => { const [x, , z] = space.toBlocks(b.x, b.y); standing.push([x, z, b.radius / U + TORCH.clear, top]); };
             for (const d of drawn) stand(d.shown, 1.9);
             if (current.dummy) stand(current.dummy, 1.95);
             for (const m of current.monsters) if (m.phase !== 'dead') stand(shownOf(m), monsterKit.height(m.kind));
-            const flameOf = d => {
+            const flameOf = (d, shift = null) => {
                 const flame = d.rig.parts.findIndex(part => part.tag === 'flame'), m = d.solved.parts[flame];
                 const base = space.toBlocks(d.shown.x, d.shown.y, d.shown.h);
                 base[1] += TORCH.height;
@@ -293,11 +319,13 @@ const viewLight = (() => {
                 if (!off) torchOffsets.set(d.id, off = want);
                 else for (let i = 0; i < 3; i++) off[i] += (want[i] - off[i]) * Math.min(1, frameSeconds * TORCH.ease);
                 const others = standing.filter((_, i) => i >= drawn.length || drawn[i] !== d);
-                return clearOf(current.terrain, base, base.map((v, i) => v + off[i]), others);
+                const at = clearOf(current.terrain, base, base.map((v, i) => v + off[i]), others);
+                if (shift) shift.set(...at.map((v, i) => v - base[i] - off[i] / TORCH.follow));
+                return at;
             };
             const bearer = drawn.find(d => d.id === selfId && d.body.lit);
             if (bearer) {
-                torchLight.position.set(...flameOf(bearer));
+                torchLight.position.set(...flameOf(bearer, flameShift));
                 torchLight.intensity = now.torch * flicker(0);
             } else torchLight.intensity = 0;
             // (Drawn at least once: a shadow map never drawn is no texture, and nothing lit would draw.)
@@ -352,9 +380,10 @@ const viewLight = (() => {
         }
         return {
             now, sky, mists, retune, frame, placeSun, dispose,
-            // `meshes` cast no shadow in the carried torch's light (its
-            // bearer's own body), or in the standing torches' (their posts).
-            shunTorch: meshes => shun(meshes, [torchLight]),
+            // `meshes`: the torch's bearer's own body, which casts its
+            // shadow as the flame does; the standing torches' posts, which
+            // cast none in their own light.
+            flameLit,
             shunLamps: meshes => shun(meshes, casters.map(c => c.light))
         };
     }
