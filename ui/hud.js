@@ -90,12 +90,13 @@ const hud = (() => {
             for (const map of Object.values(gameConfig.maps)) for (const p of map.portals || []) if (p.requires === kind) names.add(gameConfig.maps[p.to].name);
             return [...names];
         }
-        // The foe the top-right panel shows: the rival in a duel; the
-        // training dummy; else the one last traded blows with, while it
-        // stands; else the nearest one in a fight.
+        // The foe the top-right panel shows: the rival in a duel; else the
+        // monster last traded blows with, while it stands; else the nearest
+        // one in a fight; else the training dummy, if the map has one (the
+        // training ground's, or the test cave's among its monsters: one
+        // that comes for the player goes before it).
         function target(sim, p) {
             if (sim.duel) return sim.fighters.find(f => f !== p) || null;
-            if (sim.dummy) return sim.dummy;
             const live = sim.monsters.filter(m => m.phase !== 'dead' || m.t < 1);
             const held = live.find(m => m.id === focus);
             if (held) return held;
@@ -104,7 +105,7 @@ const hud = (() => {
                 const d = Math.hypot(m.x - p.x, m.y - p.y);
                 if (FIGHTING.has(m.phase) && d < far) { far = d; best = m; }
             }
-            return best;
+            return best || sim.dummy;
         }
         function place(el, view, at) {
             const xy = view?.project(at);
@@ -310,7 +311,7 @@ const hud = (() => {
                 // Whoever this fighter last traded blows with stays in the panel.
                 if (e.type === 'hit' || e.type === 'parry' || e.type === 'block') {
                     const other = e.target === selfId || e.type === 'block' ? e.source : e.target;
-                    if (other && other !== 'dummy') focus = other;
+                    if (other) focus = other;
                 }
                 if (!['hit', 'block', 'parry'].includes(e.type) || !e.at) continue;
                 const el = document.createElement('div');

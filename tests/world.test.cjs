@@ -291,7 +291,7 @@ test('torches stand in a map: one on a stand is in the way, one on a wall hangs 
     // A wall torch with no wall beside it (a low stone is none) does not load.
     assert.throws(() => W.create({ map: { name: 'lamps', rows: ['..1..', '.1!@.', '.....'] } }), /no wall beside it/);
     // The maps that have them: the base, the cave by its gate and its treasure room, and the test cave the same.
-    for (const [id, least] of [['base', 8], ['cave', 4], ['grotto', 4]]) assert.ok(W.create({ region: id }).entities.filter(e => e.type === 'lamp').length >= least, id);
+    for (const [id, least] of [['base', 8], ['cave', 4], ['grotto', 6]]) assert.ok(W.create({ region: id }).entities.filter(e => e.type === 'lamp').length >= least, id);
 });
 
 test('the test cave under the village (user, 2026-10-07): dark like the cave, straight through the village\'s south gate, with what the cave has to try', () => {
@@ -303,6 +303,13 @@ test('the test cave under the village (user, 2026-10-07): dark like the cave, st
     for (const kind of ['spider', 'goblin', 'wolf']) assert.ok(kinds.includes(kind), kind);
     assert.ok(!kinds.some(k => MON[k].boss), 'no boss');
     assert.ok(sim.entities.some(e => e.type === 'brush') && sim.entities.some(e => e.type === 'node'), 'a thicket to burn, something to gather');
+    // A training dummy in the dark middle: two torches on stands by it, every other torch out of its reach, no monster about.
+    const d = sim.dummy, reach = gameConfig.graphics.lamp.reach, lamps = sim.entities.filter(e => e.type === 'lamp').map(l => Math.hypot(l.x - d.x, l.y - d.y) / U);
+    assert.ok(d && d.facing === Math.PI, 'a dummy, facing west');
+    assert.deepEqual(lamps.filter(r => r < reach - 2).length, 2, `two torches by it: ${lamps.map(r => r.toFixed(1))}`);
+    assert.ok(lamps.filter(r => r >= reach - 2).every(r => r > reach - 0.5), `the rest far off: ${lamps.map(r => r.toFixed(1))}`);
+    const front = { x: d.x - 1.6 * U, y: d.y };
+    for (const m of sim.monsters) assert.ok(Math.hypot(m.x - front.x, m.y - front.y) > MON[m.kind].alertRange + MON[m.kind].patrolRadius + 40, `${m.kind} would notice whoever fights the dummy`);
 });
 
 test('arriving through a portal: in front of the portal back, facing in, with the HP carried', () => {
