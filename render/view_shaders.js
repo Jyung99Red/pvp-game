@@ -34,6 +34,12 @@ shadow /= float( taps );${chunk.slice(to + end.length)}`;
     }
     // The engine's point light shadows take five samples; `taps` samples
     // of the same disc are taken instead, or a soft edge shows as grain.
+    // A standing torch's shadows (render/view_light.js) take LAMP_TAPS,
+    // fewer: its light is half the carried torch's, and the grain shows
+    // half as much. How many is `pointShadowTaps`, set before a light's
+    // shadow is looked up: the carried torch is the first point light
+    // (it is added to the scene first, and the engine keeps the lights
+    // that cast in the scene's order), the standing torches the rest.
     // `direct3d`: the samples name their mip level, as the sun's do. Only
     // there: Direct3D otherwise takes all of them at every pixel, the
     // torch burning or not (over half a frame), while by OpenGL and Vulkan
@@ -41,16 +47,23 @@ shadow /= float( taps );${chunk.slice(to + end.length)}`;
     // cost half as much again or more with the torch burning.
     // Patched before any material is compiled; a three.js whose shader
     // reads otherwise is left as it is.
+    const LAMP_TAPS = gameConfig.graphics.lamp.shadow.taps;
     function softTorchShadows(T, taps, direct3d) {
         const chunk = T.ShaderChunk.shadowmap_pars_fragment, start = 'vec2 sample0 = vogelDiskSample( 0, 5, phi );', end = ') * 0.2;';
         const from = chunk.indexOf(start), to = chunk.indexOf(end, from);
         if (from < 0 || to < 0 || !chunk.slice(from, to).includes('bd3D + ( tangent * sample4.x + bitangent * sample4.y ) * texelSize')) return;
-        T.ShaderChunk.shadowmap_pars_fragment = `${chunk.slice(0, from)}shadow = 0.0;
-for ( int k = 0; k < ${taps}; k ++ ) {
-    vec2 s = vogelDiskSample( k, ${taps}, phi );
+        T.ShaderChunk.shadowmap_pars_fragment = `int pointShadowTaps = ${taps};
+${chunk.slice(0, from)}shadow = 0.0;
+for ( int k = 0; k < ${Math.max(taps, LAMP_TAPS)}; k ++ ) {
+    if ( k >= pointShadowTaps ) break;
+    vec2 s = vogelDiskSample( k, pointShadowTaps, phi );
     shadow += ${direct3d ? 'textureGrad' : 'texture'}( shadowMap, vec4( bd3D + ( tangent * s.x + bitangent * s.y ) * texelSize, dp )${direct3d ? ', vec3( 0.0 ), vec3( 0.0 )' : ''} );
 }
-shadow /= ${taps}.0;${chunk.slice(to + end.length)}`;
+shadow /= float( pointShadowTaps );${chunk.slice(to + end.length)}`;
+        // (Where the engine's lights read otherwise, every point light takes the torch's.)
+        const each = 'pointLightShadow = pointLightShadows[ i ];';
+        T.ShaderChunk.lights_fragment_begin = T.ShaderChunk.lights_fragment_begin.replace(each, `${each}
+		pointShadowTaps = UNROLLED_LOOP_INDEX < 1 ? ${taps} : ${LAMP_TAPS};`);
     }
     // A light's shadow is looked up only where its light falls: not while
     // the light is out, not past its reach, and not on a face turned away

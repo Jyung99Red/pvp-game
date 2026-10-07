@@ -248,7 +248,8 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         assert.deepEqual({ ...start, calls: undefined }, {
             map: 'base', monsters: 0, buildings: ['hotSpring', 'shop', 'smithy', 'storage'], calls: undefined, goal: '曙光村 · 🪙 0', banner: '曙光村', key: '交互', idle: true
         });
-        assert.ok(start.calls > 0 && start.calls < 60, `${start.calls} draw calls: terrain is a mesh per chunk`);
+        // (A standing torch's shadows drawn anew are some fifty more, now and then.)
+        assert.ok(start.calls > 0 && start.calls < 150, `${start.calls} draw calls: terrain is a mesh per chunk`);
         await shot(page, 'base');
         // The storage: the key names it, a tap opens the menu with the bag (one bag: the storage is it).
         const key = await page.evaluate(() => {
@@ -515,8 +516,12 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
             const g = window.game; g.pause(true);
             worldSim.command(g.sim, { type: 'press', button: 'offhand' }); worldSim.command(g.sim, { type: 'release', button: 'offhand' });
             g.run(0.3); g.view.render(g.sim, 0.016);
-            const light = g.view.scene.children.find(o => o.isPointLight), before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
+            const torchLight = () => g.view.scene.children.find(o => o.isPointLight);
+            let light = torchLight();
+            const before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
+            // (The power saver builds the world again: its torch's light is another.)
             g.view.settings({ zoom: 1, quality: 'saver' }); g.view.render(g.sim, 0.016);
+            light = torchLight();
             // Swinging with a monster up against it: the light stays out of
             // the monster's body, and moves only a little (user, 2026-10-06).
             const f = g.sim.fighters[0], m = g.sim.monsters[0], stick = () => { m.x = f.x + Math.cos(f.facing) * (f.radius + m.radius + 2); m.y = f.y + Math.sin(f.facing) * (f.radius + m.radius + 2); m.phase = 'idle'; m.t = 0; };
@@ -541,6 +546,72 @@ test('the time of day (design.md 2.5): night is darker and bluer than noon, the 
     } finally { await context.close(); }
 });
 
+test('the torches that stand in a map cast shadows (design.md 2.5): the nearest two, none in the power saver; a body by one shades the ground behind it, a torch\'s own post shades nothing; drawn anew only while something moves by one; they come and go by degrees', { timeout: 300000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const { context, page, errors } = await openPhone(844, 390, '?map=base&hour=23');
+    try {
+        const seen = await page.evaluate(() => {
+            const g = window.game, s = g.sim, p = s.player, U = gameConfig.world.unitsPerBlock, gl = g.view.renderer.getContext(), N = 9, px = new Uint8Array(N * N * 4);
+            const lamps = s.entities.filter(e => e.type === 'lamp').map(e => [e.x / U, e.y / U, e.kind]);
+            // A torch on a stand with open ground about it, and the one nearest to it.
+            const [lx, lz] = lamps.find(l => l[2] === 'stand' && l[0] > 20);
+            const stand = (x, z) => { p.x = x * U; p.y = z * U; p.facing = 0; };
+            const draw = (dt = 0) => { g.view.render(s, dt); return g.view.info().calls; };
+            // How bright the ground at (x, z) is drawn.
+            const ground = (x, z) => {
+                const at = g.view.project([x, 0, z]), k = gl.drawingBufferWidth / innerWidth;
+                gl.readPixels(Math.round(at.x * k) - 4, Math.round(gl.drawingBufferHeight - at.y * k) - 4, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                let sum = 0;
+                for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+                return sum / (N * N * 3);
+            };
+            // The lights that cast, the carried torch's (the first) left out.
+            const casting = () => g.view.scene.children.filter(o => o.isPointLight && o.castShadow).slice(1);
+            const told = () => casting().map(l => ({ lit: l.intensity > 0, strength: l.shadow.intensity, at: [l.position.x, l.position.z] }));
+            const out = { lamp: [lx, lz], saver: 0 };
+            g.view.settings({ zoom: 1, quality: 'saver' }); draw();
+            out.saver = casting().length;
+            for (const n of [0, 2]) {
+                g.view.settings({ zoom: 1, quality: { ...gameConfig.graphics.quality.high, lampShadows: n } });
+                // East of the torch: the ground east of the body lies in its shadow, the ground south of the body does not.
+                stand(lx + 1.25, lz); draw();
+                // A step, and it moves by the torch; then it stands (a few frames on: each torch's shadows are drawn once more after it has stopped, one torch's a frame).
+                stand(lx + 1.2, lz);
+                const by = { draws: draw(), behind: ground(lx + 3.1, lz), beside: ground(lx + 1.2, lz + 2) };
+                draw(); draw(); draw(); by.rest = draw();
+                if (n) by.lights = told();
+                // South of the torch, out of its way: the ground at the torch's foot is lit as with no shadows.
+                stand(lx, lz + 3); draw(); draw();
+                const foot = [ground(lx + 0.7, lz), ground(lx - 0.7, lz), ground(lx, lz + 0.8)];
+                // Far from every torch: nothing moves by one.
+                stand(22.5, 25.5); draw(); draw();
+                out[n] = { by, foot, far: { draws: draw(), lights: told() } };
+            }
+            // Over to the torches in the east: the shadows there come by degrees.
+            stand(39, 14.5);
+            draw(1 / 60);
+            out.going = told();
+            for (let k = 0; k < 60; k++) draw(1 / 60);
+            out.come = told();
+            return out;
+        });
+        await shot(page, 'lamp-shadows');
+        const { lamp } = seen, near = (a, b) => Math.abs(a - b) < 0.6;
+        assert.equal(seen.saver, 0, 'none in the power saver');
+        assert.deepEqual(seen[2].by.lights.map(l => [l.lit, l.strength]), [[true, 1], [true, 1]], 'two standing torches cast, whole from the world\'s first frame');
+        assert.ok(seen[2].by.lights.some(l => near(l.at[0], lamp[0]) && near(l.at[1], lamp[1])), `the torch stood by casts: ${JSON.stringify(seen[2].by.lights)}`);
+        assert.ok(seen[2].by.behind < seen[0].by.behind - 2, `the body shades the ground behind it: ${seen[0].by.behind} to ${seen[2].by.behind}`);
+        assert.ok(near(seen[2].by.beside, seen[0].by.beside), `and not the ground beside it: ${seen[0].by.beside} and ${seen[2].by.beside}`);
+        seen[2].foot.forEach((v, i) => assert.ok(near(v, seen[0].foot[i]), `a torch's own post shades nothing: ${seen[0].foot} and ${seen[2].foot}`));
+        assert.ok(seen[2].by.draws > seen[0].by.draws + 10, `moving by a torch, its shadows are drawn anew: ${seen[0].by.draws} draws, ${seen[2].by.draws} with them`);
+        assert.equal(seen[2].by.rest, seen[0].by.rest, 'standing by it, not');
+        assert.equal(seen[2].far.draws, seen[0].far.draws, 'nor far from every torch');
+        assert.ok(seen.going.every(l => l.strength < 1), `shadows go and come by degrees: ${JSON.stringify(seen.going)}`);
+        assert.ok(seen.come.length === 2 && seen.come.every(l => l.lit && l.strength === 1 && l.at[0] > 34), `the two torches in the east cast in the end: ${JSON.stringify(seen.come)}`);
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
 test('picture quality: the custom quality\'s sliders set what is drawn, a shader-deep one builds the world again, and they are kept', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
@@ -560,12 +631,13 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
                 ratio: r.getPixelRatio(), sun: sun.castShadow ? sun.shadow.mapSize.x : 0, torch: torch.shadow.mapSize.x,
                 lights: sc.children.filter(o => o.isPointLight && !o.castShadow && o.visible).length,
                 byVertex: sources.some(v => v.includes('vProbeIrradiance = getLightProbeGridIrradiance')),
-                taps: [4, 6, 8, 12, 16].filter(n => sources.some(v => v.includes(`vogelDiskSample( k, ${n}, phi )`))),
+                taps: [4, 6, 8, 12, 16].filter(n => sources.some(v => v.includes(`int pointShadowTaps = ${n};`))),
+                lamps: sc.children.filter(o => o.isPointLight && o.castShadow).length - 1,
                 shown: [...document.querySelectorAll('[data-custom-shown]')].map(b => b.textContent)
             };
         });
         const high = await state();
-        assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [8], shown: undefined }, 'high: twice the pixels, the probes by corner');
+        assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [8], lamps: 2, shown: undefined }, 'high: twice the pixels, the probes by corner, two standing torches cast');
         // The menu: settings, then the quality key round to 自定义, which starts from high.
         await page.evaluate(() => window.game.menu.open());
         await page.click('[data-menu-act="settings"]');
@@ -573,17 +645,17 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
             await page.click('[data-setting="quality"]');
             assert.equal(await page.textContent('[data-setting="quality"] b'), want);
         }
-        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '8 点', '开']);
+        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '8 点', '开', '2 盏']);
         const slide = (key, index) => page.evaluate(([key, index]) => {
             const input = document.querySelector(`[data-custom="${key}"]`);
             input.value = String(index);
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }, [key, index]);
-        await slide('pixelRatio', 1); await slide('sunShadow', 0); await slide('torchTaps', 1); await slide('bounce', 0);
+        await slide('pixelRatio', 1); await slide('sunShadow', 0); await slide('torchTaps', 1); await slide('bounce', 0); await slide('lampShadows', 0);
         const custom = await state();
-        assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 512, torch: 256, lights: 4, byVertex: false, taps: [6], shown: undefined });
-        assert.deepEqual(custom.shown, ['×1.5 1266×585', '512', '256', '6 点', '关']);
+        assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 512, torch: 256, lights: 4, byVertex: false, taps: [6], lamps: 0, shown: undefined });
+        assert.deepEqual(custom.shown, ['×1.5 1266×585', '512', '256', '6 点', '关', '关']);
         // A ratio past the phone's own draws at the phone's own.
         await slide('pixelRatio', 4);
         assert.deepEqual([(await state()).ratio, (await state()).shown[0]], [3, '×3 2532×1170']);
@@ -593,7 +665,7 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
         await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
         await page.evaluate(() => window.game.pause(true));
         const kept = await state();
-        assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps], [3, 512, 4, [6]]);
+        assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps, kept.lamps], [3, 512, 4, [6], 0]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

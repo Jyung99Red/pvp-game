@@ -1,7 +1,8 @@
 // The world's light and the time of day (render/world_view.js): the sky's
 // light, the sun (or the moon) where the hour puts it and its shadows, the
 // torch's light and its shadows, the moving lights (a torch that stands in
-// the map is one), the light at a cave's doors; each frame, the hour's
+// the map is one; the nearest of those cast shadows too), the light at a
+// cave's doors; each frame, the hour's
 // light on everything, what the ground gives back, the ponds' sky, where
 // the torch's light goes and what gives block light. Drawing only.
 const viewLight = (() => {
@@ -70,7 +71,13 @@ const viewLight = (() => {
                 texel = 2 * extent / tune.sunMap;
                 sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
             }
-            if (resize(torchLight.shadow, tune.torchMap)) torchLight.shadow.radius = TORCH.soft * tune.torchMap;
+            // (The radius whether the size changed or not: a light's map is 512 a side to begin with, the ultra quality's own.)
+            resize(torchLight.shadow, tune.torchMap);
+            torchLight.shadow.radius = TORCH.soft * tune.torchMap;
+            for (const c of casters) {
+                if (resize(c.light.shadow, tune.torchMap)) c.light.shadow.needsUpdate = true;
+                c.light.shadow.radius = TORCH.soft * tune.torchMap;
+            }
         }
 
         const hemisphere = new T.HemisphereLight(now.colors[0], now.colors[1], now.sky);
@@ -88,6 +95,30 @@ const viewLight = (() => {
         Object.assign(torchLight.shadow.camera, { near: 0.05, far: TORCH.reach });
         torchLight.shadow.bias = TORCH.bias; torchLight.shadow.normalBias = TORCH.normalBias;
         scene.add(torchLight);
+        // The standing torches' shadows (LAMP.shadow; user, 2026-10-07):
+        // so many lights that cast (the quality's lampShadows), each for
+        // one of the nearest standing torches that are lit; any other
+        // standing torch has one of the moving lights below, as before.
+        // Their shadow maps are the torch's in size and softness (`retune`)
+        // and are drawn anew only when `kindle` says so. Each: `lamp`, the
+        // standing torch it lights now (render/lamp_view.js `lights`);
+        // `strength`, how far its shadows have come, 0..1; `drawn`, its
+        // shadow map is that torch's; `stale`, for how many frames it has
+        // waited to be drawn anew; `near`, something moved by it last
+        // frame; `age`, seconds since it was drawn; `rev`, the terrain's
+        // revision then. (They are added after the torch's light: the
+        // shaders tell them from it by their order, render/view_shaders.js.)
+        const SHADE = LAMP.shadow;
+        const casters = Array.from({ length: tune.built.lampShadows }, () => {
+            const light = new T.PointLight(P.flame, 0, LAMP.reach, LAMP.decay);
+            light.castShadow = true;
+            light.shadow.camera.near = 0.05;
+            light.shadow.bias = TORCH.bias; light.shadow.normalBias = TORCH.normalBias;
+            // (Drawn at least once, as the torch's.)
+            light.shadow.autoUpdate = false; light.shadow.needsUpdate = true;
+            scene.add(light);
+            return { light, lamp: null, strength: 0, drawn: false, stale: 0, near: false, age: 0, rev: -1 };
+        });
         const pool = Array.from({ length: C.graphics.lights }, () => {
             const light = new T.PointLight('#ffffff', 0, 1, 1);
             scene.add(light);
@@ -95,16 +126,80 @@ const viewLight = (() => {
         });
         const glowColour = new T.Color();
         // The nearest of `glowing` ({ at: [x, y, z], color, intensity,
-        // reach, decay }, blocks) to `me` get the moving lights.
-        function kindle(glowing, me) {
+        // reach, decay; lamp: the standing torch it is, if one }, blocks)
+        // to `me` are lit, as many as there are moving lights. Of the
+        // standing torches among them the nearest have the lights that
+        // cast, the rest of what is lit the moving lights. A standing
+        // torch's shadows come and go over SHADE.fade seconds as it gets
+        // and loses its turn (a world's first frame shows them whole);
+        // while they go, the one that takes its turn waits unshadowed.
+        // Its shadow map is drawn anew when it gets the light, when the
+        // terrain has changed, while something of `stirring` ([x, z],
+        // blocks: what moves) is within SHADE.margin of its reach and
+        // once more when that has left, and every SHADE.refresh seconds
+        // for whatever else changed -- one light's a frame at most, the
+        // one that has waited longest.
+        let begun = false;
+        function kindle(glowing, me, frameSeconds, stirring, rev) {
             const [x, , z] = space.toBlocks(me.x, me.y, me.h), far = g => (g.at[0] - x) ** 2 + (g.at[2] - z) ** 2;
             glowing.sort((a, b) => far(a) - far(b));
+            const lit = glowing.slice(0, pool.length), holder = lamp => casters.find(c => c.lamp === lamp), litAs = c => c.lamp && lit.find(g => g.lamp === c.lamp);
+            // Whose turn: one that casts already keeps it against one less than SHADE.keep blocks nearer.
+            const turn = lit.filter(g => g.lamp).map(g => [g.lamp, Math.sqrt(far(g)) - (holder(g.lamp) ? SHADE.keep : 0)])
+                .sort((a, b) => a[1] - b[1]).slice(0, casters.length).map(([lamp]) => lamp);
+            for (const c of casters) {
+                if (!c.lamp || turn.includes(c.lamp)) continue;
+                c.strength = litAs(c) ? Math.max(0, c.strength - frameSeconds / SHADE.fade) : 0;
+                if (!c.strength) c.lamp = null;
+            }
+            for (const lamp of turn) {
+                const free = !holder(lamp) && casters.find(c => !c.lamp);
+                if (!free) continue;
+                Object.assign(free, { lamp, strength: 0, drawn: false });
+                free.light.position.set(...lamp.at);
+            }
+            const within = (LAMP.reach + SHADE.margin) ** 2;
+            for (const c of casters) {
+                if (!c.lamp) continue;
+                const near = stirring.some(([sx, sz]) => (sx - c.lamp.at[0]) ** 2 + (sz - c.lamp.at[2]) ** 2 < within);
+                c.age += frameSeconds;
+                if (c.stale || !c.drawn || near || c.near || c.rev !== rev || c.age >= SHADE.refresh) c.stale++;
+                c.near = near;
+            }
+            const waiting = casters.filter(c => c.lamp && c.stale).sort((a, b) => (a.drawn - b.drawn) || (b.stale - a.stale));
+            for (const c of begun ? waiting.slice(0, 1) : waiting) {
+                c.light.shadow.needsUpdate = true;
+                Object.assign(c, { drawn: true, stale: 0, age: 0, rev });
+            }
+            for (const c of casters) {
+                const g = litAs(c);
+                if (!g) { c.light.intensity = 0; continue; }
+                if (c.drawn && turn.includes(c.lamp)) c.strength = begun ? Math.min(1, c.strength + frameSeconds / SHADE.fade) : 1;
+                c.light.color.set(g.color); c.light.intensity = g.intensity; c.light.shadow.intensity = c.strength;
+            }
+            const rest = lit.filter(g => !(g.lamp && holder(g.lamp)));
             pool.forEach((light, i) => {
-                const g = glowing[i];
+                const g = rest[i];
                 if (!g) { light.intensity = 0; return; }
                 light.position.set(...g.at); light.color.set(g.color);
                 light.intensity = g.intensity; light.distance = g.reach; light.decay = g.decay;
             });
+            begun = true;
+        }
+        // `meshes` cast no shadow in the light of `lights` (point lights),
+        // and as ever in any other: for a point light's shadows they have
+        // a material of their own, which writes nothing while those
+        // lights' shadows are drawn.
+        const shy = [];
+        function shun(meshes, lights) {
+            const cameras = lights.map(l => l.shadow.camera), material = new T.MeshDistanceMaterial();
+            shy.push(material);
+            for (const mesh of meshes) {
+                mesh.customDistanceMaterial = material;
+                mesh.onBeforeShadow = (renderer, object, camera, shadowCamera, geometry, depthMaterial) => {
+                    if (depthMaterial === material) material.depthWrite = material.colorWrite = !cameras.includes(shadowCamera);
+                };
+            }
         }
         const doorways = dark ? sim.entities.filter(e => e.type === 'portal').map(e => space.toBlocks(e.x + Math.cos(e.facing) * DOORWAY.inside * U, e.y + Math.sin(e.facing) * DOORWAY.inside * U, 0)).map(([x, , z]) => [x, DOORWAY.height, z]) : [];
         Object.assign(sun.shadow.camera, { left: -extent, right: extent, top: extent, bottom: -extent, near: 1, far: 60 });
@@ -151,13 +246,17 @@ const viewLight = (() => {
 
         // Each torch's light's way out from its bearer towards the flame, eased (TORCH).
         const torchOffsets = new Map();
+        // Where each fighter's boxes were a frame ago ([x, y, z], blocks), to tell one that moves.
+        const spots = new Map();
         const bounceLight = [0, 0, 0];
         // Each frame: the hour's light, what the ground gives back, the
         // ponds' sky, the torch's light and the moving lights, block light.
         // `drawn`: the fighters drawn this frame (render/world_view.js);
         // `shownOf`: a body as shown; `lamps`: where the torches that stand
-        // in the map have their light (render/lamp_view.js `lights`).
-        function frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps = [] }) {
+        // in the map have their light (render/lamp_view.js `lights`);
+        // `stirring`: where the props that move are ([x, z], blocks;
+        // render/view_props.js).
+        function frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps = [], stirring = [] }) {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
@@ -219,7 +318,7 @@ const viewLight = (() => {
                 glows.push({ at: [x, FIRE.height, z], reach: GLOW.fire, rgb: rgbOf(P.flame, Math.sqrt(life)) });
             }
             for (const l of lamps) {
-                glowing.push({ at: l.at, color: P.flame, intensity: now.torch * LAMP.light * flicker(l.seed), reach: LAMP.reach, decay: LAMP.decay });
+                glowing.push({ at: l.at, color: P.flame, intensity: now.torch * LAMP.light * flicker(l.seed), reach: LAMP.reach, decay: LAMP.decay, lamp: l });
                 glows.push({ at: l.at, reach: LAMP.glow, rgb: rgbOf(P.flame, LAMP.light) });
             }
             const door = DOORWAY.night + (1 - DOORWAY.night) * now.outside;
@@ -228,15 +327,36 @@ const viewLight = (() => {
                 glowing.push({ at, color, intensity: DOORWAY.intensity * door, reach: DOORWAY.reach, decay: DOORWAY.decay });
                 glows.push({ at, reach: GLOW.doorway, rgb: rgbOf(color, GLOW.door * door) });
             }
-            kindle(glowing, me);
+            // What moves, for the standing torches' shadows: those props,
+            // the dummy and every monster (a fallen one sinks), and a
+            // fighter with a box that is not where it was (slower than
+            // SHADE.still it is at rest: breathing shows in no shadow).
+            const moving = [...stirring], where = b => { const [bx, , bz] = space.toBlocks(b.x, b.y); return [bx, bz]; };
+            if (current.dummy) moving.push(where(current.dummy));
+            for (const m of current.monsters) moving.push(where(shownOf(m)));
+            const least = SHADE.still * Math.max(frameSeconds, 1 / 120);
+            for (const d of drawn) {
+                const was = spots.get(d.id), at = d.solved.parts.map(m => [m[12], m[13], m[14]]);
+                if (!was || was.length !== at.length || at.some((v, i) => Math.abs(v[0] - was[i][0]) + Math.abs(v[1] - was[i][1]) + Math.abs(v[2] - was[i][2]) > least)) moving.push(where(d.shown));
+                spots.set(d.id, at);
+            }
+            kindle(glowing, me, frameSeconds, moving, current.terrain.rev);
             ground.glow(glows, now.torch * GLOW.power);
         }
         // (The shadow maps are the lights' own render targets.)
         function dispose() {
             sun.dispose(); torchLight.dispose();
             for (const light of pool) light.dispose();
+            for (const c of casters) c.light.dispose();
+            for (const material of shy) material.dispose();
         }
-        return { now, sky, mists, retune, frame, placeSun, dispose };
+        return {
+            now, sky, mists, retune, frame, placeSun, dispose,
+            // `meshes` cast no shadow in the carried torch's light (its
+            // bearer's own body), or in the standing torches' (their posts).
+            shunTorch: meshes => shun(meshes, [torchLight]),
+            shunLamps: meshes => shun(meshes, casters.map(c => c.light))
+        };
     }
     return { create };
 })();

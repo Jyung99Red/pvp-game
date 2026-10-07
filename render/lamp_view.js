@@ -2,13 +2,14 @@
 // `lamps`): on a stand, or on a wall's face. All of them are one mesh, their
 // flames one more (a few bright cubes each, licking). They always burn;
 // `lights` is where each one's light is ([x, y, z], blocks) for the moving
-// lights and the block light (render/view_light.js). Drawn only.
+// lights and the block light (render/view_light.js); `posts`, their mesh
+// (none with no torch in the map). Drawn only.
 const lampView = (() => {
     const FLAMES = 2;
     // `material`: the lit material for the posts (vertex colours).
     function create(T, scene, sim, material) {
         const P = palette, lamps = sim.entities.filter(e => e.type === 'lamp'), lights = [];
-        if (!lamps.length) { material.dispose(); return { lights, update() {} }; }
+        if (!lamps.length) { material.dispose(); return { lights, posts: null, update() {} }; }
         const pos = [], nor = [], uv = [], col = [], index = [], colour = new T.Color(), turn = new T.Matrix4(), flames = [];
         for (const e of lamps) {
             const model = propModels.lamps[e.kind], [x, , z] = space.toBlocks(e.x, e.y), [dx, dz] = e.side ? propKit.DIRS[e.side] : [0, 0];
@@ -52,7 +53,7 @@ const lampView = (() => {
             if (fire.instanceColor) fire.instanceColor.needsUpdate = true;
         }
         update(0);
-        return { lights, update };
+        return { lights, posts, update };
     }
     return { create };
 })();

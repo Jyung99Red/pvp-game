@@ -33,6 +33,20 @@ const viewProps = (() => {
         // the terrain does; `lamps`, where their lights are (render/view_light.js).
         const lamps = lampView.create(T, scene, sim, viewShaders.embodied(T, new T.MeshLambertMaterial({ map: tx.grain, vertexColors: true }), { value: 0 }, ground.fade));
         const place = new T.Object3D(), tint = new T.Color();
+        // Seconds a chest's lid takes to open, and a grave to come up.
+        const OPENS = 0.45, RISES = 0.6;
+        // Where the props that move now are ([x, z], blocks): loot (it
+        // turns), a chest opening, a grave coming up or called. A standing
+        // torch's shadows are drawn anew while one is by (render/view_light.js).
+        function stirring(current) {
+            const out = [];
+            for (const e of current.entities) {
+                if (!(e.type === 'drop' || (e.type === 'chest' && e.open && e.t < OPENS) || (e.type === 'grave' && (e.state === 'calling' || (e.state === 'ready' && e.t < RISES))))) continue;
+                const [x, , z] = space.toBlocks(e.x, e.y);
+                out.push([x, z]);
+            }
+            return out;
+        }
         // Each frame: `me`, the camera's focus (blocks); `clock`, seconds
         // drawn so far.
         function update(current, me, clock) {
@@ -46,7 +60,7 @@ const viewProps = (() => {
                 if (e.type !== 'chest') continue;
                 const view = chests.get(e.id);
                 if (!view) continue;
-                const k = e.open ? Math.min(1, e.t / 0.45) : 0, lid = rigKit.scale(propModels.chest.open, 1 - (1 - k) * (1 - k));
+                const k = e.open ? Math.min(1, e.t / OPENS) : 0, lid = rigKit.scale(propModels.chest.open, 1 - (1 - k) * (1 - k));
                 view.place(rigKit.solve(chestRig, lid, space.toBlocks(e.x, e.y, e.h), space.yawOf(e.facing)));
             }
             for (const e of current.entities) {
@@ -55,7 +69,7 @@ const viewProps = (() => {
                 if (!view) continue;
                 view.show(e.state !== 'hidden');
                 if (e.state === 'hidden') continue;
-                const up = e.state === 'ready' ? Math.min(1, e.t / 0.6) : 1, shake = e.state === 'calling' ? 0.02 * Math.min(1, e.t) * Math.sin(clock * 47) : 0;
+                const up = e.state === 'ready' ? Math.min(1, e.t / RISES) : 1, shake = e.state === 'calling' ? 0.02 * Math.min(1, e.t) * Math.sin(clock * 47) : 0;
                 const [x, , z] = space.toBlocks(e.x, e.y, e.h);
                 view.place(rigKit.solve(graveRig, {}, [x + shake, -1.2 * (1 - up) * (1 - up), z], space.yawOf(e.facing)));
                 for (const m of view.materials) m.emissive.set(P.portalGlow).multiplyScalar(e.state === 'calling' ? 0.25 * Math.min(1, e.t / C.props.graveCall) : 0);
@@ -126,7 +140,7 @@ const viewProps = (() => {
         function dispose(once) {
             for (const g of warnShapes.values()) once(g, () => g.dispose());
         }
-        return { update, warn, dispose, lamps: lamps.lights };
+        return { update, warn, dispose, stirring, lamps: lamps.lights, lampPosts: lamps.posts };
     }
     return { create };
 })();

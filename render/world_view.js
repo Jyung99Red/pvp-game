@@ -40,7 +40,8 @@ const worldView = (() => {
         // (texels a side; a large screen's sun map twice a phone's, at most
         // SUN_LARGEST), how many moving lights, and what the shaders are
         // built with (`built`: torch shadow samples, the probes' light
-        // and block light, which need a new world when they change).
+        // and block light, how many standing torches cast shadows, which
+        // need a new world when they change).
         // hourShift: hours the time of day is drawn ahead, from ?hour=21
         // in the address (it starts at that hour and goes on; for testing,
         // never saved).
@@ -52,7 +53,7 @@ const worldView = (() => {
             tune.sunMap = small ? q.sunShadow : Math.min(SUN_LARGEST, 2 * q.sunShadow);
             tune.torchMap = q.torchShadow;
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
-            const built = { torchTaps: q.torchTaps, bounce: q.bounce };
+            const built = { torchTaps: q.torchTaps, bounce: q.bounce, lampShadows: q.lampShadows || 0 };
             if (tune.built && Object.keys(built).every(k => built[k] === tune.built[k])) return false;
             tune.built = built;
             viewShaders.patchShaders(T, built, direct3d);
@@ -206,7 +207,7 @@ const worldView = (() => {
                 lastFacing: f.facing, lean: 0
             }];
         }));
-        fighters.get(selfId)?.view.shunTorch();
+        fighters.get(selfId)?.view.shunTorch(light.shunTorch);
         const dummyView = sim.dummy ? cast.character(sim.rigs.dummy) : null;
         // A monster that comes into the world later (a boss called back at
         // its grave) gets its body when it is first drawn.
@@ -215,6 +216,8 @@ const worldView = (() => {
         // ---- props (render/view_props.js), the shade of sight
         // (render/view_sight.js), the effects (render/effects.js) ----
         const props = viewProps.create(stage, cast);
+        // (A standing torch's post would shade all below its own flame.)
+        if (props.lampPosts) light.shunLamps([props.lampPosts]);
         const sight = viewSight.create(stage);
         const effects = renderEffects.create(T, scene, renderTextures.rng(11));
         let clock = 0;
@@ -274,7 +277,7 @@ const worldView = (() => {
             }
             // The hour's light (render/view_light.js); colours fade as its
             // look has them, the terrain's and other bodies'.
-            light.frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps: props.lamps });
+            light.frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps: props.lamps, stirring: props.stirring(current) });
             ground.fade.value = light.now.fade[0]; cast.fade.value = light.now.fade[1];
             const foes = [];
             if (dummyView && current.dummy) {
@@ -336,7 +339,6 @@ const worldView = (() => {
             ground.dispose();
             sight.dispose();
             light.dispose();
-            cast.dispose();
         }
         light.retune();
         return { scene, render, dispose, retune: light.retune, playerRig, seen, ground };

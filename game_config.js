@@ -442,7 +442,9 @@ const gameConfig = (() => {
         // user, 2026-10-07); bounce, the light
         // probes' colour on or off (worked out at each corner of a face:
         // at each pixel looked the same and cost far more, so that choice
-        // is gone; the block light is always on: user, 2026-10-06).
+        // is gone; the block light is always on: user, 2026-10-06);
+        // lampShadows, how many of the torches that stand in a map cast
+        // shadows, the nearest (user, 2026-10-07; none on saver).
         // `custom` is the menu's own (user, 2026-10-06): each setting a
         // slider over its `choices`, starting from `high`. lights: how
         // many moving lights without shadows are lit at once (the nearest:
@@ -451,23 +453,34 @@ const gameConfig = (() => {
         // around the player. lamp: the torches that stand in a map (on a
         // stand or a wall; user, 2026-10-06), each one of the moving lights:
         // `light` of a carried torch's intensity now, `reach` blocks,
-        // `decay`; `glow`, the cells its block light spreads.
+        // `decay`; `glow`, the cells its block light spreads. `shadow`:
+        // the nearest of them cast shadows (the quality's lampShadows;
+        // user, 2026-10-07), of walls, bodies and all but their own posts:
+        // `taps`, the samples a soft edge takes; `fade`, the seconds its
+        // shadows take to come and to go as it gets or loses its turn;
+        // `keep`, how many blocks nearer another must be to take its turn;
+        // its shadows are drawn anew while something that moves is within
+        // `margin` blocks of its reach (one torch's a frame at most; a
+        // fighter none of whose boxes goes `still` blocks a second is at
+        // rest: it only breathes), and every `refresh` seconds whatever
+        // else has changed.
         graphics: {
             quality: {
-                saver: { pixelRatio: 1, sunShadow: 512, torchShadow: 128, torchTaps: 8, bounce: true },
-                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 8, bounce: true },
-                ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 16, bounce: true }
+                saver: { pixelRatio: 1, sunShadow: 512, torchShadow: 128, torchTaps: 8, bounce: true, lampShadows: 0 },
+                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 8, bounce: true, lampShadows: 2 },
+                ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 16, bounce: true, lampShadows: 2 }
             },
             choices: {
                 pixelRatio: [1, 1.5, 2, 2.5, 3],
                 sunShadow: [512, 1024, 2048, 4096],
                 torchShadow: [128, 256, 512, 1024],
                 torchTaps: [4, 6, 8, 12, 16],
-                bounce: [false, true]
+                bounce: [false, true],
+                lampShadows: [0, 1, 2, 3, 4]
             },
             lights: 4,
             shadowExtent: 15,
-            lamp: { light: 0.5, reach: 6, decay: 1.3, glow: 6 },
+            lamp: { light: 0.5, reach: 6, decay: 1.3, glow: 6, shadow: { taps: 4, fade: 0.3, keep: 0.5, margin: 1, still: 0.3, refresh: 1 } },
 
             // The picture's own numbers (render/ reads them; no rule does).
             // They are here, in `graphics`, because the duel's rules

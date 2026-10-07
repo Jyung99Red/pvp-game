@@ -21,8 +21,6 @@ const viewBodies = (() => {
         // one struck. With ?boxes in the address, hit boxes are outlined:
         // body boxes in cyan, weapon boxes (grown by combat.weaponPad) red.
         const showBoxes = /[?&]boxes(=|&|$)/.test(window.location.search);
-        // What casts no shadow in point lights: writes nothing.
-        const shunned = new T.MeshDistanceMaterial({ depthWrite: false, colorWrite: false });
         const pad = C.combat.weaponPad / U, colour = new T.Color();
         // `look` swaps palette colours by name (playerModel.looks). `ghost`
         // and `fade` are what its materials read (render/view_shaders.js
@@ -91,9 +89,11 @@ const viewBodies = (() => {
             let lit = false;
             return {
                 mesh, blade: loose.find(l => rig.parts[l.i].kind === 'weapon')?.mesh.material || null, flames,
-                // Cast no shadow in a torch's light (its bearer's own body
-                // would shade all in front of it); the sun's still.
-                shunTorch() { for (const m of [mesh, ...loose.map(l => l.mesh)]) m.customDistanceMaterial = shunned; },
+                // Cast no shadow in the torch's light (its bearer's own body
+                // would shade all in front of it): `shun` is the light's
+                // (render/view_light.js `shunTorch`). In the sun's and a
+                // standing torch's it casts as anyone.
+                shunTorch(shun) { shun([mesh, ...loose.map(l => l.mesh)]); },
                 materials: [material, ...loose.filter(l => rig.parts[l.i].tag !== 'flame').map(l => l.mesh.material)],
                 light(on) { lit = on; for (const f of flames) f.visible = on && mesh.visible; },
                 // Show the shield white (or not); false when there is no shield.
@@ -121,9 +121,8 @@ const viewBodies = (() => {
             };
         }
         // `fade`: what other bodies' colours fade by (render/world_view.js
-        // sets it each frame from the hour's look). The material that casts
-        // no shadow is no mesh's `material`, so it is disposed of here.
-        return { character, fade: bodyFade, dispose() { shunned.dispose(); } };
+        // sets it each frame from the hour's look).
+        return { character, fade: bodyFade };
     }
     return { create };
 })();

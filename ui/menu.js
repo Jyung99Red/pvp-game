@@ -25,7 +25,8 @@ const menuScreen = (() => {
         sunShadow: ['太阳影子', v => String(v)],
         torchShadow: ['火把影子', v => String(v)],
         torchTaps: ['火把柔边', v => `${v} 点`],
-        bounce: ['反弹光', v => v ? '开' : '关']
+        bounce: ['反弹光', v => v ? '开' : '关'],
+        lampShadows: ['火炬影子', v => v ? `${v} 盏` : '关']
     };
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
