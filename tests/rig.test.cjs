@@ -231,6 +231,28 @@ test('interacting puts the left hand a little forward; not in the middle of a mo
     assert.deepEqual(plain(playerAnim.pose(rig, { ...body(1), act })), plain(playerAnim.pose(rig, { ...body(0), act })));
 });
 
+test('carrying a torch, a move comes out of the carry and goes back to it: the left arm eases back up, it does not jump as the move ends', () => {
+    const MOVES = gameConfig.combo.moves;
+    for (const main of ['wooden_sword', 'assassin_dagger']) {
+        const loadout = { ...gameConfig.gear.starter, main, offhand: 'torch' }, torchRig = R.build(playerModel, { equipment: equipmentModels.forLoadout(loadout) });
+        const flame = torchRig.parts.findIndex(p => p.tag === 'flame'), elbow = torchRig.index.forearmL;
+        const at = act => { const s = R.solve(torchRig, playerAnim.pose(torchRig, { gait: 0, moveBlend: 0, runBlend: 0, guardBlend: 0, stun: 0, loadout, act })); return [s.parts[flame], s.bones[elbow]].map(m => [m[12], m[13], m[14]]); };
+        const gap = (a, b) => Math.max(...a.map((v, i) => Math.hypot(...v.map((x, k) => x - b[i][k]))));
+        const carried = at(null), type = main === 'wooden_sword' ? 'sword' : 'dagger';
+        for (const move of Object.keys(MOVES).filter(id => MOVES[id].weapon === type)) {
+            const m = MOVES[move], recovering = k => at({ move, phase: 'recover', t: k / 40 * m.recovery, from: null });
+            // The recovery's last moment is the carry; the windup's first is too.
+            assert.ok(gap(recovering(40), carried) < 1e-9, `${main} ${move}: the recovery ends in the carry`);
+            assert.ok(gap(at({ move, phase: 'windup', t: 0, from: null }), carried) < 1e-9, `${main} ${move}: the windup starts from the carry`);
+            // On the way back, no step of a fortieth of the recovery is a jump.
+            for (let k = 0; k < 40; k++) assert.ok(gap(recovering(k + 1), recovering(k)) < 0.06, `${main} ${move}: the torch arm jumps in the recovery at ${k}/40`);
+            // Combined: the next move's windup picks up where the recovery had got to.
+            const half = { move, t: m.recovery / 2 };
+            assert.ok(gap(at({ move: type === 'sword' ? 'slash' : 'cut', phase: 'windup', t: 0, from: half }), recovering(20)) < 1e-9, `${main} ${move}: a combo goes on from the recovery`);
+        }
+    }
+});
+
 test('drawn-only additions never change the judged pose', () => {
     const body = { gait: 0.3, moveBlend: 0 }, judged = playerAnim.pose(rig, body);
     const before = JSON.stringify(judged);

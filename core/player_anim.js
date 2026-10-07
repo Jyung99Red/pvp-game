@@ -115,19 +115,25 @@ const playerAnim = (() => {
     }
     // A move in progress, `act` = { move, phase, t, lead, from }: the windup
     // eases from wherever the previous move's recovery had got to (or the
-    // stance) into key `a` -- over what is left of it after `lead`, the time
+    // rest) into key `a` -- over what is left of it after `lead`, the time
     // the attack key took to tell A from B; the swing goes `a` to `b`; the
-    // recovery back to stance.
-    function movePose(act) {
-        const K = playerMoves.moves[act.move], m = gameConfig.combo.moves[act.move], stance = playerPoses.stance;
+    // recovery back to the rest. `rest`: the stance, or what the body
+    // stands in between moves (restOf).
+    function movePose(act, rest = playerPoses.stance) {
+        const K = playerMoves.moves[act.move], m = gameConfig.combo.moves[act.move];
         if (act.phase === 'windup') {
-            const from = act.from ? movePose({ move: act.from.move, phase: 'recover', t: act.from.t }) : stance, lead = act.lead || 0;
+            const from = act.from ? movePose({ move: act.from.move, phase: 'recover', t: act.from.t }, rest) : rest, lead = act.lead || 0;
             return rigKit.mix(from, K.a, easeOut(clamp01(m.windup > lead ? (act.t - lead) / (m.windup - lead) : 1)));
         }
         if (act.phase === 'charge') return K.a;
         if (act.phase === 'swing') return rigKit.mix(K.a, K.b, smooth(clamp01(act.t / m.swing)));
-        return rigKit.mix(K.b, stance, easeInOut(clamp01(act.t / m.recovery)));
+        return rigKit.mix(K.b, rest, easeInOut(clamp01(act.t / m.recovery)));
     }
+    // The stance a move comes out of and goes back to: a carried torch is
+    // held up and forward, so a move's recovery brings the left arm back up
+    // to it (not to the stance's, whence the arm would jump to the torch as
+    // the move ended). Made anew each time: the move tuner edits the poses.
+    const restOf = loadout => inventoryKit.offhandOf(loadout) === 'torch' ? { ...playerPoses.stance, ...playerMoves.torch } : playerPoses.stance;
 
     // The legs under a guard. The pose's legs are the stance's turning into
     // the stride by moveBlend: the guard's standing legs take the stance's
@@ -152,14 +158,15 @@ const playerAnim = (() => {
     // handOut, loadout }.
     function pose(rig, body) {
         let pose = locomotion(rig, body), stepping = 1;
-        const act = body.act, lowerBody = playerModel.layers.lower;
-        // A torch is carried up and forward when the arm is not busy.
-        if (!act && inventoryKit.offhandOf(body.loadout) === 'torch') pose = { ...pose, ...playerMoves.torch };
+        const act = body.act, lowerBody = playerModel.layers.lower, rest = restOf(body.loadout);
+        // A torch is carried up and forward when the arm is not busy (a
+        // move cross-fades in over the carry, and goes back to it).
+        if (rest !== playerPoses.stance) pose = { ...pose, ...playerMoves.torch };
         if (act) {
             // Out of a walk the move cross-fades in; out of a move it does not need to.
             const w = act.from || act.phase !== 'windup' ? 1 : clamp01((act.t - (act.lead || 0)) / BLEND());
             if (act.phase !== 'charge') stepping = 1 - w;
-            let moving = movePose(act);
+            let moving = movePose(act, rest);
             // Charging may walk: the legs walk under the held charge, like
             // under a raised shield.
             if (act.phase === 'charge') {

@@ -594,8 +594,8 @@ test('the torches that stand in a map cast shadows (design.md 2.5): the nearest 
                 // South of the torch, out of its way: the ground at the torch's foot is lit as with no shadows.
                 stand(lx, lz + 3); draw(); draw();
                 const foot = [ground(lx + 0.7, lz), ground(lx - 0.7, lz), ground(lx, lz + 0.8)];
-                // Far from every torch: nothing moves by one.
-                stand(22.5, 25.5); draw(); draw();
+                // Far from every torch (in the south rocks, east of the gate to the test cave): nothing moves by one.
+                stand(34.5, 25.5); draw(); draw();
                 out[n] = { by, foot, far: { draws: draw(), lights: told() } };
             }
             // Over to the torches in the east: the shadows there come by degrees.

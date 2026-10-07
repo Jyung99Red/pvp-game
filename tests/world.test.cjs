@@ -244,11 +244,12 @@ test('portals come in pairs, the base is safe, and arrivals are out of every mon
             assert.ok(d > MON[m.kind].alertRange + 100, `${id}: ${m.kind} at ${(m.x / U).toFixed(1)},${(m.y / U).toFixed(1)} would notice an arrival (${d.toFixed(0)})`);
         }
     }
-    // Every region can be reached from the base; the valley (and the cave off it) waits on the goblin chief.
+    // Every region can be reached from the base; the valley (and the cave off it) waits on the goblin chief,
+    // the test cave under the village does not (user, 2026-10-07).
     const seen = new Set(['base']), todo = ['base'];
     while (todo.length) for (const p of MAPS[todo.pop()].portals || []) if (!seen.has(p.to)) { seen.add(p.to); todo.push(p.to); }
     assert.deepEqual([...seen].sort(), [...REGIONS].sort());
-    assert.deepEqual([...reachedWithout('goblinChief')].sort(), ['base', 'clearing', 'field'], 'the valley and the cave beyond it wait on the goblin chief');
+    assert.deepEqual([...reachedWithout('goblinChief')].sort(), ['base', 'clearing', 'field', 'grotto'], 'the valley and the cave beyond it wait on the goblin chief');
     // Each region but the base has a boss and its chest.
     assert.deepEqual(plain(T.fromRows(MAPS.field.rows).monsters.filter(m => MON[m.kind].boss).map(m => m.kind)), ['goblinChief']);
     assert.deepEqual(plain(T.fromRows(MAPS.valley.rows).monsters.filter(m => MON[m.kind].boss).map(m => m.kind)), ['wolfKing']);
@@ -289,8 +290,19 @@ test('torches stand in a map: one on a stand is in the way, one on a wall hangs 
     assert.equal(sim.entities.filter(e => e.type === 'lamp').length, 3);
     // A wall torch with no wall beside it (a low stone is none) does not load.
     assert.throws(() => W.create({ map: { name: 'lamps', rows: ['..1..', '.1!@.', '.....'] } }), /no wall beside it/);
-    // The maps that have them: the base, and the cave by its gate and its treasure room.
-    for (const [id, least] of [['base', 8], ['cave', 4]]) assert.ok(W.create({ region: id }).entities.filter(e => e.type === 'lamp').length >= least, id);
+    // The maps that have them: the base, the cave by its gate and its treasure room, and the test cave the same.
+    for (const [id, least] of [['base', 8], ['cave', 4], ['grotto', 4]]) assert.ok(W.create({ region: id }).entities.filter(e => e.type === 'lamp').length >= least, id);
+});
+
+test('the test cave under the village (user, 2026-10-07): dark like the cave, straight through the village\'s south gate, with what the cave has to try', () => {
+    const map = MAPS.grotto, sim = W.create({ region: 'grotto', arrival: 'base' }), kinds = sim.monsters.map(m => m.kind);
+    assert.equal(map.dark, true);
+    assert.deepEqual(plain(MAPS.base.portals.find(p => p.to === 'grotto')), { at: [22, 24], to: 'grotto', facing: 'north' });
+    assert.equal(map.portals.find(p => p.to === 'base').facing, 'south', 'in by its north wall, the village being north of it');
+    assert.ok(sim.player.y > sim.entities.find(e => e.id === 'p-base').y, 'arriving south of its gate');
+    for (const kind of ['spider', 'goblin', 'wolf']) assert.ok(kinds.includes(kind), kind);
+    assert.ok(!kinds.some(k => MON[k].boss), 'no boss');
+    assert.ok(sim.entities.some(e => e.type === 'brush') && sim.entities.some(e => e.type === 'node'), 'a thicket to burn, something to gather');
 });
 
 test('arriving through a portal: in front of the portal back, facing in, with the HP carried', () => {

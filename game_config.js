@@ -653,8 +653,8 @@ const gameConfig = (() => {
             stick: { zoneWidth: 250, zoneHeight: 190, restX: 120, restY: 96 }
         },
 
-        // 9. Maps (design.md 6.3: the base, two regions, the training
-        // ground and the PVP arena). One character per block: `.` grass,
+        // 9. Maps (design.md 6.3: the base, the regions, the training
+        // ground, the test cave and the PVP arena). One character per block: `.` grass,
         // `:` path, `=` cobble, `;` gravel, `~` a pond (no body walks in;
         // it is seen across and struck across), `_` the drop beyond a
         // cliff's edge (the same, and nothing is drawn there), `+` a wooden
@@ -689,7 +689,9 @@ const gameConfig = (() => {
             // fence on the north with the gate to the field, a rocky ridge on
             // the west, low rocks on the south, low rocks and a few trees on
             // the east with the gate to the training ground (the valley is
-            // reached through the field only: user, 2026-10-04). A cobbled
+            // reached through the field only: user, 2026-10-04), and a gate
+            // in the low rocks on the south, a lane from the spawn, to the
+            // test cave (user, 2026-10-07). A cobbled
             // square in the middle, streets from it to both gates and lanes
             // to the four buildings; the spawn and the cheat chest south of
             // the square; the south-east is left open for later. Torches on
@@ -721,10 +723,10 @@ const gameConfig = (() => {
                     '5321......::::::::::::::.................11.T',
                     '5321.................:::................11...',
                     '5331..................@..C...............1...',
-                    '55331....................................12T.',
-                    '4321..........T...................T......21..',
-                    '4321....................................12..T',
-                    '454311111112112111111121121111111211211111112',
+                    '55331.................:..................12T.',
+                    '4321..........T.......:...........T......21..',
+                    '4321................!.:.!...............12..T',
+                    '454311111112112111112#P#221111111211211111112',
                     '554422332222222223322222222233222222222332222',
                     '454322432333333224323333332243233333322432333',
                     '554434443354443344433544433444335444334443354'
@@ -735,7 +737,8 @@ const gameConfig = (() => {
                 ],
                 portals: [
                     { at: [22, 3], to: 'field', facing: 'south' },
-                    { at: [41, 14], to: 'clearing', facing: 'west' }
+                    { at: [41, 14], to: 'clearing', facing: 'west' },
+                    { at: [22, 24], to: 'grotto', facing: 'north' }
                 ],
                 chests: [{ at: [25, 20], loot: 'cheatChest' }]
             },
@@ -930,6 +933,42 @@ const gameConfig = (() => {
                     '..................................'
                 ],
                 portals: [{ at: [4, 8], to: 'base', facing: 'east' }]
+            },
+            // A test cave under the village (user, 2026-10-07: the cave's
+            // dark without the long way there): a small dark hall of
+            // pillars like the cave's, the gate in its north wall (the
+            // village's south gate), two torches on stands by it; a little
+            // room in the south shut by a thicket, a torch on the wall
+            // either side; a goblin, a wolf and two cave spiders.
+            grotto: {
+                name: '测试洞窟', dark: true, floor: ';',
+                rows: [
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;33333333333333#P#3333333333333;;;',
+                    ';;;3332;;;;;;;;;;;;;;;;;;;;;;2333;;;',
+                    ';;;33;;;;;;;;;;i;;;;;i;;;;;;;;;33;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;;;;;;;;;X;3;;;',
+                    ';;;3;2;;33;;;;;;;;@;;;;;;;33;;;;3;;;',
+                    ';;;3;O;;33;;;;;;;;;;;;;;;;33;1;;3;;;',
+                    ';;;3;;;;;;;;1;;;;;;;;;;;;;;;;;;33;;;',
+                    ';;;33;;;;;;;;;;;;;;;;;;3;;;;;;133;;;',
+                    ';;;332;;;;;;;;;;;33;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;33;;;;;;;;;s;;;3;;;',
+                    ';;;3;;;g;;;;33;;;;;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;33;;;;;;;;;;2;;;;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;;!;;;!;;3;;3;;;',
+                    ';;;3;;3;;;;;;;;3;;;;;33BBB33;;;;3;;;',
+                    ';;;3;;;;;;;w;;;;;;s;;3;;;;;3;;;;3;;;',
+                    ';;;33;;;;;;;;;;;;;;;;3;X;O;3;;;;3;;;',
+                    ';;;333;;;;;;;;;;;;;;;3;;;;;3;;233;;;',
+                    ';;;333333333333333333333333333333;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
+                    ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;'
+                ],
+                portals: [{ at: [18, 3], to: 'base', facing: 'south' }]
             },
             // The PVP arena (design.md 8.3): 20 x 11 blocks inside a
             // wall, the same seen from either spawn (point symmetric). Walls
