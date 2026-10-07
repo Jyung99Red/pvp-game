@@ -119,6 +119,7 @@ const renderEffects = (() => {
                     flash.set(e.target, 0.12); blinks.set(e.side, BLINK); shake = Math.max(shake, 0.1);
                 }
                 else if (e.type === 'defeated') burst(e.at, e.boss ? 30 : 14, FALLEN[e.kind] || ['#ffffff'], 1.2, e.boss ? 3.4 : 2.6, e.boss ? 0.1 : 0.08);
+                else if (e.type === 'revive') burst(e.at, 30, ['#a183ff', '#ecd9ff', ...(FALLEN[e.kind] || [])], 1.4, 3.4, 0.1);
                 else if (e.type === 'chest_open') burst(e.at, 16, ['#ffe066', '#d8b04a', '#ffffff'], 1.2, 3, 0.06);
                 else if (e.type === 'pickup' && e.side === selfId) burst(e.at, 3, ['#fff3b0', '#ffffff'], 0.6, 1.2, 0.04);
                 else if (e.type === 'rest' && e.side === selfId) rested = 0.9;

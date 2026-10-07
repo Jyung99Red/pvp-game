@@ -70,6 +70,11 @@ const mapPlan = (() => {
             const k = (map.chests || []).find(q => q.at?.[0] === col && q.at?.[1] === row);
             return { col, row, loot: k?.loot || null, requires: k?.requires || null, requiresName: k?.requires ? bossName(k.requires) : null };
         });
+        // Bosses' altars, with whom each calls back.
+        const altars = t.altars.map(({ col, row }) => {
+            const a = (map.altars || []).find(q => q.at?.[0] === col && q.at?.[1] === row);
+            return { col, row, boss: a?.boss || null, bossName: a?.boss ? bossName(a.boss) : null };
+        });
         // Torches that stand in the map: on a stand, or on the wall on `side` of the cell.
         const lamps = t.lamps.map(({ kind, col, row }) => ({ kind, col, row, side: null }));
         const portals = t.portals.map(({ col, row }) => {
@@ -98,7 +103,7 @@ const mapPlan = (() => {
             safe: !!map.safe, training: !!map.training, duel: !!map.duel, dark: !!map.dark,
             cells, spawns: t.spawns.map(({ col, row }, index) => ({ col, row, index })),
             dummy: t.dummy ? { ...t.dummy, name: gameConfig.dummy.name, facing: map.dummyFacing ?? Math.PI } : null,
-            monsters, chests, lamps, portals, buildings, problems
+            monsters, chests, altars, lamps, portals, buildings, problems
         };
     }
     // Plans by map id, built once: the page never changes a map.
@@ -130,6 +135,8 @@ const mapPlan = (() => {
         if (plan.dummy && here(plan.dummy)) return plan.dummy.name;
         const chest = plan.chests.find(here);
         if (chest) return `宝箱${chest.requires ? `（${chest.requiresName}守着）` : ''}`;
+        const altar = plan.altars.find(here);
+        if (altar) return altar.boss ? `祭坛（复活${altar.bossName}）` : '祭坛';
         const lamp = plan.lamps.find(here);
         if (lamp) return lamp.kind === 'wall' ? `墙上的火把${SIDE_NAMES[lamp.side] ? `（${SIDE_NAMES[lamp.side]}边的墙）` : ''}` : '立着的火炬';
         const portal = plan.portals.find(here);

@@ -6,6 +6,12 @@
 //   to the region it leads to, once the boss it may wait on is down.
 // - chest: opened by holding the interact key, once the boss guarding it is
 //   down; it throws out its loot. Opened stays opened (the save).
+// - altar: a stone near a boss's home (`A`; user, 2026-10-07). Once the
+//   boss is down and not in the world, holding the interact key with the
+//   materials it asks for (the boss's `revive`) lays them on it and calls
+//   the boss back at its home for another fight. The boss stays down in
+//   the save: what waits on it stays open, its chest stays opened, and a
+//   boss called back is gone again once the region is left.
 // - drop: loot on the ground. It pops out, settles, and is picked up by
 //   walking near it: it flies to the one who came close.
 // - brush: a dry thicket (a `B` block). The interact key, a torch carried,
@@ -22,7 +28,7 @@
 //   post in the way, as a chest is) or on the wall beside its cell (`!`:
 //   the wall to the north, else west, east, south). Its light is drawn
 //   only; nothing is done with it.
-// A map lists its buildings, portals and chests next to its rows; each entry
+// A map lists its buildings, portals, chests and altars next to its rows; each entry
 // must sit on the letters that draw it, so a map cannot disagree with itself.
 const propKit = (() => {
     const DIRS = Object.freeze({ north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] });
@@ -111,6 +117,17 @@ const propKit = (() => {
             });
         }
         for (const { col, row } of terrain.chests) if (!chests.has(`${col},${row}`)) throw new Error(`${map.name}: C at ${col},${row} is in no chest list`);
+        const altars = new Set();
+        for (const a of map.altars || []) {
+            const [c, r] = a.at || [];
+            if (letter(map, c, r) !== 'A') throw new Error(`${map.name}: altar needs A at ${c},${r}`);
+            if (!isBoss(a.boss)) throw new Error(`${map.name}: altar for ${a.boss}, not a boss`);
+            if (!terrain.monsters.some(m => m.kind === a.boss)) throw new Error(`${map.name}: altar for ${a.boss}, who has no home here`);
+            altars.add(`${c},${r}`);
+            const at = centre(c, r);
+            out.push({ id: `altar-${c}-${r}`, type: 'altar', boss: a.boss, x: at.x, y: at.y, h: 0, facing: angleOf(a.facing || 'south'), radius: gameConfig.props.altarRadius, solid: true });
+        }
+        for (const { col, row } of terrain.altars) if (!altars.has(`${col},${row}`)) throw new Error(`${map.name}: A at ${col},${row} is in no altar list`);
         // A wall torch hangs on the first wall round its cell, as drawn: a
         // block at least two high.
         const holds = (c, r) => { const cell = terrainKit.cellOf(letter(map, c, r) ?? '.'); return !!cell && LAMP_WALLS.includes(terrainKit.NAMES[cell[0]]) && cell[1] >= 2; };
@@ -156,6 +173,11 @@ const propKit = (() => {
             if (e.open) return null;
             out = { verb: '打开', name: '宝箱', hold: gameConfig.interact.chestHold, ready: true, why: '' };
             if (e.requires && !downed(sim, e.requires)) Object.assign(out, { ready: false, why: `${bossName(e.requires)}守着它` });
+        } else if (e.type === 'altar') {
+            const name = bossName(e.boss), short = missing(sim, e.boss);
+            out = { verb: '复活', name, hold: gameConfig.interact.altarHold, ready: true, why: '' };
+            if (bossHere(sim, e.boss)) Object.assign(out, { ready: false, why: `${name}还在` });
+            else if (short) Object.assign(out, { ready: false, why: `要${short}` });
         } else if (e.type === 'brush') {
             if (e.burning >= 0) return null;
             // A torch carried does it: one press lights the torch and the thicket.
@@ -181,8 +203,35 @@ const propKit = (() => {
             const ahead = gameConfig.props.chestRadius + 6;
             drop(sim, e.loot, e.x + Math.cos(e.facing) * ahead, e.y + Math.sin(e.facing) * ahead);
             emit(sim, 'chest_open', { side: p.id, target: e.id, at: space.toBlocks(e.x, e.y, 24) });
-        } else if (e.type === 'brush') { fighterKit.light(sim, p, true); ignite(sim, e, p.id); }
+        } else if (e.type === 'altar') revive(sim, e, p);
+        else if (e.type === 'brush') { fighterKit.light(sim, p, true); ignite(sim, e, p.id); }
         else if (e.type === 'node') gather(sim, e, p);
+    }
+    // ---- a boss's altar ----
+    // Is boss `kind` in the world and standing?
+    const bossHere = (sim, kind) => sim.entities.some(m => m.type === 'monster' && m.kind === kind && monsterKit.living(m));
+    // What is still wanted to call boss `kind` back, as words ('哥布林耳 ×6
+    // (有 2)'), or '' when everything is carried.
+    function missing(sim, kind) {
+        const items = progressOf(sim).inventory.items, short = [];
+        for (const [id, n] of Object.entries(gameConfig.monsters[kind].revive || {})) {
+            const have = items[id] || 0;
+            if (have < n) short.push(`${gameConfig.items[id]?.name || id} ×${n}（有 ${have}）`);
+        }
+        return short.join('、');
+    }
+    // The materials are laid on the altar and the boss stands at home again,
+    // already turning to the one who called it.
+    function revive(sim, e, p) {
+        const items = progressOf(sim).inventory.items;
+        for (const [id, n] of Object.entries(gameConfig.monsters[e.boss].revive || {})) {
+            items[id] -= n;
+            if (items[id] <= 0) delete items[id];
+        }
+        const index = sim.terrain.monsters.findIndex(m => m.kind === e.boss);
+        const m = entityKit.add(sim, Object.assign(monsterKit.create(sim.terrain, sim.terrain.monsters[index], index), { id: entityKit.nextId(sim, 'boss'), phase: 'alert', t: 0 }));
+        m.facing = Math.atan2(p.y - m.y, p.x - m.x);
+        emit(sim, 'revive', { side: p.id, target: m.id, kind: e.boss, name: bossName(e.boss), at: space.toBlocks(m.x, m.y, 30) });
     }
     // ---- gathering ----
     function gather(sim, e, p) {
@@ -270,5 +319,5 @@ const propKit = (() => {
             else if (e.type === 'chest' && e.open && e.t < 99) e.t = Math.min(99, e.t + dt);
         }
     }
-    return { DIRS, angleOf, place, regrow, arrival, offer, use, drop, tick, doorOf, progressOf, nodeKey };
+    return { DIRS, angleOf, place, regrow, arrival, offer, use, drop, tick, doorOf, progressOf, nodeKey, missing };
 })();

@@ -51,18 +51,20 @@ its own `dist/peerjs.min.js`, MIT) is an ordinary script in
 - `index.html`, `tune.html`, `map.html`, `style.css`, `partials/` stay at root (fetch paths are document-relative)
 
 The code, `game_config.js` and the tests are the description of current
-behaviour. `docs/tasks/` (Chinese) holds three documents and no more:
-`design.md` (what the game is and the rules decided, marked where the user
-decided them), `parameters.md` (every number in `game_config.js`, readable)
-and `roadmap.md` (what was done, what is next, how to test in this
-container). New decisions go into the matching section of `design.md`. The
-2D version is tag `v1-2d` (commit `2a313c4`).
+behaviour. `docs/parameters.md` (Chinese) is every number in
+`game_config.js`, readable. `docs/tasks/` (Chinese) holds three documents
+and no more: `design.md` (what the game is and the rules decided, marked
+where the user decided them), `roadmap.md` (what was done, what is next,
+how to test in this container) and `ideas.md` (directions talked over and
+not yet decided). New decisions go into
+the matching section of `design.md`; an idea decided moves out of
+`ideas.md` into it. The 2D version is tag `v1-2d` (commit `2a313c4`).
 This file only changes when project setup changes.
 
 ## Rules
 
 - Tunable numbers live only in `game_config.js`. When they change, update
-  `docs/tasks/parameters.md` to match. Model shapes and key
+  `docs/parameters.md` to match. Model shapes and key
   poses are data in `models/`, not tunables.
 - What is drawn is what is judged: poses that change a body's volume are a
   pure function of simulation state (`core/player_anim.js`); `render/` adds
@@ -76,7 +78,7 @@ This file only changes when project setup changes.
   page's entry; a partial also needs `#mount-<id>` in that page
   (`index.html`, `tune.html` or `map.html`).
 - Code comments and `AGENTS.md` in English; `README.md`, UI text and
-  `docs/tasks/` in Chinese.
+  `docs/` in Chinese.
 - Ask the user before adding a feature they did not ask for, or changing
   a rule already decided (user, 2026-10-05). Keep `design.md` short: what
   the game is and the rules decided, not how they are built or tested;

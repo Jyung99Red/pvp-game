@@ -232,7 +232,7 @@ const app = (() => {
                 if (e.side !== 'player' && e.type !== 'boss_defeated') continue;
                 if (e.type === 'travel') { load(e.to, { arrival: e.from, carry: { hp: sim.player.hp } }); return; }
                 if (e.type === 'open') { input.releaseAll(); if (BUILDING_SCREENS[e.what]) screens.open(BUILDING_SCREENS[e.what]); else menu.open(); }
-                else if (e.type === 'boss_defeated' || e.type === 'chest_open') persist();
+                else if (e.type === 'boss_defeated' || e.type === 'chest_open' || e.type === 'revive') persist();
                 else if (e.type === 'pickup' && saveAt === null) saveAt = clock + SAVE_DELAY;
             }
         }

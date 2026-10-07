@@ -34,7 +34,7 @@ const palette = Object.freeze({
     door: '#5a3a22', window: '#2c3542', portalStone: '#4a4357', portalStoneLight: '#6b6279', portalGlow: '#a183ff', portalLocked: '#c0453a',
     roofSpring: '#6f9fc4', roofSmithy: '#7b7b85', roofShop: '#c2574a', roofStorage: '#a07a45',
     // props
-    chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6',
+    chestWood: '#8f5d2c', chestDark: '#6a4220', earItem: '#8cc25a', peltItem: '#a7a9ae', tuskItem: '#efe6cc', fangItem: '#f4f1e6', silkItem: '#e8e4f0',
     // world
     sky: '#a9cdea', skyLight: '#e7f2ff', groundLight: '#6f5d47', sun: '#fff2d8', darkSky: '#05060a',
     // the world's light by look (render/view_light.js): the sun warm, the

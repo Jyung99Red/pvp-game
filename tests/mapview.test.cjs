@@ -103,7 +103,7 @@ test('a map the game would refuse is still shown, with what is wrong; rows the l
     assert.throws(() => P.build('yard', { ...YARD, rows: ['@?'] }), /Unknown map cell/);
 });
 
-test('describe says what a cell holds: a monster by name, a wall with its height, a portal with where it leads', () => {
+test('describe says what a cell holds: a monster by name, a wall with its height, a portal with where it leads, an altar with whom it calls back', () => {
     const plan = P.build('yard', YARD), say = (col, row) => P.describe(plan, col, row);
     assert.equal(say(2, 2), `yard (2, 2) ${MON.wolf.name} w`);
     assert.equal(say(9, 4), `yard (9, 4) ${MON.goblinChief.name}（首领） G`);
@@ -138,6 +138,7 @@ test('describe says what a cell holds: a monster by name, a wall with its height
         const map = MAPS[id], plan = P.planOf(id);
         for (const m of plan.monsters) assert.equal(P.describe(id, m.col, m.row), `${id} (${m.col}, ${m.row}) ${MON[m.kind].name}${MON[m.kind].boss ? '（首领）' : ''} ${map.rows[m.row][m.col]}`);
         for (const p of map.portals || []) assert.ok(P.describe(id, ...p.at).startsWith(`${id} (${p.at[0]}, ${p.at[1]}) 传送门 → ${MAPS[p.to].name} ${p.to}`), `${id} ${p.at}`);
+        for (const a of map.altars || []) assert.equal(P.describe(id, ...a.at), `${id} (${a.at[0]}, ${a.at[1]}) 祭坛（复活${MON[a.boss].name}） A`);
         const wall = plan.cells.findIndex(c => c.kind === 'stone');
         if (wall >= 0) assert.ok(P.describe(id, wall % plan.width, Math.floor(wall / plan.width)).includes(`石墙 高${plan.cells[wall].level}`), `${id}: a wall`);
     }

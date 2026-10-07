@@ -294,6 +294,7 @@ const hud = (() => {
                     const names = opens(e.kind);
                     announce(`击败首领 · ${e.name}`, names.length ? `${names.join('、')}的大门已开启` : '这一带平定了', 3.5, now);
                 }
+                if (e.type === 'revive') announce(`${e.name}复活了`, '再打倒它，还会掉它的素材', 2.5, now);
                 if (e.type === 'rest' && e.side === selfId) announce('生命回满了', '', 1.6, now);
                 // Whoever this fighter last traded blows with stays in the panel.
                 if (e.type === 'hit' || e.type === 'parry' || e.type === 'block') {

@@ -1,6 +1,7 @@
 // The world (design.md 6): terrain in chunks that can change at run
 // time, the regions and how their portals join up, entities, the interact
-// key, chests, loot on the ground, bosses that stay down, and the save.
+// key, chests, loot on the ground, bosses that stay down (and their
+// altars, which call them back), and the save.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { load } = require('./load.cjs');
@@ -489,6 +490,63 @@ test('the goblin chief: a bigger goblin; down, it stays down, and the gate and c
     const again = W.create({ region: 'field', progress: save });
     assert.equal(again.monsters.some(m => m.boss), false, 'it does not come back');
     assert.equal(again.monsters.length, sim.terrain.monsters.length - 1);
+});
+
+test('a boss\'s altar calls it back for another fight: only once it is down and gone, for the materials it asks; down again, it drops its loot again (user, 2026-10-07)', () => {
+    const H = gameConfig.interact.altarHold;
+    for (const [region, kind] of [['field', 'goblinChief'], ['valley', 'wolfKing']]) {
+        const cost = Object.entries(MON[kind].revive), [[need, n]] = cost;
+        assert.equal(cost.length, 1, `${kind} asks for one material`);
+        const sim = W.create({ region }), p = sim.player, altar = sim.entities.find(e => e.type === 'altar');
+        assert.equal(altar.boss, kind);
+        // Standing: the altar has nothing to call back.
+        before(p, altar, Math.PI / 2, 34); step(sim, 0.02);
+        assert.equal(p.focus, altar.id);
+        assert.deepEqual(plain(interactKit.target(sim, p).offer), { verb: '复活', name: MON[kind].name, hold: H, ready: false, why: `${MON[kind].name}还在` });
+        // Down, the materials short.
+        const save = saveKit.fresh();
+        save.bosses[kind] = true; save.inventory.items[need] = n - 1;
+        const down = W.create({ region, progress: save }), q = down.player, stone = down.entities.find(e => e.type === 'altar');
+        assert.equal(down.monsters.some(m => m.kind === kind), false);
+        before(q, stone, Math.PI / 2, 34); step(down, 0.02);
+        const short = interactKit.target(down, q).offer;
+        assert.equal(short.ready, false);
+        assert.equal(short.why, `要${gameConfig.items[need].name} ×${n}（有 ${n - 1}）`);
+        // Enough: held for altarHold, they are laid on it and the boss stands at home again, turned to its caller.
+        down.progress.inventory.items[need] = n + 2;
+        press(down, 'interact'); step(down, H - 0.05);
+        assert.equal(down.monsters.some(m => m.kind === kind), false, 'not yet');
+        step(down, 0.07); release(down, 'interact');
+        const boss = down.monsters.find(m => m.kind === kind), spawn = down.terrain.monsters.find(m => m.kind === kind);
+        assert.ok(boss && boss.hp === boss.maxHp && boss.phase === 'alert', `${kind} back`);
+        assert.ok(Math.hypot(boss.x - T.cellCentre(down.terrain, spawn.col, spawn.row).x, boss.y - T.cellCentre(down.terrain, spawn.col, spawn.row).y) < 1e-9, 'at home');
+        assert.ok(Math.abs(boss.facing - Math.atan2(q.y - boss.y, q.x - boss.x)) < 1e-9);
+        assert.equal(down.progress.inventory.items[need], 2, 'the materials are spent');
+        const ev = W.drain(down).filter(e => e.type === 'revive');
+        assert.deepEqual(plain(ev.map(e => [e.kind, e.name, e.target])), [[kind, MON[kind].name, boss.id]]);
+        step(down, 0.02);
+        assert.equal(interactKit.target(down, q).offer.why, `${MON[kind].name}还在`, 'one at a time');
+        // It fights; down again, it drops its loot again and stays down in the save.
+        boss.hp = 1; down.monsters = [boss];
+        put(q, boss.x - 60, boss.y, 0); boss.rest = 99; boss.phase = 'patrol';
+        tap(down); step(down, 0.3);
+        assert.equal(boss.phase, 'dead');
+        assert.ok(down.entities.some(e => e.type === 'drop' && gameConfig.loot[MON[kind].loot].some(l => l.item === e.item && l.item !== 'gold')), 'its own loot');
+        assert.equal(down.progress.bosses[kind], true);
+        // Its corpse calls nothing; the altar can call it once more.
+        down.progress.inventory.items[need] = n;
+        before(q, stone, Math.PI / 2, 34); step(down, 0.02);
+        assert.equal(interactKit.target(down, q).offer.ready, true);
+        // A boss called back and left behind is gone on the next visit.
+        const later = W.create({ region, progress: saveKit.merge(saveKit.fresh(), down) });
+        assert.equal(later.monsters.some(m => m.kind === kind), false);
+    }
+    // An altar must stand on its letter and call a boss whose home is on the map.
+    const rows = ['1111111', '1@.A.G1', '1111111'];
+    assert.doesNotThrow(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [3, 1], boss: 'goblinChief' }] } }));
+    assert.throws(() => W.create({ map: { name: '祭坛', rows } }), /A at 3,1/);
+    assert.throws(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [3, 1], boss: 'wolfKing' }] } }), /no home here/);
+    assert.throws(() => W.create({ map: { name: '祭坛', rows, altars: [{ at: [2, 1], boss: 'goblinChief' }] } }), /needs A/);
 });
 
 test('a monster that gives up the chase and gets home is whole again', () => {

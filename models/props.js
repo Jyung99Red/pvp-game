@@ -1,5 +1,5 @@
 // Models of the world's props (design.md 6): the chest (a rig with a
-// hinged lid), the shapes of things lying on the ground, the roof colour of
+// hinged lid), a boss's altar, the shapes of things lying on the ground, the roof colour of
 // each building, and the colours of a portal's opening. Data only; the
 // renderer builds them.
 const propModels = Object.freeze({
@@ -23,6 +23,19 @@ const propModels = Object.freeze({
         // Fully open, the lid swings back this far.
         open: { lid: { rx: -1.9 } }
     },
+    // A boss's altar: a stone about 0.7 blocks high, a glowing mark on its
+    // top where the materials are laid. Faces +z.
+    altar: {
+        bones: [{ name: 'base', parent: null, at: [0, 0, 0] }],
+        parts: [
+            { bone: 'base', size: [0.9, 0.16, 0.9], at: [0, 0.08, 0], color: 'stoneDark' },
+            { bone: 'base', size: [0.6, 0.44, 0.6], at: [0, 0.38, 0], color: 'stone' },
+            { bone: 'base', size: [0.8, 0.12, 0.8], at: [0, 0.66, 0], color: 'stoneLight' },
+            { bone: 'base', size: [0.34, 0.02, 0.34], at: [0, 0.73, 0], color: 'portalGlow', kind: 'deco' },
+            { bone: 'base', size: [0.12, 0.2, 0.02], at: [0, 0.4, 0.31], color: 'portalGlow', kind: 'deco' }
+        ],
+        mounts: {}
+    },
     // Loot on the ground: a small box per item, in blocks.
     drops: {
         gold: { size: [0.2, 0.14, 0.2], color: 'gold' },
@@ -32,7 +45,8 @@ const propModels = Object.freeze({
         king_fang: { size: [0.08, 0.08, 0.26], color: 'fangItem' },
         iron_ore: { size: [0.2, 0.16, 0.18], color: 'ore' },
         crystal: { size: [0.1, 0.24, 0.1], color: 'crystal' },
-        herb: { size: [0.22, 0.08, 0.16], color: 'herbLight' }
+        herb: { size: [0.22, 0.08, 0.16], color: 'herbLight' },
+        spider_silk: { size: [0.2, 0.12, 0.2], color: 'silkItem' }
     },
     // Torches that stand in a map (core/props.js `lamp`), in blocks: boxes
     // ({ size, at, color }) and where the flame burns. `stand` from the

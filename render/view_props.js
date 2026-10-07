@@ -1,5 +1,5 @@
 // Props for the world view (render/world_view.js): portal openings,
-// chests, loot on the ground, burning thickets, the torches that stand in
+// chests, bosses' altars, loot on the ground, burning thickets, the torches that stand in
 // the map and a monster's range warning. Drawing only.
 const viewProps = (() => {
     // `stage`: what the world's parts share (render/world_view.js `build`);
@@ -18,6 +18,9 @@ const viewProps = (() => {
         });
         const chestRig = rigKit.build(propModels.chest), chests = new Map();
         for (const e of sim.entities) if (e.type === 'chest') chests.set(e.id, character(chestRig));
+        // Altars never move: placed once.
+        const altarRig = rigKit.build(propModels.altar);
+        for (const e of sim.entities) if (e.type === 'altar') character(altarRig).place(rigKit.solve(altarRig, {}, space.toBlocks(e.x, e.y, e.h), space.yawOf(e.facing)));
         const unitBox = new T.BoxGeometry(1, 1, 1), DROPS = 64, drops = new T.InstancedMesh(unitBox, new T.MeshLambertMaterial({ map: tx.grain }), DROPS);
         drops.castShadow = true; drops.frustumCulled = false; drops.count = 0;
         scene.add(drops);

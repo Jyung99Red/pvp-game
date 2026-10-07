@@ -202,7 +202,10 @@ const worldView = (() => {
         }));
         fighters.get(selfId)?.view.shunTorch();
         const dummyView = sim.dummy ? cast.character(sim.rigs.dummy) : null;
-        const monsters = new Map(sim.monsters.map(m => [m.id, { body: m, view: cast.character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null }]));
+        // A monster that comes into the world later (a boss called back at
+        // its altar) gets its body when it is first drawn.
+        const monsterView = m => ({ body: m, view: cast.character(sim.rigs.monsters[m.kind], () => false, monsterKit.look(m.kind)), warning: null });
+        const monsters = new Map(sim.monsters.map(m => [m.id, monsterView(m)]));
         // ---- props (render/view_props.js), the shade of sight
         // (render/view_sight.js), the effects (render/effects.js) ----
         const props = viewProps.create(stage, cast);
@@ -275,8 +278,8 @@ const worldView = (() => {
             }
             const focus = space.toBlocks(me.x, me.y, me.h);
             for (const m of current.monsters) {
+                if (!monsters.has(m.id)) monsters.set(m.id, monsterView(m));
                 const entry = monsters.get(m.id);
-                if (!entry) continue;
                 const shown = shownOf(m), rig = current.rigs.monsters[m.kind], root = space.toBlocks(shown.x, shown.y, shown.h);
                 // A fallen monster lies a while, then sinks into the ground.
                 const sink = m.phase === 'dead' ? Math.max(0, m.t - C.monsters.corpseSeconds) * 0.5 : 0;

@@ -1,7 +1,7 @@
 // Procedural combat sounds (Web Audio, no asset files), carried over from
 // the 2D version, plus monsters noticing, enraging and falling, the end of
 // a fight, and the world's: loot picked up, a chest opening, a rest, a
-// building entered, a boss down, a potion drunk or spilt, a torch, fire. Presentation only: the simulation never waits on or reads
+// building entered, a boss down or called back, a potion drunk or spilt, a torch, fire. Presentation only: the simulation never waits on or reads
 // anything here. Mobile browsers keep audio locked until the first touch,
 // so the context is created and resumed on the first pointer press.
 const sfx = (() => {
@@ -78,6 +78,8 @@ const sfx = (() => {
         burn: () => { hiss(1500, 600, 0.5, 0.05, 0.5); hiss(300, 200, 0.6, 0.04, 1.2); },
         // Stone cracking (ore, crystal) or leaves rustling (a herb).
         gather: kind => kind === 'herb' ? hiss(2400, 1400, 0.16, 0.04, 0.5) : (tone('square', 220, 140, 0.08, 0.05), hiss(900, 400, 0.18, 0.05, 0.9), kind === 'crystal' && tone('sine', 1760, 1980, 0.18, 0.03, 0.05)),
+        // A boss called back at its altar: a low swell and a falling call.
+        revive: () => { hiss(200, 900, 0.6, 0.05, 0.7); tone('sawtooth', 70, 110, 0.7, 0.05); tone('sine', 392, 262, 0.5, 0.05, 0.45); },
         boss: () => { tone('sine', 523, 523, 0.18, 0.06); tone('sine', 659, 659, 0.18, 0.06, 0.16); tone('sine', 784, 784, 0.18, 0.06, 0.32); tone('sine', 1047, 1047, 0.5, 0.06, 0.48); }
     };
     // Simulation events carry who they belong to (`side`); `selfId` is the
@@ -101,6 +103,7 @@ const sfx = (() => {
         else if (e.type === 'rest' && own) sounds.rest();
         else if (e.type === 'open' && own) sounds.door();
         else if (e.type === 'boss_defeated') sounds.boss();
+        else if (e.type === 'revive') sounds.revive();
         else if (e.type === 'drink' && own) sounds.drink();
         else if (e.type === 'drink_spilled' && own) sounds.spill();
         else if (e.type === 'potion_empty' && own) sounds.empty();
