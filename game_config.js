@@ -423,10 +423,10 @@ const gameConfig = (() => {
 
         // 5. Fixed oblique camera (design.md 1). yaw 0 keeps
         // screen-up on -z; pitch is the angle down from the horizon;
-        // distance and lookHeight are blocks (distance a little further
-        // out, user 2026-10-02); fov is vertical, in degrees. zoom: the
+        // distance and lookHeight are blocks (distance what the far setting
+        // gave before, user 2026-10-07); fov is vertical, in degrees. zoom: the
         // distance multiplier each camera setting of the menu picks.
-        camera: { yaw: 0, pitch: 0.96, distance: 11.5, fov: 34, lookHeight: 0.8, zoom: { near: 0.85, mid: 1, far: 1.15 } },
+        camera: { yaw: 0, pitch: 0.96, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 } },
 
         // 6. Rendering cost, by the menu's picture quality (user,
         // 2026-10-06). Each quality: pixelRatio, the most device pixels
