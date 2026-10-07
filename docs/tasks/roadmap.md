@@ -156,9 +156,9 @@
   | 文件（登记在 `world_view.js` 前面） | 装什么 |
   |---|---|
   | `render/view_shaders.js` | 改写 three.js 着色器文字（太阳和火把软影子的取样、光照探针按顶点算）和人物材质的 `embodied`（隐形、褪色） |
-  | `render/view_light.js` | 光照和时刻：按钟点混合、天光、太阳、火把的光、会动的光、洞口的光；每帧的 `frame`（反弹光、水面天色、火把的光放哪、方块光的光源） |
+  | `render/view_light.js` | 光照和时刻：按钟点混合、天光、太阳、火把的光、会动的光（地图里的火把也是）、洞口的光；每帧的 `frame`（反弹光、水面天色、火把的光放哪、方块光的光源） |
   | `render/view_bodies.js` | `character()`：主角、对手、怪物、木桩、宝箱各是一个蒙皮网格 |
-  | `render/view_props.js` | 传送门、宝箱、掉落物、火焰、怪物红区 |
+  | `render/view_props.js` | 传送门、宝箱、掉落物、火焰、地图里的火把（模型在 `render/lamp_view.js`）、怪物红区 |
   | `render/view_sight.js` | 视野遮罩和暗部 |
   | `render/world_view.js` | `create()`、组装、地图外的地面和雾、镜头和遮挡透明、每帧的 `render`、`dispose` |
 
