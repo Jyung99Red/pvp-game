@@ -438,7 +438,8 @@ const gameConfig = (() => {
         // off, which changed the picture's tone: user, 2026-10-06);
         // torchShadow, the torch's (it always casts them:
         // they keep its light from passing walls; user, 2026-10-06) and
-        // torchTaps, the samples its soft edge takes; bounce, the light
+        // torchTaps, the samples its soft edge takes (high 8, down from 12:
+        // user, 2026-10-07); bounce, the light
         // probes' colour on or off (worked out at each corner of a face:
         // at each pixel looked the same and cost far more, so that choice
         // is gone; the block light is always on: user, 2026-10-06).
@@ -454,7 +455,7 @@ const gameConfig = (() => {
         graphics: {
             quality: {
                 saver: { pixelRatio: 1, sunShadow: 512, torchShadow: 128, torchTaps: 8, bounce: true },
-                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 12, bounce: true },
+                high: { pixelRatio: 2, sunShadow: 1024, torchShadow: 256, torchTaps: 8, bounce: true },
                 ultra: { pixelRatio: 3, sunShadow: 2048, torchShadow: 512, torchTaps: 16, bounce: true }
             },
             choices: {

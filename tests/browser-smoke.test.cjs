@@ -565,7 +565,7 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
             };
         });
         const high = await state();
-        assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [12], shown: undefined }, 'high: twice the pixels, the probes by corner');
+        assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [8], shown: undefined }, 'high: twice the pixels, the probes by corner');
         // The menu: settings, then the quality key round to 自定义, which starts from high.
         await page.evaluate(() => window.game.menu.open());
         await page.click('[data-menu-act="settings"]');
@@ -573,7 +573,7 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
             await page.click('[data-setting="quality"]');
             assert.equal(await page.textContent('[data-setting="quality"] b'), want);
         }
-        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '12 点', '开']);
+        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '8 点', '开']);
         const slide = (key, index) => page.evaluate(([key, index]) => {
             const input = document.querySelector(`[data-custom="${key}"]`);
             input.value = String(index);
