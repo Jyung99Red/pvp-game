@@ -235,7 +235,7 @@ const gameConfig = (() => {
         // `revive`: the materials its grave takes to call it back for
         // another fight (user, 2026-10-07; design.md 5): it rises out of the
         // ground at home over riseSeconds, and cannot be struck until it is
-        // up.
+        // up; it is back till beaten again (user, 2026-10-08).
         monsters: {
             corpseSeconds: 2.5, riseSeconds: 1.2, approachSeconds: 0.8, turnFirst: Math.PI / 4, reactSeconds: 0.35, packStandOff: 1.5, returnHeal: 0.3,
             goblin: {

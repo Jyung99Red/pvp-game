@@ -544,6 +544,7 @@ test('a boss\'s grave: none while it stands; it shows where the boss stood once 
         press(down, 'interact'); step(down, H + 0.02); release(down, 'interact');
         assert.equal(stone.state, 'calling');
         assert.equal(down.progress.inventory.items[need], 2, 'the materials are spent');
+        assert.equal(down.progress.revived[kind], true, 'it is back for good');
         assert.deepEqual(plain(W.drain(down).filter(e => e.type === 'grave_call').map(e => e.kind)), [kind]);
         step(down, 0.02);
         assert.equal(q.focus, null);
@@ -573,23 +574,36 @@ test('a boss\'s grave: none while it stands; it shows where the boss stood once 
         tap(down); step(down, 0.3);
         assert.equal(back.phase, 'dead');
         assert.ok(down.entities.some(e => e.type === 'drop' && gameConfig.loot[MON[kind].loot].some(l => l.item === e.item && l.item !== 'gold')), 'its own loot');
-        assert.equal(down.progress.bosses[kind], true);
+        assert.deepEqual([down.progress.bosses[kind], down.progress.revived[kind]], [true, undefined]);
         step(down, G.graveAfter + 0.1);
         assert.equal(stone.state, 'ready', 'its grave is back');
-        // A boss called back and left behind is gone on the next visit.
+        // Called back is a reset (user, 2026-10-08): left and come back to,
+        // it stands at home, whole, with no grave, and what waits on it
+        // stays open; beaten again, it is down again in the save.
         stone.state = 'ready'; down.progress.inventory.items[need] = n;
         before(q, stone, Math.PI / 2, 40); step(down, 0.02);
         press(down, 'interact'); step(down, H + G.graveCall + 0.1); release(down, 'interact');
         assert.ok(down.monsters.some(m => m.kind === kind && m.phase === 'rise'));
-        const later = W.create({ region, progress: saveKit.merge(saveKit.fresh(), down) });
-        assert.equal(later.monsters.some(m => m.kind === kind), false);
-        assert.equal(later.entities.find(e => e.type === 'grave').state, 'ready');
+        const later = W.create({ region, progress: saveKit.merge(saveKit.fresh(), down) }), again = later.monsters.find(m => m.kind === kind);
+        assert.ok(again && again.phase === 'patrol' && again.hp === again.maxHp, `${kind} still there, whole`);
+        assert.deepEqual([again.x, again.y], [home.x, home.y]);
+        assert.equal(later.entities.find(e => e.type === 'grave').state, 'hidden');
+        assert.equal(later.progress.bosses[kind], true);
+        again.hp = 1; again.rest = 99; later.monsters = [again];
+        put(later.player, again.x - 60, again.y, 0);
+        tap(later); step(later, 0.3);
+        assert.equal(again.phase, 'dead');
+        const last = saveKit.merge(saveKit.fresh(), later);
+        assert.deepEqual(plain(last.revived), {});
+        const gone = W.create({ region, progress: last });
+        assert.equal(gone.monsters.some(m => m.kind === kind), false);
+        assert.equal(gone.entities.find(e => e.type === 'grave').state, 'ready');
     }
     // Only bosses have graves.
     assert.equal(W.create({ region: 'cave' }).entities.some(e => e.type === 'grave'), false);
 });
 
-test('a grave left while it glows keeps the call: on the way back it glows again and the boss rises, the materials spent once', () => {
+test('a boss called back is back at once: a region left while its grave glows has it at home on the way back, the materials spent once (user, 2026-10-08)', () => {
     const H = gameConfig.interact.graveHold, G = gameConfig.props;
     const kind = 'goblinChief', [[need, n]] = Object.entries(MON[kind].revive);
     const save = saveKit.fresh();
@@ -602,19 +616,13 @@ test('a grave left while it glows keeps the call: on the way back it glows again
     // Left half way (a portal, the title screen, the page shut): what is saved then.
     const kept = saveKit.merge(save, sim);
     assert.equal(kept.inventory.items[need], 1, 'the materials are spent');
-    assert.deepEqual(plain(kept.called), { [kind]: true });
-    const again = W.create({ region: 'field', progress: kept }), stone = again.entities.find(e => e.type === 'grave');
-    assert.deepEqual([stone.state, stone.solid], ['calling', true]);
-    assert.equal(again.monsters.some(m => m.kind === kind), false);
-    step(again, G.graveCall - 0.1);
-    assert.equal(again.monsters.some(m => m.kind === kind), false, 'glowing anew from the start');
-    step(again, 0.15);
-    assert.equal(again.monsters.find(m => m.kind === kind)?.phase, 'rise');
+    assert.deepEqual(plain(kept.revived), { [kind]: true });
+    const again = W.create({ region: 'field', progress: kept }), boss = again.monsters.find(m => m.kind === kind), stone = again.entities.find(e => e.type === 'grave');
+    assert.ok(boss && boss.phase === 'patrol' && boss.hp === boss.maxHp, 'at home, whole');
+    assert.deepEqual([stone.state, stone.solid], ['hidden', false]);
+    step(again, G.graveCall + 1);
+    assert.equal(again.monsters.filter(m => m.kind === kind).length, 1, 'one of it');
     assert.equal(again.progress.inventory.items[need], 1, 'nothing spent twice');
-    // Up, the call is over: left now, the boss is gone and its grave waits (core/props.js).
-    const after = saveKit.merge(kept, again);
-    assert.deepEqual(plain(after.called), {});
-    assert.equal(W.create({ region: 'field', progress: after }).entities.find(e => e.type === 'grave').state, 'ready');
 });
 
 test('a monster that gives up the chase and gets home is whole again', () => {
@@ -637,7 +645,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     assert.equal(saveKit.exists(store), false, 'nothing written yet');
     const fresh = plain(saveKit.load(store));
     assert.deepEqual(fresh, plain(saveKit.fresh()));
-    assert.deepEqual(fresh, { v: 2, bosses: {}, called: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {}, clock: 0, gathered: {} }, 'a new game owns and wears the starter gear');
+    assert.deepEqual(fresh, { v: 2, bosses: {}, revived: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {}, clock: 0, gathered: {} }, 'a new game owns and wears the starter gear');
     const sim = W.create({ region: 'field' });
     sim.progress.bosses.goblinChief = true;
     sim.progress.inventory.gold = 12; sim.progress.inventory.items.goblin_ear = 3; sim.progress.inventory.items.iron_armor = 1;
@@ -646,7 +654,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     assert.equal(saveKit.write(store, saveKit.merge(saveKit.fresh(), sim)), true);
     assert.equal(saveKit.exists(store), true);
     const back = saveKit.load(store), items = { ...START, goblin_ear: 3, iron_armor: 1 };
-    assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, called: {}, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] }, clock: 0, gathered: {} });
+    assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, revived: {}, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] }, clock: 0, gathered: {} });
     // A region made from the save has the edit back, carries what was carried and wears what was worn.
     const again = W.create({ region: 'field', progress: back });
     assert.equal(T.levelAt(again.terrain, 20, 20), 2);
@@ -655,12 +663,12 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     // Junk is dropped, and anything unreadable starts fresh. A version 1
     // save (M5, before gear) gets the starter gear.
     const junk = {
-        v: 1, bosses: { goblinChief: true, goblin: true, nobody: true }, called: { goblinChief: true, wolfKing: true, goblin: true, nobody: 1 }, chests: { 'field/chest-53-5': true, 'mars/x': true },
+        v: 1, bosses: { goblinChief: true, goblin: true, nobody: true }, revived: { goblinChief: true, wolfKing: true, goblin: true, nobody: 1 }, chests: { 'field/chest-53-5': true, 'mars/x': true },
         inventory: { gold: -5, items: { goblin_ear: 2.5, wolf_pelt: 3, junk: 9, gold: 4, potion: 99 } },
         edits: { arena: [[1, 1, 'stone', 1]], field: [[1, 1, 'stone', 1], 'x', [1, 2, 'lava', 1]], mars: [[1, 1, 'stone', 1]] }
     };
     assert.deepEqual(plain(saveKit.clean(junk)), {
-        v: 2, bosses: { goblinChief: true }, called: { goblinChief: true }, chests: { 'field/chest-53-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
+        v: 2, bosses: { goblinChief: true }, revived: { goblinChief: true }, chests: { 'field/chest-53-5': true }, inventory: { gold: 0, items: { ...START, wolf_pelt: 3, potion: 5 } },
         loadout: WORN, edits: { field: [[1, 1, 'stone', 1]] }, clock: 0, gathered: {}
     });
     // Gear worn but not owned, or in the wrong slot, falls back to the starter piece; the main hand is never empty.

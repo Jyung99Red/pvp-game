@@ -12,8 +12,8 @@
 // the path. How far a move reaches, and the warning on the ground, are swept
 // out of its key poses once (`reach`).
 // Bosses (design.md 5) are the same skeletons made bigger, with a
-// look and moves of their own; a boss down stays down (the save), and the
-// portals and chests waiting on it open. A fallen monster drops its loot
+// look and moves of their own; a boss down stays down (the save) till its
+// grave calls it back, and the portals and chests waiting on it open. A fallen monster drops its loot
 // (core/props.js). One that gives up the chase and gets home is whole
 // again.
 //
@@ -197,7 +197,9 @@ const monsterKit = (() => {
         const S = configOf(m.kind);
         if (S.loot) propKit.drop(sim, S.loot, m.x, m.y);
         if (m.boss) {
-            propKit.progressOf(sim).bosses[m.kind] = true;
+            const bag = propKit.progressOf(sim);
+            bag.bosses[m.kind] = true;
+            delete bag.revived?.[m.kind];
             emit(sim, m, 'boss_defeated', { name: S.name });
         }
     }

@@ -80,13 +80,13 @@ const worldSim = (() => {
         const saved = progress || {};
         // clock: seconds played (outside duels), which grows resources back.
         const world = {
-            bosses: { ...saved.bosses }, called: { ...saved.called }, chests: { ...saved.chests },
+            bosses: { ...saved.bosses }, revived: { ...saved.revived }, chests: { ...saved.chests },
             inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }, loadout: { ...loadout },
             clock: saved.clock || 0, gathered: { ...saved.gathered }
         };
         const dummy = dummyKit.create(terrain, map.dummyFacing ?? Math.PI);
-        // A boss once down stays down.
-        const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i)).filter(m => !(m.boss && world.bosses[m.kind]));
+        // A boss once down stays down, till its grave calls it back.
+        const monsters = terrain.monsters.map((spawn, i) => monsterKit.create(terrain, spawn, i)).filter(m => !(m.boss && world.bosses[m.kind] && !world.revived[m.kind]));
         const kinds = [...new Set(terrain.monsters.map(m => m.kind))];
         return aliases({
             time: 0, tick: 0, terrain, map: map.name || '', region, duel, seed: seed >>> 0, serial: 0, dayFrom: duel ? dayFrom : 0,

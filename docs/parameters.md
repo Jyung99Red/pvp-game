@@ -241,7 +241,7 @@
 | `props.chestRadius` | 14 | 宝箱是实心的 |
 | `props.graveRadius` | 14 | 首领的坟墓，出现时是实心的 |
 | `props.graveAfter` | 5 | 首领倒下后多久出现坟墓（尸体 2.5 秒后开始下沉，这时已经沉没） |
-| `props.graveCall` | 3 | 复活时坟墓发光、冒粒子多久，然后首领从地下升起 |
+| `props.graveCall` | 3 | 复活时坟墓一边发光、冒粒子一边沉进地里要多久，沉没后首领从地下升起 |
 | `props.lampRadius` | 5 | 立着的火炬的杆子是实心的 |
 | `props.arriveDistance` | 64 | 过传送门后站在门前多远 |
 | `props.burnSpread` / `burnSeconds` | 0.35 / 1.4 | 枯木丛点着后多久烧到相邻的、多久烧完 |

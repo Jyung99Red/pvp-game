@@ -69,9 +69,13 @@ const viewProps = (() => {
                 if (!view) continue;
                 view.show(e.state !== 'hidden');
                 if (e.state === 'hidden') continue;
-                const up = e.state === 'ready' ? Math.min(1, e.t / RISES) : 1, shake = e.state === 'calling' ? 0.02 * Math.min(1, e.t) * Math.sin(clock * 47) : 0;
+                // It comes up out of the ground as it shows; called, it glows
+                // and sinks back over graveCall seconds, and the boss rises
+                // where it was (user, 2026-10-08).
+                const under = e.state === 'ready' ? 1 - Math.min(1, e.t / RISES) : Math.min(1, e.t / C.props.graveCall);
+                const shake = e.state === 'calling' ? 0.02 * Math.min(1, e.t) * Math.sin(clock * 47) : 0;
                 const [x, , z] = space.toBlocks(e.x, e.y, e.h);
-                view.place(rigKit.solve(graveRig, {}, [x + shake, -1.2 * (1 - up) * (1 - up), z], space.yawOf(e.facing)));
+                view.place(rigKit.solve(graveRig, {}, [x + shake, -1.2 * under * under, z], space.yawOf(e.facing)));
                 for (const m of view.materials) m.emissive.set(P.portalGlow).multiplyScalar(e.state === 'calling' ? 0.25 * Math.min(1, e.t / C.props.graveCall) : 0);
             }
             let n = 0;
