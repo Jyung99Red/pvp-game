@@ -423,7 +423,9 @@ const gameConfig = (() => {
         // 5. Oblique camera (design.md 1). yaw is where it stands at
         // first, 0 due south (screen-up on -z); a drag across the picture
         // takes it round the fighter from there (input.turn; user,
-        // 2026-10-08). pitch is the angle down from the horizon;
+        // 2026-10-08). pitch is the angle down from the horizon (for now a
+        // slider on the screen sets it by hand, to find the one to keep:
+        // ui/app.js, temporary);
         // distance and lookHeight are blocks (distance what the far setting
         // gave before, user 2026-10-07); fov is vertical, in degrees. zoom: the
         // distance multiplier each camera setting of the menu picks.
@@ -442,7 +444,7 @@ const gameConfig = (() => {
         // stands, a share of the screen's width (the name and the keys are
         // on the left).
         camera: {
-            yaw: 0, pitch: 0.8, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 },
+            yaw: 0, pitch: 0.96, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 },
             title: {
                 seconds: 7, fade: 0.7, shift: 0.16, fov: 45,
                 things: { building: [5, 1.4], portal: [3.5, 1.5], chest: [1.8, 0.5], stand: [2, 1.1], dummy: [2.4, 1] },

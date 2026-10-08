@@ -2,6 +2,8 @@
     <canvas class="game-canvas" aria-label="游戏画面"></canvas>
     <div class="game-fallback" data-fallback role="alert" hidden></div>
     <div class="hud-perf" data-perf aria-live="off"></div>
+    <!-- Temporary (user, 2026-10-08): the camera's angle down set by hand, until the one to keep is found (ui/app.js). -->
+    <label class="hud-tilt" data-tilt><span data-tilt-text></span><input type="range" data-tilt-range min="0.5" max="1.4" step="0.01" aria-label="镜头俯角"></label>
     <div class="hud-mobs" data-hud="mobs" aria-hidden="true"></div>
     <div class="hud-floats" data-hud="floats" aria-hidden="true"></div>
     <div class="hud-banner" data-hud="banner" aria-live="polite" hidden></div>

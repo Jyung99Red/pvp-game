@@ -35,6 +35,15 @@ html, body {
     background: var(--hud); color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .hud-perf:empty { display: none; }
+/* Temporary: the slider for the camera's angle down, over the frame-rate
+   line, between the stick's zone and the right-hand keys. */
+.hud-tilt {
+    position: absolute; z-index: 4; display: grid; justify-items: center; gap: 1px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); left: 50%; transform: translateX(-50%);
+    width: min(200px, 22vw); padding: 2px 8px 0; border-radius: 6px; background: var(--hud);
+    font-size: 11px; line-height: 1.4; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.hud-tilt input { display: block; width: 100%; height: 22px; margin: 0; accent-color: var(--accent); }
 
 /* Top HUD: the clock and own bars on the left, the running combo in the
    middle, the target on the right. Never takes touches. */
@@ -516,4 +525,4 @@ img.item-icon { object-fit: contain; vertical-align: middle; }
 .title-settings[hidden] { display: none; }
 .game.at-title .hud-top, .game.at-title .hud-menu, .game.at-title .ctl, .game.at-title .stick, .game.at-title .stick-zone,
 .game.at-title .hud-mobs, .game.at-title .hud-floats, .game.at-title .hud-banner, .game.at-title .hud-region, .game.at-title .hud-tag,
-.game.at-title .hud-hold, .game.at-title .hud-toasts, .game.at-title .hud-arrow { visibility: hidden; }
+.game.at-title .hud-hold, .game.at-title .hud-toasts, .game.at-title .hud-arrow, .game.at-title .hud-tilt { visibility: hidden; }

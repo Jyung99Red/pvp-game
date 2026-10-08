@@ -127,6 +127,19 @@ const app = (() => {
             press: button => blocked() ? false : act({ type: 'press', button }),
             release: button => act({ type: 'release', button })
         });
+        // Temporary (user, 2026-10-08): the camera's angle down, set by hand
+        // on a slider over the picture to find the one to keep; not saved,
+        // and to be taken out with its mark-up (partials/game.html) and
+        // style once camera.pitch is settled.
+        let pitch = gameConfig.camera.pitch;
+        {
+            const range = root.querySelector('[data-tilt-range]'), text = root.querySelector('[data-tilt-text]');
+            const show = () => { text.textContent = `俯角 ${Math.round(pitch * 180 / Math.PI)}° · ${pitch.toFixed(2)}`; };
+            range.value = String(pitch); show();
+            range.addEventListener('input', () => { pitch = Number(range.value); show(); });
+            // (Let go, it gives the keyboard back to the game's own keys.)
+            range.addEventListener('change', () => range.blur());
+        }
         // The guard, offhand and interact keys are the HUD's (ui/hud.js):
         // they show what guards, what is carried and what the key would do.
         const display = hud.attach(root);
@@ -382,7 +395,7 @@ const app = (() => {
             display.events(events, clock);
             display.update(w, view, clock, bodies, { self: me, duel: s ? { countdown: s.countdown, phase: s.phase, waiting: s.waiting } : null });
             // Portrait is covered by the rotate hint: skip drawing to save power.
-            if (view && !portrait.matches) view.render(w, Math.min(seconds, simLoop.MAX_FRAME), { bodies, events, tour: title.isOpen(), yaw: input.yaw() });
+            if (view && !portrait.matches) view.render(w, Math.min(seconds, simLoop.MAX_FRAME), { bodies, events, tour: title.isOpen(), yaw: input.yaw(), pitch });
             if (title.isOpen()) title.dim(view?.tourFade || 0);
             // The fight is decided: let it play out a moment, then the result.
             if (duel) {

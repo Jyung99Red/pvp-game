@@ -92,9 +92,10 @@ const worldView = (() => {
         // middle; `tourFade` is how dark the picture is to be, for the title
         // screen to draw. `run` counts the tours begun.
         // `yaw`: where the camera has been turned to round the fighter
-        // (ui/input.js; 0 due south of it).
+        // (ui/input.js; 0 due south of it). `pitch`: its angle down, when
+        // it is not the configured one (the temporary slider, ui/app.js).
         const tour = { on: false, t: 0, fade: 0, run: 0 };
-        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false, yaw = C.camera.yaw } = {}) {
+        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false, yaw = C.camera.yaw, pitch = C.camera.pitch } = {}) {
             if (touring !== tour.on) {
                 tour.on = touring; tour.t = 0;
                 camera.fov = touring ? C.camera.title.fov : C.camera.fov;
@@ -108,7 +109,7 @@ const worldView = (() => {
             let shot = null;
             if (touring) { tour.t += frameSeconds; shot = { ...tourAt(tour.t), run: tour.run }; }
             tour.fade = shot ? shot.fade : 0;
-            world.render(current, frameSeconds, bodies, events, shot, yaw);
+            world.render(current, frameSeconds, bodies, events, shot, yaw, pitch);
             renderer.render(world.scene, camera);
         }
         function resize(width, height) {
@@ -277,16 +278,16 @@ const worldView = (() => {
             });
         }
         // The camera `yaw` round the point (x, y, z), blocks (0: due south
-        // of it). Returns how far beyond that point the middle of the
+        // of it), looking `pitch` down. Returns how far beyond that point the middle of the
         // ground on screen lies (blocks, along the ground): the screen
         // shows further beyond the fighter than short of it.
-        function placeCamera(x, y, z, yaw) {
-            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(cam.pitch);
+        function placeCamera(x, y, z, yaw, pitch) {
+            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
-            camera.position.set(tx0 + Math.sin(yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(yaw) * cp * d);
+            camera.position.set(tx0 + Math.sin(yaw) * cp * d, ty0 + Math.sin(pitch) * d, tz0 + Math.cos(yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
-            const half = cam.fov * Math.PI / 360, height = cam.lookHeight + Math.sin(cam.pitch) * d;
-            return (height / Math.tan(Math.max(0.1, cam.pitch - half)) + height / Math.tan(cam.pitch + half)) / 2 - cp * d;
+            const half = cam.fov * Math.PI / 360, height = cam.lookHeight + Math.sin(pitch) * d;
+            return (height / Math.tan(Math.max(0.1, pitch - half)) + height / Math.tan(pitch + half)) / 2 - cp * d;
         }
         // ---- the title screen's camera (camera.title): what it may look
         // at, the region's things (where each stands, blocks; its size and
@@ -347,9 +348,9 @@ const worldView = (() => {
         // shot: the title screen's camera ({ n, index, u, run }: worldView
         // `tourAt`), or null. Its picture is of the thing it looks at: the
         // lights, the sun's shadows round that; no shade of sight, no cut
-        // and no crowns fading for the fighter. `yaw`: the fighter's own
-        // camera, where it has been turned to.
-        function render(current, frameSeconds, bodies, events, shot = null, yaw = C.camera.yaw) {
+        // and no crowns fading for the fighter. `yaw`, `pitch`: the fighter's own
+        // camera, where it has been turned to and its angle down.
+        function render(current, frameSeconds, bodies, events, shot = null, yaw = C.camera.yaw, pitch = C.camera.pitch) {
             const dt = Math.max(1e-3, frameSeconds);
             clock += frameSeconds;
             const shownOf = body => bodies?.get(body.id) || body;
@@ -427,7 +428,7 @@ const worldView = (() => {
             }
             // The sun's shadows lie round the middle of the ground on
             // screen, so they reach its far corners as they do its near ones.
-            const ahead = placeCamera(at[0], at[1], at[2], yaw);
+            const ahead = placeCamera(at[0], at[1], at[2], yaw, pitch);
             light.placeSun(at[0] - Math.sin(yaw) * ahead, at[1], at[2] - Math.cos(yaw) * ahead);
             // Cut the blocks between the camera and this fighter's chest,
             // while some do hide the fighter; the hole eases open and shut.
