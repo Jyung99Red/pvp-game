@@ -69,8 +69,15 @@ This file only changes when project setup changes.
 - What is drawn is what is judged: poses that change a body's volume are a
   pure function of simulation state (`core/player_anim.js`); `render/` adds
   only drawn-only motion (breathing, leaning).
-- Done = `node --test "tests/*.test.cjs"` passes. If a change alters what a test
-  asserts, update the test and say why. `tests/browser-smoke.test.cjs` runs
+- Done = committed and pushed straight to `main` (user, 2026-10-08): no
+  pull request, no asking first. A session given a branch of its own pushes
+  that branch as well.
+- Tests (user, 2026-10-08): only a big change (a new system, or a wide
+  change to the simulation, the view or the UI) runs
+  `node --test "tests/*.test.cjs"` and must pass before it is pushed; a
+  small one (numbers, text, colours, docs, a local fix) is pushed without.
+  If a change alters what a test asserts, update the test and say why.
+  `tests/browser-smoke.test.cjs` runs
   when Playwright is installed and skips otherwise; on Windows, install
   `playwright-core` anywhere and set `PLAYWRIGHT_MODULE` to it and
   `PLAYWRIGHT_CHANNEL=chrome`.
