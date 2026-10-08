@@ -443,35 +443,19 @@ test('the world: the title screen, the base, through the north gate by touch, a 
         assert.deepEqual([fight.seen, fight.behind, fight.again], [true, { seen: false, warning: false }, true], 'a monster behind the player is not drawn');
         await page.waitForFunction(() => document.querySelector('[data-hud="target-name"]').textContent === '哥布林', null, { timeout: 10000 });
         await shot(page, 'field-windup');
-        // A wall in front of the player is cut open round them: the pixel at
-        // their chest is the shirt with the cut, the stone without it.
+        // A wall in front of the player is cut open round them (how the
+        // picture then looks is for the eye, on the phone).
         const cut = await page.evaluate(() => {
             const g = window.game, s = g.sim, p = s.player;
             s.monsters = s.monsters.filter(m => m.boss);
-            // (Just north of the chief's yard's south wall, three blocks high.)
+            // (Just north of the chief's yard's south wall, three blocks
+            // high. The cut eases open while the wall hides the player.)
             Object.assign(p, { x: 43.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
-            const gl = g.view.renderer.getContext(), N = 8, px = new Uint8Array(N * N * 4), ground = g.view.ground;
-            // Share of bluish pixels in a small square at the back, low
-            // enough that the head does not come over it from a steep
-            // camera (the cut is a dither; it eases open while the wall
-            // hides the player, so a second is drawn).
-            const sample = on => {
-                ground.cut.on.value = on;
-                g.view.render(s, 1);
-                const at = g.view.project([p.x / 40, 0.9, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
-                gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                let blue = 0;
-                for (let i = 0; i < N * N; i++) if (px[i * 4 + 2] > px[i * 4] + 10 && px[i * 4 + 2] > px[i * 4 + 1]) blue++;
-                return blue / (N * N);
-            };
-            const off = sample(0), on = sample(1);
-            ground.cut.on.value = 1;
-            return { off, on, open: ground.cut.open.value };
+            g.view.render(s, 1); g.view.render(s, 1);
+            return { open: g.view.ground.cut.open.value };
         });
         await shot(page, 'cutaway');
         assert.equal(cut.open, 1, 'the wall hides the player: the cut is open');
-        assert.ok(cut.on > 0.5, `the blue shirt shows through the wall: ${JSON.stringify(cut)}`);
-        assert.ok(cut.off < 0.1, `without the cut, the stone hides it: ${JSON.stringify(cut)}`);
         // Falling: the trip ends; home to the base, whole.
         await page.evaluate(() => {
             const g = window.game, s = g.sim, m = s.monsters[0], p = s.player;
@@ -541,7 +525,7 @@ test('the world: the title screen, the base, through the north gate by touch, a 
     } finally { await context.close(); }
 });
 
-test('items: the smithy makes iron armor, the bag puts it on (the model changes), the shop sells a potion that heals; a torch lights the dark cave', { timeout: 300000 }, async t => {
+test('items: the smithy makes iron armor, the bag puts it on (the model changes), the shop sells a potion that heals', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390, '');
     try {
@@ -606,174 +590,6 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         assert.deepEqual(await page.evaluate(() => [window.game.menu.isOpen(), window.game.panel, document.querySelector('[data-panel-title]').textContent]), [false, 'pause', '暂停']);
         assert.equal(await ticks(), 0, 'paused, it stands still');
         await page.click('[data-action="resume"]');
-        // The torch in the dark cave: the ground round the player is lit only while it burns.
-        await page.evaluate(() => { const g = window.game; g.sim.progress.loadout.offhand = 'torch'; g.load('cave'); });
-        const light = await page.evaluate(() => {
-            const g = window.game, s = g.sim, p = s.player, gl = g.view.renderer.getContext(), N = 16, px = new Uint8Array(N * N * 4);
-            s.monsters = [];
-            // Out in the hall, away from the torches that stand by the gate,
-            // and far enough north of the pillar at (25, 29) that it hides
-            // none of the floor sampled from the camera.
-            Object.assign(p, terrainKit.cellCentre(s.terrain, 24, 25));
-            // The ground sampled lies east of the player: facing it, so it is in sight (not shaded).
-            p.facing = 0;
-            const sample = (east = 1.2, south = 0) => {
-                g.view.render(s, 0);
-                const at = g.view.project([p.x / 40 + east, 0, p.y / 40 + south]), k = gl.drawingBufferWidth / innerWidth;
-                gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                let sum = 0;
-                for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
-                return sum / (N * N * 3);
-            };
-            const dark = sample();
-            worldSim.command(s, { type: 'press', button: 'offhand' }); worldSim.command(s, { type: 'release', button: 'offhand' });
-            g.run(0.02);
-            // Behind the bearer (out of its sight on both hands alike): the
-            // torch is in its left hand, so its own shadow falls to its right.
-            const out = { dark, lit: sample(), on: p.lit, right: sample(-1.3, 1.3), left: sample(-1.3, -1.3) };
-            // Open floor two and three blocks from the light, with nothing
-            // between: as bright with the torch's shadows as without them.
-            const torch = g.view.scene.children.find(o => o.isPointLight), [lx, lz] = [torch.position.x - p.x / 40, torch.position.z - p.y / 40];
-            const open = () => [sample(lx + 2.25, lz), sample(lx + 3, lz), sample(lx, lz - 2.25), sample(lx, lz - 3)];
-            out.shadowed = open();
-            torch.castShadow = false; out.bare = open(); torch.castShadow = true;
-            return out;
-        });
-        await shot(page, 'cave');
-        assert.ok(light.on && light.lit > light.dark * 2 && light.dark < 40, `the torch lights the cave floor: ${JSON.stringify(light)}`);
-        assert.ok(light.right < light.left * 0.8, `the bearer's own body shades the ground beyond it from the flame (user, 2026-10-07): ${JSON.stringify(light)}`);
-        light.shadowed.forEach((v, i) => assert.ok(v > light.bare[i] * 0.97, `the open floor does not shade itself in the torch's light (no brighter square about the bearer): ${light.shadowed} with its shadows, ${light.bare} without`));
-        assert.deepEqual(errors, []);
-    } finally { await context.close(); }
-});
-
-test('the time of day (design.md 2.5): night is darker and bluer than noon, the sun moves; the torch casts shadows, the power saver too, its light kept out of monsters', { timeout: 300000 }, async t => {
-    if (skip) { t.skip(skip); return; }
-    const look = async query => {
-        const { context, page, errors } = await openPhone(844, 390, query);
-        try {
-            const info = await page.evaluate(() => {
-                const g = window.game, sun = g.view.scene.children.find(o => o.isDirectionalLight), sky = g.view.scene.children.find(o => o.isHemisphereLight);
-                g.view.render(g.sim, 0);
-                const gl = g.view.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, px = new Uint8Array(4), sum = [0, 0, 0];
-                for (let i = 1; i < 8; i++) for (let j = 1; j < 6; j++) {
-                    gl.readPixels(Math.floor(w * i / 8), Math.floor(h * j / 6), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                    for (let k = 0; k < 3; k++) sum[k] += px[k];
-                }
-                return { sum, sky: sky.intensity, toSun: sun.position.clone().sub(sun.target.position).normalize().toArray() };
-            });
-            assert.deepEqual(errors, []);
-            return info;
-        } finally { await context.close(); }
-    };
-    const noon = await look('?map=field&hour=13'), night = await look('?map=field&hour=23'), morning = await look('?map=field&hour=8.5');
-    const bright = v => v.sum[0] + v.sum[1] + v.sum[2];
-    assert.ok(bright(night) < bright(noon) * 0.6, `night ${bright(night)} against noon ${bright(noon)}`);
-    assert.ok(night.sum[2] / bright(night) > noon.sum[2] / bright(noon), 'the night is bluer');
-    assert.ok(bright(night) > 0.1 * bright(noon), 'out of doors the night is still to be seen by (user)');
-    assert.ok(morning.toSun[0] > 0.5 && noon.toSun[1] > morning.toSun[1], `the sun in the east in the morning, higher at noon: ${morning.toSun} ${noon.toSun}`);
-    // A torch in the cave: its light casts shadows (they keep it from
-    // passing walls), in the power saver too (user, 2026-10-06).
-    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
-    await context.addInitScript(() => localStorage.setItem('blocky-rpg-save', JSON.stringify({ v: 2, inventory: { gold: 0, items: { wooden_sword: 1, torch: 1, cloth_armor: 1 } }, loadout: { main: 'wooden_sword', offhand: 'torch', armor: 'cloth_armor', accessory: null } })));
-    const { page, errors } = await openPage(context, '?map=cave');
-    try {
-        const torch = await page.evaluate(() => {
-            const g = window.game; g.pause(true);
-            worldSim.command(g.sim, { type: 'press', button: 'offhand' }); worldSim.command(g.sim, { type: 'release', button: 'offhand' });
-            g.run(0.3); g.view.render(g.sim, 0.016);
-            const torchLight = () => g.view.scene.children.find(o => o.isPointLight);
-            let light = torchLight();
-            const before = { lit: light.intensity, shadows: light.castShadow, map: !!light.shadow.map };
-            // (The power saver builds the world again: its torch's light is another.)
-            g.view.settings({ zoom: 1, quality: 'saver' }); g.view.render(g.sim, 0.016);
-            light = torchLight();
-            // Swinging with a monster up against it: the light stays out of
-            // the monster's body, and moves only a little (user, 2026-10-06).
-            const f = g.sim.fighters[0], m = g.sim.monsters[0], stick = () => { m.x = f.x + Math.cos(f.facing) * (f.radius + m.radius + 2); m.y = f.y + Math.sin(f.facing) * (f.radius + m.radius + 2); m.phase = 'idle'; m.t = 0; };
-            let closest = Infinity, jump = 0, last = null;
-            for (let k = 0; k < 60; k++) {
-                if (k % 30 === 0) { worldSim.command(g.sim, { type: 'press', button: 'attack' }); worldSim.command(g.sim, { type: 'release', button: 'attack' }); }
-                stick(); g.run(0.02); g.view.render(g.sim, 0.02);
-                const p = light.position.clone();
-                closest = Math.min(closest, Math.hypot(p.x - m.x / 40, p.z - m.y / 40) - m.radius / 40);
-                if (last) jump = Math.max(jump, p.distanceTo(last));
-                last = p;
-            }
-            return { before, saver: { shadows: light.castShadow }, closest, jump };
-        });
-        assert.ok(torch.before.lit > 0);
-        assert.deepEqual([torch.before.shadows, torch.before.map], [true, true]);
-        assert.deepEqual(torch.saver, { shadows: true });
-        assert.ok(torch.closest > 0.05, `the torch's light ${torch.closest} blocks from the monster's body`);
-        assert.ok(torch.jump < 0.08, `the torch's light moved ${torch.jump} blocks in a frame`);
-        await shot(page, 'cave-torch');
-        assert.deepEqual(errors, []);
-    } finally { await context.close(); }
-});
-
-test('the torches that stand in a map cast shadows (design.md 2.5): the nearest two, none in the power saver; a body by one shades the ground behind it, a torch\'s own post shades nothing; drawn anew only while something moves by one; they come and go by degrees', { timeout: 300000 }, async t => {
-    if (skip) { t.skip(skip); return; }
-    const { context, page, errors } = await openPhone(844, 390, '?map=base&hour=23');
-    try {
-        const seen = await page.evaluate(() => {
-            const g = window.game, s = g.sim, p = s.player, U = gameConfig.world.unitsPerBlock, gl = g.view.renderer.getContext(), N = 9, px = new Uint8Array(N * N * 4);
-            const lamps = s.entities.filter(e => e.type === 'lamp').map(e => [e.x / U, e.y / U, e.kind]);
-            // A torch on a stand with open ground about it, and the one nearest to it.
-            const [lx, lz] = lamps.find(l => l[2] === 'stand' && l[0] > 20);
-            const stand = (x, z) => { p.x = x * U; p.y = z * U; p.facing = 0; };
-            const draw = (dt = 0) => { g.view.render(s, dt); return g.view.info().calls; };
-            // How bright the ground at (x, z) is drawn.
-            const ground = (x, z) => {
-                const at = g.view.project([x, 0, z]), k = gl.drawingBufferWidth / innerWidth;
-                gl.readPixels(Math.round(at.x * k) - 4, Math.round(gl.drawingBufferHeight - at.y * k) - 4, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
-                let sum = 0;
-                for (let i = 0; i < N * N; i++) sum += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
-                return sum / (N * N * 3);
-            };
-            // The lights that cast, the carried torch's (the first) left out.
-            const casting = () => g.view.scene.children.filter(o => o.isPointLight && o.castShadow).slice(1);
-            const told = () => casting().map(l => ({ lit: l.intensity > 0, strength: l.shadow.intensity, at: [l.position.x, l.position.z] }));
-            const out = { lamp: [lx, lz], saver: 0 };
-            g.view.settings({ zoom: 1, quality: 'saver' }); draw();
-            out.saver = casting().length;
-            for (const n of [0, 2]) {
-                g.view.settings({ zoom: 1, quality: { ...gameConfig.graphics.quality.high, lampShadows: n } });
-                // East of the torch: the ground east of the body lies in its shadow, the ground south of the body does not.
-                stand(lx + 1.25, lz); draw();
-                // A step, and it moves by the torch; then it stands (a few frames on: each torch's shadows are drawn once more after it has stopped, one torch's a frame).
-                stand(lx + 1.2, lz);
-                const by = { draws: draw(), behind: ground(lx + 3.1, lz), beside: ground(lx + 1.2, lz + 2) };
-                draw(); draw(); draw(); by.rest = draw();
-                if (n) by.lights = told();
-                // South of the torch, out of its way: the ground at the torch's foot is lit as with no shadows.
-                stand(lx, lz + 3); draw(); draw();
-                const foot = [ground(lx + 0.7, lz), ground(lx - 0.7, lz), ground(lx, lz + 0.8)];
-                // Far from every torch (in the south rocks, east of the gate to the test cave): nothing moves by one.
-                stand(34.5, 25.5); draw(); draw();
-                out[n] = { by, foot, far: { draws: draw(), lights: told() } };
-            }
-            // Over to the torches in the east: the shadows there come by degrees.
-            stand(39, 14.5);
-            draw(1 / 60);
-            out.going = told();
-            for (let k = 0; k < 60; k++) draw(1 / 60);
-            out.come = told();
-            return out;
-        });
-        await shot(page, 'lamp-shadows');
-        const { lamp } = seen, near = (a, b) => Math.abs(a - b) < 0.6;
-        assert.equal(seen.saver, 0, 'none in the power saver');
-        assert.deepEqual(seen[2].by.lights.map(l => [l.lit, l.strength]), [[true, 1], [true, 1]], 'two standing torches cast, whole from the world\'s first frame');
-        assert.ok(seen[2].by.lights.some(l => near(l.at[0], lamp[0]) && near(l.at[1], lamp[1])), `the torch stood by casts: ${JSON.stringify(seen[2].by.lights)}`);
-        assert.ok(seen[2].by.behind < seen[0].by.behind - 2, `the body shades the ground behind it: ${seen[0].by.behind} to ${seen[2].by.behind}`);
-        assert.ok(near(seen[2].by.beside, seen[0].by.beside), `and not the ground beside it: ${seen[0].by.beside} and ${seen[2].by.beside}`);
-        seen[2].foot.forEach((v, i) => assert.ok(near(v, seen[0].foot[i]), `a torch's own post shades nothing: ${seen[0].foot} and ${seen[2].foot}`));
-        assert.ok(seen[2].by.draws > seen[0].by.draws + 10, `moving by a torch, its shadows are drawn anew: ${seen[0].by.draws} draws, ${seen[2].by.draws} with them`);
-        assert.equal(seen[2].by.rest, seen[0].by.rest, 'standing by it, not');
-        assert.equal(seen[2].far.draws, seen[0].far.draws, 'nor far from every torch');
-        assert.ok(seen.going.every(l => l.strength < 1), `shadows go and come by degrees: ${JSON.stringify(seen.going)}`);
-        assert.ok(seen.come.length === 2 && seen.come.every(l => l.lit && l.strength === 1 && l.at[0] > 34), `the two torches in the east cast in the end: ${JSON.stringify(seen.come)}`);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

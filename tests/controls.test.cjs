@@ -36,7 +36,6 @@ test('screen directions map to the ground wherever the camera has been turned to
 });
 
 test('a drag across the picture turns the camera: to the right looks to the right, and all the way round', () => {
-    assert.equal(I.turn, 0.007);
     assert.equal(K.turned(0, 0), 0);
     // Looking to the right: the camera goes round to the west of the
     // fighter, so screen-up, north at first, turns towards the east.
@@ -79,13 +78,6 @@ test('controls fit every common landscape phone without overlapping', () => {
         assert.ok(b.interact.x < stickZone.x1 && b.interact.y + b.interact.r < stickRest.y - I.stickRadius, name);
         assert.ok(stickRest.x - I.stickRadius > (insets.left || 0), `${name}: resting stick inside the safe area`);
     }
-});
-
-test('first sizes follow parameters.md 9', () => {
-    assert.deepEqual([L.buttons.attack.size, L.buttons.offhand.size, L.buttons.guard.size, L.buttons.interact.size], [84, 72, 72, 56]);
-    assert.equal(L.minGap, 10);
-    assert.equal(I.maxTouches, 2);
-    assert.deepEqual([I.deadZone, I.ramp], [12, 32]);
 });
 
 test('the checker does flag a bad layout', () => {

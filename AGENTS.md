@@ -84,7 +84,9 @@ This file only changes when project setup changes.
   `playwright-core` anywhere and set `PLAYWRIGHT_MODULE` to it and
   `PLAYWRIGHT_CHANNEL=chrome`) is for what a browser alone shows -- the
   input layer, the page's boot, the net -- or when the user asks; not for
-  a number tuned. A test that fails for no fault of the game (a pixel read
+  a number tuned. No test judges how the picture looks (light, shadow,
+  colour: the user's eye, on the phone) and none pins a tunable to its
+  number. A test that fails for no fault of the game (a pixel read
   where the camera or a map has since moved) is mended or dropped when
   met and holds no push back. If a change alters what a test asserts,
   update the test and say why.

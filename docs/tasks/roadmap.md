@@ -179,6 +179,8 @@
   大改动（新系统，或模拟、画面、界面的大范围改动）：跑 `node --test "tests/*.test.cjs"`，全绿再推。
   浏览器测试（约两分半）只在改了输入层、页面启动、联机这类只有浏览器看得出的东西时跑，或用户要求时跑；调参数不跑。
   不是游戏出错的失败（按屏幕位置取像素的断言，镜头或地图一动就偏）不拦推送，遇到时修掉或删掉，并说明是哪一类。改了测试断言的内容要说明为什么。
+  **画面好不好看、光影对不对不写测试**（用户 2026-10-08 要去掉一部分测试）：昼夜的颜色、火把和火炬的影子、隔着墙看到人、洞里被火把照亮的地面，这些读像素的检查已经删掉，靠用户在手机上看；
+  也不写"某个参数等于几"的测试（按钮大小、摇杆死区、转镜头的速度这类），它们只会在调参时挡路。要比较改动前后的画面，用 `tests/pixels.cjs`（第 4.0 节）。
 - 代码注释和 `AGENTS.md` 用英文；`README.md`、界面文字、`docs/` 用中文。
 - `docs/parameters.md` 是数值对照表；`docs/tasks/` 只有 3 份（这份、`design.md`、`ideas.md`），都要短，只写现在：`design.md` 写游戏是什么和定下来的规则，`ideas.md` 写聊过还没定的方向，
   这份写进度、接下来和怎么测。不写怎么实现、改过几次；新决定写进 `design.md` 对应的节。
@@ -203,7 +205,7 @@
 在哪儿跑决定了浏览器怎么用：
 
 - **用户的 Windows 电脑**（Claude 桌面版）：`playwright-core` 装在仓库外的 `C:\Users\USER\pw-tools`，用本机的 Chrome 跑（没有 Chrome 就把 `chrome` 换成 `msedge`）。
-  不设下面两个变量时 `tests/browser-smoke.test.cjs` 的 12 条照旧跳过；设了以后全部测试约一分半钟：
+  不设下面两个变量时 `tests/browser-smoke.test.cjs` 的 10 条照旧跳过；设了以后全部测试约两分钟：
 
   ```powershell
   $env:PLAYWRIGHT_MODULE = "C:\Users\USER\pw-tools\node_modules\playwright-core"
