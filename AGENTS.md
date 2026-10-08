@@ -72,15 +72,22 @@ This file only changes when project setup changes.
 - Done = committed and pushed straight to `main` (user, 2026-10-08): no
   pull request, no asking first. A session given a branch of its own pushes
   that branch as well.
-- Tests (user, 2026-10-08): only a big change (a new system, or a wide
-  change to the simulation, the view or the UI) runs
-  `node --test "tests/*.test.cjs"` and must pass before it is pushed; a
-  small one (numbers, text, colours, docs, a local fix) is pushed without.
-  If a change alters what a test asserts, update the test and say why.
-  `tests/browser-smoke.test.cjs` runs
+- Tests (user, 2026-10-08): they serve the work and do not hold it back.
+  A small change (numbers, text, colours, docs, a local fix) is pushed
+  without running any. A change that could break something runs the tests
+  of what it touches -- a file of `tests/`, or one test by
+  `--test-name-pattern` -- and not the whole suite. Only a big change (a
+  new system, or a wide change to the simulation, the view or the UI) runs
+  `node --test "tests/*.test.cjs"` and must pass before it is pushed.
+  `tests/browser-smoke.test.cjs` (some 2.5 minutes; it runs
   when Playwright is installed and skips otherwise; on Windows, install
   `playwright-core` anywhere and set `PLAYWRIGHT_MODULE` to it and
-  `PLAYWRIGHT_CHANNEL=chrome`.
+  `PLAYWRIGHT_CHANNEL=chrome`) is for what a browser alone shows -- the
+  input layer, the page's boot, the net -- or when the user asks; not for
+  a number tuned. A test that fails for no fault of the game (a pixel read
+  where the camera or a map has since moved) is mended or dropped when
+  met and holds no push back. If a change alters what a test asserts,
+  update the test and say why.
 - New script or partial: register it in `client-assets.json` under its
   page's entry; a partial also needs `#mount-<id>` in that page
   (`index.html`, `tune.html` or `map.html`).
