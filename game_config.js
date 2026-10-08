@@ -442,7 +442,7 @@ const gameConfig = (() => {
         // stands, a share of the screen's width (the name and the keys are
         // on the left).
         camera: {
-            yaw: 0, pitch: 0.96, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 },
+            yaw: 0, pitch: 0.8, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 },
             title: {
                 seconds: 7, fade: 0.7, shift: 0.16, fov: 45,
                 things: { building: [5, 1.4], portal: [3.5, 1.5], chest: [1.8, 0.5], stand: [2, 1.1], dummy: [2.4, 1] },
@@ -476,7 +476,7 @@ const gameConfig = (() => {
         // many moving lights without shadows are lit at once (the nearest:
         // a burning thicket, a doorway's glow, someone else's torch).
         // shadowExtent is the half-width in blocks of the shadowed area
-        // around the player. lamp: the torches that stand in a map (on a
+        // around the middle of the ground on screen. lamp: the torches that stand in a map (on a
         // stand or a wall; user, 2026-10-06), each one of the moving lights:
         // `light` of a carried torch's intensity now, `reach` blocks,
         // `decay`; `glow`, the cells its block light spreads. `shadow`:
@@ -650,7 +650,7 @@ const gameConfig = (() => {
             // each block they are nearer it than the body, along the ground
             // (user, 2026-10-08, the camera turning: reach up from 1.3, and
             // the trees that stand in front of the picture open wide).
-            leaves: { least: 0.25, reach: 2.5, widen: 0.5 }
+            leaves: { least: 0.25, reach: 2, widen: 0.5 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

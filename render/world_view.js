@@ -276,12 +276,17 @@ const worldView = (() => {
                 return ground.hides(eyeAt, bodyAt);
             });
         }
-        // The camera `yaw` round the point (x, y, z), blocks (0: due south of it).
+        // The camera `yaw` round the point (x, y, z), blocks (0: due south
+        // of it). Returns how far beyond that point the middle of the
+        // ground on screen lies (blocks, along the ground): the screen
+        // shows further beyond the fighter than short of it.
         function placeCamera(x, y, z, yaw) {
             const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(cam.pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
             camera.position.set(tx0 + Math.sin(yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
+            const half = cam.fov * Math.PI / 360, height = cam.lookHeight + Math.sin(cam.pitch) * d;
+            return (height / Math.tan(Math.max(0.1, cam.pitch - half)) + height / Math.tan(cam.pitch + half)) / 2 - cp * d;
         }
         // ---- the title screen's camera (camera.title): what it may look
         // at, the region's things (where each stands, blocks; its size and
@@ -420,8 +425,10 @@ const worldView = (() => {
                 ground.seeThrough([]);
                 return;
             }
-            placeCamera(at[0], at[1], at[2], yaw);
-            light.placeSun(at[0], at[1], at[2]);
+            // The sun's shadows lie round the middle of the ground on
+            // screen, so they reach its far corners as they do its near ones.
+            const ahead = placeCamera(at[0], at[1], at[2], yaw);
+            light.placeSun(at[0] - Math.sin(yaw) * ahead, at[1], at[2] - Math.cos(yaw) * ahead);
             // Cut the blocks between the camera and this fighter's chest,
             // while some do hide the fighter; the hole eases open and shut.
             ground.cut.center.value.set(at[0], at[1] + 1, at[2]);

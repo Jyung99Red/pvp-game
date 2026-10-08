@@ -610,8 +610,10 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
         const light = await page.evaluate(() => {
             const g = window.game, s = g.sim, p = s.player, gl = g.view.renderer.getContext(), N = 16, px = new Uint8Array(N * N * 4);
             s.monsters = [];
-            // Out in the hall, away from the torches that stand by the gate.
-            Object.assign(p, terrainKit.cellCentre(s.terrain, 24, 26));
+            // Out in the hall, away from the torches that stand by the gate,
+            // and far enough north of the pillar at (25, 29) that it hides
+            // none of the floor sampled from the camera.
+            Object.assign(p, terrainKit.cellCentre(s.terrain, 24, 25));
             // The ground sampled lies east of the player: facing it, so it is in sight (not shaded).
             p.facing = 0;
             const sample = (east = 1.2, south = 0) => {

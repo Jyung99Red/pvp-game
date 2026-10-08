@@ -256,7 +256,8 @@ const viewLight = (() => {
         sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
         scene.add(sun, sun.target);
         // The sun (or the moon) goes where the hour puts it (dayKit.sky);
-        // its shadow box follows the player, snapped to whole shadow texels
+        // its shadow box follows what the screen shows (`placeSun`: the
+        // middle of its ground, render/world_view.js), snapped to whole shadow texels
         // in the light's frame so edges do not shimmer while walking.
         const lightDir = new T.Vector3(), lightRight = new T.Vector3(), lightUp = new T.Vector3(), upward = new T.Vector3(...UP);
         let aimedAt = NaN;
