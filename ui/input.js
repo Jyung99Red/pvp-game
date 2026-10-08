@@ -3,12 +3,20 @@
 // interact on the left. One pointer per control and at most
 // input.maxTouches at once (two thumbs). Movement leaves here already turned
 // into a ground direction; the simulation never sees pixels.
+//
+// A drag across the picture itself, off every control, turns the camera
+// round the fighter (`yaw`; user, 2026-10-08). Where the camera stands is
+// this phone's own and is drawn only: the simulation never hears of it, but
+// the stick's directions are the screen's, so they are read by it. A thumb
+// turning the camera gives way to any control pressed past the two touches.
 const inputLayer = (() => {
     const MOVE_KEYS = ['up', 'down', 'left', 'right'];
 
     function attach(root, sink) {
         const C = gameConfig.input;
         const zone = root.querySelector('[data-stick-zone]'), stick = root.querySelector('[data-stick]'), knob = root.querySelector('[data-knob]');
+        const picture = root.querySelector('canvas');
+        let yaw = gameConfig.camera.yaw;
         const buttons = {};
         root.querySelectorAll('[data-button]').forEach(el => { buttons[el.dataset.button] = el; });
         const pointers = new Map(); // pointerId -> { control, el, x0, y0 }
@@ -21,7 +29,7 @@ const inputLayer = (() => {
 
         const stickActive = () => [...pointers.values()].some(p => p.control === 'stick');
         function sendMove() {
-            const v = stickActive() ? stickVec : keyVec, g = space.screenToGround(v.x, v.y);
+            const v = stickActive() ? stickVec : keyVec, g = space.screenToGround(v.x, v.y, yaw);
             if (g.x === sent.x && g.y === sent.y) return;
             sent = g; sink.move(g.x, g.y);
         }
@@ -43,7 +51,16 @@ const inputLayer = (() => {
         }
         function restStick() { stick.classList.remove('active'); showStick(rest.x, rest.y); moveKnob(0, 0); }
         const local = e => { const r = root.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-        const canStart = control => pointers.size < C.maxTouches && ![...pointers.values()].some(p => p.control === control);
+        // May `control` take a new pointer? One each, and maxTouches in all;
+        // past that, the pointer turning the camera is let go for it.
+        function canStart(control) {
+            const held = [...pointers];
+            if (held.some(([, p]) => p.control === control)) return false;
+            if (held.length < C.maxTouches) return true;
+            const look = control !== 'look' && held.find(([, p]) => p.control === 'look');
+            if (look) end({ pointerId: look[0] });
+            return !!look;
+        }
         // Capture keeps a drag on its control; a pointer that is already gone
         // (or a synthetic one in a test) simply goes uncaptured.
         const capture = (el, id) => { try { el.setPointerCapture(id); } catch (_) { /* no live pointer */ } };
@@ -75,14 +92,33 @@ const inputLayer = (() => {
                 hold(id);
             });
         }
+        // The camera: the drag is taken from one pointer event to the next,
+        // and what the stick or the keys hold is sent anew as the ground
+        // turns under them.
+        if (picture) {
+            listen(picture, 'pointerdown', e => {
+                e.preventDefault();
+                if ((e.pointerType === 'mouse' && e.button !== 0) || !canStart('look')) return;
+                pointers.set(e.pointerId, { control: 'look', el: picture, x: local(e).x });
+                capture(picture, e.pointerId);
+            });
+            listen(picture, 'pointermove', e => {
+                const p = pointers.get(e.pointerId);
+                if (!p || p.control !== 'look') return;
+                if (e.pointerType === 'mouse' && e.buttons === 0) { end(e); return; }
+                const x = local(e).x;
+                yaw = controlsKit.turned(yaw, x - p.x); p.x = x;
+                sendMove();
+            });
+        }
         function end(e) {
             const p = pointers.get(e.pointerId);
             if (!p) return;
             pointers.delete(e.pointerId);
             if (p.el.hasPointerCapture?.(e.pointerId)) p.el.releasePointerCapture(e.pointerId);
-            if (p.control === 'stick') { stickVec = { x: 0, y: 0 }; restStick(); sendMove(); } else drop(p.control);
+            if (p.control === 'stick') { stickVec = { x: 0, y: 0 }; restStick(); sendMove(); } else if (p.control !== 'look') drop(p.control);
         }
-        for (const el of [zone, ...Object.values(buttons)]) for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(el, type, end);
+        for (const el of [zone, picture, ...Object.values(buttons)].filter(Boolean)) for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) listen(el, type, end);
 
         listen(window, 'keydown', e => {
             const name = codeTo[e.code];
@@ -137,7 +173,9 @@ const inputLayer = (() => {
         }
         return {
             place, releaseAll,
-            state: () => ({ pointers: [...pointers.values()].map(p => p.control), stick: { ...stickVec }, keys: [...keysHeld], sent: { ...sent } }),
+            // Where the camera has been turned to (core/space.js: 0 due south of the fighter).
+            yaw: () => yaw,
+            state: () => ({ pointers: [...pointers.values()].map(p => p.control), stick: { ...stickVec }, keys: [...keysHeld], sent: { ...sent }, yaw }),
             destroy() { releaseAll(); removers.forEach(remove => remove()); probe.remove(); }
         };
     }

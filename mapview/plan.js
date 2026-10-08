@@ -227,7 +227,8 @@ const mapPlan = (() => {
     // The ground a landscape phone shows with its fighter standing at
     // (x, y) (blocks): the camera where render/world_view.js puts it
     // (placeCamera: `distance` away times the zoom, `pitch` above the
-    // horizon, looking at the point lookHeight over the fighter), and the
+    // horizon, looking at the point lookHeight over the fighter; due
+    // south of it, where it stands until the player turns it), and the
     // four corners of the screen cast onto the ground. `corners`: [x, y] in
     // blocks, the screen's top left, top right, bottom right, bottom left.
     // PHONE: the screen the game is laid out for; FAR: that camera's far

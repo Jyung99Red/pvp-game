@@ -1,5 +1,6 @@
 // Pure maths of the touch layer, kept out of the DOM so Node can test it:
-// where each button sits for a screen size, and what a stick offset means.
+// where each button sits for a screen size, what a stick offset means, and
+// how far a drag turns the camera.
 const controlsKit = (() => {
     // Stick offset in CSS px (screen axes) to a move vector of length 0..1:
     // nothing inside the dead zone, then full speed `ramp` px further out.
@@ -16,6 +17,10 @@ const controlsKit = (() => {
         const len = Math.hypot(x, y);
         return len ? { x: x / len, y: y / len, mag: 1 } : { x: 0, y: 0, mag: 0 };
     }
+    // The camera's yaw (core/space.js: 0 due south of the fighter) after a
+    // finger has gone `dx` CSS px across the picture: a drag to the right
+    // looks to the right, so the far ground goes left.
+    function turned(yaw, dx, input = gameConfig.input) { return space.wrapAngle(yaw - dx * input.turn); }
     // Button centres and sizes in viewport px for a screen of `width` x
     // `height` with safe-area `insets` { top, right, bottom, left }.
     function layout(width, height, insets = {}, L = gameConfig.controlsLayout) {
@@ -45,5 +50,5 @@ const controlsKit = (() => {
         }
         return problems;
     }
-    return { stickVector, keyVector, layout, check };
+    return { stickVector, keyVector, turned, layout, check };
 })();

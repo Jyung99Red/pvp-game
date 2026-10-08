@@ -7,7 +7,7 @@
 // day) and the duel's own time. Drawing only: no rule reads it.
 //
 // Hours run 0..24. Directions are in blocks: x east, y up, z south (the
-// camera looks north, screen-up on -z).
+// camera, where it first stands, looks north, screen-up on -z).
 const dayKit = (() => {
     const D = () => gameConfig.day;
     const wrap = h => ((h % 24) + 24) % 24;

@@ -25,7 +25,8 @@ const worldView = (() => {
         return { n, index: n % S.shots.length, u: into / S.seconds, fade };
     }
 
-    // opts.selfId: the fighter this phone plays (the camera follows it; in a
+    // opts.selfId: the fighter this phone plays (the camera follows it, and
+    // goes round it as the player turns it: `render`; in a
     // duel the other one is drawn as the rival). opts.quality: the picture
     // quality to begin with (`settings`), the menu's, or the world would be
     // built a second time as soon as the menu's settings came.
@@ -90,8 +91,10 @@ const worldView = (() => {
         // thing after another (`tourAt`), wider and shifted right of the
         // middle; `tourFade` is how dark the picture is to be, for the title
         // screen to draw. `run` counts the tours begun.
+        // `yaw`: where the camera has been turned to round the fighter
+        // (ui/input.js; 0 due south of it).
         const tour = { on: false, t: 0, fade: 0, run: 0 };
-        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false } = {}) {
+        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false, yaw = C.camera.yaw } = {}) {
             if (touring !== tour.on) {
                 tour.on = touring; tour.t = 0;
                 camera.fov = touring ? C.camera.title.fov : C.camera.fov;
@@ -105,7 +108,7 @@ const worldView = (() => {
             let shot = null;
             if (touring) { tour.t += frameSeconds; shot = { ...tourAt(tour.t), run: tour.run }; }
             tour.fade = shot ? shot.fade : 0;
-            world.render(current, frameSeconds, bodies, events, shot);
+            world.render(current, frameSeconds, bodies, events, shot, yaw);
             renderer.render(world.scene, camera);
         }
         function resize(width, height) {
@@ -273,10 +276,11 @@ const worldView = (() => {
                 return ground.hides(eyeAt, bodyAt);
             });
         }
-        function placeCamera(x, y, z) {
+        // The camera `yaw` round the point (x, y, z), blocks (0: due south of it).
+        function placeCamera(x, y, z, yaw) {
             const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(cam.pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
-            camera.position.set(tx0 + Math.sin(cam.yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(cam.yaw) * cp * d);
+            camera.position.set(tx0 + Math.sin(yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
         }
         // ---- the title screen's camera (camera.title): what it may look
@@ -338,8 +342,9 @@ const worldView = (() => {
         // shot: the title screen's camera ({ n, index, u, run }: worldView
         // `tourAt`), or null. Its picture is of the thing it looks at: the
         // lights, the sun's shadows round that; no shade of sight, no cut
-        // and no crowns fading for the fighter.
-        function render(current, frameSeconds, bodies, events, shot = null) {
+        // and no crowns fading for the fighter. `yaw`: the fighter's own
+        // camera, where it has been turned to.
+        function render(current, frameSeconds, bodies, events, shot = null, yaw = C.camera.yaw) {
             const dt = Math.max(1e-3, frameSeconds);
             clock += frameSeconds;
             const shownOf = body => bodies?.get(body.id) || body;
@@ -415,7 +420,7 @@ const worldView = (() => {
                 ground.seeThrough([]);
                 return;
             }
-            placeCamera(at[0], at[1], at[2]);
+            placeCamera(at[0], at[1], at[2], yaw);
             light.placeSun(at[0], at[1], at[2]);
             // Cut the blocks between the camera and this fighter's chest,
             // while some do hide the fighter; the hole eases open and shut.

@@ -245,6 +245,69 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
     } finally { await context.close(); }
 });
 
+test('a drag across the picture turns the camera round the fighter (design.md 3.2): the stick goes by the screen as it now stands, and a control pressed takes the turning thumb\'s place', { timeout: 240000 }, async t => {
+    if (skip) { t.skip(skip); return; }
+    const { context, page, errors } = await openPhone(844, 390);
+    try {
+        const at = await page.evaluate(() => {
+            window.game.sim.dummy.wait = 1e9; // keep the dummy out of it
+            const r = document.querySelector('[data-button="attack"]').getBoundingClientRect();
+            return { a: { x: r.left + r.width / 2, y: r.top + r.height / 2 }, turn: gameConfig.input.turn };
+        });
+        const cdp = await context.newCDPSession(page);
+        const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+        const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        // Which way the camera stands from the fighter, as a yaw, and how far along the ground (blocks).
+        const eye = () => page.evaluate(() => {
+            const p = window.game.sim.player, me = space.toBlocks(p.x, p.y), c = window.game.view.camera.position;
+            return { yaw: Math.atan2(c.x - me[0], c.z - me[2]), far: Math.hypot(c.x - me[0], c.z - me[2]), up: c.y };
+        });
+        const near = (a, b, slack = 1e-6) => Math.abs(a - b) < slack;
+        await frame();
+        const first = await eye();
+        assert.ok(near(first.yaw, 0), `the camera stands due south at first: ${JSON.stringify(first)}`);
+        // A thumb goes 200 px to the right across the picture: looking to
+        // the right, the camera goes round to the fighter's west.
+        const look = { x: 400, y: 150, id: 1 }, stick = { x: 160, y: 300, id: 2 }, a = { x: at.a.x, y: at.a.y, id: 3 };
+        await touch('touchStart', [look]);
+        await touch('touchMove', [{ ...look, x: 600 }]);
+        await page.waitForFunction(() => window.game.input.state().yaw !== 0, null, { timeout: 10000 });
+        const turned = await page.evaluate(() => window.game.input.state());
+        assert.deepEqual(turned.pointers, ['look']);
+        assert.ok(near(turned.yaw, -200 * at.turn), `yaw ${turned.yaw}`);
+        await frame();
+        const second = await eye();
+        assert.ok(near(second.yaw, turned.yaw) && near(second.far, first.far) && near(second.up, first.up), `the camera after the drag: ${JSON.stringify(second)}`);
+        assert.equal(await page.evaluate(() => window.game.sim.input.move.x), 0, 'turning the camera moves nobody');
+        await shot(page, 'camera-turned');
+        // The other thumb pushes the stick up: away from the camera as it now stands.
+        await touch('touchStart', [{ ...look, x: 600 }, stick]);
+        await touch('touchMove', [{ ...look, x: 600 }, { ...stick, y: 240 }]);
+        await page.waitForFunction(() => Math.hypot(window.game.sim.input.move.x, window.game.sim.input.move.y) > 0.99, null, { timeout: 10000 });
+        const pushed = await page.evaluate(() => ({ move: window.game.sim.input.move, pointers: window.game.input.state().pointers }));
+        assert.ok(near(pushed.move.x, -Math.sin(turned.yaw)) && near(pushed.move.y, -Math.cos(turned.yaw)), JSON.stringify(pushed));
+        assert.deepEqual([...pushed.pointers].sort(), ['look', 'stick']);
+        // The camera turned back under a stick held still: the fighter's way turns with it.
+        await touch('touchMove', [look, { ...stick, y: 240 }]);
+        await page.waitForFunction(() => window.game.sim.input.move.y < -0.999, null, { timeout: 10000 }).catch(() => {});
+        const back = await page.evaluate(() => ({ move: window.game.sim.input.move, yaw: window.game.input.state().yaw }));
+        assert.ok(near(back.yaw, 0) && near(back.move.x, 0) && near(back.move.y, -1), JSON.stringify(back));
+        // Two touches are down. A control pressed now is not refused: the
+        // thumb turning the camera gives way to it, and turns nothing more.
+        await touch('touchStart', [look, { ...stick, y: 240 }, a]);
+        await page.waitForFunction(() => window.game.sim.input.buttons.attack.held, null, { timeout: 10000 });
+        await touch('touchMove', [{ ...look, x: 500 }, { ...stick, y: 240 }, a]);
+        await frame();
+        const taken = await page.evaluate(() => window.game.input.state());
+        assert.deepEqual([...taken.pointers].sort(), ['attack', 'stick']);
+        assert.ok(near(taken.yaw, 0), `yaw ${taken.yaw}`);
+        await touch('touchEnd', []);
+        await page.waitForFunction(() => window.game.input.state().pointers.length === 0, null, { timeout: 10000 }).catch(() => {});
+        assert.deepEqual(await page.evaluate(() => window.game.input.state().pointers), []);
+        assert.deepEqual(errors, []);
+    } finally { await context.close(); }
+});
+
 test('the world: the title screen, the base, through the north gate by touch, a fight, falling and home again; walls in front go see-through; back to the title and on; the save keeps it', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390, '');

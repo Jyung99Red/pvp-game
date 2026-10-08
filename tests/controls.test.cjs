@@ -26,13 +26,29 @@ test('keyboard: WASD and arrows make a unit vector; opposite keys cancel', () =>
     assert.deepEqual([keys.attack[0], keys.offhand[0], keys.guard[0], keys.interact[0]], ['KeyJ', 'KeyK', 'KeyL', 'KeyE']);
 });
 
-test('screen directions map to the ground for the fixed camera', () => {
+test('screen directions map to the ground wherever the camera has been turned to', () => {
     const g = (sx, sy, yaw) => { const r = space.screenToGround(sx, sy, yaw); return [r.x, r.y].map(n => Math.round(n * 1e9) / 1e9 + 0); };
     assert.deepEqual(g(0, -1, 0), [0, -1], 'screen up is north (-y, 3D -z)');
     assert.deepEqual(g(1, 0, 0), [1, 0]);
     // A camera turned a quarter round still maps screen-up to "away from the camera".
     assert.deepEqual(g(0, -1, Math.PI / 2), [-1, 0]);
-    assert.equal(gameConfig.camera.yaw, 0);
+    assert.equal(gameConfig.camera.yaw, 0, 'the camera stands due south at first');
+});
+
+test('a drag across the picture turns the camera: to the right looks to the right, and all the way round', () => {
+    assert.equal(I.turn, 0.007);
+    assert.equal(K.turned(0, 0), 0);
+    // Looking to the right: the camera goes round to the west of the
+    // fighter, so screen-up, north at first, turns towards the east.
+    const right = K.turned(0, 100);
+    assert.ok(Math.abs(right + 100 * I.turn) < 1e-12);
+    const up = space.screenToGround(0, -1, right);
+    assert.ok(up.x > 0 && up.y < 0, `screen-up after a drag to the right: ${JSON.stringify(up)}`);
+    assert.ok(Math.abs(K.turned(right, -100)) < 1e-12, 'and back');
+    // Round and round: the angle stays within a turn.
+    let yaw = 0;
+    for (let i = 0; i < 40; i++) { yaw = K.turned(yaw, 60); assert.ok(yaw > -Math.PI - 1e-9 && yaw <= Math.PI + 1e-9); }
+    assert.ok(Math.abs(space.wrapAngle(yaw + 40 * 60 * I.turn)) < 1e-9);
 });
 
 // Landscape phones: width x height in CSS px, with notch insets.

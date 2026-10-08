@@ -420,8 +420,10 @@ const gameConfig = (() => {
             sun: { high: 1.1, low: 0.35 }, moon: { high: 0.95, low: 0.45 }
         },
 
-        // 5. Fixed oblique camera (design.md 1). yaw 0 keeps
-        // screen-up on -z; pitch is the angle down from the horizon;
+        // 5. Oblique camera (design.md 1). yaw is where it stands at
+        // first, 0 due south (screen-up on -z); a drag across the picture
+        // takes it round the fighter from there (input.turn; user,
+        // 2026-10-08). pitch is the angle down from the horizon;
         // distance and lookHeight are blocks (distance what the far setting
         // gave before, user 2026-10-07); fov is vertical, in degrees. zoom: the
         // distance multiplier each camera setting of the menu picks.
@@ -653,8 +655,11 @@ const gameConfig = (() => {
         // two thumbs (design.md 3.2). sliderSlop: how far a finger goes on
         // a settings slider before it is judged a sideways drag (the
         // slider moves) or a scroll (user, 2026-10-08; ui/settings_view.js).
+        // turn: radians the camera goes round the fighter for each CSS px
+        // a finger is dragged across the picture, a drag to the right
+        // looking to the right (user, 2026-10-08).
         input: {
-            deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2, sliderSlop: 8,
+            deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2, sliderSlop: 8, turn: 0.007,
             keys: {
                 up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
                 left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
