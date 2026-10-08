@@ -493,6 +493,8 @@ img.item-icon { object-fit: contain; vertical-align: middle; }
     background: linear-gradient(90deg, rgba(10, 13, 17, 0.88) 0%, rgba(10, 13, 17, 0.62) 42%, rgba(10, 13, 17, 0.3) 100%);
 }
 .title[hidden] { display: none; }
+/* The picture behind goes dark at each of the camera's cuts (ui/title.js `dim`). */
+.title-cut { position: absolute; inset: 0; z-index: -1; background: #05070a; opacity: 0; pointer-events: none; }
 .title-main { display: grid; gap: clamp(14px, 6vh, 28px); justify-items: start; min-width: 0; }
 .title-name {
     margin: 0; font: 800 clamp(34px, 11vh, 52px)/1.05 var(--font); letter-spacing: 0.08em; color: var(--accent);

@@ -377,7 +377,8 @@ const app = (() => {
             display.events(events, clock);
             display.update(w, view, clock, bodies, { self: me, duel: s ? { countdown: s.countdown, phase: s.phase, waiting: s.waiting } : null });
             // Portrait is covered by the rotate hint: skip drawing to save power.
-            if (view && !portrait.matches) view.render(w, Math.min(seconds, simLoop.MAX_FRAME), { bodies, events });
+            if (view && !portrait.matches) view.render(w, Math.min(seconds, simLoop.MAX_FRAME), { bodies, events, tour: title.isOpen() });
+            if (title.isOpen()) title.dim(view?.tourFade || 0);
             // The fight is decided: let it play out a moment, then the result.
             if (duel) {
                 if (duel.outcome && !duel.shown && !duel.ended && clock - duel.resultAt >= RESULT_DELAY) { duel.shown = true; openPanel('duelResult'); }

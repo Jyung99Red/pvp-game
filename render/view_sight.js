@@ -101,12 +101,14 @@ void main() {
             ground.sight.at.value.set(x, z, mask.half);
             mask.draw(x, z, fan);
         }
+        // Shaded or not (not under the title screen's camera: drawing only).
+        function show(on) { ground.sight.tone.value.w = on ? SHADE.opacity : 0; }
         // The masks' targets and the blur are in no scene.
         function dispose() {
             for (const one of masks) one.dispose();
             blur.dispose(); full.geometry.dispose();
         }
-        return { update, dispose };
+        return { update, show, dispose };
     }
     return { create };
 })();

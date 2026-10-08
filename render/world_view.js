@@ -14,6 +14,16 @@ const worldView = (() => {
     const { ghost: GHOST, mist: MIST } = gameConfig.graphics;
     // The largest sun shadow map, texels a side.
     const SUN_LARGEST = 4096;
+    const DEG = Math.PI / 180;
+    // The title screen's camera (game_config.js camera.title) `t` seconds
+    // into its tour: the how-manyth shot (`n`), its kind (`index`, the
+    // kinds taking turns), how far through it (it glides evenly), and how
+    // dark the picture is (1 at a cut, clear `fade` seconds from it).
+    function tourAt(t) {
+        const S = gameConfig.camera.title, n = Math.floor(Math.max(0, t) / S.seconds), into = Math.max(0, t) - n * S.seconds;
+        const fade = S.fade > 0 ? Math.max(0, 1 - Math.min(into, S.seconds - into) / S.fade) : 0;
+        return { n, index: n % S.shots.length, u: into / S.seconds, fade };
+    }
 
     // opts.selfId: the fighter this phone plays (the camera follows it; in a
     // duel the other one is drawn as the rival).
@@ -74,8 +84,22 @@ const worldView = (() => {
         // `bodies`: fighters and monsters as shown, by id -- a blend between
         // two steps (ui/app.js); anyone missing is drawn as simulated.
         // `events` are the simulation events since the last frame.
-        function render(current, frameSeconds, { bodies = null, events = [] } = {}) {
-            world.render(current, frameSeconds, bodies, events);
+        // `tour`: drawn under the title screen, its camera going round one
+        // thing after another (`tourAt`), wider and shifted right of the
+        // middle; `tourFade` is how dark the picture is to be, for the title
+        // screen to draw. `run` counts the tours begun.
+        const tour = { on: false, t: 0, fade: 0, run: 0 };
+        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false } = {}) {
+            if (touring !== tour.on) {
+                tour.on = touring; tour.t = 0;
+                camera.fov = touring ? C.camera.title.fov : C.camera.fov;
+                if (touring) { tour.run++; camera.setViewOffset(1, 1, -C.camera.title.shift, 0, 1, 1); }
+                else camera.clearViewOffset();
+            }
+            let shot = null;
+            if (touring) { tour.t += frameSeconds; shot = { ...tourAt(tour.t), run: tour.run }; }
+            tour.fade = shot ? shot.fade : 0;
+            world.render(current, frameSeconds, bodies, events, shot);
             renderer.render(world.scene, camera);
         }
         function resize(width, height) {
@@ -103,6 +127,9 @@ const worldView = (() => {
         return {
             load, render, resize, project, settings, renderer, camera,
             info: () => renderer.info.render,
+            get tourFade() { return tour.fade; },
+            // What the title screen's camera looks at: { id, look: [x, y, z] }, or null.
+            get tourFocus() { return world.tourFocus(); },
             // The hour a world is drawn at (the HUD's clock shows the same).
             hour: current => dayKit.hourOf(current, tune.hourShift),
             get scene() { return world.scene; },
@@ -246,7 +273,67 @@ const worldView = (() => {
             camera.position.set(tx0 + Math.sin(cam.yaw) * cp * d, ty0 + Math.sin(cam.pitch) * d, tz0 + Math.cos(cam.yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
         }
-        function render(current, frameSeconds, bodies, events) {
+        // ---- the title screen's camera (camera.title): what it may look
+        // at, the region's things (where each stands, blocks; its size and
+        // how high to look); the fighter if there is none ----
+        const TITLE = C.camera.title;
+        const things = sim.entities.flatMap(e => {
+            const sort = e.type === 'lamp' ? (e.kind === 'stand' ? 'stand' : null) : e.type, made = TITLE.things[sort];
+            if (!made) return [];
+            const f = e.footprint, foot = space.toBlocks(e.x, e.y, e.h);
+            return [{ id: e.id, sort, at: f ? [f.col + f.w / 2, foot[1], f.row + f.d / 2] : foot, size: made[0], look: made[1] }];
+        });
+        // Where shot `s` has the camera `u` of the way through it, round
+        // thing `th`, starting `yaw` radians round it.
+        function shotEye(th, s, yaw, u) {
+            const mix = ([a, b]) => a + (b - a) * u, a = yaw + s.turn * DEG * u, pitch = mix(s.pitch) * DEG, d = mix(s.distance) * th.size, cp = Math.cos(pitch);
+            return [th.at[0] + Math.cos(a) * cp * d, th.at[1] + th.look + Math.sin(pitch) * d, th.at[2] + Math.sin(a) * cp * d];
+        }
+        const lookOf = th => [th.at[0], th.at[1] + th.look, th.at[2]];
+        // Is the thing in sight from `eye`, with no block and not the
+        // fighter (standing at `body`, blocks) in the way? Tried up to half
+        // its size short of where the camera looks: a building's own blocks
+        // are not in the way.
+        function sees(eye, th, body) {
+            const look = lookOf(th), d = Math.hypot(eye[0] - look[0], eye[1] - look[1], eye[2] - look[2]), k = Math.min(1, th.size / 2 / Math.max(1e-6, d));
+            const to = look.map((v, i) => v + (eye[i] - v) * k);
+            if (ground.hides(eye, to)) return false;
+            for (let i = 0; i <= 40; i++) {
+                const x = eye[0] + (to[0] - eye[0]) * i / 40, y = eye[1] + (to[1] - eye[1]) * i / 40, z = eye[2] + (to[2] - eye[2]) * i / 40;
+                if (y < body[1] + 2.1 && Math.hypot(x - body[0], z - body[2]) < 0.8) return false;
+            }
+            return true;
+        }
+        // Each shot, as it begins: a thing at random -- not the last one,
+        // and of another sort if there is one -- from a side at random
+        // where no block stands in the camera's way at the shot's start,
+        // middle or end (a few sides tried, then other things); failing
+        // all, the first tried.
+        let pick = { key: null, thing: null, yaw: 0 };
+        function choose(shot, me) {
+            const s = TITLE.shots[shot.index], last = pick.thing;
+            const all = things.length ? things : [{ id: me.id, sort: 'fighter', at: space.toBlocks(me.x, me.y, me.h), size: 2, look: 1 }];
+            const after = th => !last ? 0 : th.id === last.id ? 2 : th.sort === last.sort ? 1 : 0;
+            const order = all.map(th => [th, Math.random() + after(th)]).sort((a, b) => a[1] - b[1]).map(([th]) => th);
+            const body = space.toBlocks(me.x, me.y, me.h);
+            let first = null;
+            for (const th of order.slice(0, 6)) for (let k = 0; k < 6; k++) {
+                const yaw = Math.random() * 2 * Math.PI;
+                first ??= { thing: th, yaw };
+                if (th.sort === 'fighter' || [0, 0.5, 1].every(u => sees(shotEye(th, s, yaw, u), th, body))) return { thing: th, yaw };
+            }
+            return first;
+        }
+        function shotView(shot, me) {
+            const key = `${shot.run}/${shot.n}`;
+            if (pick.key !== key) pick = { key, ...choose(shot, me) };
+            return { eye: shotEye(pick.thing, TITLE.shots[shot.index], pick.yaw, shot.u), look: lookOf(pick.thing) };
+        }
+        // shot: the title screen's camera ({ n, index, u, run }: worldView
+        // `tourAt`), or null. Its picture is of the thing it looks at: the
+        // lights, the sun's shadows round that; no shade of sight, no cut
+        // and no crowns fading for the fighter.
+        function render(current, frameSeconds, bodies, events, shot = null) {
             const dt = Math.max(1e-3, frameSeconds);
             clock += frameSeconds;
             const shownOf = body => bodies?.get(body.id) || body;
@@ -275,9 +362,11 @@ const worldView = (() => {
                 entry.view.light(!!f.lit);
                 drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials, flash: entry.view.flash });
             }
+            const view = shot ? shotView(shot, me) : null, U = C.world.unitsPerBlock;
             // The hour's light (render/view_light.js); colours fade as its
             // look has them, the terrain's and other bodies'.
-            light.frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps: props.lamps, stirring: props.stirring(current) });
+            const near = view ? { x: view.look[0] * U, y: view.look[2] * U, h: 0 } : me;
+            light.frame(current, { me, near, drawn, shownOf, clock, frameSeconds, lamps: props.lamps, stirring: props.stirring(current) });
             ground.fade.value = light.now.fade[0]; cast.fade.value = light.now.fade[1];
             const foes = [];
             if (dummyView && current.dummy) {
@@ -308,6 +397,15 @@ const worldView = (() => {
             effects.update(frameSeconds, current, { selfId, fighters: drawn, foes });
             const at = space.toBlocks(me.x, me.y, me.h);
             sight.update(at[0], at[2], me.facing);
+            sight.show(!view);
+            if (view) {
+                camera.position.fromArray(view.eye);
+                camera.lookAt(view.look[0], view.look[1], view.look[2]);
+                light.placeSun(view.look[0], view.look[1], view.look[2]);
+                ground.cut.open.value = 0; cutSet = false;
+                ground.seeThrough([]);
+                return;
+            }
             placeCamera(at[0], at[1], at[2]);
             light.placeSun(at[0], at[1], at[2]);
             // Cut the blocks between the camera and this fighter's chest,
@@ -341,7 +439,8 @@ const worldView = (() => {
             light.dispose();
         }
         light.retune();
-        return { scene, render, dispose, retune: light.retune, playerRig, seen, ground };
+        const tourFocus = () => pick.thing ? { id: pick.thing.id, look: lookOf(pick.thing) } : null;
+        return { scene, render, dispose, retune: light.retune, playerRig, seen, ground, tourFocus };
     }
     return { create };
 })();

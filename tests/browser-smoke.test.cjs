@@ -248,6 +248,34 @@ test('the world: the title screen, the base, through the north gate by touch, a 
             return [g.title.isOpen(), g.sim.time - t0, getComputedStyle(document.querySelector('[data-menu]')).visibility, localStorage.getItem('blocky-rpg-save')];
         });
         assert.deepEqual(still, [true, 0, 'hidden', null]);
+        // Behind it the camera is not the fighter's (user, 2026-10-08): shot
+        // after shot it goes round something of the base's picked at random
+        // (a building, a portal, the chest, a standing torch), never the
+        // last one again, which stands right of the middle; the view is
+        // wider; dark at a cut. Drawn for the game again, the camera is the
+        // game's. (Stepped here by hand, from a tour begun afresh.)
+        const tour = await page.evaluate(() => {
+            const g = window.game, v = g.view, me = g.sim.player, at = space.toBlocks(me.x, me.y, me.h), S = gameConfig.camera.title;
+            const step = (dt, tour = true) => {
+                v.render(g.sim, dt, { tour });
+                const focus = v.tourFocus, p = v.project(tour ? focus.look : [at[0], at[1] + 1, at[2]]);
+                return { focus: focus?.id, eye: v.camera.position.toArray(), x: p.x / window.innerWidth, fov: v.camera.fov, fade: v.tourFade };
+            };
+            step(0, false); step(0);
+            const a = step(S.seconds / 2), b = step(1), cut = step(S.seconds / 2 - 1), next = step(S.seconds / 2), game = step(0, false);
+            const things = g.sim.entities.filter(e => ['building', 'portal', 'chest'].includes(e.type) || (e.type === 'lamp' && e.kind === 'stand')).map(e => e.id);
+            return { a, b, cut, next, game, things, shift: S.shift, fov: [S.fov, gameConfig.camera.fov] };
+        });
+        const apart = (p, q) => Math.hypot(...p.eye.map((v, i) => v - q.eye[i]));
+        assert.ok(tour.things.includes(tour.a.focus) && tour.things.includes(tour.next.focus), `${tour.a.focus}, ${tour.next.focus}: things of the base`);
+        assert.ok(tour.a.focus === tour.b.focus && apart(tour.a, tour.b) > 0.1, `one shot glides round one thing: ${JSON.stringify(tour)}`);
+        assert.ok(tour.next.focus !== tour.b.focus && apart(tour.b, tour.next) > 1, `the next shot is of another: ${JSON.stringify(tour)}`);
+        for (const one of [tour.a, tour.b, tour.next]) assert.ok(Math.abs(one.x - (0.5 + tour.shift)) < 0.02 && one.fov === tour.fov[0], JSON.stringify(one));
+        assert.ok(tour.a.fade === 0 && tour.cut.fade > 0.99, `clear in a shot, dark at the cut: ${tour.a.fade}, ${tour.cut.fade}`);
+        assert.ok(Math.abs(tour.game.x - 0.5) < 0.02 && tour.game.fov === tour.fov[1] && tour.game.fade === 0, JSON.stringify(tour.game));
+        // The page's next frames go round again from the start: the title screen dims the picture as the tour begins.
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.ok(await page.evaluate(() => Number(getComputedStyle(document.querySelector('[data-title-cut]')).opacity)) > 0.5);
         await page.click('[data-title-act="settings"]');
         await page.click('[data-title-settings] [data-setting="perf"][data-pick="1"]');
         assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-perf]').hidden, JSON.parse(localStorage.getItem('blocky-rpg-settings')).perf]), [true, false]);

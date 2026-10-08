@@ -426,7 +426,32 @@ const gameConfig = (() => {
         // distance and lookHeight are blocks (distance what the far setting
         // gave before, user 2026-10-07); fov is vertical, in degrees. zoom: the
         // distance multiplier each camera setting of the menu picks.
-        camera: { yaw: 0, pitch: 0.96, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 } },
+        //
+        // title: the title screen's camera (design.md 3.6; user,
+        // 2026-10-08): not the fighter's; shot after shot, `seconds` each,
+        // it looks at something of the region's picked at random --
+        // `things`, by entity type (a lamp only when it stands), each
+        // [its size, how high to look above its foot], blocks -- from a
+        // side at random. At each cut the picture goes dark and comes back
+        // over `fade` seconds. The shots take turns: each goes round its
+        // thing by `turn` degrees, gliding evenly, its pitch (degrees down)
+        // and distance (in sizes of the thing) from the first value to the
+        // second. `fov`: the vertical field of view, degrees (wider than
+        // the game's). `shift`: how far right of the middle the thing
+        // stands, a share of the screen's width (the name and the keys are
+        // on the left).
+        camera: {
+            yaw: 0, pitch: 0.96, distance: 13.2, fov: 34, lookHeight: 0.8, zoom: { near: 0.87, mid: 1, far: 1.13 },
+            title: {
+                seconds: 7, fade: 0.7, shift: 0.16, fov: 45,
+                things: { building: [5, 1.4], portal: [3.5, 1.5], chest: [1.8, 0.5], stand: [2, 1.1], dummy: [2.4, 1] },
+                shots: [
+                    { turn: 30, pitch: [12, 16], distance: [2.2, 1.9] },
+                    { turn: -25, pitch: [40, 34], distance: [3, 2.7] },
+                    { turn: 30, pitch: [24, 18], distance: [2.6, 2.3] }
+                ]
+            }
+        },
 
         // 6. Rendering cost, by the menu's picture quality (user,
         // 2026-10-06). Each quality: pixelRatio, the most device pixels

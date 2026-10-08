@@ -304,8 +304,10 @@ const viewLight = (() => {
         // `shownOf`: a body as shown; `lamps`: where the torches that stand
         // in the map have their light (render/lamp_view.js `lights`);
         // `stirring`: where the props that move are ([x, z], blocks;
-        // render/view_props.js).
-        function frame(current, { me, drawn, shownOf, clock, frameSeconds, lamps = [], stirring = [] }) {
+        // render/view_props.js); `near`: what the lights nearest to are lit
+        // for ({ x, y, h }, world units; the fighter, or what the title
+        // screen's camera looks at).
+        function frame(current, { me, near = me, drawn, shownOf, clock, frameSeconds, lamps = [], stirring = [] }) {
             // The hour's light.
             const hour = dayKit.hourOf(current, tune.hourShift);
             daylight(hour);
@@ -395,7 +397,7 @@ const viewLight = (() => {
                 if (!was || was.length !== at.length || at.some((v, i) => Math.abs(v[0] - was[i][0]) + Math.abs(v[1] - was[i][1]) + Math.abs(v[2] - was[i][2]) > least)) moving.push(where(d.shown));
                 spots.set(d.id, at);
             }
-            kindle(glowing, me, frameSeconds, moving, current.terrain.rev);
+            kindle(glowing, near, frameSeconds, moving, current.terrain.rev);
             ground.glow(glows, now.torch * GLOW.power);
         }
         // (The shadow maps are the lights' own render targets.)
