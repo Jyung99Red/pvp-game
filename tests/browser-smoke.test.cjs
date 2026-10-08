@@ -699,6 +699,34 @@ test('picture quality: a quality\'s key loads its values into the sliders, a sli
         await page.evaluate(() => window.game.menu.open());
         await page.click('[data-menu-page="settings"]');
         assert.deepEqual([await picked(), (await state()).shown], ['自定义', ['×3 2532×1170', '512', '256', '6 点', '关', '关']]);
+        // A finger on a slider, real touches (user, 2026-10-08: a scroll
+        // begun on one moved it): up or down is the page's scroll and moves
+        // nothing; sideways it follows, kept when let go; a tap puts it
+        // where tapped. Points are [share of the track across, pixels down].
+        const cdp = await context.newCDPSession(page);
+        const finger = async (key, points) => {
+            const r = await page.evaluate(key => {
+                const input = document.querySelector(`[data-custom="${key}"]`);
+                input.scrollIntoView({ block: 'center' });
+                const b = input.getBoundingClientRect();
+                return { x: b.left, y: b.top + b.height / 2, w: b.width };
+            }, key);
+            const at = ([across, down]) => [{ x: r.x + across * r.w, y: r.y + down, id: 1 }];
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(points[0]) });
+            for (const p of points.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(p) });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        };
+        // The torch shadow's map drawn, its slider's reading, and what is kept.
+        const torch = async () => {
+            const now = await state();
+            return [now.torch, now.shown[2], await page.evaluate(() => JSON.parse(localStorage.getItem('blocky-rpg-settings')).custom.torchShadow)];
+        };
+        await finger('torchShadow', [[0.9, 0], [0.91, 6], [0.93, 20], [0.95, 45], [0.96, 70]]);
+        assert.deepEqual(await torch(), [256, '256', 256], 'up or down: the scroll, the slider left as it was');
+        await finger('torchShadow', [[0.4, 0], [0.5, 1], [0.7, 2], [0.98, 2]]);
+        assert.deepEqual(await torch(), [1024, '1024', 1024], 'sideways: it follows, and is kept');
+        await finger('torchShadow', [[0.02, 0]]);
+        assert.deepEqual(await torch(), [128, '128', 128], 'a tap: where tapped');
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });

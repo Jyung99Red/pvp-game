@@ -15,6 +15,10 @@ const menuScreen = (() => {
     const K = inventoryKit, { SLOT_NAMES, STAT_NAMES } = itemScreens;
     // Radians the figure turns per CSS pixel dragged.
     const TURN = 0.012;
+    // CSS pixels a finger goes on a slider before its way is judged
+    // (sideways moves it, up or down scrolls); half its knob, which the
+    // track is short of at either end.
+    const SLOP = 8, KNOB = 8;
     // The picture quality's sliders (ui/settings.js), one per value of
     // graphics.choices: the label, and how a value reads. The pixel
     // ratio reads as what is drawn: never more than the phone's own, and
@@ -121,7 +125,7 @@ const menuScreen = (() => {
             return `<div class="sliders">${Object.entries(SLIDERS).map(([key, [label, read]]) => {
                 const options = choices[key], at = Math.max(0, options.indexOf(custom[key]));
                 return `<label class="slider"><span>${label}<b data-custom-shown="${key}">${esc(read(options[at]))}</b></span>`
-                    + `<input type="range" min="0" max="${options.length - 1}" step="1" value="${at}" data-custom="${key}" aria-label="${label}"></label>`;
+                    + `<span class="slider-track" data-track><input type="range" min="0" max="${options.length - 1}" step="1" value="${at}" data-custom="${key}" aria-label="${label}"></span></label>`;
             }).join('')}</div>`;
         }
         // A slider moved: its value reads at once; let go, it is kept and drawn.
@@ -134,6 +138,53 @@ const menuScreen = (() => {
         };
         el.addEventListener('input', slid);
         el.addEventListener('change', e => { const s = slid(e); if (s) { gameSettings.setCustom(s.key, s.value); render(); } });
+        // A slider moves for a sideways drag only (user, 2026-10-08: a
+        // scroll begun on one moved it). Its input takes no touch; its track
+        // waits until the finger has gone SLOP pixels: sideways, the slider
+        // follows the finger; up or down, it is the page's scroll
+        // (touch-action: pan-y) and the slider stays as it was. A tap puts
+        // it where tapped. Let go, a new value is kept (`change`).
+        let sliding = null;
+        const follow = (s, x) => {
+            const r = s.track.getBoundingClientRect(), share = (x - r.left - KNOB) / Math.max(1, r.width - 2 * KNOB);
+            const at = String(Math.round(Math.max(0, Math.min(1, share)) * Number(s.input.max)));
+            if (at === s.input.value) return;
+            s.input.value = at;
+            s.input.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        el.addEventListener('pointerdown', e => {
+            const track = e.target.closest?.('[data-track]');
+            if (!track || e.button > 0) return;
+            const input = track.querySelector('[data-custom]');
+            sliding = { id: e.pointerId, track, input, x: e.clientX, y: e.clientY, from: input.value, way: null };
+        });
+        el.addEventListener('pointermove', e => {
+            const s = sliding;
+            if (!s || e.pointerId !== s.id) return;
+            if (!s.way) {
+                const dx = Math.abs(e.clientX - s.x), dy = Math.abs(e.clientY - s.y);
+                if (Math.max(dx, dy) < SLOP) return;
+                s.way = dx > dy ? 'side' : 'scroll';
+            }
+            if (s.way === 'side') follow(s, e.clientX);
+        });
+        el.addEventListener('pointerup', e => {
+            const s = sliding;
+            if (!s || e.pointerId !== s.id) return;
+            sliding = null;
+            if (s.way === 'scroll') return;
+            if (!s.way) follow(s, e.clientX);
+            if (s.input.value !== s.from) s.input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        // The page took the finger for its scroll: the slider goes back.
+        el.addEventListener('pointercancel', e => {
+            const s = sliding;
+            if (!s || e.pointerId !== s.id) return;
+            sliding = null;
+            if (s.input.value === s.from) return;
+            s.input.value = s.from;
+            s.input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
         // HP goes on changing under the open menu.
         function life(force = false) {
             const f = hooks.player(), text = `${Math.ceil(f.hp)} / ${f.maxHp}`;
@@ -166,7 +217,7 @@ const menuScreen = (() => {
         }
         function close() {
             if (!open) return;
-            open = false; el.hidden = true; drag = null;
+            open = false; el.hidden = true; drag = null; sliding = null;
             cancelAnimationFrame(raf);
             hooks.closed({ gearChanged });
         }
