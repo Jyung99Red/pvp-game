@@ -1,6 +1,7 @@
 // Starts the game once every script is loaded: simulation, 3D view, input
 // and the frame loop, plus the landscape shell (fullscreen on Android's
-// first touch), the title screen, the menu and the panels. The page opens
+// first touch, and again on the first back from the background), the
+// title screen, the menu and the panels. The page opens
 // on the title screen (ui/title.js) over the base, standing still; nothing
 // is saved till the adventure is begun from it. The world (design.md 6):
 // a game starts in the base; a portal's `travel` builds the next region in
@@ -46,9 +47,11 @@ const app = (() => {
         box.textContent = text; box.hidden = false;
     }
     // Fullscreen needs a user gesture; for touch, pointerup is one and
-    // pointerdown is not. Asked once; leaving fullscreen is respected.
-    // iPhone Safari has no element fullscreen, so it is simply skipped.
-    function fullscreenOnFirstTouch() {
+    // pointerdown is not. Asked on the first touch, and again on the first
+    // touch back from the background, which leaves fullscreen (user,
+    // 2026-10-08); leaving it otherwise is respected till then. iPhone
+    // Safari has no element fullscreen, so it is simply skipped.
+    function fullscreenOnTouch() {
         const ask = e => {
             if (e.pointerType !== 'touch') return;
             window.removeEventListener('pointerup', ask, true);
@@ -58,7 +61,9 @@ const app = (() => {
                 .then(() => screen.orientation?.lock?.('landscape'))
                 .catch(() => { /* Refused or unsupported: the rotate hint still covers portrait. */ });
         };
-        window.addEventListener('pointerup', ask, true);
+        const arm = () => window.addEventListener('pointerup', ask, true);
+        arm();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.fullscreenElement) arm(); });
     }
     const mapFromAddress = () => {
         const id = new URLSearchParams(window.location.search).get('map');
@@ -342,7 +347,7 @@ const app = (() => {
         }
         window.addEventListener('resize', resize);
         resize();
-        fullscreenOnFirstTouch();
+        fullscreenOnTouch();
 
         const perf = root.querySelector('[data-perf]'), portrait = window.matchMedia('(orientation: portrait)');
         // This phone's settings, from the menu.

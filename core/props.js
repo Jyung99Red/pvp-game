@@ -218,21 +218,18 @@ const propKit = (() => {
     // What is still wanted to call boss `kind` back, as words ('哥布林耳 ×6
     // (有 2)'), or '' when everything is carried.
     function missing(sim, kind) {
-        const items = progressOf(sim).inventory.items, short = [];
+        const bag = progressOf(sim), short = [];
         for (const [id, n] of Object.entries(gameConfig.monsters[kind].revive || {})) {
-            const have = items[id] || 0;
-            if (have < n) short.push(`${gameConfig.items[id]?.name || id} ×${n}（有 ${have}）`);
+            const have = inventoryKit.count(bag, id);
+            if (have < n) short.push(`${inventoryKit.itemOf(id)?.name || id} ×${n}（有 ${have}）`);
         }
         return short.join('、');
     }
     // The materials are spent, the boss is back for good (`revived`, till it
     // is beaten again), and the grave starts to glow.
     function call(sim, e, p) {
-        const bag = progressOf(sim), items = bag.inventory.items;
-        for (const [id, n] of Object.entries(gameConfig.monsters[e.boss].revive || {})) {
-            items[id] -= n;
-            if (items[id] <= 0) delete items[id];
-        }
+        const bag = progressOf(sim);
+        for (const [id, n] of Object.entries(gameConfig.monsters[e.boss].revive || {})) inventoryKit.give(bag, id, -n);
         bag.revived = { ...bag.revived, [e.boss]: true };
         Object.assign(e, { state: 'calling', t: 0, caller: p.id });
         emit(sim, 'grave_call', { side: p.id, target: e.id, kind: e.boss, at: space.toBlocks(e.x, e.y, 20) });
@@ -340,5 +337,5 @@ const propKit = (() => {
             else if (e.type === 'grave') tickGrave(sim, e, dt);
         }
     }
-    return { DIRS, angleOf, place, regrow, arrival, offer, use, drop, tick, doorOf, progressOf, nodeKey, missing };
+    return { DIRS, angleOf, place, regrow, arrival, offer, use, drop, tick, doorOf, progressOf, nodeKey };
 })();

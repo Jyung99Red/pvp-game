@@ -4,10 +4,10 @@
 // quality picked. A key picks its choice; moving a slider makes the
 // quality custom (user, 2026-10-08).
 const settingsView = (() => {
-    // CSS pixels a finger goes on a slider before its way is judged
-    // (sideways moves it, up or down scrolls); half its knob, which the
-    // track is short of at either end.
-    const SLOP = 8, KNOB = 8;
+    // Half a slider's knob (CSS pixels), which the track is short of at
+    // either end. (How far a finger goes before its way is judged:
+    // gameConfig.input.sliderSlop.)
+    const KNOB = 8;
     // The picture quality's sliders, one per value of graphics.choices:
     // the label, and how a value reads. The pixel ratio reads as what is
     // drawn: never more than the phone's own, and the picture's size in
@@ -65,7 +65,7 @@ const settingsView = (() => {
         el.addEventListener('change', e => { const s = slid(e); if (s) { gameSettings.setCustom(s.key, s.value); render(); } });
         // A slider moves for a sideways drag only (user, 2026-10-08: a
         // scroll begun on one moved it). Its input takes no touch; its track
-        // waits until the finger has gone SLOP pixels: sideways, the slider
+        // waits until the finger has gone input.sliderSlop: sideways, the slider
         // follows the finger; up or down, it is the page's scroll
         // (touch-action: pan-y) and the slider stays as it was. A tap puts
         // it where tapped. Let go, a new value is kept (`change`).
@@ -90,7 +90,7 @@ const settingsView = (() => {
             if (!s || e.pointerId !== s.id) return;
             if (!s.way) {
                 const dx = Math.abs(e.clientX - s.x), dy = Math.abs(e.clientY - s.y);
-                if (Math.max(dx, dy) < SLOP) return;
+                if (Math.max(dx, dy) < gameConfig.input.sliderSlop) return;
                 s.way = dx > dy ? 'side' : 'scroll';
             }
             if (s.way === 'side') follow(s, e.clientX);

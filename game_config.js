@@ -651,9 +651,11 @@ const gameConfig = (() => {
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)
         // below which nothing moves, and beyond which speed reaches full
         // over `ramp` more pixels. stickRadius: knob travel. maxTouches:
-        // two thumbs (design.md 3.2).
+        // two thumbs (design.md 3.2). sliderSlop: how far a finger goes on
+        // a settings slider before it is judged a sideways drag (the
+        // slider moves) or a scroll (user, 2026-10-08; ui/settings_view.js).
         input: {
-            deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2,
+            deadZone: 12, ramp: 32, stickRadius: 52, maxTouches: 2, sliderSlop: 8,
             keys: {
                 up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'],
                 left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],

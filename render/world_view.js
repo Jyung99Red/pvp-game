@@ -95,7 +95,11 @@ const worldView = (() => {
             if (touring !== tour.on) {
                 tour.on = touring; tour.t = 0;
                 camera.fov = touring ? C.camera.title.fov : C.camera.fov;
-                if (touring) { tour.run++; camera.setViewOffset(1, 1, -C.camera.title.shift, 0, 1, 1); }
+                // (setViewOffset makes the aspect its full width over its
+                // full height: the canvas's own is that full size, or the
+                // picture is stretched -- and stays so after the title
+                // screen, till the window's size next changes.)
+                if (touring) { tour.run++; camera.setViewOffset(camera.aspect, 1, -C.camera.title.shift * camera.aspect, 0, camera.aspect, 1); }
                 else camera.clearViewOffset();
             }
             let shot = null;

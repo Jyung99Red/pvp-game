@@ -132,8 +132,14 @@ const playerAnim = (() => {
     // The stance a move comes out of and goes back to: a carried torch is
     // held up and forward, so a move's recovery brings the left arm back up
     // to it (not to the stance's, whence the arm would jump to the torch as
-    // the move ended). Made anew each time: the move tuner edits the poses.
-    const restOf = loadout => inventoryKit.offhandOf(loadout) === 'torch' ? { ...playerPoses.stance, ...playerMoves.torch } : playerPoses.stance;
+    // the move ended). Worked out once; made anew each time on the move
+    // tuner's page (its config unfrozen), whose edits change the poses.
+    let torchRest = null;
+    function restOf(loadout) {
+        if (inventoryKit.offhandOf(loadout) !== 'torch') return playerPoses.stance;
+        if (globalThis.unfrozenConfig === true) return { ...playerPoses.stance, ...playerMoves.torch };
+        return torchRest ??= Object.freeze({ ...playerPoses.stance, ...playerMoves.torch });
+    }
 
     // The legs under a guard. The pose's legs are the stance's turning into
     // the stride by moveBlend: the guard's standing legs take the stance's

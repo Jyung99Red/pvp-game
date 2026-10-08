@@ -313,6 +313,7 @@
 | `graphics.shadowExtent` | 15 | 太阳阴影范围半宽（格；用户 2026-10-07 从 13 加到 15，盖住拉远后的远档镜头） |
 | `input.deadZone` / `ramp` / `stickRadius` | 12 / 32 / 52 | 摇杆死区、再拖多少到满速、底座半径 |
 | `input.maxTouches` | 2 | 同时有效的触点 |
+| `input.sliderSlop` | 8 | 设置页的滑块：手指移动多少 CSS 像素后才判断方向，横着拖动滑块，竖着滚动页面（用户 2026-10-08） |
 | `input.keys` | WASD/方向键、J、K、L、E | 移动、攻击、副手、格挡、交互 |
 
 **画质** `graphics.quality`（菜单"画质"，用户 2026-10-06）：

@@ -139,6 +139,19 @@ test('landscape phone: boots clean, draws the world, controls laid out', { timeo
         });
         assert.ok(shade.seen.ground > 40 && shade.unseen.ground < shade.seen.ground * 0.7, `the ground behind the player is shaded: ${JSON.stringify(shade)}`);
         assert.ok(shade.seen.top > 40 && shade.unseen.top < shade.seen.top * 0.7, `and the block on it too: ${JSON.stringify(shade)}`);
+        // Fullscreen is asked on the first touch, and again on the first
+        // touch back from the background (user, 2026-10-08), not on others.
+        const asked = await page.evaluate(() => {
+            let n = 0;
+            const el = document.documentElement, counts = [], touch = type => { window.dispatchEvent(new PointerEvent('pointerup', { pointerType: type })); counts.push(n); };
+            el.requestFullscreen = () => { n++; return Promise.reject(new Error('not in this test')); };
+            touch('mouse'); touch('touch'); touch('touch');
+            document.dispatchEvent(new Event('visibilitychange'));
+            touch('touch'); touch('touch');
+            delete el.requestFullscreen;
+            return counts;
+        });
+        assert.deepEqual(asked, [0, 1, 1, 2, 2]);
         // A real-time fight: the frame loop runs, J is A, the dummy swings back.
         await page.evaluate(() => { const g = window.game, d = g.sim.dummy; g.sim.player.x = d.x - 60; g.sim.player.y = d.y; g.sim.player.facing = 0; g.pause(false); });
         for (let i = 0; i < 3; i++) { await page.keyboard.press('KeyJ'); await page.waitForTimeout(250); }
@@ -255,13 +268,14 @@ test('the world: the title screen, the base, through the north gate by touch, a 
         // (a building, a portal, the chest, a standing torch), never the
         // last one again, which stands right of the middle; the view is
         // wider; dark at a cut. Drawn for the game again, the camera is the
-        // game's. (Stepped here by hand, from a tour begun afresh.)
+        // game's; neither is stretched. (Stepped here by hand, from a tour begun afresh.)
         const tour = await page.evaluate(() => {
             const g = window.game, v = g.view, me = g.sim.player, at = space.toBlocks(me.x, me.y, me.h), S = gameConfig.camera.title;
             const step = (dt, tour = true) => {
                 v.render(g.sim, dt, { tour });
                 const focus = v.tourFocus, p = v.project(tour ? focus.look : [at[0], at[1] + 1, at[2]]);
-                return { focus: focus?.id, eye: v.camera.position.toArray(), x: p.x / window.innerWidth, fov: v.camera.fov, fade: v.tourFade };
+                const canvas = v.renderer.domElement, stretch = v.camera.aspect / (canvas.clientWidth / canvas.clientHeight);
+                return { focus: focus?.id, eye: v.camera.position.toArray(), x: p.x / window.innerWidth, fov: v.camera.fov, fade: v.tourFade, stretch };
             };
             step(0, false); step(0);
             const a = step(S.seconds / 2), b = step(1), cut = step(S.seconds / 2 - 1), next = step(S.seconds / 2), game = step(0, false);
@@ -275,6 +289,7 @@ test('the world: the title screen, the base, through the north gate by touch, a 
         for (const one of [tour.a, tour.b, tour.next]) assert.ok(Math.abs(one.x - (0.5 + tour.shift)) < 0.02 && one.fov === tour.fov[0], JSON.stringify(one));
         assert.ok(tour.a.fade === 0 && tour.cut.fade > 0.99, `clear in a shot, dark at the cut: ${tour.a.fade}, ${tour.cut.fade}`);
         assert.ok(Math.abs(tour.game.x - 0.5) < 0.02 && tour.game.fov === tour.fov[1] && tour.game.fade === 0, JSON.stringify(tour.game));
+        for (const one of [tour.a, tour.next, tour.game]) assert.ok(Math.abs(one.stretch - 1) < 1e-6, `the camera's aspect is the canvas's: ${JSON.stringify(one)}`);
         // The page's next frames go round again from the start: the title screen dims the picture as the tour begins.
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         assert.ok(await page.evaluate(() => Number(getComputedStyle(document.querySelector('[data-title-cut]')).opacity)) > 0.5);

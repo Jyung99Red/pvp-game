@@ -100,10 +100,11 @@ const renderEffects = (() => {
         // id -> seconds left.
         const blinks = new Map(), BLINK = 0.2;
         const blinking = id => (blinks.get(id) || 0) > 0;
-        const FALLEN = {
-            goblin: ['#7fb550', '#8cc25a', '#6b4a2a'], wolf: ['#9c9ea3', '#b5b7bc', '#8d8f94'], spider: ['#5b4a5f', '#6f5d73', '#b8432f'],
-            goblinChief: ['#5f8a34', '#8a2f2a', '#7d8088', '#d8b04a'], wolfKing: ['#4c4d55', '#2c2d33', '#ff7a3a', '#d8b04a']
-        };
+        // A monster's colours (models/palette.js), for the burst as it falls.
+        const FALLEN = Object.fromEntries(Object.entries({
+            goblin: ['goblin', 'goblinLight', 'rag'], wolf: ['wolf', 'wolfLight', 'wolfDark'], spider: ['spider', 'spiderLight', 'spiderMark'],
+            goblinChief: ['chiefSkin', 'chiefRag', 'helmet', 'gold'], wolfKing: ['kingFur', 'mane', 'kingEye', 'gold']
+        }).map(([kind, names]) => [kind, names.map(name => palette[name])]));
         let shake = 0, cue = 0, rested = 0;
         function onEvents(events, selfId = 'player') {
             for (const e of events) {
