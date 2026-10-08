@@ -205,7 +205,7 @@
 在哪儿跑决定了浏览器怎么用：
 
 - **用户的 Windows 电脑**（Claude 桌面版）：`playwright-core` 装在仓库外的 `C:\Users\USER\pw-tools`，用本机的 Chrome 跑（没有 Chrome 就把 `chrome` 换成 `msedge`）。
-  不设下面两个变量时 `tests/browser-smoke.test.cjs` 的 10 条照旧跳过；设了以后全部测试约两分钟：
+  不设下面两个变量时 `tests/browser-smoke.test.cjs` 的 9 条照旧跳过；设了以后全部测试约一分半钟：
 
   ```powershell
   $env:PLAYWRIGHT_MODULE = "C:\Users\USER\pw-tools\node_modules\playwright-core"
