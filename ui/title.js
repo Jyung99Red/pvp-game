@@ -27,6 +27,8 @@ const titleScreen = (() => {
             keys.continue.hidden = !saved;
             keys.new.textContent = saved ? '新的冒险' : '开始冒险';
             keys.new.classList.toggle('primary', !saved);
+            // Red while it would erase a save (user, 2026-10-08).
+            keys.new.classList.toggle('danger', saved);
             box.hidden = !unfolded;
             keys.settings.setAttribute('aria-expanded', String(unfolded));
             if (unfolded) settingsPage.render();

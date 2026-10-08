@@ -242,6 +242,8 @@ test('the world: the title screen, the base, through the north gate by touch, a 
         // beside the keys and work as the menu's.
         const titleKeys = () => page.evaluate(() => [...document.querySelectorAll('[data-title-act]')].filter(b => !b.hidden).map(b => b.textContent));
         assert.deepEqual(await titleKeys(), ['开始冒险', '联机对战', '设置']);
+        const newKey = () => page.evaluate(() => [...document.querySelector('[data-title-act="new"]').classList].filter(c => ['primary', 'danger'].includes(c)));
+        assert.deepEqual(await newKey(), ['primary'], 'no save: 开始冒险 is the main key');
         const still = await page.evaluate(async () => {
             const g = window.game, t0 = g.sim.time, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
             g.pause(false); await frame(); await frame(); await frame(); g.pause(true);
@@ -427,6 +429,7 @@ test('the world: the title screen, the base, through the north gate by touch, a 
         await page.click('[data-menu-act="title"]');
         assert.deepEqual([await page.evaluate(() => [window.game.title.isOpen(), window.game.menu.isOpen(), localStorage.getItem('blocky-rpg-save') !== null]), await titleKeys()],
             [[true, false, true], ['继续冒险', '新的冒险', '联机对战', '设置']]);
+        assert.deepEqual(await newKey(), ['danger'], 'a save to erase: 新的冒险 is red (user, 2026-10-08)');
         await page.click('[data-title-act="new"]');
         assert.deepEqual(await page.evaluate(() => [window.game.panel, document.querySelector('[data-panel-title]').textContent]), ['reset', '开始新的冒险？']);
         await page.click('[data-action="resume"]');
