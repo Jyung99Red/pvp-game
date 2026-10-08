@@ -350,12 +350,11 @@ const gameConfig = (() => {
             chiefChest: [{ item: 'gold', chance: 1, amount: [40, 60] }, { item: 'goblin_ear', chance: 1, amount: [2, 4] }, { item: 'wolf_pelt', chance: 1, amount: [1, 2] }],
             kingChest: [{ item: 'gold', chance: 1, amount: [60, 90] }, { item: 'wolf_pelt', chance: 1, amount: [3, 5] }],
             caveChest: [{ item: 'gold', chance: 1, amount: [50, 80] }, { item: 'crystal', chance: 1, amount: [2, 3] }, { item: 'wolf_pelt', chance: 1, amount: [2, 3] }],
-            // The cheat chest in the village (user, 2026-10-06): gold and
-            // materials enough for everything the smithy makes.
+            // The cheat chest in the village (user, 2026-10-06): gold, and
+            // 20 of every material (user, 2026-10-08).
             cheatChest: [
-                { item: 'gold', chance: 1, amount: [500, 500] }, { item: 'iron_ore', chance: 1, amount: [20, 20] }, { item: 'wolf_pelt', chance: 1, amount: [10, 10] },
-                { item: 'goblin_ear', chance: 1, amount: [5, 5] }, { item: 'herb', chance: 1, amount: [5, 5] }, { item: 'crystal', chance: 1, amount: [5, 5] },
-                { item: 'chief_tusk', chance: 1, amount: [1, 1] }, { item: 'king_fang', chance: 1, amount: [1, 1] }
+                { item: 'gold', chance: 1, amount: [500, 500] },
+                ...['iron_ore', 'wolf_pelt', 'goblin_ear', 'herb', 'crystal', 'spider_silk', 'chief_tusk', 'king_fang'].map(item => ({ item, chance: 1, amount: [20, 20] }))
             ],
             ironOre: [{ item: 'iron_ore', chance: 1, amount: [1, 2] }],
             crystal: [{ item: 'crystal', chance: 1, amount: [1, 1] }],
