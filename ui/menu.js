@@ -2,19 +2,21 @@
 // running game, which goes on (user, 2026-10-02: like Minecraft's
 // inventory; the pause is a button of its own). Three columns: the main
 // character in what is worn, turned by dragging (render/figure_view.js);
-// HP and stats over the four gear slots (a column) and the bag beside
-// them, the picked item below (one bag: the base's storage opens this
-// too), gear changed in the base only (design.md 7.2); and the side:
-// pause, the duel room, this phone's settings (folded away), a new
-// adventure. The close key has the corner to itself. Gear changes go
-// through core/inventory.js on the world's progress and take effect when
-// the menu closes (`closed`).
+// a page; and the side: the pages' keys (user, 2026-10-08), pause, the
+// duel room, a new adventure. The character page: HP and stats over the
+// four gear slots (a column) and the bag beside them, the picked item
+// below (one bag: the base's storage opens this too), gear changed in the
+// base only (design.md 7.2). The settings page takes its place: this
+// phone's settings, every choice a key. The menu opens on the character
+// page every time (user, 2026-10-08). The close key has the corner to
+// itself. Gear changes go through core/inventory.js on the world's
+// progress and take effect when the menu closes (`closed`).
 const menuScreen = (() => {
     const K = inventoryKit, { SLOT_NAMES, STAT_NAMES } = itemScreens;
     // Radians the figure turns per CSS pixel dragged.
     const TURN = 0.012;
-    // The custom picture quality's sliders (ui/settings.js), one per value
-    // of graphics.choices: the label, and how a value reads. The pixel
+    // The picture quality's sliders (ui/settings.js), one per value of
+    // graphics.choices: the label, and how a value reads. The pixel
     // ratio reads as what is drawn: never more than the phone's own, and
     // the picture's size in device pixels.
     const SLIDERS = {
@@ -40,8 +42,9 @@ const menuScreen = (() => {
         const hpFill = $('[data-menu-hp]'), hpText = $('[data-menu-hp-text]'), statsEl = $('[data-menu-stats]');
         const settingsEl = $('[data-menu-settings]');
         const acts = Object.fromEntries([...el.querySelectorAll('[data-menu-act]')].map(b => [b.dataset.menuAct, b]));
+        const tabs = [...el.querySelectorAll('[data-menu-page]')], pages = [...el.querySelectorAll('[data-menu-page-body]')];
         const I = gameConfig.items;
-        let open = false, picked = null, message = '', gearChanged = false, raf = 0, drag = null, fig = null, shownHp = '', folded = true;
+        let open = false, picked = null, message = '', gearChanged = false, raf = 0, drag = null, fig = null, shownHp = '', page = 'role';
 
         const owned = id => K.count(hooks.progress(), id);
         const statLine = stats => K.STATS.filter(k => stats?.[k]).map(k => `${STAT_NAMES[k]} +${stats[k]}`).join('，');
@@ -83,7 +86,12 @@ const menuScreen = (() => {
                 ${lines.map(l => `<p>${esc(l)}</p>`).join('')}`;
         }
         function render() {
-            const p = hooks.progress(), stats = K.statsOf(p.loadout);
+            for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.menuPage === page));
+            for (const body of pages) body.hidden = body.dataset.menuPageBody !== page;
+            const p = hooks.progress();
+            if (fig) fig.show(p.loadout);
+            if (page === 'settings') { settingsEl.innerHTML = settings(); return; }
+            const stats = K.statsOf(p.loadout);
             statsEl.innerHTML = ['atk', 'def', 'maxHp'].map(k => `<div><dt>${k === 'maxHp' ? '生命上限' : STAT_NAMES[k]}</dt><dd>${stats[k]}</dd></div>`).join('')
                 + `<div class="menu-gold"><dt aria-label="金币">${itemScreens.iconHtml('gold')}</dt><dd>${p.inventory.gold}</dd></div>`;
             slotsEl.innerHTML = K.SLOTS.map(slot => {
@@ -93,17 +101,21 @@ const menuScreen = (() => {
             const items = bagItems();
             bagEl.innerHTML = items.length ? items.map(id => cell(id)).join('') : '<p class="bag-empty">背包里没有别的东西</p>';
             detailEl.innerHTML = detail();
-            settingsEl.hidden = folded;
-            acts.settings.setAttribute('aria-expanded', String(!folded));
-            settingsEl.innerHTML = Object.entries(gameSettings.CHOICES).map(([key, c]) => {
-                const now = c.options.find(([v]) => v === gameSettings.get(key))?.[1] ?? '';
-                const button = `<button type="button" class="setting" data-setting="${key}" aria-label="${c.label}：${now}，点一下换">${c.label}<b>${now}</b></button>`;
-                return key === 'quality' && gameSettings.get('quality') === 'custom' ? button + sliders() : button;
-            }).join('');
-            if (fig) fig.show(p.loadout);
             life(true);
         }
-        // The custom quality's sliders, under the quality's key.
+        // The settings page: a row per setting, every choice a key (the
+        // one in use lit); under the picture quality its values' sliders,
+        // showing the quality picked (ui/settings.js).
+        function settings() {
+            return Object.entries(gameSettings.CHOICES).map(([key, c]) => {
+                const now = gameSettings.get(key);
+                const row = `<div class="setting-row"><span class="setting-name" id="setting-${key}">${c.label}</span><div class="choice" role="radiogroup" aria-labelledby="setting-${key}">`
+                    + c.options.map(([value, label], i) => `<button type="button" role="radio" aria-checked="${value === now}" data-setting="${key}" data-pick="${i}">${label}</button>`).join('')
+                    + '</div></div>';
+                return key === 'quality' ? row + sliders() : row;
+            }).join('');
+        }
+        // The picture's values, one slider each: moving one makes the quality custom.
         function sliders() {
             const custom = gameSettings.get('custom'), choices = gameConfig.graphics.choices;
             return `<div class="sliders">${Object.entries(SLIDERS).map(([key, [label, read]]) => {
@@ -121,7 +133,7 @@ const menuScreen = (() => {
             return { key, value };
         };
         el.addEventListener('input', slid);
-        el.addEventListener('change', e => { const s = slid(e); if (s) gameSettings.setCustom(s.key, s.value); });
+        el.addEventListener('change', e => { const s = slid(e); if (s) { gameSettings.setCustom(s.key, s.value); render(); } });
         // HP goes on changing under the open menu.
         function life(force = false) {
             const f = hooks.player(), text = `${Math.ceil(f.hp)} / ${f.maxHp}`;
@@ -143,7 +155,7 @@ const menuScreen = (() => {
 
         function show() {
             if (open) return;
-            open = true; picked = null; message = ''; gearChanged = false;
+            open = true; picked = null; message = ''; gearChanged = false; page = 'role';
             el.hidden = false;
             fig = figureView.figure();
             if (fig && fig.canvas.parentNode !== figureBox) figureBox.prepend(fig.canvas);
@@ -171,18 +183,18 @@ const menuScreen = (() => {
                 render();
                 return;
             }
-            // A setting's key moves it on to its next choice.
+            // A setting's key picks its choice.
             const s = e.target.closest('[data-setting]');
             if (s) {
-                const key = s.dataset.setting, options = gameSettings.CHOICES[key].options, at = options.findIndex(([v]) => v === gameSettings.get(key));
-                gameSettings.set(key, options[(at + 1) % options.length][0]);
+                gameSettings.set(s.dataset.setting, gameSettings.CHOICES[s.dataset.setting].options[Number(s.dataset.pick)][0]);
                 render();
                 return;
             }
+            const tab = e.target.closest('[data-menu-page]');
+            if (tab) { page = tab.dataset.menuPage; render(); return; }
             const act = e.target.closest('[data-menu-act]');
             if (!act || act.disabled) return;
             if (act.dataset.menuAct === 'close') close();
-            else if (act.dataset.menuAct === 'settings') { folded = !folded; render(); }
             else hooks.act(act.dataset.menuAct);
         });
         // Dragging the figure turns it.

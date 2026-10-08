@@ -83,7 +83,7 @@
             <section class="menu-figure" data-menu-figure aria-label="人物，拖动旋转">
                 <p class="menu-figure-note">拖动旋转</p>
             </section>
-            <section class="menu-gear">
+            <section class="menu-gear menu-page" id="menu-page-role" data-menu-page-body="role" role="tabpanel" aria-label="角色">
                 <div class="menu-life"><b>生命</b><div class="bar bar-hp"><i data-menu-hp></i></div><span data-menu-hp-text></span></div>
                 <dl class="menu-stats" data-menu-stats></dl>
                 <div class="menu-pack">
@@ -92,11 +92,14 @@
                 </div>
                 <div class="menu-detail" data-menu-detail></div>
             </section>
+            <section class="menu-settings menu-page" id="menu-page-settings" data-menu-page-body="settings" data-menu-settings role="tabpanel" aria-label="设置" hidden></section>
             <section class="menu-side">
+                <div class="menu-tabs" role="tablist" aria-label="菜单页">
+                    <button type="button" role="tab" data-menu-page="role" aria-controls="menu-page-role" aria-selected="true">角色</button>
+                    <button type="button" role="tab" data-menu-page="settings" aria-controls="menu-page-settings" aria-selected="false">设置</button>
+                </div>
                 <button type="button" data-menu-act="pause">暂停</button>
                 <button type="button" data-menu-act="duel">联机对战</button>
-                <button type="button" class="menu-fold" data-menu-act="settings" aria-expanded="false" aria-controls="menu-settings">设定</button>
-                <div class="menu-settings" id="menu-settings" data-menu-settings hidden></div>
                 <button type="button" class="menu-reset" data-menu-act="reset">重新开始冒险</button>
             </section>
             <button type="button" class="menu-close" data-menu-act="close" aria-label="关闭">✕</button>

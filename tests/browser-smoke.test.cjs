@@ -355,15 +355,23 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         await shot(page, 'fallen');
         await page.click('[data-action="home"]');
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
-        // The menu: no way home from it (user, 2026-10-02); the settings
-        // fold open, a tap moves one on; resetting asks first.
+        // The menu: no way home from it (user, 2026-10-02). It opens on the
+        // character page; the settings page takes its place, a key picks a
+        // choice; opened again it is the character page (user,
+        // 2026-10-08). Resetting asks first.
         await page.click('[data-menu]');
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side > [data-menu-act]')].map(b => b.textContent)), ['暂停', '联机对战', '设定', '重新开始冒险']);
-        assert.equal(await page.evaluate(() => document.querySelector('[data-menu-settings]').hidden), true);
-        await page.click('[data-menu-act="settings"]');
-        await page.click('[data-setting="camera"]');
-        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-menu-settings]').hidden, document.querySelector('[data-setting="camera"] b').textContent, JSON.parse(localStorage.getItem('blocky-rpg-settings')).camera]), [false, '远', 'far']);
-        await page.click('[data-setting="camera"]'); await page.click('[data-setting="camera"]');
+        const pages = () => page.evaluate(() => [[...document.querySelectorAll('[data-menu-page][aria-selected="true"]')].map(b => b.textContent),
+            ...['role', 'settings'].map(name => document.querySelector(`[data-menu-page-body="${name}"]`).hidden)]);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side [data-menu-page], .menu-side [data-menu-act]')].map(b => b.textContent)), ['角色', '设置', '暂停', '联机对战', '重新开始冒险']);
+        assert.deepEqual(await pages(), [['角色'], false, true]);
+        await page.click('[data-menu-page="settings"]');
+        assert.deepEqual(await pages(), [['设置'], true, false]);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.setting-name')].map(e => e.textContent)), ['音效', '帧率', '镜头', '画质']);
+        await page.click('[data-setting="camera"][data-pick="2"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-setting="camera"][aria-checked="true"]').textContent, JSON.parse(localStorage.getItem('blocky-rpg-settings')).camera]), ['远', 'far']);
+        await page.click('[data-setting="camera"][data-pick="1"]');
+        await page.click('[data-menu-act="close"]'); await page.click('[data-menu]');
+        assert.deepEqual(await pages(), [['角色'], false, true]);
         await page.click('[data-menu-act="reset"]');
         assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
         await page.click('[data-action="resume"]');
@@ -623,7 +631,7 @@ test('the torches that stand in a map cast shadows (design.md 2.5): the nearest 
     } finally { await context.close(); }
 });
 
-test('picture quality: the custom quality\'s sliders set what is drawn, a shader-deep one builds the world again, and they are kept', { timeout: 300000 }, async t => {
+test('picture quality: a quality\'s key loads its values into the sliders, a slider moved makes it custom, a shader-deep one builds the world again, and they are kept', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
     const { page, errors } = await openPage(context, '?map=field');
@@ -649,20 +657,31 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
         });
         const high = await state();
         assert.deepEqual({ ...high, shown: undefined }, { ratio: 2, sun: 1024, torch: 256, lights: 4, byVertex: true, taps: [8], lamps: 2, shown: undefined }, 'high: twice the pixels, the probes by corner, two standing torches cast');
-        // The menu: settings, then the quality key round to 自定义, which starts from high.
+        // The menu's settings page: the sliders show the quality picked,
+        // and picking one loads its values (user, 2026-10-08).
         await page.evaluate(() => window.game.menu.open());
-        await page.click('[data-menu-act="settings"]');
-        for (const want of ['极高', '省电', '自定义']) {
-            await page.click('[data-setting="quality"]');
-            assert.equal(await page.textContent('[data-setting="quality"] b'), want);
-        }
-        assert.deepEqual((await state()).shown, ['×2 1688×780', '1024', '256', '8 点', '开', '2 盏']);
+        await page.click('[data-menu-page="settings"]');
+        const picked = () => page.textContent('[data-setting="quality"][aria-checked="true"]');
+        assert.deepEqual([await picked(), (await state()).shown], ['清晰', ['×2 1688×780', '1024', '256', '8 点', '开', '2 盏']]);
+        await page.click('[data-setting="quality"][data-pick="2"]');
+        const ultra = await state();
+        assert.deepEqual([await picked(), ultra.shown], ['极高', ['×3 2532×1170', '2048', '512', '16 点', '开', '2 盏']]);
+        assert.deepEqual([ultra.ratio, ultra.sun, ultra.torch, ultra.taps, ultra.lamps], [3, 2048, 512, [16], 2]);
         const slide = (key, index) => page.evaluate(([key, index]) => {
             const input = document.querySelector(`[data-custom="${key}"]`);
             input.value = String(index);
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }, [key, index]);
+        // One slider moved: the others keep the quality's values, and the quality is custom.
+        await slide('sunShadow', 1);
+        const one = await state();
+        assert.deepEqual([await picked(), one.shown], ['自定义', ['×3 2532×1170', '1024', '512', '16 点', '开', '2 盏']]);
+        assert.deepEqual([one.ratio, one.sun, one.torch, one.taps, one.lamps], [3, 1024, 512, [16], 2]);
+        // 自定义 picked by its key goes on from the quality picked: nothing custom is kept from before.
+        await page.click('[data-setting="quality"][data-pick="1"]');
+        await page.click('[data-setting="quality"][data-pick="3"]');
+        assert.deepEqual([await picked(), (await state()).shown], ['自定义', ['×2 1688×780', '1024', '256', '8 点', '开', '2 盏']]);
         await slide('pixelRatio', 1); await slide('sunShadow', 0); await slide('torchTaps', 1); await slide('bounce', 0); await slide('lampShadows', 0);
         const custom = await state();
         assert.deepEqual({ ...custom, shown: undefined }, { ratio: 1.5, sun: 512, torch: 256, lights: 4, byVertex: false, taps: [6], lamps: 0, shown: undefined });
@@ -677,6 +696,9 @@ test('picture quality: the custom quality\'s sliders set what is drawn, a shader
         await page.evaluate(() => window.game.pause(true));
         const kept = await state();
         assert.deepEqual([kept.ratio, kept.sun, kept.lights, kept.taps, kept.lamps], [3, 512, 4, [6], 0]);
+        await page.evaluate(() => window.game.menu.open());
+        await page.click('[data-menu-page="settings"]');
+        assert.deepEqual([await picked(), (await state()).shown], ['自定义', ['×3 2532×1170', '512', '256', '6 点', '关', '关']]);
         assert.deepEqual(errors, []);
     } finally { await context.close(); }
 });
