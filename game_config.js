@@ -645,8 +645,12 @@ const gameConfig = (() => {
             // Tree crowns over a body (user, 2026-10-07): the leaves on the
             // line from it to the camera fade to `least` (of them left
             // drawn), within `reach` blocks of the line (more for a body
-            // taller than the player), fading out to there.
-            leaves: { least: 0.25, reach: 1.3 }
+            // taller than the player), fading out to there. The nearer the
+            // camera the leaves stand, the wider: `widen` blocks more for
+            // each block they are nearer it than the body, along the ground
+            // (user, 2026-10-08, the camera turning: reach up from 1.3, and
+            // the trees that stand in front of the picture open wide).
+            leaves: { least: 0.25, reach: 2.5, widen: 0.5 }
         },
 
         // 7. Touch and keyboard. deadZone and ramp: stick offset (CSS px)

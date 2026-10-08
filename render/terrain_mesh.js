@@ -30,7 +30,9 @@
 // material: where they come between the camera and a body (the player, a
 // monster, the dummy, a rival: `see`), they fade, smoothly, to
 // graphics.leaves.least, so nothing stands hidden under a tree (user,
-// 2026-10-07). The cut leaves them alone, and they do not open it.
+// 2026-10-07) -- the wider the nearer the camera they stand, so the crowns
+// in front of the picture open on the ground round the body too (user,
+// 2026-10-08). The cut leaves them alone, and they do not open it.
 const terrainMesh = (() => {
     // The picture's numbers here are game_config.js `graphics` (what each
     // is for is written there): the corners' shading, the ponds and their
@@ -261,8 +263,10 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
         const sight = { mask: { value: null }, at: { value: new T.Vector3(0, 0, 1) }, tone: { value: new T.Vector4(0, 0, 0, 0) } };
         // The bodies the crowns fade over (`seeThrough`, below): each a
         // point (blocks, about its middle) and how far round the line from
-        // it to the camera the leaves fade (w; 0 for none).
-        const see = { bodies: { value: Array.from({ length: SEE_MAX }, () => new T.Vector4()) }, least: { value: LEAVES.least } };
+        // it to the camera the leaves fade (w; 0 for none), and `widen`
+        // blocks further for each block the leaves stand nearer the camera
+        // than the body does, along the ground.
+        const see = { bodies: { value: Array.from({ length: SEE_MAX }, () => new T.Vector4()) }, least: { value: LEAVES.least }, widen: { value: LEAVES.widen } };
         // How far the terrain's colours fade to grey in the natural light
         // (`fadeLight`, above): the view sets it by the look of the hour.
         const fade = { value: 0 };
@@ -289,7 +293,7 @@ ${glows ? 'irradiance += texture2D(glowMap, (vCutPos.xz + vSide.xz * 0.5) / glow
         // The terrain's shader text, for the blocks and (`leaves`) for the
         // crowns: those take no cut, and fade over the bodies under them.
         function terrainShader(shader, leaves) {
-            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone, glowMap: { value: glowMap }, glowSize: { value: new T.Vector2(t.width, t.height) }, glowPower, seeBodies: see.bodies, seeLeast: see.least });
+            Object.assign(shader.uniforms, { cutCenter: cut.center, cutEye: cut.eye, cutRadius: cut.radius, cutOn: cut.on, cutOpen: cut.open, sightMask: sight.mask, sightAt: sight.at, sightTone: sight.tone, glowMap: { value: glowMap }, glowSize: { value: new T.Vector2(t.width, t.height) }, glowPower, seeBodies: see.bodies, seeLeast: see.least, seeWiden: see.widen });
             shader.vertexShader = shader.vertexShader
                 .replace('#include <common>', '#include <common>\nattribute float sky; varying float vSky; varying vec3 vCutPos; varying vec3 vSide;')
                 .replace('#include <project_vertex>', '#include <project_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vSide = normal; vSky = sky;');
@@ -305,16 +309,17 @@ float cutDither(vec2 p) {
     ivec2 i = ivec2(mod(p, 4.0));
     return (m[i.x + i.y * 4] + 0.5) / 16.0;
 }
-uniform vec4 seeBodies[${SEE_MAX}]; uniform float seeLeast;
-// How much of a crown stays: less on the line from a body to the camera.
+uniform vec4 seeBodies[${SEE_MAX}]; uniform float seeLeast; uniform float seeWiden;
+// How much of a crown stays: less on the line from a body to the camera,
+// and for further round it the nearer the camera the leaves stand.
 float leafStays() {
     float k = 0.0;
     for (int i = 0; i < ${SEE_MAX}; i++) {
         vec4 b = seeBodies[i];
         if (b.w <= 0.0) continue;
         vec3 axis = normalize(cutEye - b.xyz), rel = vCutPos - b.xyz;
-        float along = dot(rel, axis), ahead = dot(rel.xz, normalize(axis.xz));
-        k = max(k, (1.0 - smoothstep(b.w * 0.45, b.w, length(rel - axis * along))) * smoothstep(-0.3, 0.2, ahead));
+        float along = dot(rel, axis), ahead = dot(rel.xz, normalize(axis.xz)), reach = b.w + seeWiden * max(ahead, 0.0);
+        k = max(k, (1.0 - smoothstep(reach * 0.45, reach, length(rel - axis * along))) * smoothstep(-0.3, 0.2, ahead));
     }
     return 1.0 - k * (1.0 - seeLeast);
 }`)
