@@ -300,7 +300,7 @@ test('the test cave under the village (user, 2026-10-07): dark like the cave, st
     assert.deepEqual(plain(MAPS.base.portals.find(p => p.to === 'grotto')), { at: [22, 24], to: 'grotto', facing: 'north' });
     assert.equal(map.portals.find(p => p.to === 'base').facing, 'south', 'in by its north wall, the village being north of it');
     assert.ok(sim.player.y > sim.entities.find(e => e.id === 'p-base').y, 'arriving south of its gate');
-    for (const kind of ['spider', 'goblin', 'wolf']) assert.ok(kinds.includes(kind), kind);
+    assert.deepEqual(plain(kinds), ['spider'], 'one monster only (user, 2026-10-07): a cave spider');
     assert.ok(!kinds.some(k => MON[k].boss), 'no boss');
     assert.ok(sim.entities.some(e => e.type === 'brush') && sim.entities.some(e => e.type === 'node'), 'a thicket to burn, something to gather');
     // A training dummy in the dark middle: two torches on stands by it, every other torch out of its reach, no monster about.

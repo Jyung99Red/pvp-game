@@ -939,10 +939,11 @@ const gameConfig = (() => {
             // pillars like the cave's, the gate in its north wall (the
             // village's south gate), two torches on stands by it; a little
             // room in the south shut by a thicket, a torch on the wall
-            // either side; a goblin, a wolf and two cave spiders. In the
-            // dark middle, out of the other torches' reach, a training
-            // dummy facing west with a torch on a stand either side of it,
-            // to try the dark with (user, 2026-10-07).
+            // either side; one cave spider, in the east (user, 2026-10-07:
+            // one monster only). In the dark middle, out of the other
+            // torches' reach, a training dummy facing west with a torch on
+            // a stand either side of it, to try the dark with (user,
+            // 2026-10-07).
             grotto: {
                 name: '测试洞窟', dark: true, floor: ';',
                 dummyFacing: Math.PI,
@@ -960,12 +961,12 @@ const gameConfig = (() => {
                     ';;;33;;;;;;;;33;;;;;;;;3;;;;;;133;;;',
                     ';;;332;;;;;;;;;;;;D;;;;;;;;;;;;;3;;;',
                     ';;;3;;;;;;;;;;;;;;;;;;;;;;;;s;;;3;;;',
-                    ';;;3;;;g;;;;33;;;;;;;;;;;;;;;;;;3;;;',
+                    ';;;3;;;;;;;;33;;;;;;;;;;;;;;;;;;3;;;',
                     ';;;3;;;;;;;;33;;i;;;;;;;2;;;;;;;3;;;',
                     ';;;3;;;;;;;;;;;;;;;;;;!;;;!;;3;;3;;;',
                     ';;;3;;3;;;;;;;;3;;;;;33BBB33;;;;3;;;',
-                    ';;;3;;;;;;;w;;;;;;;;;3;;;;;3;;;;3;;;',
-                    ';;;33;;;;;;;;;;s;;;;;3;X;O;3;;;;3;;;',
+                    ';;;3;;;;;;;;;;;;;;;;;3;;;;;3;;;;3;;;',
+                    ';;;33;;;;;;;;;;;;;;;;3;X;O;3;;;;3;;;',
                     ';;;333;;;;;;;;;;;;;;;3;;;;;3;;233;;;',
                     ';;;333333333333333333333333333333;;;',
                     ';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;',
