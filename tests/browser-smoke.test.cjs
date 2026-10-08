@@ -451,13 +451,14 @@ test('the world: the title screen, the base, through the north gate by touch, a 
             // (Just north of the chief's yard's south wall, three blocks high.)
             Object.assign(p, { x: 43.5 * 40, y: 13.4 * 40, facing: -Math.PI / 2, act: null, stun: 0, push: null });
             const gl = g.view.renderer.getContext(), N = 8, px = new Uint8Array(N * N * 4), ground = g.view.ground;
-            // Share of bluish pixels in a small square at the chest (the cut
-            // is a dither; it eases open while the wall hides the player, so
-            // a second is drawn).
+            // Share of bluish pixels in a small square at the back, low
+            // enough that the head does not come over it from a steep
+            // camera (the cut is a dither; it eases open while the wall
+            // hides the player, so a second is drawn).
             const sample = on => {
                 ground.cut.on.value = on;
                 g.view.render(s, 1);
-                const at = g.view.project([p.x / 40, 1.05, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
+                const at = g.view.project([p.x / 40, 0.9, p.y / 40]), k = gl.drawingBufferWidth / innerWidth;
                 gl.readPixels(Math.round(at.x * k) - N / 2, Math.round(gl.drawingBufferHeight - at.y * k) - N / 2, N, N, gl.RGBA, gl.UNSIGNED_BYTE, px);
                 let blue = 0;
                 for (let i = 0; i < N * N; i++) if (px[i * 4 + 2] > px[i * 4] + 10 && px[i * 4 + 2] > px[i * 4 + 1]) blue++;
