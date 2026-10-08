@@ -35,14 +35,16 @@ html, body {
     background: var(--hud); color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .hud-perf:empty { display: none; }
-/* Temporary: the slider for the camera's angle down, over the frame-rate
-   line, between the stick's zone and the right-hand keys. */
+/* Temporary: the sliders for the camera's angle down, field of view and
+   distance, over the frame-rate line, between the stick's zone and the
+   right-hand keys. */
 .hud-tilt {
-    position: absolute; z-index: 4; display: grid; justify-items: center; gap: 1px;
+    position: absolute; z-index: 4; display: grid;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); left: 50%; transform: translateX(-50%);
-    width: min(200px, 22vw); padding: 2px 8px 0; border-radius: 6px; background: var(--hud);
+    width: min(250px, 28vw); padding: 2px 8px; border-radius: 6px; background: var(--hud);
     font-size: 11px; line-height: 1.4; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
+.hud-tilt label { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 6px; }
 .hud-tilt input { display: block; width: 100%; height: 22px; margin: 0; accent-color: var(--accent); }
 
 /* Top HUD: the clock and own bars on the left, the running combo in the

@@ -291,7 +291,7 @@ const viewLight = (() => {
             sun.shadow.intensity = now.shadow;
             sky.copy(now.colors[3]); scene.fog.color.copy(sky);
             for (const m of mists) m.color.copy(sky);
-            const d = C.camera.distance * tune.zoom;
+            const d = tune.distance * tune.zoom;
             scene.fog.near = d + now.fog[0]; scene.fog.far = d + now.fog[1];
         }
 

@@ -2,8 +2,12 @@
     <canvas class="game-canvas" aria-label="游戏画面"></canvas>
     <div class="game-fallback" data-fallback role="alert" hidden></div>
     <div class="hud-perf" data-perf aria-live="off"></div>
-    <!-- Temporary (user, 2026-10-08): the camera's angle down set by hand, until the one to keep is found (ui/app.js). -->
-    <label class="hud-tilt" data-tilt><span data-tilt-text></span><input type="range" data-tilt-range min="0.5" max="1.4" step="0.01" aria-label="镜头俯角"></label>
+    <!-- Temporary (user, 2026-10-08): the camera's angle down, field of view and distance set by hand, until the ones to keep are found (ui/app.js). -->
+    <div class="hud-tilt" data-tilt>
+        <label><span data-lens-text="pitch"></span><input type="range" data-lens="pitch" min="0.5" max="1.4" step="0.01" aria-label="镜头俯角"></label>
+        <label><span data-lens-text="fov"></span><input type="range" data-lens="fov" min="12" max="60" step="1" aria-label="镜头视角"></label>
+        <label><span data-lens-text="distance"></span><input type="range" data-lens="distance" min="8" max="40" step="0.2" aria-label="镜头距离"></label>
+    </div>
     <div class="hud-mobs" data-hud="mobs" aria-hidden="true"></div>
     <div class="hud-floats" data-hud="floats" aria-hidden="true"></div>
     <div class="hud-banner" data-hud="banner" aria-live="polite" hidden></div>

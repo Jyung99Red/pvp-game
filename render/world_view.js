@@ -58,7 +58,7 @@ const worldView = (() => {
         // hourShift: hours the time of day is drawn ahead, from ?hour=21
         // in the address (it starts at that hour and goes on; for testing,
         // never saved).
-        const tune = { zoom: 1, sunMap: 0, torchMap: 0, built: null, hourShift: 0 };
+        const tune = { zoom: 1, sunMap: 0, torchMap: 0, built: null, hourShift: 0, distance: C.camera.distance };
         // `level`: a quality's name (graphics.quality) or its values.
         // Returns whether the shaders must be built anew.
         function quality(level) {
@@ -92,20 +92,23 @@ const worldView = (() => {
         // middle; `tourFade` is how dark the picture is to be, for the title
         // screen to draw. `run` counts the tours begun.
         // `yaw`: where the camera has been turned to round the fighter
-        // (ui/input.js; 0 due south of it). `pitch`: its angle down, when
-        // it is not the configured one (the temporary slider, ui/app.js).
+        // (ui/input.js; 0 due south of it). `pitch`, `fov`, `distance`:
+        // its angle down, its field of view and how far it stands (before
+        // the zoom; kept in `tune` for the fog), when they are not the
+        // configured ones (the temporary sliders, ui/app.js).
         const tour = { on: false, t: 0, fade: 0, run: 0 };
-        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false, yaw = C.camera.yaw, pitch = C.camera.pitch } = {}) {
+        function render(current, frameSeconds, { bodies = null, events = [], tour: touring = false, yaw = C.camera.yaw, pitch = C.camera.pitch, fov = C.camera.fov, distance = C.camera.distance } = {}) {
+            tune.distance = distance;
             if (touring !== tour.on) {
                 tour.on = touring; tour.t = 0;
-                camera.fov = touring ? C.camera.title.fov : C.camera.fov;
+                camera.fov = touring ? C.camera.title.fov : fov;
                 // (setViewOffset makes the aspect its full width over its
                 // full height: the canvas's own is that full size, or the
                 // picture is stretched -- and stays so after the title
                 // screen, till the window's size next changes.)
                 if (touring) { tour.run++; camera.setViewOffset(camera.aspect, 1, -C.camera.title.shift * camera.aspect, 0, camera.aspect, 1); }
                 else camera.clearViewOffset();
-            }
+            } else if (!touring && camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
             let shot = null;
             if (touring) { tour.t += frameSeconds; shot = { ...tourAt(tour.t), run: tour.run }; }
             tour.fade = shot ? shot.fade : 0;
@@ -282,11 +285,11 @@ const worldView = (() => {
         // ground on screen lies (blocks, along the ground): the screen
         // shows further beyond the fighter than short of it.
         function placeCamera(x, y, z, yaw, pitch) {
-            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = cam.distance * tune.zoom * fit, cp = Math.cos(pitch);
+            const cam = C.camera, fit = Math.max(1, 1.05 / camera.aspect), d = tune.distance * tune.zoom * fit, cp = Math.cos(pitch);
             const [jx, jy] = effects.jitter(), tx0 = x + jx, ty0 = y + cam.lookHeight + jy, tz0 = z;
             camera.position.set(tx0 + Math.sin(yaw) * cp * d, ty0 + Math.sin(pitch) * d, tz0 + Math.cos(yaw) * cp * d);
             camera.lookAt(tx0, ty0, tz0);
-            const half = cam.fov * Math.PI / 360, height = cam.lookHeight + Math.sin(pitch) * d;
+            const half = camera.fov * Math.PI / 360, height = cam.lookHeight + Math.sin(pitch) * d;
             return (height / Math.tan(Math.max(0.1, pitch - half)) + height / Math.tan(pitch + half)) / 2 - cp * d;
         }
         // ---- the title screen's camera (camera.title): what it may look
