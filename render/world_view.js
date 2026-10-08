@@ -26,7 +26,9 @@ const worldView = (() => {
     }
 
     // opts.selfId: the fighter this phone plays (the camera follows it; in a
-    // duel the other one is drawn as the rival).
+    // duel the other one is drawn as the rival). opts.quality: the picture
+    // quality to begin with (`settings`), the menu's, or the world would be
+    // built a second time as soon as the menu's settings came.
     function create(canvas, sim, opts = {}) {
         const T = THREE, C = gameConfig;
         const renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -69,7 +71,7 @@ const worldView = (() => {
             viewShaders.patchShaders(T, built, direct3d);
             return true;
         }
-        quality('high');
+        quality(opts.quality || 'high');
         const asked = new URLSearchParams(window.location.search).get('hour');
         if (asked !== null && Number.isFinite(Number(asked))) tune.hourShift = Number(asked) - dayKit.hourOf(sim);
 
@@ -338,9 +340,12 @@ const worldView = (() => {
             clock += frameSeconds;
             const shownOf = body => bodies?.get(body.id) || body;
             const me = shownOf(current.fighters.find(f => f.id === selfId) || current.fighters[0]);
+            const view = shot ? shotView(shot, me) : null, U = C.world.unitsPerBlock;
             // What this fighter does not see is not drawn: a rival, a
-            // monster or the dummy behind its back or behind a wall.
-            const inSight = body => combatKit.sees(current.terrain, me, body);
+            // monster or the dummy behind its back or behind a wall. The
+            // title screen's camera is not the fighter's: everything is
+            // drawn, and the bodies near what it looks at.
+            const inSight = view ? () => true : body => combatKit.sees(current.terrain, me, body);
             seen.clear();
             const drawn = [];
             for (const f of current.fighters) {
@@ -362,7 +367,6 @@ const worldView = (() => {
                 entry.view.light(!!f.lit);
                 drawn.push({ id: f.id, body: f, shown: p, rig: entry.rig, solved, blade: entry.view.blade, materials: entry.view.materials, flash: entry.view.flash });
             }
-            const view = shot ? shotView(shot, me) : null, U = C.world.unitsPerBlock;
             // The hour's light (render/view_light.js); colours fade as its
             // look has them, the terrain's and other bodies'.
             const near = view ? { x: view.look[0] * U, y: view.look[2] * U, h: 0 } : me;
@@ -374,7 +378,8 @@ const worldView = (() => {
                 dummyView.show(visible);
                 if (visible) { seen.add(current.dummy.id); dummyView.place(dummyKit.solve(current)); foes.push({ body: current.dummy, view: dummyView, top: 1.95 }); }
             }
-            const focus = space.toBlocks(me.x, me.y, me.h);
+            // Monsters, and the props that are drawn near enough, are within FAR of the camera's focus.
+            const focus = view ? view.look : space.toBlocks(me.x, me.y, me.h);
             for (const m of current.monsters) {
                 if (!monsters.has(m.id)) monsters.set(m.id, monsterView(m));
                 const entry = monsters.get(m.id);

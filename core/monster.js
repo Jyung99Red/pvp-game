@@ -238,6 +238,10 @@ const monsterKit = (() => {
         terrainKit.wayTo(sim.terrain, m.x, m.y, x, y, m.radius, short, way);
         return walkTo(sim, m, way.x, way.y, speed, dt, turn) && way.x === x && way.y === y;
     }
+    // Is a body standing on the monster's home, and the monster up against it?
+    function heldOff(sim, m) {
+        return obstacles(sim, m).some(o => distance(o, m.home) < o.radius + m.radius && distance(o, m) < o.radius + m.radius + 3);
+    }
 
     // ---- choosing what to do (design.md 5.2) ----
     // How far a kind's bands go: `near` as far as any move of its near
@@ -356,8 +360,11 @@ const monsterKit = (() => {
                 if (m.t >= F().stagger.duration - 1e-9) { m.phase = 'chase'; m.t = 0; m.wait = S.delay; emit(sim, m, 'recovered'); }
                 return;
             case 'return':
-                // Home again: whole, calm, and back on its rounds.
-                if (walkRound(sim, m, m.home.x, m.home.y, 0, S.speed, dt)) Object.assign(m, { phase: 'patrol', t: 0, rest: S.patrolRest, hp: m.maxHp, enraged: false, stagger: 0 });
+                // Home again: whole, calm, and back on its rounds. A body
+                // standing on its home (the player, as like as not) keeps it
+                // off: up against that body is home, or it would walk on the
+                // spot, mending and never fighting, for as long as they stood.
+                if (walkRound(sim, m, m.home.x, m.home.y, 0, S.speed, dt) || heldOff(sim, m)) Object.assign(m, { phase: 'patrol', t: 0, rest: S.patrolRest, hp: m.maxHp, enraged: false, stagger: 0 });
                 return;
         }
     }

@@ -563,6 +563,23 @@ test('past its leash it goes home though the player stands by it, mending as it 
     assert.equal(n.phase, 'chase');
 });
 
+test('a player standing on its home does not keep it walking there for good: up against them it is home, whole, and fights again', () => {
+    const sim = field('goblin'), m = sim.monsters[0], p = sim.player, S = MON.goblin;
+    m.phase = 'chase'; m.wait = 0;
+    put(m, m.home.x - S.leash - 10, m.home.y, 0);
+    put(p, m.home.x, m.home.y, Math.PI);
+    W.step(sim, 0.01);
+    assert.equal(m.phase, 'return');
+    m.hp = 10;
+    for (let i = 0; i < 1500 && m.phase === 'return'; i++) W.step(sim, 0.01);
+    assert.notEqual(m.phase, 'return', 'still walking home, the player in the way');
+    assert.ok(dist(m, p) < m.radius + p.radius + 3, `${dist(m, p)} from the player`);
+    assert.equal(m.hp, m.maxHp);
+    const hp = p.hp;
+    for (let i = 0; i < 1000 && p.hp === hp; i++) W.step(sim, 0.01);
+    assert.ok(p.hp < hp, 'it fights the player on its home');
+});
+
 // ---- walls (design.md 5: it notices what it sees, and walks round) ----
 // The open square with blocks put into it: `walls` is a list of [letter,
 // column, first row, last row].

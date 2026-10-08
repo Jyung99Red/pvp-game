@@ -78,7 +78,7 @@ const app = (() => {
         let view = null, paused = false, panel = null, resultSeen = null;
         // The duel under way: { session, link, code, outcome, resultAt, shown, ended }.
         let duel = null;
-        try { view = worldView.create(canvas, sim); } catch (error) {
+        try { view = worldView.create(canvas, sim, { quality: gameSettings.quality() }); } catch (error) {
             console.error(error);
             fallback(root, '这台设备的浏览器没有开启 WebGL，3D 画面无法显示。');
         }
@@ -257,7 +257,7 @@ const app = (() => {
                 if (e.side !== 'player' && e.type !== 'boss_defeated') continue;
                 if (e.type === 'travel') { load(e.to, { arrival: e.from, carry: { hp: sim.player.hp } }); return; }
                 if (e.type === 'open') { input.releaseAll(); if (BUILDING_SCREENS[e.what]) screens.open(BUILDING_SCREENS[e.what]); else menu.open(); }
-                else if (e.type === 'boss_defeated' || e.type === 'chest_open' || e.type === 'grave_call') persist();
+                else if (e.type === 'boss_defeated' || e.type === 'chest_open' || e.type === 'grave_call' || e.type === 'revive') persist();
                 else if (e.type === 'pickup' && saveAt === null) saveAt = clock + SAVE_DELAY;
             }
         }

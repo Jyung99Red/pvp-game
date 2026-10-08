@@ -80,7 +80,7 @@ const worldSim = (() => {
         const saved = progress || {};
         // clock: seconds played (outside duels), which grows resources back.
         const world = {
-            bosses: { ...saved.bosses }, chests: { ...saved.chests },
+            bosses: { ...saved.bosses }, called: { ...saved.called }, chests: { ...saved.chests },
             inventory: { gold: saved.inventory?.gold || 0, items: { ...saved.inventory?.items } }, loadout: { ...loadout },
             clock: saved.clock || 0, gathered: { ...saved.gathered }
         };

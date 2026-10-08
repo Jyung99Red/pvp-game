@@ -15,6 +15,10 @@
 //   ground there (core/monster.js phase `rise`), turned to its caller. The
 //   boss stays down in the save: what waits on it stays open, its chest
 //   stays opened, and a boss called back is gone once the region is left.
+//   A call paid for is kept (the save's `called`) until the boss is up: a
+//   region left while its grave glows, or a page shut, finds the grave
+//   glowing again on the way back, and the boss rises with nothing spent
+//   twice.
 //   state: hidden | ready | calling; t: seconds in that state.
 // - drop: loot on the ground. It pops out, settles, and is picked up by
 //   walking near it: it flies to the one who came close.
@@ -45,7 +49,7 @@ const propKit = (() => {
     const isBoss = kind => !!gameConfig.monsters[kind]?.boss;
     // Progress of the world (core/save.js): bosses down, chests opened, what
     // is carried. Duels and tests may have none.
-    const progressOf = sim => sim.progress || (sim.progress = { bosses: {}, chests: {}, inventory: { gold: 0, items: {} }, clock: 0, gathered: {} });
+    const progressOf = sim => sim.progress || (sim.progress = { bosses: {}, called: {}, chests: {}, inventory: { gold: 0, items: {} }, clock: 0, gathered: {} });
     const nodeKey = (region, c, r) => `${region}/${c},${r}`;
     // What a gathered resource leaves: rubble for a boulder, the map's floor for a plant.
     const spentOf = (terrain, kind) => terrainKit.isSolid(kind) ? terrainKit.KIND.gravel : terrain.floor;
@@ -121,13 +125,14 @@ const propKit = (() => {
             });
         }
         for (const { col, row } of terrain.chests) if (!chests.has(`${col},${row}`)) throw new Error(`${map.name}: C at ${col},${row} is in no chest list`);
-        // A grave at each boss's home; already showing where the save has the boss down.
+        // A grave at each boss's home; already showing where the save has
+        // the boss down, and glowing anew where it has a call paid for.
         terrain.monsters.forEach(({ kind, col, row }, spawn) => {
             if (!isBoss(kind)) return;
-            const at = centre(col, row), down = !!progress?.bosses?.[kind];
+            const at = centre(col, row), down = !!progress?.bosses?.[kind], called = down && !!progress?.called?.[kind];
             out.push({
                 id: `grave-${col}-${row}`, type: 'grave', boss: kind, spawn, x: at.x, y: at.y, h: 0, facing: angleOf('south'),
-                radius: gameConfig.props.graveRadius, solid: down, state: down ? 'ready' : 'hidden', t: down ? 99 : 0, caller: null
+                radius: gameConfig.props.graveRadius, solid: down, state: called ? 'calling' : down ? 'ready' : 'hidden', t: down && !called ? 99 : 0, caller: null
             });
         });
         // A wall torch hangs on the first wall round its cell, as drawn: a
@@ -221,13 +226,15 @@ const propKit = (() => {
         }
         return short.join('、');
     }
-    // The materials are spent and the grave starts to glow.
+    // The materials are spent, the call is kept till the boss is up, and
+    // the grave starts to glow.
     function call(sim, e, p) {
-        const items = progressOf(sim).inventory.items;
+        const bag = progressOf(sim), items = bag.inventory.items;
         for (const [id, n] of Object.entries(gameConfig.monsters[e.boss].revive || {})) {
             items[id] -= n;
             if (items[id] <= 0) delete items[id];
         }
+        bag.called = { ...bag.called, [e.boss]: true };
         Object.assign(e, { state: 'calling', t: 0, caller: p.id });
         emit(sim, 'grave_call', { side: p.id, target: e.id, kind: e.boss, at: space.toBlocks(e.x, e.y, 20) });
     }
@@ -240,6 +247,7 @@ const propKit = (() => {
             const spawn = sim.terrain.monsters[e.spawn], caller = sim.fighters.find(f => f.id === e.caller) || sim.fighters[0];
             const m = entityKit.add(sim, Object.assign(monsterKit.create(sim.terrain, spawn, e.spawn), { id: entityKit.nextId(sim, 'boss'), phase: 'rise', t: 0 }));
             m.facing = Math.atan2(caller.y - m.y, caller.x - m.x);
+            delete progressOf(sim).called?.[e.boss];
             Object.assign(e, { state: 'hidden', t: 0, solid: false, caller: null });
             emit(sim, 'revive', { side: caller.id, target: m.id, kind: e.boss, name: bossName(e.boss), at: space.toBlocks(m.x, m.y, 20) });
             return;

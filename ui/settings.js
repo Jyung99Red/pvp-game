@@ -53,8 +53,9 @@ const gameSettings = (() => {
         values.quality = 'custom';
         changed();
     }
-    // The picture quality to draw with: a quality's name, or the custom values.
-    const quality = v => v.quality === 'custom' ? { ...v.custom } : v.quality;
+    // The picture quality to draw with: a quality's name, or the custom
+    // values (of `v`, by default the values now).
+    const quality = (v = values) => v.quality === 'custom' ? { ...v.custom } : v.quality;
     // `fn(values)` now and after every change.
     function apply(fn) { listener = fn; fn(copy()); }
     // get('custom'): the picture's values drawn now (the sliders').

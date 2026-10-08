@@ -84,11 +84,12 @@ const viewLight = (() => {
                 if (shadow.map) { shadow.map.dispose(); shadow.map = null; }
                 return true;
             };
-            if (resize(sun.shadow, tune.sunMap)) {
-                texel = 2 * extent / tune.sunMap;
-                sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
-            }
-            // (The radius whether the size changed or not: a light's map is 512 a side to begin with, the ultra quality's own.)
+            // (The texel and the radii whether the size changed or not: a
+            // light's map is 512 a side to begin with, the saver quality's
+            // sun's on a phone and the ultra quality's torch's.)
+            resize(sun.shadow, tune.sunMap);
+            texel = 2 * extent / tune.sunMap;
+            sun.shadow.radius = Math.max(1, SUN_SOFT / texel);
             resize(torchLight.shadow, tune.torchMap);
             torchLight.shadow.radius = TORCH.soft * tune.torchMap;
             for (const c of casters) {
