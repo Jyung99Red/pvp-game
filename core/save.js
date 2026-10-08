@@ -97,5 +97,9 @@ const saveKit = (() => {
         try { storage.removeItem(KEY); } catch (_) { /* Nothing to erase. */ }
         return fresh();
     }
-    return { KEY, VERSION, fresh, clean, merge, load, write, erase };
+    // Whether a save was ever written here (the title screen's 继续冒险).
+    function exists(storage) {
+        try { return storage?.getItem(KEY) != null; } catch (_) { return false; }
+    }
+    return { KEY, VERSION, fresh, clean, merge, load, write, erase, exists };
 })();

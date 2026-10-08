@@ -2,49 +2,31 @@
 // running game, which goes on (user, 2026-10-02: like Minecraft's
 // inventory; the pause is a button of its own). Three columns: the main
 // character in what is worn, turned by dragging (render/figure_view.js);
-// a page; and the side: the pages' keys (user, 2026-10-08), pause, the
-// duel room, a new adventure. The character page: HP and stats over the
-// four gear slots (a column) and the bag beside them, the picked item
-// below (one bag: the base's storage opens this too), gear changed in the
-// base only (design.md 7.2). The settings page takes its place: this
-// phone's settings, every choice a key. The menu opens on the character
-// page every time (user, 2026-10-08). The close key has the corner to
-// itself. Gear changes go through core/inventory.js on the world's
-// progress and take effect when the menu closes (`closed`).
+// a page; and the side: the pages' keys (user, 2026-10-08), pause, back
+// to the title screen (ui/title.js; the duel and a new adventure are
+// there). The character page: HP and stats over the four gear slots (a
+// column) and the bag beside them, the picked item below (one bag: the
+// base's storage opens this too), gear changed in the base only
+// (design.md 7.2). The settings page takes its place: this phone's
+// settings (ui/settings_view.js). The menu opens on the character page
+// every time (user, 2026-10-08). The close key has the corner to itself.
+// Gear changes go through core/inventory.js on the world's progress and
+// take effect when the menu closes (`closed`).
 const menuScreen = (() => {
     const K = inventoryKit, { SLOT_NAMES, STAT_NAMES } = itemScreens;
     // Radians the figure turns per CSS pixel dragged.
     const TURN = 0.012;
-    // CSS pixels a finger goes on a slider before its way is judged
-    // (sideways moves it, up or down scrolls); half its knob, which the
-    // track is short of at either end.
-    const SLOP = 8, KNOB = 8;
-    // The picture quality's sliders (ui/settings.js), one per value of
-    // graphics.choices: the label, and how a value reads. The pixel
-    // ratio reads as what is drawn: never more than the phone's own, and
-    // the picture's size in device pixels.
-    const SLIDERS = {
-        pixelRatio: ['像素比', v => {
-            const own = window.devicePixelRatio || 1, used = Math.min(v, own);
-            return `×${+used.toFixed(2)}${v > own ? '（手机上限）' : ''} ${Math.round(window.innerWidth * used)}×${Math.round(window.innerHeight * used)}`;
-        }],
-        sunShadow: ['太阳影子', v => String(v)],
-        torchShadow: ['火把影子', v => String(v)],
-        torchTaps: ['火把柔边', v => `${v} 点`],
-        bounce: ['反弹光', v => v ? '开' : '关'],
-        lampShadows: ['火炬影子', v => v ? `${v} 盏` : '关']
-    };
     const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
     // hooks: progress() the world's progress; player() the fighter shown
     // (HP); canChange() gear may be changed now;
-    // changed('gear'); act(name) for the side's buttons (pause, duel,
-    // reset); closed({ gearChanged }).
+    // changed('gear'); act(name) for the side's buttons (pause, title);
+    // closed({ gearChanged }).
     function attach(root, hooks) {
         const el = root.querySelector('[data-menu-screen]'), $ = sel => el.querySelector(sel);
         const figureBox = $('[data-menu-figure]'), slotsEl = $('[data-menu-slots]'), bagEl = $('[data-menu-bag]'), detailEl = $('[data-menu-detail]');
         const hpFill = $('[data-menu-hp]'), hpText = $('[data-menu-hp-text]'), statsEl = $('[data-menu-stats]');
-        const settingsEl = $('[data-menu-settings]');
+        const settingsPage = settingsView.attach($('[data-menu-settings]'), { prefix: 'menu-setting' });
         const acts = Object.fromEntries([...el.querySelectorAll('[data-menu-act]')].map(b => [b.dataset.menuAct, b]));
         const tabs = [...el.querySelectorAll('[data-menu-page]')], pages = [...el.querySelectorAll('[data-menu-page-body]')];
         const I = gameConfig.items;
@@ -94,7 +76,7 @@ const menuScreen = (() => {
             for (const body of pages) body.hidden = body.dataset.menuPageBody !== page;
             const p = hooks.progress();
             if (fig) fig.show(p.loadout);
-            if (page === 'settings') { settingsEl.innerHTML = settings(); return; }
+            if (page === 'settings') { settingsPage.render(); return; }
             const stats = K.statsOf(p.loadout);
             statsEl.innerHTML = ['atk', 'def', 'maxHp'].map(k => `<div><dt>${k === 'maxHp' ? '生命上限' : STAT_NAMES[k]}</dt><dd>${stats[k]}</dd></div>`).join('')
                 + `<div class="menu-gold"><dt aria-label="金币">${itemScreens.iconHtml('gold')}</dt><dd>${p.inventory.gold}</dd></div>`;
@@ -107,84 +89,6 @@ const menuScreen = (() => {
             detailEl.innerHTML = detail();
             life(true);
         }
-        // The settings page: a row per setting, every choice a key (the
-        // one in use lit); under the picture quality its values' sliders,
-        // showing the quality picked (ui/settings.js).
-        function settings() {
-            return Object.entries(gameSettings.CHOICES).map(([key, c]) => {
-                const now = gameSettings.get(key);
-                const row = `<div class="setting-row"><span class="setting-name" id="setting-${key}">${c.label}</span><div class="choice" role="radiogroup" aria-labelledby="setting-${key}">`
-                    + c.options.map(([value, label], i) => `<button type="button" role="radio" aria-checked="${value === now}" data-setting="${key}" data-pick="${i}">${label}</button>`).join('')
-                    + '</div></div>';
-                return key === 'quality' ? row + sliders() : row;
-            }).join('');
-        }
-        // The picture's values, one slider each: moving one makes the quality custom.
-        function sliders() {
-            const custom = gameSettings.get('custom'), choices = gameConfig.graphics.choices;
-            return `<div class="sliders">${Object.entries(SLIDERS).map(([key, [label, read]]) => {
-                const options = choices[key], at = Math.max(0, options.indexOf(custom[key]));
-                return `<label class="slider"><span>${label}<b data-custom-shown="${key}">${esc(read(options[at]))}</b></span>`
-                    + `<span class="slider-track" data-track><input type="range" min="0" max="${options.length - 1}" step="1" value="${at}" data-custom="${key}" aria-label="${label}"></span></label>`;
-            }).join('')}</div>`;
-        }
-        // A slider moved: its value reads at once; let go, it is kept and drawn.
-        const slid = e => {
-            const input = e.target.closest?.('[data-custom]');
-            if (!input) return null;
-            const key = input.dataset.custom, value = gameConfig.graphics.choices[key][Number(input.value)];
-            el.querySelector(`[data-custom-shown="${key}"]`).textContent = SLIDERS[key][1](value);
-            return { key, value };
-        };
-        el.addEventListener('input', slid);
-        el.addEventListener('change', e => { const s = slid(e); if (s) { gameSettings.setCustom(s.key, s.value); render(); } });
-        // A slider moves for a sideways drag only (user, 2026-10-08: a
-        // scroll begun on one moved it). Its input takes no touch; its track
-        // waits until the finger has gone SLOP pixels: sideways, the slider
-        // follows the finger; up or down, it is the page's scroll
-        // (touch-action: pan-y) and the slider stays as it was. A tap puts
-        // it where tapped. Let go, a new value is kept (`change`).
-        let sliding = null;
-        const follow = (s, x) => {
-            const r = s.track.getBoundingClientRect(), share = (x - r.left - KNOB) / Math.max(1, r.width - 2 * KNOB);
-            const at = String(Math.round(Math.max(0, Math.min(1, share)) * Number(s.input.max)));
-            if (at === s.input.value) return;
-            s.input.value = at;
-            s.input.dispatchEvent(new Event('input', { bubbles: true }));
-        };
-        el.addEventListener('pointerdown', e => {
-            const track = e.target.closest?.('[data-track]');
-            if (!track || e.button > 0) return;
-            const input = track.querySelector('[data-custom]');
-            sliding = { id: e.pointerId, track, input, x: e.clientX, y: e.clientY, from: input.value, way: null };
-        });
-        el.addEventListener('pointermove', e => {
-            const s = sliding;
-            if (!s || e.pointerId !== s.id) return;
-            if (!s.way) {
-                const dx = Math.abs(e.clientX - s.x), dy = Math.abs(e.clientY - s.y);
-                if (Math.max(dx, dy) < SLOP) return;
-                s.way = dx > dy ? 'side' : 'scroll';
-            }
-            if (s.way === 'side') follow(s, e.clientX);
-        });
-        el.addEventListener('pointerup', e => {
-            const s = sliding;
-            if (!s || e.pointerId !== s.id) return;
-            sliding = null;
-            if (s.way === 'scroll') return;
-            if (!s.way) follow(s, e.clientX);
-            if (s.input.value !== s.from) s.input.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-        // The page took the finger for its scroll: the slider goes back.
-        el.addEventListener('pointercancel', e => {
-            const s = sliding;
-            if (!s || e.pointerId !== s.id) return;
-            sliding = null;
-            if (s.input.value === s.from) return;
-            s.input.value = s.from;
-            s.input.dispatchEvent(new Event('input', { bubbles: true }));
-        });
         // HP goes on changing under the open menu.
         function life(force = false) {
             const f = hooks.player(), text = `${Math.ceil(f.hp)} / ${f.maxHp}`;
@@ -217,7 +121,7 @@ const menuScreen = (() => {
         }
         function close() {
             if (!open) return;
-            open = false; el.hidden = true; drag = null; sliding = null;
+            open = false; el.hidden = true; drag = null; settingsPage.stop();
             cancelAnimationFrame(raf);
             hooks.closed({ gearChanged });
         }
@@ -231,13 +135,6 @@ const menuScreen = (() => {
                 const why = K.equip(hooks.progress(), slot, equip ? picked : null);
                 if (!why) { gearChanged = true; hooks.changed('gear'); }
                 message = why || (equip ? `换上了${I[picked].name}` : `卸下了${I[picked].name}`);
-                render();
-                return;
-            }
-            // A setting's key picks its choice.
-            const s = e.target.closest('[data-setting]');
-            if (s) {
-                gameSettings.set(s.dataset.setting, gameSettings.CHOICES[s.dataset.setting].options[Number(s.dataset.pick)][0]);
                 render();
                 return;
             }

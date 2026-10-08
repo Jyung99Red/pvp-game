@@ -1,6 +1,6 @@
-// This phone's settings, picked on the menu's settings page (design.md
-// 3.6): sound, the frame-rate line, picture quality and how far the camera
-// stands. Kept in localStorage apart from the save (the sound in
+// This phone's settings, picked on the settings page (design.md 3.6;
+// ui/settings_view.js, in the menu and on the title screen): sound, the
+// frame-rate line, picture quality and how far the camera stands. Kept in localStorage apart from the save (the sound in
 // ui/sfx.js's own key); none of it touches the rules. `apply` hands every
 // value to whoever draws it, now and on each change.
 //

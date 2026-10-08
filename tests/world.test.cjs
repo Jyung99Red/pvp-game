@@ -606,6 +606,7 @@ function storage() {
 }
 test('the save: fresh, written and read back with progress, gear and terrain edits, and junk cleaned out', () => {
     const store = storage(), START = { wooden_sword: 1, wooden_shield: 1, cloth_armor: 1 }, WORN = plain(gameConfig.gear.starter);
+    assert.equal(saveKit.exists(store), false, 'nothing written yet');
     const fresh = plain(saveKit.load(store));
     assert.deepEqual(fresh, plain(saveKit.fresh()));
     assert.deepEqual(fresh, { v: 2, bosses: {}, chests: {}, inventory: { gold: 0, items: START }, loadout: WORN, edits: {}, clock: 0, gathered: {} }, 'a new game owns and wears the starter gear');
@@ -615,6 +616,7 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     sim.progress.loadout.armor = 'iron_armor';
     T.set(sim.terrain, 20, 20, 'stone', 2);
     assert.equal(saveKit.write(store, saveKit.merge(saveKit.fresh(), sim)), true);
+    assert.equal(saveKit.exists(store), true);
     const back = saveKit.load(store), items = { ...START, goblin_ear: 3, iron_armor: 1 };
     assert.deepEqual(plain(back), { v: 2, bosses: { goblinChief: true }, chests: {}, inventory: { gold: 12, items }, loadout: { ...WORN, armor: 'iron_armor' }, edits: { field: [[20, 20, 'stone', 2]] }, clock: 0, gathered: {} });
     // A region made from the save has the edit back, carries what was carried and wears what was worn.
@@ -641,8 +643,10 @@ test('the save: fresh, written and read back with progress, gear and terrain edi
     const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('full'); }, removeItem() { throw new Error('denied'); } };
     assert.deepEqual(plain(saveKit.load(broken)), plain(saveKit.fresh()));
     assert.equal(saveKit.write(broken, saveKit.fresh()), false);
+    assert.equal(saveKit.exists(broken), false);
     assert.deepEqual(plain(saveKit.erase(store)), plain(saveKit.fresh()));
     assert.equal(store.data.size, 0);
+    assert.equal(saveKit.exists(store), false, 'erased');
 });
 
 test('a world with entities replays the same and survives a JSON round trip', () => {

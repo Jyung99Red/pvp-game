@@ -232,10 +232,29 @@ test('two thumbs through real touch points: stick with the shield, then stick wi
     } finally { await context.close(); }
 });
 
-test('the world: the base, through the north gate by touch, a fight, falling and home again; walls in front go see-through; the save keeps it', { timeout: 300000 }, async t => {
+test('the world: the title screen, the base, through the north gate by touch, a fight, falling and home again; walls in front go see-through; back to the title and on; the save keeps it', { timeout: 300000 }, async t => {
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390, '');
     try {
+        // The page opens on the title screen (user, 2026-10-08): no save yet,
+        // so no 继续冒险; the base behind it stands still and the HUD is away;
+        // nothing is saved till the adventure begins. Its settings unfold
+        // beside the keys and work as the menu's.
+        const titleKeys = () => page.evaluate(() => [...document.querySelectorAll('[data-title-act]')].filter(b => !b.hidden).map(b => b.textContent));
+        assert.deepEqual(await titleKeys(), ['开始冒险', '联机对战', '设置']);
+        const still = await page.evaluate(async () => {
+            const g = window.game, t0 = g.sim.time, frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+            g.pause(false); await frame(); await frame(); await frame(); g.pause(true);
+            return [g.title.isOpen(), g.sim.time - t0, getComputedStyle(document.querySelector('[data-menu]')).visibility, localStorage.getItem('blocky-rpg-save')];
+        });
+        assert.deepEqual(still, [true, 0, 'hidden', null]);
+        await page.click('[data-title-act="settings"]');
+        await page.click('[data-title-settings] [data-setting="perf"][data-pick="1"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-perf]').hidden, JSON.parse(localStorage.getItem('blocky-rpg-settings')).perf]), [true, false]);
+        await page.click('[data-title-settings] [data-setting="perf"][data-pick="0"]');
+        await shot(page, 'title');
+        await page.click('[data-title-act="new"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.title.isOpen(), getComputedStyle(document.querySelector('[data-menu]')).visibility]), [false, 'visible']);
         const start = await page.evaluate(() => {
             const g = window.game;
             g.view.render(g.sim, 0);
@@ -357,24 +376,35 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.panel, window.game.sim.player.hp, window.game.sim.result]), ['base', null, 360, null]);
         // The menu: no way home from it (user, 2026-10-02). It opens on the
         // character page; the settings page takes its place, a key picks a
-        // choice; opened again it is the character page (user,
-        // 2026-10-08). Resetting asks first.
+        // choice; opened again it is the character page (user, 2026-10-08).
         await page.click('[data-menu]');
         const pages = () => page.evaluate(() => [[...document.querySelectorAll('[data-menu-page][aria-selected="true"]')].map(b => b.textContent),
             ...['role', 'settings'].map(name => document.querySelector(`[data-menu-page-body="${name}"]`).hidden)]);
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side [data-menu-page], .menu-side [data-menu-act]')].map(b => b.textContent)), ['角色', '设置', '暂停', '联机对战', '重新开始冒险']);
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.menu-side [data-menu-page], .menu-side [data-menu-act]')].map(b => b.textContent)), ['角色', '设置', '暂停', '回到主界面']);
         assert.deepEqual(await pages(), [['角色'], false, true]);
         await page.click('[data-menu-page="settings"]');
         assert.deepEqual(await pages(), [['设置'], true, false]);
-        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.setting-name')].map(e => e.textContent)), ['音效', '帧率', '镜头', '画质']);
-        await page.click('[data-setting="camera"][data-pick="2"]');
-        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-setting="camera"][aria-checked="true"]').textContent, JSON.parse(localStorage.getItem('blocky-rpg-settings')).camera]), ['远', 'far']);
-        await page.click('[data-setting="camera"][data-pick="1"]');
+        assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-menu-settings] .setting-name')].map(e => e.textContent)), ['音效', '帧率', '镜头', '画质']);
+        await page.click('[data-menu-settings] [data-setting="camera"][data-pick="2"]');
+        assert.deepEqual(await page.evaluate(() => [document.querySelector('[data-menu-settings] [data-setting="camera"][aria-checked="true"]').textContent, JSON.parse(localStorage.getItem('blocky-rpg-settings')).camera]), ['远', 'far']);
+        await page.click('[data-menu-settings] [data-setting="camera"][data-pick="1"]');
         await page.click('[data-menu-act="close"]'); await page.click('[data-menu]');
         assert.deepEqual(await pages(), [['角色'], false, true]);
-        await page.click('[data-menu-act="reset"]');
-        assert.equal(await page.evaluate(() => document.querySelector('[data-panel-title]').textContent), '重新开始冒险？');
+        // 回到主界面: saved, and the world stands still behind it; 继续冒险
+        // goes on where the player stood, as hurt as they were. A new
+        // adventure asks first now there is a save.
+        const where = () => page.evaluate(() => { const g = window.game, p = g.sim.player; return [g.map, Math.round(p.x), Math.round(p.y), p.hp]; });
+        await page.evaluate(() => { const g = window.game, p = g.sim.player; Object.assign(p, { x: p.x + 40, hp: 200 }); });
+        const stood = await where();
+        await page.click('[data-menu-act="title"]');
+        assert.deepEqual([await page.evaluate(() => [window.game.title.isOpen(), window.game.menu.isOpen(), localStorage.getItem('blocky-rpg-save') !== null]), await titleKeys()],
+            [[true, false, true], ['继续冒险', '新的冒险', '联机对战', '设置']]);
+        await page.click('[data-title-act="new"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.panel, document.querySelector('[data-panel-title]').textContent]), ['reset', '开始新的冒险？']);
         await page.click('[data-action="resume"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.panel, window.game.title.isOpen()]), [null, true]);
+        await page.click('[data-title-act="continue"]');
+        assert.deepEqual([await page.evaluate(() => window.game.title.isOpen()), await where()], [false, stood]);
         // Loot picked up is in the save and survives a reload.
         await page.evaluate(() => {
             const g = window.game;
@@ -384,6 +414,10 @@ test('the world: the base, through the north gate by touch, a fight, falling and
         await page.reload({ waitUntil: 'load' });
         await page.waitForFunction(() => document.documentElement.dataset.clientState === 'ready' && window.game, null, { timeout: 120000 });
         assert.deepEqual(await page.evaluate(() => [window.game.map, window.game.sim.progress.inventory.gold, window.game.save.inventory.items.wolf_pelt]), ['base', 42, 2]);
+        assert.deepEqual(await titleKeys(), ['继续冒险', '新的冒险', '联机对战', '设置']);
+        // A new adventure, agreed to: the save is erased, the base is begun afresh.
+        await page.click('[data-title-act="new"]'); await page.click('[data-action="erase"]');
+        assert.deepEqual(await page.evaluate(() => [window.game.title.isOpen(), window.game.panel, window.game.map, window.game.sim.progress.inventory.gold, localStorage.getItem('blocky-rpg-save')]), [false, null, 'base', 0, null]);
         // Rebuilding a world frees the last one: GPU memory does not grow.
         const memory = await page.evaluate(() => {
             const g = window.game, out = [];
@@ -401,6 +435,7 @@ test('items: the smithy makes iron armor, the bag puts it on (the model changes)
     if (skip) { t.skip(skip); return; }
     const { context, page, errors } = await openPhone(844, 390, '');
     try {
+        await page.click('[data-title-act="new"]');
         const door = kind => page.evaluate(k => {
             const g = window.game, p = g.sim.player, s = g.sim.entities.find(e => e.kind === k);
             Object.assign(p, { x: s.x, y: s.y + 30, facing: -Math.PI / 2 }); g.run(0.05);
@@ -737,8 +772,10 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
     try {
         const A = await openPage(context, '?link=local&map=clearing'), B = await openPage(context, '?link=local&map=clearing');
         const text = (page, sel) => page.evaluate(s => document.querySelector(s).textContent, sel);
-        // A creates a room; B types its code on the keypad and joins.
-        await A.page.click('[data-menu]'); await A.page.click('[data-menu-act="duel"]');
+        // A creates a room; B types its code on the keypad and joins. The
+        // room is the title screen's: the menu goes back to it.
+        const room = page => page.click('[data-menu]').then(() => page.click('[data-menu-act="title"]')).then(() => page.click('[data-title-act="duel"]'));
+        await room(A.page);
         assert.equal(await text(A.page, '[data-room-title]'), '联机对战');
         await A.page.click('[data-room-action="host"]');
         await A.page.waitForFunction(() => document.querySelector('[data-room-status]').textContent.includes('等待'), null, { timeout: 20000 });
@@ -746,7 +783,7 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         assert.match(code, /^\d{4}$/);
         await shot(A.page, 'room-host');
         // B picks the dagger first (each side picks its own weapon; the pick is remembered).
-        await B.page.click('[data-menu]'); await B.page.click('[data-menu-act="duel"]');
+        await room(B.page);
         assert.equal(await B.page.evaluate(() => document.querySelector('[data-room-weapons]').hidden), false);
         await B.page.click('[data-weapon="assassin_dagger"]');
         await shot(B.page, 'room-weapons');
@@ -814,14 +851,18 @@ test('two phones in one browser (?link=local): a room code, a duel to a result, 
         await A.page.waitForFunction(() => document.querySelector('[data-panel-note]').textContent.includes('对方想再来一局'), null, { timeout: 30000 });
         await A.page.click('[data-action="rematch"]');
         for (const { page } of [A, B]) await page.waitForFunction(() => window.game.panel === null && ['countdown', 'fight'].includes(window.game.duel?.phase) && window.game.sim.fighters.every(f => f.hp === f.maxHp), null, { timeout: 30000 });
-        // A leaves from the menu: back to the field; B is told.
+        // A leaves from the menu: the title screen, over the base; B is told,
+        // and goes back to it too.
         await A.page.click('[data-menu]');
         assert.equal(await text(A.page, '[data-panel-title]'), '对战中');
         await A.page.click('[data-action="leave"]');
-        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel]), ['base', null, null]);
+        assert.deepEqual(await A.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel, window.game.title.isOpen()]), ['base', null, null, true]);
         await B.page.waitForFunction(() => window.game.panel === 'duelEnded', null, { timeout: 30000 });
         assert.match(await text(B.page, '[data-panel-note]'), /对方离开了房间/);
         await shot(B.page, 'duel-ended');
+        assert.equal(await text(B.page, '[data-action="leave"]'), '回到主界面');
+        await B.page.click('[data-action="leave"]');
+        assert.deepEqual(await B.page.evaluate(() => [window.game.map, window.game.panel, window.game.duel, window.game.title.isOpen()]), ['base', null, null, true]);
         assert.deepEqual(A.errors, []); assert.deepEqual(B.errors, []);
     } finally { await context.close(); }
 });

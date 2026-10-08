@@ -57,7 +57,9 @@
       "ui/input.js",
       "ui/room.js",
       "ui/screens.js",
+      "ui/settings_view.js",
       "ui/menu.js",
+      "ui/title.js",
       "ui/app.js"
     ],
     "partials": [
